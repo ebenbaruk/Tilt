@@ -6,7 +6,7 @@ Act like a pragmatic senior engineer. Write code a strong teammate would approve
 
 - **Name:** Tilt
 - **Status:** New project. Stack and architecture are not decided yet. Update this section once they are.
-- **Repo:** Local git only. No remote. **Never** add a remote, push, or publish this code anywhere (GitHub or anything else) unless the user explicitly asks.
+- **Repo:** Private GitHub repo `ebenbaruk/Tilt`. It must stay **private**. Never make it public or publish this code anywhere else.
 
 ## Core principles
 
@@ -53,7 +53,7 @@ Act like a pragmatic senior engineer. Write code a strong teammate would approve
 - Commit only when asked.
 - Commit messages: imperative mood and a concise subject line (`Add user login`, not `added stuff`). Explain the *why* in the body if it isn't obvious.
 - Never commit secrets, build artifacts, or `node_modules`.
-- Never add a remote or push (see Project).
+- Push only when asked. Never force-push `main`.
 
 ## Communication
 
