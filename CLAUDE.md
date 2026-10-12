@@ -9,9 +9,9 @@ Act like a pragmatic senior engineer. Write code a strong teammate would approve
 - **Status:** Spec draft v0.1, pending validation. No code yet. Open decisions are listed in the spec (§13); don't settle them in code. Ask instead.
 - **Team:** Eli and Armand, each working with their own AI.
 - **Ownership:** Stay inside the zone you're working for (spec §8). Never edit the other person's zone; open an issue or ask.
-  - **Armand:** everything that touches money: `apps/wallet` (Privy, ledger, deposits, withdrawals, bankroll) and `chain/`.
-  - **Eli:** `apps/mod` (Claude Code mod), `apps/api` (game server: games, RNG, competitions, sponsors) and `apps/web`.
-  - **Shared:** `packages/contract`, the only boundary between `api` and `wallet`. Changes need both to agree.
+  - **Armand:** everything that touches money or game rules: `chain/` (Anchor program: games, VRF, bankroll) and `apps/wallet` (relay: Privy, signers, fee payer, transaction sending).
+  - **Eli:** `apps/mod` (Claude Code mod, displays on-chain state), `apps/api` (mod sessions, reads program events, competitions, sponsors) and `apps/web`.
+  - **Shared:** `packages/contract` (program IDL + relay API), the only boundary between the two zones. Changes need both to agree.
 - **Proposed stack:** TypeScript monorepo (pnpm), Node + Postgres, Next.js for web, Privy, `@solana/kit`. Not final until spec D7 is decided.
 - **Repo:** Private GitHub repo `ebenbaruk/Tilt`. It must stay **private**. Never make it public or publish this code anywhere else.
 

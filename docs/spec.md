@@ -117,20 +117,21 @@ Chaque jeu affiche son **RTP** (taux de retour au joueur) et est **provably fair
 
 ```
             ┌──────────────┐        ┌─────────────────────────┐
- Claude ──▶ │  mod (TS)    │──HTTP─▶│  api  (game server)     │
- Code       │  UI + touches│        │  auth, jeux, RNG,       │
-            └──────────────┘        │  compétitions, sponsors │
-                                    └───────────┬─────────────┘
-            ┌──────────────┐                    │ HTTP interne (contrat §7)
- Navigateur▶│  web (Next)  │──┐                 ▼
-            │  landing,    │  │     ┌─────────────────────────┐      ┌──────────┐
-            │  connect,    │  └────▶│  wallet  (money service)│─────▶│ Solana   │
-            │  dépôt/retrait│       │  Privy, ledger, dépôts, │      │ (vault,  │
-            └──────────────┘        │  retraits, bankroll     │      │  USDC…)  │
-                                    └─────────────────────────┘      └──────────┘
+ Claude ──▶ │  mod (TS)    │──HTTP─▶│  api  (Eli)             │◀── événements du programme
+ Code       │  UI + touches│        │  sessions du mod,       │    (indexeur)
+            └──────────────┘        │  historique, classement,│
+                                    │  compétitions, sponsors │
+            ┌──────────────┐        └───────────┬─────────────┘
+ Navigateur▶│  web (Next)  │                    │ intentions (contrat §7)
+            │  landing,    │                    ▼
+            │  connect,    │        ┌─────────────────────────┐      ┌────────────────────┐
+            │  dépôt/retrait,      │  wallet = relais (Armand)│─────▶│ chain/ (Armand)     │
+            │  vérif       │        │  Privy, signers, fee    │      │ programme Anchor :  │
+            └──────────────┘        │  payer, envoi des tx    │      │ jeux, VRF, bankroll │
+                                    └─────────────────────────┘      └────────────────────┘
 ```
 
-**Principe :** tout ce qui touche à l'argent est dans `wallet` (Armand). Tout ce qui touche au jeu et au produit est dans `mod` / `api` / `web` (Eli). Les deux mondes ne se parlent que par le contrat du §7.
+**Principe :** tout ce qui touche à l'argent et aux règles des jeux est on-chain ou dans le relais (Armand). Tout ce qui touche au produit est dans `mod` / `api` / `web` (Eli). Le mod **affiche** l'état lu sur la chaîne et ne recalcule aucune règle. Les deux mondes ne se parlent que par le contrat du §7.
 
 ### 5.1 Stack proposée (🟡 D7)
 
@@ -187,7 +188,7 @@ Sans rollup, les tirages coûtent 6 à 10× ce que rapportent les 1 % : le rollu
 
 **À valider par un spike devnet avant d'écrire le programme :** une donne de blackjack en Ephemeral Rollup avec VRF MagicBlock ; mesurer latence et coût réels ; vérifier qu'on peut payer un gain depuis la bankroll pendant que les comptes de jeu sont délégués au rollup.
 
-**Conséquences sur le reste de la spec (🟡 D13, à revoir avec Eli) :** la logique des jeux et l'aléa passent dans `chain/` ; le ledger Postgres, le contrat `reserve/settle` (§7) et le provably fair serveur (§6.4) ne sont plus le cœur du système ; l'architecture (§5) et la répartition (§8) sont à réécrire ensemble.
+**Conséquences sur le reste de la spec (D13) :** la logique des jeux et l'aléa passent dans `chain/` ; le ledger Postgres, l'ancien contrat `reserve/settle` et le provably fair serveur disparaissent. L'architecture (§5), le contrat (§7), la répartition (§8) et les jalons (§14) sont réécrits en conséquence.
 
 ### 6.2 Monnaie (🟡 D3)
 
@@ -209,69 +210,58 @@ Tous les montants sont stockés en **unités entières** (base units : 6 décima
 
 Assurée on-chain par le VRF (§6.1) : chaque tirage est accompagné d'une preuve vérifiée par le programme. Une page web permet de retrouver et de vérifier les transactions d'une main. Le schéma `serverSeed` / `clientSeed` n'est plus nécessaire.
 
-**Propriétaire :** 🟡 D13.
+**Propriétaire :** Armand (programme `chain/`) ; Eli pour la page de vérification dans `web`.
 
 ### 6.5 Responsabilités d'Armand
 
-- Intégration Privy : config, login, wallets embarqués, export de clé.
-- Détection des dépôts (webhook ou indexeur), confirmations, crédit du ledger.
-- Retraits : file d'attente, signature, limites, contrôles anti-fraude.
-- Ledger : double entrée, idempotent, réconciliation avec la chaîne.
-- Bankroll : wallet de la maison (multisig Squads recommandé), plafonds, monitoring.
+- **Spike devnet d'abord** (§6.1) : tout le reste en dépend.
+- **Programme Anchor (`chain/`)** : bankroll (vault), comptes de main, règles et gains des 4 jeux, 1 % sur les gains, plafonds (mise max, gain max selon la bankroll), interrupteur de pause, VRF MagicBlock en Ephemeral Rollup. Tests, fuzzing, simulations de RTP, audits externes.
+- **IDL** (types des comptes et événements) publiée tôt dans `packages/contract`, pour qu'Eli code contre.
+- **Relais (`apps/wallet`)** : wallets Privy, signers et policies, Tilt comme fee payer, construction et envoi des transactions à partir des intentions d'`api`, idempotence.
+- **Paiement des prix** de compétition et des drops depuis le pool sponsor.
+- **Exploitation** : multisig Squads (bankroll et autorité d'upgrade), build vérifiable, monitoring, kill switches.
 - Onramp carte.
-- Programme Anchor des jeux + intégration VRF MagicBlock (Ephemeral Rollup) + audits externes.
-- Paiement des prix de compétition et des drops depuis le pool sponsor.
 - Token Tilt éventuel (🟡 D4).
 
-## 7. Contrat entre `api` (Eli) et `wallet` (Armand)
+## 7. Contrat entre Eli et Armand
 
-**Seule frontière entre les deux.** Les types vivent dans `packages/contract` ; aucune modification sans l'accord des deux.
+**Seule frontière entre les deux.** Tout vit dans `packages/contract` ; aucune modification sans l'accord des deux. Il remplace l'ancien contrat `reserve/settle`, qui supposait un ledger off-chain.
 
-Service interne, authentifié par une clé partagée (variable d'environnement). Tous les montants sont des strings d'entiers en base units.
+**1. L'IDL du programme (Armand la possède, Eli la consomme).** Générée par Anchor, elle donne les types TypeScript :
+- **Comptes :** état d'une main (jeu, mise, cartes ou résultat, **totaux déjà calculés par le programme**, statut), bankroll, config (plafonds, pause).
+- **Événements :** `BetPlaced`, `CardDrawn` / `OutcomeDrawn`, `HandSettled` (gain, frais de 1 %).
+
+**2. L'API du relais (`apps/wallet`), appelée uniquement par `api`**, sur réseau privé, authentifiée (secret partagé ou mTLS). Montants en strings d'entiers en base units.
 
 ```ts
 // packages/contract — esquisse, à affiner ensemble
-type Currency = 'USDC' | 'SOL'
-type Amount = string // entier, base units
+type Amount = string // entier, base units USDC
+type Game = 'blackjack' | 'roulette' | 'baccarat' | 'slots'
 
-// Utilisateurs (l'identité vient de Privy)
-GET  /users/:privyUserId            -> { userId, solanaAddress }
-
-// Soldes
-GET  /balances/:userId              -> { available: Amount, locked: Amount, currency }
-
-// Paris — idempotents par betId
-POST /bets/reserve  { betId, userId, amount, currency }   -> { ok } | { error: 'INSUFFICIENT_FUNDS' | 'LIMIT_REACHED' | 'MAX_BET' }
-POST /bets/settle   { betId, payout: Amount }              -> { ok, balance }   // payout = 0 si perdu
-POST /bets/cancel   { betId }                              -> { ok }            // libère la mise réservée
-
-// Promotions (prix de compétition, drops) — payées depuis un pool sponsor
-POST /payouts/promo { payoutId, userId, amount, currency, poolId, reason } -> { ok }
-
-// Événements wallet -> api (webhooks signés)
-deposit.confirmed     { userId, amount, currency, txSig }
-withdrawal.completed  { userId, amount, currency, txSig }
-limit.changed         { userId, ... }   // jeu responsable
+GET  /users/:privyUserId  -> { userId, solanaAddress }
+POST /intents { intentId, userId, game, action, params } -> { txSig } | { error: 'INSUFFICIENT_FUNDS' | 'MAX_BET' | 'PAUSED' | 'INVALID_ACTION' }
+// action : 'bet' | 'hit' | 'stand' | 'double' | 'spin' …, params validés par schéma
+POST /payouts/promo { payoutId, userId, amount, poolId, reason } -> { txSig }
 ```
 
 **Règles :**
-- `reserve` bloque la mise au début de la main ; `settle` la solde à la fin.
-- Une main abandonnée est soldée par `api` selon les règles du jeu après expiration.
-- Rejouer un appel avec le même `betId` ou `payoutId` ne fait rien (idempotence).
-- `api` ne touche jamais aux clés ni à la chaîne. `wallet` ne connaît jamais les règles des jeux.
+- Rejouer un appel avec le même `intentId` ou `payoutId` ne fait rien (idempotence).
+- Le programme reste l'arbitre : une intention invalide est rejetée on-chain même si le relais l'a laissée passer.
+- `api` ne touche jamais aux clés. Le relais ne garde aucun état de jeu : il le lit sur la chaîne.
+- `api` lit l'état et les événements directement sur la chaîne (RPC / indexeur), pas via le relais.
 
-**Développement en parallèle :** Eli code contre un **mock** du wallet (un ledger en mémoire qui respecte le contrat). Armand teste avec un petit client qui appelle le contrat. On branche les deux en jalon M3.
+**Développement en parallèle :** Armand publie très tôt l'IDL v0 (forme des comptes et événements) et le contrat du relais. Eli code le mod et `api` contre un **faux relais** qui rejoue des événements enregistrés. On branche tout sur devnet en M3.
 
 ## 8. Répartition du travail
 
 | Zone | Dossier | Propriétaire |
 | --- | --- | --- |
-| Mod Claude Code (UI, touches, événements agent) | `apps/mod` | **Eli** |
-| Game server : jeux, RNG provably fair, sessions, compétitions, drops, leaderboard, sponsors | `apps/api` | **Eli** |
-| Landing, page connect, pages dépôt/retrait, vérif provably fair, cartes de partage | `apps/web` | **Eli** (composants Privy et dépôt fournis par Armand) |
-| Money service : Privy, ledger, dépôts, retraits, bankroll, onramp | `apps/wallet` | **Armand** |
-| Programme Solana (jeux, VRF, bankroll ; logique des jeux 🟡 D13), token (si D4) | `chain/` | **Armand** |
-| Contrat partagé | `packages/contract` | **Les deux** (relecture croisée obligatoire) |
+| Mod Claude Code (UI, touches, événements agent, version compacte) : affiche l'état on-chain | `apps/mod` | **Eli** |
+| Sessions du mod, lecture des événements du programme, historique, classement, compétitions, drops, sponsors | `apps/api` | **Eli** |
+| Landing, page connect, pages dépôt/retrait, vérification d'une main on-chain, cartes de partage | `apps/web` | **Eli** (composants Privy et dépôt fournis par Armand) |
+| Relais : Privy, signers et policies, fee payer, envoi des transactions, paiement des prix, onramp | `apps/wallet` | **Armand** |
+| Programme Solana : 4 jeux, VRF, bankroll, 1 %, plafonds, pause ; token (si D4) | `chain/` | **Armand** |
+| Contrat partagé (IDL + API du relais) | `packages/contract` | **Les deux** (relecture croisée obligatoire) |
 | Juridique / licence / KYC | — | 🟡 D8 |
 
 **Règles de collaboration :**
@@ -319,8 +309,8 @@ On gère l'argent des joueurs et une bankroll. **On part du principe que des att
 | Faux dépôt | Crédit uniquement après **finalisation** de la transaction. Vérifier le **mint exact** (vrai USDC, pas un faux token homonyme), le montant, l'adresse de destination. Idempotence par signature de transaction. |
 | Retraits frauduleux (compte volé, session volée) | Retrait **uniquement depuis le web**, jamais depuis le mod. Réauthentification fraîche + confirmation email ou 2FA. Délai et plafond réduit sur une nouvelle adresse et après tout changement de compte. Revue manuelle au-dessus d'un seuil. |
 | Vidage par volume | Plafonds de retrait par utilisateur, par jour et **global**. Disjoncteur automatique : si les retraits du jour dépassent X % de la bankroll, tout se met en pause et nous sommes alertés. |
-| Double dépense / solde négatif | Ledger en **double entrée** dans Postgres. `CHECK (balance >= 0)` en base. Verrou par utilisateur ou transactions `SERIALIZABLE`. Invariant : la somme de toutes les écritures vaut 0. |
-| Désynchronisation chaîne ↔ ledger | **Réconciliation automatique** (au moins horaire) entre soldes on-chain et ledger. Au moindre écart inexpliqué, pause des retraits et alerte. |
+| Double dépense / solde négatif | Les soldes sont on-chain : le programme vérifie les fonds et l'état de la main à chaque instruction ; une main ne se solde qu'une fois (compte fermé au règlement). Invariant testé : la bankroll couvre toujours le gain max des mains ouvertes. |
+| Désynchronisation chaîne ↔ index | La chaîne fait foi. L'index d'`api` n'est qu'un cache d'affichage, reconstruisible depuis les événements ; aucun paiement ne se décide sur l'index. |
 | Bug du programme on-chain | Audits externes avant le mainnet, fuzzing, autorité d'upgrade sur le multisig, build vérifiable, limites dans le programme lui-même. |
 | Arrêt d'urgence | **Kill switches** séparés : dépôts, paris, retraits, payouts promo. Activables en une commande par l'un ou l'autre. |
 
@@ -443,18 +433,18 @@ Une feature est finie quand :
 | D10 | Classement des compétitions | gain net / volume / solde | Gain net |
 | D11 | Split au blackjack v1 | oui / non | Non (v1.1) |
 | D12 | Nom de domaine et marque | — | — |
-| D13 | Répartition après D2 on-chain | qui porte la logique des jeux (`chain/`), que devient `api`, contrat §7 | À décider avec Eli |
+| D13 | Répartition après D2 on-chain | qui porte la logique des jeux (`chain/`), que devient `api`, contrat §7 | Proposé par Armand (§5, §7, §8, §14) : jeux on-chain chez Armand, `api` en lecture + produit chez Eli. **À valider par Eli** |
 
 ## 14. Jalons
 
 | Jalon | Contenu | Eli | Armand |
 | --- | --- | --- | --- |
-| **M0 — Fondations** | Valider la spec, monorepo, contrat v0, mock du wallet, **CI complète dès le jour 1** (§11.3) | Squelette mod + api | Squelette wallet + Privy sandbox |
-| **M1 — Ça se joue** | Blackjack jouable dans Claude Code, jetons fictifs, bandeau de fin de tour | Mod + moteur blackjack + provably fair | Ledger + `reserve/settle` sur Postgres |
-| **M2 — Comptes** | `/tilt login` via Privy, wallet créé, solde réel affiché (devnet) | Page connect, session mod | Wallets Privy, dépôts devnet |
-| **M3 — Branchement** | api ↔ wallet réels sur devnet, dépôts et retraits de bout en bout, **E2E devnet en CI, revue de sécurité interne** | Intégration | Retraits, réconciliation |
+| **M0 — Fondations** | Valider la spec, monorepo, IDL v0 + contrat du relais, faux relais, **CI complète dès le jour 1** (§11.3) | Squelette mod + api | **Spike devnet** (§6.1), squelette `chain/` + relais, Privy sandbox |
+| **M1 — Ça se joue** | Blackjack jouable dans Claude Code, bandeau de fin de tour | Mod + api contre le faux relais | Blackjack on-chain sur localnet (programme + VRF), tests et simulation de RTP |
+| **M2 — Comptes** | `/tilt login` via Privy, wallet créé, solde réel affiché (devnet) | Page connect, session mod | Wallets Privy, signers, fee payer, relais sur devnet |
+| **M3 — Branchement** | Tout branché sur devnet, de bout en bout, **E2E devnet en CI, revue de sécurité interne** | Intégration, lecture des événements | Ephemeral Rollup en conditions réelles, retraits |
 | **M4 — Sponsors** | Bloc sponsor, compétition 24 h, drops, leaderboard, carte de partage | Tout | Payouts promo |
-| **M5 — Bêta mainnet** | **Prérequis : audit externe passé, kill switches testés, runbook écrit.** Bêta fermée, limites basses, blocage géographique, KYC | Landing, jeu responsable | Bankroll, multisig, monitoring |
+| **M5 — Bêta mainnet** | **Prérequis : audit externe du programme passé, kill switches testés, runbook écrit.** Bêta fermée, limites basses, blocage géographique, KYC | Landing, jeu responsable | Bankroll, multisig, monitoring |
 | **v1.1** | Roulette, baccarat, slots, version compacte du panneau | | |
 
 ## 15. Indicateurs
