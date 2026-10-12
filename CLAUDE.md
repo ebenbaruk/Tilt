@@ -5,7 +5,14 @@ Act like a pragmatic senior engineer. Write code a strong teammate would approve
 ## Project
 
 - **Name:** Tilt
-- **Status:** New project. Stack and architecture are not decided yet. Update this section once they are.
+- **What:** A crypto casino on Solana, played inside Claude Code (a Claude Code mod) while the agent works, with a sponsor always visible. Spec: `docs/spec.md` (source of truth). Background: `docs/idea.md`, `docs/integrations.md`.
+- **Status:** Spec draft v0.1, pending validation. No code yet. Open decisions are listed in the spec (§13); don't settle them in code. Ask instead.
+- **Team:** Eli and Armand, each working with their own AI.
+- **Ownership:** Stay inside the zone you're working for (spec §8). Never edit the other person's zone; open an issue or ask.
+  - **Armand:** everything that touches money: `apps/wallet` (Privy, ledger, deposits, withdrawals, bankroll) and `chain/`.
+  - **Eli:** `apps/mod` (Claude Code mod), `apps/api` (game server: games, RNG, competitions, sponsors) and `apps/web`.
+  - **Shared:** `packages/contract`, the only boundary between `api` and `wallet`. Changes need both to agree.
+- **Proposed stack:** TypeScript monorepo (pnpm), Node + Postgres, Next.js for web, Privy, `@solana/kit`. Not final until spec D7 is decided.
 - **Repo:** Private GitHub repo `ebenbaruk/Tilt`. It must stay **private**. Never make it public or publish this code anywhere else.
 
 ## Core principles
@@ -33,12 +40,25 @@ Act like a pragmatic senior engineer. Write code a strong teammate would approve
 - Never hardcode secrets. Use environment variables and keep `.env*` out of git.
 - Validate and sanitize all external input. Use parameterized queries.
 - Apply least privilege to keys, permissions, and access.
+- This project handles real money. Security is non-negotiable; follow spec §10 for every feature. Key rules:
+  - **The server is authoritative.** Clients (mod, web) only send intents. Never trust client-supplied state, results, or randomness.
+  - **Fail closed.** On any doubt, error, or inconsistency, refuse and block rather than pay out.
+  - **Money integrity:**
+    - Amounts are integer base units, never floats.
+    - Every money movement is idempotent (unique key) and audit-logged.
+    - Balances can never go negative, enforced by a DB constraint, not just app code.
+    - Guard against concurrent requests with locks or serializable transactions.
+  - **No private keys** in code, local `.env` files, or logs.
+  - **Rate-limit every endpoint.** Assume bots, replayed requests, and people reading the mod's source.
+  - The mod never reads the user's prompts, code, or tool calls, and never runs shell commands.
 
 ## Testing
 
 - Test behavior, not implementation details.
 - Add tests for non-trivial logic and for every bug fix (a regression test).
 - Before calling a task done, run the relevant tests, linter, and type checker. If something fails, say so with the output. Never claim success without checking.
+- Money, game, and RNG code needs ≥ 90% coverage, property tests for invariants, and concurrency tests (spec §11.2).
+- A feature is only done when it meets spec §11.4.
 
 ## Workflow
 
@@ -54,6 +74,9 @@ Act like a pragmatic senior engineer. Write code a strong teammate would approve
 - Commit messages: imperative mood and a concise subject line (`Add user login`, not `added stuff`). Explain the *why* in the body if it isn't obvious.
 - Never commit secrets, build artifacts, or `node_modules`.
 - Push only when asked. Never force-push `main`.
+- Once code exists, work on a branch and open a PR to `main`; don't push code directly to `main`.
+- Every PR includes a `Sécurité :` line describing the threat considered (or "aucun impact").
+- PRs touching money, the contract, sessions, RNG, or rate limits need review from both Eli and Armand.
 
 ## Communication
 
