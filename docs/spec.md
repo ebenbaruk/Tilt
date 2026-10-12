@@ -102,6 +102,7 @@ Référence visuelle : la maquette d'Eli (image partagée dans la conversation, 
 | --- | --- | --- |
 | Blackjack | v1 | Règles standard, 6 decks, le croupier reste sur 17, blackjack payé 3:2. Pas de split en v1 (🟡). |
 | Roulette | v1.1 | Européenne (un seul zéro). |
+| Baccarat | v1.1 | Punto Banco : paris joueur (1:1), banque (1:1, commission 5 %) et égalité (8:1). Un tirage VRF par coup (§6.1). |
 | Slots | v1.1 | 3 rouleaux, table de gains publique, RTP affiché. |
 | Autres (crash, dice, mines…) | plus tard | Très adaptés au terminal et rapides à jouer. |
 
@@ -145,15 +146,48 @@ Chaque jeu affiche son **RTP** (taux de retour au joueur) et est **provably fair
 
 ## 6. Le cœur « argent » (Armand)
 
-### 6.1 Modèle de règlement des paris (🟡 D2, décision structurante)
+### 6.1 Modèle de règlement des paris (D2 : tout on-chain, décidé par Armand le 2026-10-12)
 
-- **(a) Hybride, solde off-chain** *(recommandé pour la v1).* Dépôts et retraits on-chain ; les paris sont débités et crédités dans un ledger Postgres. C'est le modèle de la plupart des casinos crypto.
-  - **Pour :** instantané (une main de blackjack = plusieurs actions), aucun frais par mise, aucune signature à chaque mise, simple.
-  - **Contre :** custodial, donc la confiance repose sur nous. On compense avec du provably fair et une preuve de réserves.
-- **(b) Full on-chain :** chaque pari est une transaction vers un programme Anchor, avec un aléa VRF (Switchboard / ORAO).
-  - **Pour :** trustless, ce qui est un argument « crypto ».
-  - **Contre :** latence et frais à chaque action, signature via les session signers de Privy, programme à auditer, beaucoup plus long à sortir.
-- **(c) Hybride d'abord, puis migration** des jeux simples (dice, slots) on-chain en v2.
+**Décision :** les jeux, les cotes et les tirages (cartes, roulette, rouleaux) sont **entièrement on-chain**, dans un programme Anchor sur Solana. Chaque mise et chaque gain est une transaction ; chaque tirage vient d'un VRF vérifié on-chain. Le joueur qui veut vérifier lit le programme et ses transactions ; rien ne dépend de notre serveur.
+
+Options écartées : hybride avec solde off-chain (custodial, confiance reposant sur nous), hybride puis migration.
+
+**L'utilisateur n'a pas besoin de savoir que c'est de la crypto :**
+- Connexion Privy (email, Google, X) ; un wallet Solana est créé sans qu'il voie d'adresse.
+- Dépôt par carte via l'onramp de Privy ; le solde s'affiche en « $ » (USDC, voir D3).
+- **Tilt paie les frais réseau** (Solana permet un *fee payer* distinct du joueur) : le joueur n'a jamais besoin de SOL.
+- Pas de signature à chaque main : signers Privy côté serveur, avec une policy limitée au programme Tilt et plafonnée par transaction. Les retraits restent signés par le joueur.
+- Celui qui veut creuser vérifie le programme (build vérifiable) et les tirages sur la chaîne.
+
+**Aléa : VRF MagicBlock** (chiffres annoncés par les fournisseurs, non mesurés ; SOL à 200 $).
+
+| Option | Latence | Coût par tirage |
+| --- | --- | --- |
+| MagicBlock, Ephemeral Rollup | < 50 ms | gratuit (+ ~0,003 SOL de délégation par session) |
+| MagicBlock, Solana rapide | < 500 ms | 0,0008 SOL |
+| MagicBlock, Solana standard | 1–2 s | 0,0005 SOL |
+| ORAO | sub-seconde possible, 4–20 s | 0,001 SOL |
+
+- Solana suffit : la latence vient de l'oracle VRF, pas de la chaîne. On vise l'**Ephemeral Rollup** MagicBlock.
+- Blackjack : environ 3 tirages par main (donne, chaque carte demandée, tirage du croupier après « stand »). La carte cachée du croupier n'existe pas on-chain avant d'être révélée ; on tire donc à la demande (équivalent d'un sabot quasi infini, RTP à recalculer et à afficher).
+- Roulette, baccarat, slots : un tirage par tour.
+
+**Frais : Tilt prend 1 % sur chaque gain**, ce qui finance les tirages VRF et les frais réseau. Les 1 % réduisent le RTP et sont inclus dans le RTP affiché.
+
+| Par main de blackjack | Mise 10 $ | Mise 1 $ |
+| --- | --- | --- |
+| Revenu moyen des 1 % sur les gains | ≈ 0,047 $ | ≈ 0,005 $ |
+| Tirages sur Solana rapide | ≈ 0,48 $ | ≈ 0,48 $ |
+| Tirages sur Solana standard | ≈ 0,30 $ | ≈ 0,30 $ |
+| Tirages en Ephemeral Rollup (session de 50 mains) | ≈ 0,012 $ | ≈ 0,012 $ |
+
+Sans rollup, les tirages coûtent 6 à 10× ce que rapportent les 1 % : le rollup est nécessaire. À petite mise, l'avantage de la maison complète.
+
+**Accès au programme :** pas de co-signature Tilt exigée sur les mises (décision Armand). À confirmer avec l'avocat : sans elle, un joueur qui exporte sa clé peut jouer sans passer par notre KYC ni notre blocage géographique.
+
+**À valider par un spike devnet avant d'écrire le programme :** une donne de blackjack en Ephemeral Rollup avec VRF MagicBlock ; mesurer latence et coût réels ; vérifier qu'on peut payer un gain depuis la bankroll pendant que les comptes de jeu sont délégués au rollup.
+
+**Conséquences sur le reste de la spec (🟡 D13, à revoir avec Eli) :** la logique des jeux et l'aléa passent dans `chain/` ; le ledger Postgres, le contrat `reserve/settle` (§7) et le provably fair serveur (§6.4) ne sont plus le cœur du système ; l'architecture (§5) et la répartition (§8) sont à réécrire ensemble.
 
 ### 6.2 Monnaie (🟡 D3)
 
@@ -173,13 +207,9 @@ Tous les montants sont stockés en **unités entières** (base units : 6 décima
 
 ### 6.4 Équité (provably fair)
 
-C'est le standard des casinos crypto ; on n'en a pas besoin en option (b).
-- Le serveur s'engage sur `hash(serverSeed)` avant le jeu.
-- Le client fournit un `clientSeed`.
-- Chaque main est tirée avec `HMAC-SHA256(serverSeed, clientSeed:nonce)`.
-- Après rotation, on révèle `serverSeed` ; une page web permet de tout vérifier.
+Assurée on-chain par le VRF (§6.1) : chaque tirage est accompagné d'une preuve vérifiée par le programme. Une page web permet de retrouver et de vérifier les transactions d'une main. Le schéma `serverSeed` / `clientSeed` n'est plus nécessaire.
 
-**Propriétaire : Eli** (dans `api`), car c'est de la logique de jeu. Armand relit.
+**Propriétaire :** 🟡 D13.
 
 ### 6.5 Responsabilités d'Armand
 
@@ -189,7 +219,7 @@ C'est le standard des casinos crypto ; on n'en a pas besoin en option (b).
 - Ledger : double entrée, idempotent, réconciliation avec la chaîne.
 - Bankroll : wallet de la maison (multisig Squads recommandé), plafonds, monitoring.
 - Onramp carte.
-- Si option (b) ou (c) : programme Anchor + VRF + audit.
+- Programme Anchor des jeux + intégration VRF MagicBlock (Ephemeral Rollup) + audits externes.
 - Paiement des prix de compétition et des drops depuis le pool sponsor.
 - Token Tilt éventuel (🟡 D4).
 
@@ -240,7 +270,7 @@ limit.changed         { userId, ... }   // jeu responsable
 | Game server : jeux, RNG provably fair, sessions, compétitions, drops, leaderboard, sponsors | `apps/api` | **Eli** |
 | Landing, page connect, pages dépôt/retrait, vérif provably fair, cartes de partage | `apps/web` | **Eli** (composants Privy et dépôt fournis par Armand) |
 | Money service : Privy, ledger, dépôts, retraits, bankroll, onramp | `apps/wallet` | **Armand** |
-| Programmes Solana (si D2 = b/c), token (si D4) | `chain/` | **Armand** |
+| Programme Solana (jeux, VRF, bankroll ; logique des jeux 🟡 D13), token (si D4) | `chain/` | **Armand** |
 | Contrat partagé | `packages/contract` | **Les deux** (relecture croisée obligatoire) |
 | Juridique / licence / KYC | — | 🟡 D8 |
 
@@ -275,7 +305,7 @@ On gère l'argent des joueurs et une bankroll. **On part du principe que des att
 
 ### 10.1 Principes
 
-- **Le serveur fait autorité.** Le mod et le web n'envoient que des *intentions* (« je tire une carte »). Le serveur décide de tout : état, aléa, gains. Rien de ce qui vient du client n'est cru sans vérification.
+- **Le programme on-chain fait autorité.** Le mod et le web n'envoient que des *intentions* (« je tire une carte »). Le programme décide de l'état et des gains, l'aléa vient du VRF. Rien de ce qui vient du client n'est cru sans vérification.
 - **Fail closed.** En cas de doute, d'erreur ou d'incohérence, on refuse et on bloque plutôt que de payer.
 - **Moindre privilège.** Chaque service, clé et utilisateur de base de données n'a accès qu'au strict nécessaire.
 - **Défense en profondeur.** Pour chaque risque d'argent, au moins deux barrières indépendantes : une règle applicative **et** une contrainte en base ou une limite globale.
@@ -291,7 +321,7 @@ On gère l'argent des joueurs et une bankroll. **On part du principe que des att
 | Vidage par volume | Plafonds de retrait par utilisateur, par jour et **global**. Disjoncteur automatique : si les retraits du jour dépassent X % de la bankroll, tout se met en pause et nous sommes alertés. |
 | Double dépense / solde négatif | Ledger en **double entrée** dans Postgres. `CHECK (balance >= 0)` en base. Verrou par utilisateur ou transactions `SERIALIZABLE`. Invariant : la somme de toutes les écritures vaut 0. |
 | Désynchronisation chaîne ↔ ledger | **Réconciliation automatique** (au moins horaire) entre soldes on-chain et ledger. Au moindre écart inexpliqué, pause des retraits et alerte. |
-| Bug du programme on-chain (si D2 = b/c) | Audit externe avant le mainnet, fuzzing, autorité d'upgrade sur le multisig, limites dans le programme lui-même. |
+| Bug du programme on-chain | Audits externes avant le mainnet, fuzzing, autorité d'upgrade sur le multisig, build vérifiable, limites dans le programme lui-même. |
 | Arrêt d'urgence | **Kill switches** séparés : dépôts, paris, retraits, payouts promo. Activables en une commande par l'un ou l'autre. |
 
 ### 10.3 Ne pas se faire exploiter côté jeu (Eli)
@@ -387,7 +417,7 @@ Une feature est finie quand :
 
 À valider par un avocat **avant tout lancement en argent réel**. Ce qui suit n'est pas un avis juridique.
 
-- **Licence :** un casino en ligne en argent réel exige une licence (souvent Curaçao, Anjouan, ou d'autres juridictions), avec une société dédiée. Il faut compter plusieurs semaines à plusieurs mois et un budget.
+- **Licence : Curaçao** (décision du 2026-10-12), avec une société dédiée. Il faut compter plusieurs semaines à plusieurs mois et un budget.
 - **France :** les jeux de casino en ligne y sont **interdits** (l'ANJ n'autorise que paris sportifs, hippiques et poker). Les joueurs français sont donc à bloquer, et le montage de la société doit être vérifié, puisque les fondateurs sont en France.
 - **Blocage géographique :** au minimum les États-Unis, le Royaume-Uni, la France et les autres pays sans licence locale. Blocage par IP, plus une déclaration de pays, plus le KYC.
 - **KYC / AML :** vérification d'âge (18+), d'identité au-delà de certains seuils, surveillance des flux. Prestataire à choisir (🟡).
@@ -402,17 +432,18 @@ Une feature est finie quand :
 | # | Décision | Options | Reco |
 | --- | --- | --- | --- |
 | D1 | Modes de jeu au lancement | réel seul / réel + sponsors / + jetons gratuits | Réel + sponsors, et jetons gratuits tant que la licence n'est pas là |
-| D2 | Règlement des paris | hybride / on-chain / hybride puis on-chain | Hybride |
+| D2 | Règlement des paris | hybride / on-chain / hybride puis on-chain | ✅ **Tout on-chain** (§6.1) |
 | D3 | Monnaie | USDC / SOL / les deux | USDC |
 | D4 | Token Tilt propre | oui / non / plus tard | Plus tard |
 | D5 | Liquidité 30–50 k$ | source, conditions, qui supporte les pertes | À écrire noir sur blanc |
 | D6 | Onramp carte | Privy funding / Stripe / MoonPay | Ce que Privy fournit nativement |
 | D7 | Stack | voir §5.1 | TS monorepo |
-| D8 | Juridique | qui s'en charge, juridiction, société | Avocat avant M4 |
+| D8 | Juridique | qui s'en charge, juridiction, société | Juridiction : ✅ **Curaçao**. Reste : qui s'en charge, société, avocat avant M4 |
 | D9 | Commission sur les budgets sponsors | % | ~40 % |
 | D10 | Classement des compétitions | gain net / volume / solde | Gain net |
 | D11 | Split au blackjack v1 | oui / non | Non (v1.1) |
 | D12 | Nom de domaine et marque | — | — |
+| D13 | Répartition après D2 on-chain | qui porte la logique des jeux (`chain/`), que devient `api`, contrat §7 | À décider avec Eli |
 
 ## 14. Jalons
 
@@ -424,7 +455,7 @@ Une feature est finie quand :
 | **M3 — Branchement** | api ↔ wallet réels sur devnet, dépôts et retraits de bout en bout, **E2E devnet en CI, revue de sécurité interne** | Intégration | Retraits, réconciliation |
 | **M4 — Sponsors** | Bloc sponsor, compétition 24 h, drops, leaderboard, carte de partage | Tout | Payouts promo |
 | **M5 — Bêta mainnet** | **Prérequis : audit externe passé, kill switches testés, runbook écrit.** Bêta fermée, limites basses, blocage géographique, KYC | Landing, jeu responsable | Bankroll, multisig, monitoring |
-| **v1.1** | Roulette, slots, version compacte du panneau | | |
+| **v1.1** | Roulette, baccarat, slots, version compacte du panneau | | |
 
 ## 15. Indicateurs
 
