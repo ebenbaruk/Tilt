@@ -288,6 +288,10 @@ describe("HTTP API", () => {
     expect((await post(intent(bet, randomUUID(), "did:privy:test-user"))).status).toBe(400);
     const payout = { payoutId: randomUUID(), userId: "x".repeat(200), amount: "5000000", poolId: "weekly", reason: "1st place" };
     expect((await call("/payouts/promo", { method: "POST", body: JSON.stringify(payout) })).status).toBe(400);
+
+    const huge = await post({ ...intent(bet), padding: "x".repeat(9 * 1024) });
+    expect(huge.status).toBe(413);
+    expect(await huge.json()).toMatchObject({ error: { code: "INVALID_REQUEST" } });
   });
 
   it("returns users and intents", async () => {

@@ -1,5 +1,6 @@
 // HTTP API of the relay, for `apps/api` only (private network + shared key, spec §7).
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import {
   ErrorResponse,
   IntentRequest,
@@ -43,6 +44,9 @@ const REQUEST_REFUSALS: Partial<Record<ErrorCode, 409 | 422>> = { INTENT_CONFLIC
 
 const Id = z.string().uuid().transform((s) => s.toLowerCase());
 
+/** Valid requests stay well under this, identity token included; larger ones are refused unread. */
+const MAX_BODY_BYTES = 8 * 1024;
+
 const asPayout = ({ intentId, ...rest }: IntentResponse): PromoPayoutResponse => ({ payoutId: intentId, ...rest });
 
 /** Runs an intent (or payout), turning request-level refusals into 409 / 422 responses. */
@@ -58,6 +62,8 @@ async function run<T>(submit: () => Promise<IntentResponse>, shape: (r: IntentRe
 
 export function createApp(deps: AppDeps): Hono {
   const app = new Hono();
+
+  app.use("*", bodyLimit({ maxSize: MAX_BODY_BYTES, onError: (c) => c.json(error("INVALID_REQUEST", "request body too large"), 413) }));
 
   app.get("/health", async (c) => {
     const ok = await deps.db.query("SELECT 1").then(() => true, () => false);
