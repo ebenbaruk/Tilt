@@ -26,7 +26,9 @@ common=(--network host --user "$(id -u):$(id -g)" -e HOME="$HOME" -e RUST_LOG=in
   -v "$HOME:$HOME" -w "$RUN_DIR")
 
 # mAGic…: MagicBlock's local rollup validator identity (public account fixture), so delegations can target it.
-docker run -d --name tilt-mb-stack --ulimit nofile=1048576:1048576 "${common[@]}" "$IMAGE" \
+# seccomp=unconfined: Docker's default profile blocks io_uring, which the Agave validator
+# asserts at startup ("assertion failed: io_uring_supported()", exit code 101).
+docker run -d --name tilt-mb-stack --ulimit nofile=1048576:1048576 --security-opt seccomp=unconfined "${common[@]}" "$IMAGE" \
   mb-stack --reset --gossip-port 18000 --dynamic-port-range 18001-18040 \
   --account mAGicPQYBMvcYveUZA5F5UNNwyHvfYh5xkLS2Fr1mev "$CHAIN_DIR/scripts/validator-identity.json" \
   --upgradeable-program "$PROGRAM_ID" "$CHAIN_DIR/target/deploy/tilt.so" "$WALLET_PUBKEY" >/dev/null
