@@ -478,6 +478,23 @@ mod tests {
     }
 
     #[test]
+    fn a_huge_stake_is_out_of_range_not_a_panic() {
+        use crate::games::{baccarat::BaccaratBet, blackjack, roulette::RouletteBet, slots};
+        let mut a = account(1_000, 1_000);
+        for max_gain in [
+            blackjack::max_gain(u64::MAX),
+            RouletteBet::Straight(0).max_gain(u64::MAX),
+            BaccaratBet::Tie.max_gain(u64::MAX),
+            slots::max_gain(u64::MAX),
+        ] {
+            assert_eq!(
+                a.start_round(Game::Slots, u64::MAX, max_gain, &config(), 0),
+                Err(TiltError::AmountOutOfRange.into())
+            );
+        }
+    }
+
+    #[test]
     fn win_cap_counts_the_worst_case_including_a_double() {
         // Lifetime win cap 1 000: a 500 bet can win 2 x 500 when doubled, which reaches exactly the cap.
         let mut a = account(1_000, 1_000);

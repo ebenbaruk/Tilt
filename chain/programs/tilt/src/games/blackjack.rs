@@ -41,7 +41,7 @@ fn is_blackjack(cards: &[u8]) -> bool {
 
 /// Largest gain for a base bet, reached by doubling and winning.
 pub fn max_gain(bet: u64) -> u64 {
-    bet * 2
+    bet.saturating_mul(2)
 }
 
 impl BlackjackHand {

@@ -28,8 +28,10 @@ pub struct SlotsSpin {
     pub reels: [u8; 3],
 }
 
+/// Saturates, like every game's `max_gain`: it is computed before `start_round` checks the
+/// stake, which then refuses a huge one as out of range instead of the program panicking.
 pub fn max_gain(stake: u64) -> u64 {
-    stake * (MAX_MULTIPLE - 1)
+    stake.saturating_mul(MAX_MULTIPLE - 1)
 }
 
 fn multiple(reels: [u8; 3]) -> u64 {

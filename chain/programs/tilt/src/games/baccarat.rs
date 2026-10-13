@@ -52,7 +52,7 @@ fn banker_draws(banker: u8, player_third: Option<u8>) -> bool {
 impl BaccaratBet {
     pub fn max_gain(self, stake: u64) -> u64 {
         match self {
-            Self::Tie => stake * 8,
+            Self::Tie => stake.saturating_mul(8),
             _ => stake,
         }
     }

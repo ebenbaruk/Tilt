@@ -52,7 +52,7 @@ impl RouletteBet {
     }
 
     pub fn max_gain(self, stake: u64) -> u64 {
-        stake * (self.win_multiple() - 1)
+        stake.saturating_mul(self.win_multiple() - 1)
     }
 
     fn wins(self, n: u8) -> bool {
