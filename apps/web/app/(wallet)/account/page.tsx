@@ -12,7 +12,7 @@ export default function AccountPage() {
       title="Your Tilt account"
       lede="Deposits, withdrawals, terminal sessions and limits. Money only moves from this page, never from the terminal."
     >
-      <GeoGate>
+      <GeoGate blocked={<AccountView withdrawOnly />}>
         <AccountView />
       </GeoGate>
     </Page>

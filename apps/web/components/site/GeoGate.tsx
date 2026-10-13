@@ -10,8 +10,9 @@ import { getApi } from "@/lib/api";
 
 type State = { kind: "loading" } | { kind: "error" } | { kind: "done"; geo: GeoResponse };
 
-/** Blocks its children unless the API says the caller's region may play. Fails closed. */
-export function GeoGate({ children }: { children: ReactNode }) {
+/** Blocks its children unless the API says the caller's region may play. Fails closed.
+ *  `blocked` is shown under the notice when the region is refused (e.g. withdrawals). */
+export function GeoGate({ children, blocked }: { children: ReactNode; blocked?: ReactNode }) {
   const [state, setState] = useState<State>({ kind: "loading" });
 
   const check = useCallback((signal?: AbortSignal) => {
@@ -43,16 +44,19 @@ export function GeoGate({ children }: { children: ReactNode }) {
   }
   if (!state.geo.allowed) {
     return (
-      <Box tone="loss" title="not available in your region">
-        <p>
-          Tilt isn&apos;t available{state.geo.country ? ` in your region (${state.geo.country})` : " in your region"}.
-          Real-money games are blocked in the United States, the United Kingdom, France and other restricted
-          jurisdictions.
-        </p>
-        <p>
-          Using a VPN to get around this breaks the <Link href="/legal/terms">terms</Link> and gets accounts closed.
-        </p>
-      </Box>
+      <>
+        <Box tone="loss" title="not available in your region">
+          <p>
+            Tilt isn&apos;t available{state.geo.country ? ` in your region (${state.geo.country})` : " in your region"}.
+            Real-money games are blocked in the United States, the United Kingdom, France and other restricted
+            jurisdictions.
+          </p>
+          <p>
+            Using a VPN to get around this breaks the <Link href="/legal/terms">terms</Link> and gets accounts closed.
+          </p>
+        </Box>
+        {blocked}
+      </>
     );
   }
   return children;

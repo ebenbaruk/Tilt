@@ -17,7 +17,8 @@ import { SessionsPanel } from "./SessionsPanel";
 import { WithdrawPanel } from "./WithdrawPanel";
 import styles from "./account.module.css";
 
-export function AccountView() {
+/** `withdrawOnly`: the region may not play, but players can always take their money out. */
+export function AccountView({ withdrawOnly = false }: { withdrawOnly?: boolean }) {
   const { ready, authenticated, login } = usePrivy();
   if (!ready) return <Status tone="pending">loading login</Status>;
   if (!authenticated) {
@@ -30,12 +31,12 @@ export function AccountView() {
       </div>
     );
   }
-  return <SignedIn />;
+  return <SignedIn withdrawOnly={withdrawOnly} />;
 }
 
 type Load = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; account: AccountResponse };
 
-function SignedIn() {
+function SignedIn({ withdrawOnly }: { withdrawOnly: boolean }) {
   const { logout } = usePrivy();
   const { auth } = useTiltAuth();
   const [load, setLoad] = useState<Load>({ kind: "loading" });
@@ -71,22 +72,21 @@ function SignedIn() {
   return (
     <div className={styles.stack}>
       <Overview account={account} onLogout={logout} />
-      {excluded ? (
+      {excluded && (
         <Box tone="loss" title="self-excluded">
           <p>
             You are self-excluded until {new Date(account.limits.excludedUntil ?? "").toLocaleString("en-US")}. Deposits
-            and play are closed until then.
+            and play are closed until then; withdrawals stay open.
           </p>
         </Box>
-      ) : (
-        <div className={styles.grid}>
-          <DepositPanel account={account} onSettled={refresh} />
-          <WithdrawPanel account={account} onSettled={refresh} />
-        </div>
       )}
+      <div className={styles.grid}>
+        {!excluded && !withdrawOnly && <DepositPanel account={account} onSettled={refresh} />}
+        <WithdrawPanel account={account} onSettled={refresh} />
+      </div>
       <SessionsPanel />
-      <LimitsPanel limits={account.limits} onSaved={refresh} />
-      {!excluded && <ExclusionPanel onExcluded={refresh} />}
+      {!withdrawOnly && <LimitsPanel limits={account.limits} onSaved={refresh} />}
+      {!excluded && !withdrawOnly && <ExclusionPanel onExcluded={refresh} />}
     </div>
   );
 }

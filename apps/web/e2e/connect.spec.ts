@@ -37,3 +37,11 @@ test("fails closed when the region check errors", async ({ page }) => {
   await expect(page.getByText("region check failed")).toBeVisible();
   await expect(page.getByRole("button", { name: "retry" })).toBeVisible();
 });
+
+test("keeps withdrawals reachable in a restricted region", async ({ page }) => {
+  await page.route("**/v1/geo", (route) => json(route, 200, { allowed: false, country: "FR" }));
+  await page.goto("/account");
+  await expect(page.getByText("not available in your region")).toBeVisible();
+  // The withdraw-only account view still mounts under the notice (Privy is offline here, so it waits on login).
+  await expect(page.getByText(/loading login|log in/)).toBeVisible();
+});

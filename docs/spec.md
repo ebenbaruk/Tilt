@@ -300,9 +300,13 @@ GET  /payouts/promo/:payoutId -> même réponse
 
 ### 9.2 Comment le pool est redistribué
 
-- **Compétition** (ex. 24 h) : le classement se fait au **gain net** sur la période (et non au solde total, qui favoriserait les gros dépôts 🟡 D10). Répartition sur le top N (ex. 50 % / 25 % / 10 % / reste partagé).
-- **Drops aléatoires :** une partie du pool (ex. 20 %) est distribuée en petits gains tirés au sort parmi les mains jouées. Une main = un ticket, quelle que soit la mise, pour que les petits joueurs gardent une chance.
-- **Anti-abus :** mise minimum pour qu'une main compte, plafond de tickets par heure, un compte par personne (Privy + vérifs), aucun drop sur des mains annulées.
+- **Compétition** (ex. 24 h) : le classement se fait au **gain net sur toutes les manches** du joueur pendant la période (et non au solde total, qui favoriserait les gros dépôts 🟡 D10). Répartition sur le top N (ex. 50 % / 25 % / 10 % / reste partagé). Un prix de rang exige un gain net positif.
+- **Drops aléatoires :** une partie du pool (ex. 20 %) est distribuée en petits gains tirés au sort parmi les mains jouées. Une main = un ticket, quelle que soit la mise, pour que les petits joueurs gardent une chance. Tirage par **engagement puis révélation** : le hash de la graine est publié à l'ouverture, la graine à la clôture ; les gagnants sortent de HMAC(graine, signature de la manche). Un drop max par joueur.
+- **Anti-abus :**
+  - la mise minimum se juge sur la **mise initiale** (un double au blackjack ne compte pas), et ne décide que de l'éligibilité au classement et des tickets ; le gain net, lui, compte toutes les manches, sinon un joueur choisirait les mains qui comptent ;
+  - plafond de tickets par heure, un compte par personne (Privy + vérifs), aucun drop sur des mains annulées ;
+  - une compétition ne se clôt que lorsque l'indexeur a traité tout ce qui précède sa fin ;
+  - les prix sont bloqués en revue avant paiement, et chaque `payoutId` est déterministe (payé une seule fois).
 
 ### 9.3 Ce qu'on livre au sponsor
 
