@@ -4,11 +4,8 @@
   gap: var(--space-8);
 }
 
-.code {
-  color: var(--tilt-gold);
-  font-size: 28px;
-  font-weight: var(--weight-black);
-  letter-spacing: var(--tracking-wordmark);
+.warning {
+  color: var(--fg-3);
 }
 
 .muted {

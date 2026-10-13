@@ -8,7 +8,8 @@ export const metadata: Metadata = { title: "Connect a terminal", robots: { index
 
 export default async function ConnectPage({ searchParams }: { searchParams: Promise<{ code?: string | string[] }> }) {
   const { code } = await searchParams;
-  const userCode = parseUserCode(Array.isArray(code) ? code[0] : code);
+  // Shown as a reminder only: the player types the code from their terminal.
+  const linkCode = parseUserCode(Array.isArray(code) ? code[0] : code);
   return (
     <Page
       eyebrow="tilt login"
@@ -16,7 +17,7 @@ export default async function ConnectPage({ searchParams }: { searchParams: Prom
       lede="Approve the Tilt mod running in Claude Code. It gets a game-only session: it can play, never withdraw."
     >
       <GeoGate>
-        <ConnectFlow userCode={userCode} />
+        <ConnectFlow linkCode={linkCode} />
       </GeoGate>
     </Page>
   );

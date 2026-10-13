@@ -71,7 +71,9 @@ describe("createApi", () => {
 describe("device login", () => {
   it("normalizes and validates user codes", () => {
     expect(parseUserCode(" wdjb-mjht ")).toBe("WDJB-MJHT");
-    expect(parseUserCode("WDJBMJHT")).toBeNull();
+    expect(parseUserCode("wdjb mjht")).toBe("WDJB-MJHT");
+    expect(parseUserCode("WDJBMJHT")).toBe("WDJB-MJHT");
+    expect(parseUserCode("WDJB-MJH0")).toBeNull();
     expect(parseUserCode("<script>")).toBeNull();
     expect(parseUserCode(undefined)).toBeNull();
   });

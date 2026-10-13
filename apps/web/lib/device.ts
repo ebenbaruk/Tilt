@@ -1,12 +1,13 @@
-// Device-code login (`/tilt login` opens /connect?code=XXXX-XXXX).
+// Device-code login: `/tilt login` opens /connect?code=XXXX-XXXX, where the player types the code.
 import { ApiError } from "./api";
 
-const USER_CODE = /^[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+/** The api's user-code alphabet (no I/1, O/0) and length. */
+const USER_CODE = /^[A-HJ-NP-Z2-9]{8}$/;
 
-/** Normalizes the code from the URL; null when it isn't a well-formed code. */
+/** Canonical form of a code ("wdjb mjht" -> "WDJB-MJHT"); null when it cannot be one. */
 export function parseUserCode(raw: string | null | undefined): string | null {
-  const code = (raw ?? "").trim().toUpperCase();
-  return USER_CODE.test(code) ? code : null;
+  const compact = (raw ?? "").toUpperCase().replace(/[\s-]/g, "");
+  return USER_CODE.test(compact) ? `${compact.slice(0, 4)}-${compact.slice(4)}` : null;
 }
 
 export type ApproveFailure = "expired" | "login" | "error";
