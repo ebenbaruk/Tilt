@@ -1,0 +1,81 @@
+<!-- @dsCard group="Tilt CLI" viewport="1120x820" name="Tilt in the agent CLI" subtitle="Agent session with the Tilt panel open" -->
+<!doctype html><html><head><meta charset="utf-8"><title>Tilt · CLI panel</title>
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
+<script src="../../scripts/load-components.js"></script>
+</head>
+<body style="margin:0;background:var(--surface-page);font-family:var(--font-mono);">
+<div id="root"></div>
+<script type="text/babel">
+getTilt('../../').then(NS => {
+const { TerminalWindow, TranscriptLine, Spinner, TiltPanel, GameTabs, Stat, Notice, KeyButton, PromptInput, Hand, RouletteStrip, SlotMachine, WinCard, SponsorBlock, Leaderboard } = NS;
+const SUITS = ['♠','♥','♦','♣'], RANKS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+const draw = () => ({ rank: RANKS[Math.floor(Math.random()*13)], suit: SUITS[Math.floor(Math.random()*4)] });
+const val = h => { let v=0,a=0; h.forEach(c=>{ if(c.rank==='A'){a++;v+=11;} else v+=['J','Q','K'].includes(c.rank)?10:+c.rank; }); while(v>21&&a){v-=10;a--;} return v; };
+const fmt = n => n.toLocaleString('en-US');
+
+function App() {
+  const [game, setGame] = React.useState('bj');
+  const [done, setDone] = React.useState(false);
+  const [chips, setChips] = React.useState(18450);
+  const [p, setP] = React.useState([draw(), draw()]);
+  const [d, setD] = React.useState([draw(), draw()]);
+  const [phase, setPhase] = React.useState('play');
+  const [msg, setMsg] = React.useState('Hit, stand or double.');
+  const [win, setWin] = React.useState(null);
+  React.useEffect(() => { const t = setTimeout(() => setDone(true), 9000); return () => clearTimeout(t); }, []);
+  const settle = (hand, bet) => {
+    let dl = d.slice(); const pv = val(hand);
+    if (pv <= 21) while (val(dl) < 17) dl.push(draw());
+    const dv = val(dl); setD(dl); setPhase('done');
+    if (pv > 21) setMsg('Bust at ' + pv + '. −' + fmt(bet));
+    else if (dv > 21 || pv > dv) { setChips(c => c + bet * 2); setMsg('You win ' + pv + ' vs ' + dv + '. +' + fmt(bet)); if (bet >= 1000) setWin(fmt(bet)); }
+    else if (pv === dv) { setChips(c => c + bet); setMsg('Push at ' + pv + '.'); }
+    else setMsg('Dealer ' + dv + ' beats ' + pv + '. −' + fmt(bet));
+  };
+  const deal = () => { setChips(c => c - 500); setP([draw(), draw()]); setD([draw(), draw()]); setPhase('play'); setWin(null); setMsg('Hit, stand or double.'); };
+  const hit = () => { const h = [...p, draw()]; setP(h); if (val(h) > 21) settle(h, 500); };
+  const dbl = () => { setChips(c => c - 500); const h = [...p, draw()]; setP(h); settle(h, 1000); };
+  const play = phase === 'play';
+  const tabs = [{id:'bj',keyLabel:'1',label:'Blackjack'},{id:'roulette',keyLabel:'2',label:'Roulette'},{id:'slots',keyLabel:'3',label:'Slots'}];
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', justifyContent: 'center', padding: '40px 20px', boxSizing: 'border-box' }}>
+      <TerminalWindow title="~/acme-api — agent — 120×40">
+        <TranscriptLine kind="meta">agent v2.4 · ~/acme-api · main ✓ · tilt plugin enabled</TranscriptLine>
+        <TranscriptLine kind="prompt">fix the flaky auth tests in src/auth</TranscriptLine>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <TranscriptLine name="Read" arg="src/auth/session.ts" out="214 lines" />
+          <TranscriptLine name="Edit" arg="src/auth/session.ts" out="+12 −4" />
+          {done ? <TranscriptLine kind="done">Fixed. Auth suite is green across 20 runs.</TranscriptLine> : <Spinner verb="Running tests" meta="esc to interrupt" />}
+        </div>
+        <TiltPanel season="S3"
+          tabs={<GameTabs tabs={tabs} active={game} onChange={setGame} />}
+          stats={<><Stat label="chips" value={fmt(chips)} tone="money" /><Stat label="rank" prefix="#" value="412" /></>}
+          notice={done && <Notice actions={<KeyButton keyLabel="⏎" variant="ghost">review diff</KeyButton>}>✓ agent finished in 9s · your hand is saved</Notice>}
+          side={<><SponsorBlock name="Northwind Cloud" pool="$25,000" endsIn="6d 14h" /><Leaderboard rows={[{r:1,n:'@0xkira',c:'412,900'},{r:2,n:'@segfault_sam',c:'388,120'},{r:3,n:'@tabs_not_spaces',c:'351,004'}]} you={{ r: 412, c: fmt(chips) }} /></>}>
+          {game === 'bj' && <>
+            <Hand label="DEALER" total={play ? val([d[0]]) + ' + ?' : val(d)} cards={d.map((c, i) => ({ ...c, hidden: play && i === 1 }))} />
+            <Hand label="YOU" total={val(p)} meta="bet 500" cards={p} />
+          </>}
+          {game === 'roulette' && <RouletteStrip value={17} />}
+          {game === 'slots' && <SlotMachine symbols={['7', '★', '◆']} />}
+          <div style={{ color: 'var(--fg-4)', minHeight: 21 }}>{game === 'bj' ? msg : 'Pick a bet.'}</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {game === 'bj' && (play
+              ? <><KeyButton keyLabel="H" onClick={hit}>hit</KeyButton><KeyButton keyLabel="S" onClick={() => settle(p, 500)}>stand</KeyButton><KeyButton keyLabel="D" onClick={dbl} disabled={p.length !== 2}>double</KeyButton></>
+              : <KeyButton keyLabel="N" onClick={deal}>deal · 500</KeyButton>)}
+            {game === 'roulette' && <><KeyButton keyLabel="R">red</KeyButton><KeyButton keyLabel="B">black</KeyButton><KeyButton keyLabel="Z">zero 36×</KeyButton></>}
+            {game === 'slots' && <KeyButton keyLabel="␣">spin · 200</KeyButton>}
+          </div>
+          {win && <WinCard amount={win} game="blackjack" sponsor="Northwind Cloud" caption={'“won ' + win + ' on blackjack while my agent fixed flaky tests”'} />}
+        </TiltPanel>
+        <PromptInput placeholder={done ? 'Ask a follow-up, or keep playing' : 'Agent is working · your keys go to Tilt'} />
+      </TerminalWindow>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+});
+</script></body></html>

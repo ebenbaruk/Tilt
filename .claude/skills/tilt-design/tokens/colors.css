@@ -1,0 +1,62 @@
+:root {
+  /* Ink — surfaces, darkest to lightest */
+  --ink-0: #0b0b0c;   /* page behind the terminal */
+  --ink-well: #0f1012;/* recessed wells (slot reels) */
+  --ink-1: #141517;   /* terminal surface */
+  --ink-2: #1b1c1f;   /* window chrome */
+
+  /* Lines */
+  --line-1: #2a2b2f;  /* dividers, window border */
+  --line-2: #34353a;  /* input box */
+  --line-3: #3a3b40;  /* key buttons, reels */
+  --line-4: #4a4b50;  /* hidden card, ellipsis */
+
+  /* Foreground ramp */
+  --fg-1: #f0eee9;    /* emphasis, values, tool names */
+  --fg-2: #d6d4cf;    /* body */
+  --fg-3: #c8c6c1;    /* secondary body */
+  --fg-4: #9a9aa0;    /* labels, args */
+  --fg-5: #7d7e84;    /* tool output, captions */
+  --fg-6: #6f7076;    /* meta, prompt chevron */
+  --fg-7: #5d5e64;    /* placeholder, footer hints */
+
+  /* Brand accents — shared chroma family, hue varies */
+  --tilt-pink: oklch(0.74 0.17 350);   /* brand: TILT wordmark, active tab, panel frame */
+  --tilt-gold: oklch(0.84 0.13 85);    /* money: chips, wins, key letters, spinner */
+  --tilt-green: oklch(0.78 0.12 150);  /* agent: tool bullets, success */
+  --tilt-green-fg: oklch(0.86 0.1 150);
+  --tilt-red: oklch(0.7 0.17 25);      /* loss, red suits */
+
+  /* Felt — roulette pockets */
+  --felt-red: oklch(0.52 0.17 25);
+  --felt-green: oklch(0.5 0.12 150);
+  --felt-black: #2a2b2f;
+
+  /* Semantic aliases */
+  --surface-page: var(--ink-0);
+  --surface-terminal: var(--ink-1);
+  --surface-chrome: var(--ink-2);
+  --surface-well: var(--ink-well);
+  --surface-brand-tint: oklch(0.74 0.17 350 / .08);
+  --surface-success-tint: oklch(0.78 0.12 150 / .1);
+  --surface-win-tint: oklch(0.84 0.13 85 / .06);
+
+  --text-strong: var(--fg-1);
+  --text-body: var(--fg-2);
+  --text-muted: var(--fg-4);
+  --text-subtle: var(--fg-6);
+  --text-placeholder: var(--fg-7);
+  --text-on-light: var(--ink-1);
+
+  --border-default: var(--line-1);
+  --border-control: var(--line-3);
+  --border-brand: oklch(0.74 0.17 350 / .55);
+  --border-brand-soft: oklch(0.74 0.17 350 / .3);
+  --border-success: oklch(0.78 0.12 150 / .3);
+  --border-win: oklch(0.84 0.13 85 / .6);
+
+  --accent-brand: var(--tilt-pink);
+  --accent-money: var(--tilt-gold);
+  --status-success: var(--tilt-green);
+  --status-loss: var(--tilt-red);
+}

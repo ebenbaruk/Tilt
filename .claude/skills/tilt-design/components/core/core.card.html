@@ -1,0 +1,31 @@
+<!-- @dsCard group="Components" viewport="700x330" name="Core" -->
+<!doctype html><html><head><meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
+<script src="../../scripts/load-components.js"></script></head>
+<body style="margin:0;background:var(--surface-terminal);color:var(--text-body);font-family:var(--font-mono);font-size:var(--text-base);line-height:var(--leading-body);">
+<div id="root"></div>
+<script type="text/babel">
+getTilt('../../').then(NS => {
+const { KeyButton, GameTabs, Stat, Notice, Spinner, PromptInput } = NS;
+function Demo() {
+  const [g, setG] = React.useState('bj');
+  return <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+      <GameTabs active={g} onChange={setG} tabs={[{id:'bj',keyLabel:'1',label:'Blackjack'},{id:'roulette',keyLabel:'2',label:'Roulette'},{id:'slots',keyLabel:'3',label:'Slots'}]} />
+      <Stat label="chips" value="18,450" tone="money" /><Stat label="rank" prefix="#" value="412" />
+    </div>
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <KeyButton keyLabel="H">hit</KeyButton><KeyButton keyLabel="S">stand</KeyButton><KeyButton keyLabel="D">double</KeyButton>
+      <KeyButton keyLabel="x" variant="solid">post to X</KeyButton><KeyButton keyLabel="↺" variant="ghost">replay</KeyButton><KeyButton keyLabel="D" disabled>double</KeyButton>
+    </div>
+    <Spinner verb="Running tests" meta="1m 04s · esc to interrupt" />
+    <div style={{ border: '1px solid var(--border-brand)', borderRadius: 6, overflow: 'hidden' }}><Notice actions={<KeyButton keyLabel="⏎" variant="ghost">review diff</KeyButton>}>✓ agent finished in 31s · your hand is saved</Notice></div>
+    <PromptInput placeholder="Agent is working · your keys go to Tilt" />
+  </div>;
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo />);
+});
+</script></body></html>

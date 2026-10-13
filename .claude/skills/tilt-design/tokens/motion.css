@@ -1,0 +1,10 @@
+:root {
+  /* Tilt animates in discrete frames, like a terminal redraw. No easing curves. */
+  --tick-agent: 200ms;      /* spinner + agent clock */
+  --frame-roulette: 70ms;
+  --frame-slots: 80ms;
+  --dur-roulette: 1400ms;
+  --dur-slots: 1100ms;
+  --dur-hover: 0ms;         /* hover states snap */
+  --spinner-frames: "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
+}

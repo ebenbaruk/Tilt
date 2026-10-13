@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0b0b0c}
+a{color:oklch(0.74 0.17 350)}a:hover{color:oklch(0.84 0.13 85)}
+</style>
+</helmet>
+<div style="min-height:100vh;background:#0b0b0c;display:flex;justify-content:center;align-items:flex-start;padding:40px 20px;box-sizing:border-box;font-family:'JetBrains Mono',ui-monospace,monospace;">
+  <div style="width:100%;max-width:1080px;background:#141517;border:1px solid #2a2b2f;border-radius:10px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.55);">
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#1b1c1f;border-bottom:1px solid #2a2b2f;">
+      <span style="width:12px;height:12px;border-radius:50%;background:#3a3b40;"></span>
+      <span style="width:12px;height:12px;border-radius:50%;background:#3a3b40;"></span>
+      <span style="width:12px;height:12px;border-radius:50%;background:#3a3b40;"></span>
+      <span style="flex:1;text-align:center;font-size:12px;color:#8a8a90;">~/acme-api — agent — 120×40</span>
+    </div>
+
+    <div style="padding:18px 22px 14px;font-size:13.5px;line-height:1.55;color:#d6d4cf;display:flex;flex-direction:column;gap:12px;">
+      <div style="color:#6f7076;">agent v2.4 · ~/acme-api · main ✓ · tilt plugin enabled</div>
+      <div style="display:flex;gap:10px;"><span style="color:#6f7076;">›</span><span style="color:#f0eee9;">fix the flaky auth tests in src/auth</span></div>
+
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <sc-for list="{{ lines }}" as="l" hint-placeholder-count="2">
+          <div style="display:flex;flex-direction:column;">
+            <sc-if value="{{ l.isTool }}" hint-placeholder-val="{{ true }}">
+              <div><span style="color:oklch(0.78 0.12 150);">●</span> <span style="color:#f0eee9;font-weight:700;">{{ l.name }}</span><span style="color:#9a9aa0;">({{ l.arg }})</span></div>
+              <div style="color:#7d7e84;padding-left:18px;">└ {{ l.out }}</div>
+            </sc-if>
+            <sc-if value="{{ l.isText }}">
+              <div><span style="color:#f0eee9;">●</span> {{ l.text }}</div>
+            </sc-if>
+            <sc-if value="{{ l.isDone }}">
+              <div><span style="color:oklch(0.78 0.12 150);">✓</span> <span style="color:oklch(0.86 0.1 150);">{{ l.text }}</span></div>
+            </sc-if>
+          </div>
+        </sc-for>
+        <sc-if value="{{ running }}" hint-placeholder-val="{{ true }}">
+          <div style="color:oklch(0.84 0.13 85);">{{ spin }} {{ verb }}… <span style="color:#6f7076;">({{ elapsed }} · esc to interrupt)</span></div>
+        </sc-if>
+      </div>
+
+      <sc-if value="{{ showTilt }}" hint-placeholder-val="{{ true }}">
+        <div style="border:1px solid oklch(0.74 0.17 350 / .55);border-radius:6px;overflow:hidden;">
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:8px 14px;background:oklch(0.74 0.17 350 / .08);border-bottom:1px solid oklch(0.74 0.17 350 / .3);">
+            <span style="color:oklch(0.74 0.17 350);font-weight:800;letter-spacing:.12em;">TILT</span>
+            <span style="color:#6f7076;">S3</span>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;">
+              <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+                <span onClick="{{ t.go }}" style="cursor:pointer;white-space:nowrap;padding:1px 8px;border-radius:3px;color:{{ t.color }};background:{{ t.bg }};">[{{ t.key }}] {{ t.label }}</span>
+              </sc-for>
+            </div>
+            <span style="flex:1;"></span>
+            <span style="color:#9a9aa0;white-space:nowrap;">chips <span style="color:oklch(0.84 0.13 85);font-weight:700;">{{ chips }}</span></span>
+            <span style="color:#9a9aa0;white-space:nowrap;">rank <span style="color:#f0eee9;">#{{ rank }}</span></span>
+          </div>
+
+          <sc-if value="{{ agentDone }}">
+            <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:7px 14px;background:oklch(0.78 0.12 150 / .1);border-bottom:1px solid oklch(0.78 0.12 150 / .3);color:oklch(0.86 0.1 150);">
+              <span>✓ agent finished in {{ elapsed }} · your hand is saved</span>
+              <span style="flex:1;"></span>
+              <span style="color:#f0eee9;">⏎ review diff</span>
+              <span onClick="{{ replay }}" style="cursor:pointer;color:#9a9aa0;" style-hover="color:#f0eee9;">↺ replay demo</span>
+            </div>
+          </sc-if>
+
+          <div style="display:grid;grid-template-columns:minmax(0,1fr) {{ sideCol }};">
+            <div style="padding:14px 16px;display:flex;flex-direction:column;gap:10px;min-height:250px;">
+
+              <sc-if value="{{ isBJ }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex;flex-direction:column;gap:10px;">
+                  <div style="color:#7d7e84;">DEALER <span style="color:#f0eee9;">{{ dealerVal }}</span></div>
+                  <div style="display:flex;gap:6px;flex-wrap:wrap;min-height:86px;">
+                    <sc-for list="{{ dealerCards }}" as="c" hint-placeholder-count="2"><pre style="margin:0;font-family:inherit;line-height:1.15;color:{{ c.color }};">{{ c.art }}</pre></sc-for>
+                  </div>
+                  <div style="color:#7d7e84;">YOU <span style="color:#f0eee9;">{{ playerVal }}</span> <span style="color:#6f7076;">· bet {{ bet }}</span></div>
+                  <div style="display:flex;gap:6px;flex-wrap:wrap;min-height:86px;">
+                    <sc-for list="{{ playerCards }}" as="c" hint-placeholder-count="2"><pre style="margin:0;font-family:inherit;line-height:1.15;color:{{ c.color }};">{{ c.art }}</pre></sc-for>
+                  </div>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ isRoulette }}">
+                <div style="display:flex;flex-direction:column;gap:12px;">
+                  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                    <sc-for list="{{ wheel }}" as="w" hint-placeholder-count="9">
+                      <span style="width:38px;text-align:center;padding:6px 0;border-radius:3px;background:{{ w.bg }};color:#f0eee9;opacity:{{ w.op }};outline:{{ w.ring }};font-weight:700;">{{ w.n }}</span>
+                    </sc-for>
+                  </div>
+                  <div style="color:#6f7076;">▲ ball · last: <span style="color:#9a9aa0;">{{ rouletteHistory }}</span></div>
+                  <div style="color:#7d7e84;">bet 500 on <span style="color:#f0eee9;">{{ roulettePickLabel }}</span></div>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ isSlots }}">
+                <div style="display:flex;flex-direction:column;gap:12px;">
+                  <div style="display:flex;gap:10px;">
+                    <sc-for list="{{ reels }}" as="r" hint-placeholder-count="3">
+                      <div style="width:78px;height:78px;display:flex;align-items:center;justify-content:center;border:1px solid #3a3b40;border-radius:4px;background:#0f1012;font-size:34px;font-weight:800;color:{{ r.color }};">{{ r.s }}</div>
+                    </sc-for>
+                  </div>
+                  <div style="color:#6f7076;">7 7 7 pays 50× · any triple 10× · any pair 2× · spin 200</div>
+                </div>
+              </sc-if>
+
+              <div style="color:{{ msgColor }};min-height:21px;">{{ msg }}</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <sc-for list="{{ actions }}" as="a" hint-placeholder-count="3">
+                  <span onClick="{{ a.go }}" style="cursor:pointer;padding:3px 10px;border:1px solid #3a3b40;border-radius:3px;color:#f0eee9;" style-hover="border-color:oklch(0.74 0.17 350);color:oklch(0.74 0.17 350);"><span style="color:oklch(0.84 0.13 85);">{{ a.key }}</span> {{ a.label }}</span>
+                </sc-for>
+              </div>
+
+              <sc-if value="{{ hasWin }}">
+                <div style="margin-top:4px;border:1px solid oklch(0.84 0.13 85 / .6);border-radius:6px;padding:12px 14px;background:oklch(0.84 0.13 85 / .06);display:flex;flex-direction:column;gap:6px;">
+                  <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+                    <span style="color:oklch(0.84 0.13 85);font-weight:800;letter-spacing:.08em;">★ BIG WIN +{{ winAmount }}</span>
+                    <span style="color:#7d7e84;">win powered by <span style="color:#f0eee9;">{{ sponsor }}</span></span>
+                  </div>
+                  <div style="color:#c8c6c1;">“won {{ winAmount }} on {{ winGame }} while my agent fixed flaky tests” · share card ready</div>
+                  <div style="display:flex;gap:8px;">
+                    <span onClick="{{ shareX }}" style="cursor:pointer;padding:2px 10px;background:#f0eee9;color:#141517;border-radius:3px;font-weight:700;">[x] post to X</span>
+                    <span onClick="{{ shareX }}" style="cursor:pointer;padding:2px 10px;border:1px solid #3a3b40;color:#f0eee9;border-radius:3px;">[k] TikTok</span>
+                    <span style="color:#7d7e84;align-self:center;">{{ shareMsg }}</span>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+
+            <sc-if value="{{ showSide }}" hint-placeholder-val="{{ true }}">
+              <div style="border-left:1px solid #2a2b2f;padding:14px 16px;display:flex;flex-direction:column;gap:16px;">
+                <div style="display:flex;flex-direction:column;gap:4px;">
+                  <span style="color:#6f7076;font-size:11px;letter-spacing:.14em;">PRESENTED BY</span>
+                  <span style="color:#f0eee9;font-size:18px;font-weight:800;">{{ sponsor }}</span>
+                  <span style="color:#9a9aa0;">season pool <span style="color:oklch(0.84 0.13 85);">$25,000</span></span>
+                  <span style="color:#6f7076;">ends in 6d 14h</span>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:3px;">
+                  <span style="color:#6f7076;font-size:11px;letter-spacing:.14em;">LEADERBOARD</span>
+                  <sc-for list="{{ board }}" as="b" hint-placeholder-count="3">
+                    <div style="display:flex;gap:8px;"><span style="color:#6f7076;width:28px;">{{ b.r }}</span><span style="flex:1;color:#c8c6c1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ b.n }}</span><span style="color:#9a9aa0;">{{ b.c }}</span></div>
+                  </sc-for>
+                  <div style="color:#4a4b50;">  ⋮</div>
+                  <div style="display:flex;gap:8px;"><span style="color:oklch(0.74 0.17 350);width:28px;">{{ rank }}</span><span style="flex:1;color:oklch(0.74 0.17 350);">you</span><span style="color:oklch(0.84 0.13 85);">{{ chips }}</span></div>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+      </sc-if>
+      <sc-if value="{{ tiltHidden }}">
+        <div onClick="{{ toggleTilt }}" style="cursor:pointer;color:#7d7e84;"><span style="color:oklch(0.74 0.17 350);font-weight:800;">TILT</span> ▸ press ` to open · {{ chips }} chips · rank #{{ rank }}</div>
+      </sc-if>
+
+      <div style="border:1px solid #34353a;border-radius:6px;padding:8px 12px;display:flex;gap:10px;align-items:center;">
+        <span style="color:#6f7076;">›</span>
+        <span style="color:#5d5e64;flex:1;">{{ inputHint }}</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:16px;color:#5d5e64;font-size:12px;">
+        <span>1·2·3 switch game</span><span>` hide tilt</span><span>keys go to the game while the agent works</span>
+        <span style="flex:1;"></span><span>free to play · real prizes</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;sponsorName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Northwind Cloud&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;agentSpeed&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;fast&quot;,&quot;normal&quot;,&quot;slow&quot;],&quot;default&quot;:&quot;normal&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;showLeaderboard&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+const SUITS = ['♠','♥','♦','♣'];
+const RANKS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+const RED = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36];
+const SYM = ['7','◆','★','♣','¤'];
+const SPIN = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+const SCRIPT = [
+  { t:'tool', name:'Read', arg:'src/auth/session.ts', out:'214 lines', verb:'Reading' },
+  { t:'tool', name:'Grep', arg:'"refreshToken", src/', out:'9 matches in 4 files', verb:'Searching' },
+  { t:'text', text:'The flake is a race between token refresh and the TTL check. I\'ll make the clock injectable.', verb:'Thinking' },
+  { t:'tool', name:'Edit', arg:'src/auth/session.ts', out:'+12 −4', verb:'Editing' },
+  { t:'tool', name:'Bash', arg:'npm test -- auth --repeat 20', out:'38 passed, 0 failed (20 runs)', verb:'Running tests' },
+  { t:'done', text:'Fixed. Auth suite is green across 20 runs.', verb:'Done' }
+];
+const fmt = n => n.toLocaleString('en-US');
+const shuffle = () => { const d=[]; SUITS.forEach(s=>RANKS.forEach(r=>d.push({r,s}))); for(let i=d.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[d[i],d[j]]=[d[j],d[i]];} return d; };
+const val = h => { let v=0,a=0; h.forEach(c=>{ if(c.r==='A'){a++;v+=11;} else v+= ['J','Q','K'].includes(c.r)?10:+c.r; }); while(v>21&&a){v-=10;a--;} return v; };
+const colorOf = n => n===0?'green':(RED.includes(n)?'red':'black');
+
+class Component extends DCLogic {
+  state = { tick:0, game:'bj', chips:18450, showTilt:true,
+    deck:shuffle(), player:[], dealer:[], phase:'idle', bet:500, msg:'Agent is working. Deal a hand.', msgTone:'dim',
+    wheelN:17, rPick:'red', rHist:[32,5,0,19], spinning:false,
+    reels:['7','★','◆'], win:null, shareMsg:'' };
+
+  componentDidMount(){
+    this.timer = setInterval(()=>this.setState(s=>({tick:s.tick+1})), 200);
+    this.onKey = e => this.key(e);
+    this.deal();
+    window.addEventListener('keydown', this.onKey);
+  }
+  componentWillUnmount(){ clearInterval(this.timer); clearInterval(this.anim); window.removeEventListener('keydown', this.onKey); }
+
+  stepSec(){ return ({fast:2.5,normal:5,slow:9})[this.props.agentSpeed ?? 'normal'] || 5; }
+  agentStep(){ return Math.min(SCRIPT.length, 1 + Math.floor(this.state.tick/(this.stepSec()*5))); }
+
+  key(e){
+    const k = e.key.toLowerCase(), g = this.state.game;
+    if (k==='`') return this.setState(s=>({showTilt:!s.showTilt}));
+    if (!this.state.showTilt) return;
+    if (k==='1') return this.setGame('bj'); if (k==='2') return this.setGame('roulette'); if (k==='3') return this.setGame('slots');
+    if (g==='bj'){ if(k==='n') this.deal(); if(k==='h') this.hit(); if(k==='s') this.stand(); if(k==='d') this.double(); }
+    if (g==='roulette'){ if(k==='r') this.spinR('red'); if(k==='b') this.spinR('black'); if(k==='z') this.spinR('green'); }
+    if (g==='slots' && k===' '){ e.preventDefault(); this.spinS(); }
+    if (k==='x'||k==='k') this.share();
+  }
+  setGame(game){ if(this.state.spinning) return; this.setState({game, win:null, shareMsg:'', msg: game==='bj'?'Deal a hand.':game==='roulette'?'Pick a color.':'Pull the lever.', msgTone:'dim'}); }
+  payout(net, game, msg){
+    const big = net >= 700;
+    this.setState({ msg, msgTone: net>0?'win':net<0?'lose':'dim', win: big?{amount:net, game}:null, shareMsg:'' });
+  }
+
+  deal(){
+    if (this.state.phase==='play') return;
+    let deck = this.state.deck.length<15 ? shuffle() : this.state.deck.slice();
+    const p=[deck.pop(),deck.pop()], d=[deck.pop(),deck.pop()];
+    const chips = this.state.chips - 500;
+    this.setState({deck, player:p, dealer:d, phase:'play', bet:500, chips, win:null, msg:'Hit, stand or double.', msgTone:'dim'}, ()=>{ if(val(p)===21) this.settle(true); });
+  }
+  hit(){
+    if (this.state.phase!=='play') return;
+    const deck=this.state.deck.slice(), player=[...this.state.player, deck.pop()];
+    this.setState({deck, player}, ()=>{ if(val(player)>21) this.settle(); else if(val(player)===21) this.stand(); });
+  }
+  double(){
+    if (this.state.phase!=='play' || this.state.player.length!==2) return;
+    const deck=this.state.deck.slice(), player=[...this.state.player, deck.pop()];
+    this.setState(s=>({deck, player, chips:s.chips-s.bet, bet:s.bet*2}), ()=>this.settle());
+  }
+  stand(){ if (this.state.phase==='play') this.settle(); }
+  settle(natural){
+    const { player, bet } = this.state; let deck=this.state.deck.slice(), dealer=this.state.dealer.slice();
+    const pv=val(player);
+    if (pv<=21 && !natural) while(val(dealer)<17) dealer.push(deck.pop());
+    const dv=val(dealer); let ret=0, msg;
+    if (pv>21){ msg=`Bust at ${pv}. −${fmt(bet)}`; }
+    else if (natural){ ret=Math.round(bet*2.5); msg=`Blackjack! +${fmt(ret-bet)}`; }
+    else if (dv>21||pv>dv){ ret=bet*2; msg=`You win ${pv} vs ${dv}. +${fmt(bet)}`; }
+    else if (pv===dv){ ret=bet; msg=`Push at ${pv}.`; }
+    else { msg=`Dealer ${dv} beats ${pv}. −${fmt(bet)}`; }
+    this.setState(s=>({deck, dealer, phase:'done', chips:s.chips+ret}), ()=>this.payout(ret-bet,'blackjack',msg));
+  }
+
+  spinR(pick){
+    if (this.state.spinning) return;
+    this.setState(s=>({spinning:true, rPick:pick, chips:s.chips-500, win:null, msg:'No more bets…', msgTone:'dim'}));
+    const end = Date.now()+1400;
+    this.anim = setInterval(()=>{
+      const n = Math.floor(Math.random()*37);
+      if (Date.now()<end) return this.setState({wheelN:n});
+      clearInterval(this.anim);
+      const c=colorOf(n), hit=c===pick, ret = hit ? (pick==='green'?18000:1000) : 0;
+      this.setState(s=>({wheelN:n, spinning:false, chips:s.chips+ret, rHist:[n,...s.rHist].slice(0,6)}),
+        ()=>this.payout(ret-500,'roulette', hit?`${n} ${c.toUpperCase()}. +${fmt(ret-500)}`:`${n} ${c.toUpperCase()}. −500`));
+    }, 70);
+  }
+  spinS(){
+    if (this.state.spinning) return;
+    this.setState(s=>({spinning:true, chips:s.chips-200, win:null, msg:'Spinning…', msgTone:'dim'}));
+    const end = Date.now()+1100, pickSym=()=>SYM[Math.floor(Math.random()*SYM.length)];
+    this.anim = setInterval(()=>{
+      if (Date.now()<end) return this.setState({reels:[pickSym(),pickSym(),pickSym()]});
+      clearInterval(this.anim);
+      let r=[pickSym(),pickSym(),pickSym()]; if (Math.random()<0.12) r=[r[0],r[0],r[0]];
+      const tri=r[0]===r[1]&&r[1]===r[2], pair=!tri&&(r[0]===r[1]||r[1]===r[2]||r[0]===r[2]);
+      const ret = tri ? (r[0]==='7'?10000:2000) : pair ? 400 : 0;
+      this.setState(s=>({reels:r, spinning:false, chips:s.chips+ret}),
+        ()=>this.payout(ret-200,'slots', ret? `${r.join(' ')} · +${fmt(ret-200)}` : `${r.join(' ')} · no luck. −200`));
+    }, 80);
+  }
+  share(){ if (this.state.win) this.setState({shareMsg:'card copied · link ready'}); }
+
+  card(c, hidden){
+    if (hidden) return { art:'┌─────┐\n│░░░░░│\n│░░░░░│\n│░░░░░│\n└─────┘', color:'#4a4b50' };
+    return { art:`┌─────┐\n│${c.r.padEnd(2)}   │\n│  ${c.s}  │\n│   ${c.r.padStart(2)}│\n└─────┘`, color: (c.s==='♥'||c.s==='♦') ? 'oklch(0.7 0.17 25)' : '#f0eee9' };
+  }
+
+  renderVals(){
+    const s=this.state, step=this.agentStep(), done=step>=SCRIPT.length;
+    const secs=Math.floor(s.tick/5), elapsed = secs>=60?`${Math.floor(secs/60)}m ${secs%60}s`:`${secs}s`;
+    const lines = SCRIPT.slice(0, done?SCRIPT.length:step-1).map(l=>({...l, isTool:l.t==='tool', isText:l.t==='text', isDone:l.t==='done'}));
+    const g=s.game, play=s.phase==='play';
+    const hideHole = play;
+    const rank = Math.max(1, 412 - Math.floor((s.chips-18450)/400));
+    const tabs = [['bj','1','Blackjack'],['roulette','2','Roulette'],['slots','3','Slots']].map(([id,key,label])=>({
+      key,label, go:()=>this.setGame(id), color: g===id?'#141517':'#9a9aa0', bg: g===id?'oklch(0.74 0.17 350)':'transparent' }));
+    let actions=[];
+    if (g==='bj') actions = play ? [{key:'H',label:'hit',go:()=>this.hit()},{key:'S',label:'stand',go:()=>this.stand()},{key:'D',label:'double',go:()=>this.double()}]
+                                 : [{key:'N',label:'deal · 500',go:()=>this.deal()}];
+    if (g==='roulette') actions = [{key:'R',label:'red',go:()=>this.spinR('red')},{key:'B',label:'black',go:()=>this.spinR('black')},{key:'Z',label:'zero 36×',go:()=>this.spinR('green')}];
+    if (g==='slots') actions = [{key:'␣',label:'spin · 200',go:()=>this.spinS()}];
+    const wheel = [-4,-3,-2,-1,0,1,2,3,4].map(o=>{ const n=(s.wheelN+o+37)%37, c=colorOf(n);
+      return { n, bg: c==='red'?'oklch(0.52 0.17 25)':c==='green'?'oklch(0.5 0.12 150)':'#2a2b2f', op: o===0?1:0.4-Math.abs(o)*0.05, ring: o===0?'2px solid oklch(0.84 0.13 85)':'none' }; });
+    const showSide = this.props.showLeaderboard ?? true;
+    return {
+      lines, running:!done, agentDone:done, spin:SPIN[s.tick%SPIN.length], verb:SCRIPT[step-1].verb, elapsed,
+      replay:()=>this.setState({tick:0}),
+      showTilt:s.showTilt, tiltHidden:!s.showTilt, toggleTilt:()=>this.setState({showTilt:true}),
+      tabs, chips:fmt(s.chips), rank:fmt(rank),
+      isBJ:g==='bj', isRoulette:g==='roulette', isSlots:g==='slots',
+      dealerCards: s.dealer.map((c,i)=>this.card(c, hideHole && i===1)),
+      playerCards: s.player.map(c=>this.card(c)),
+      dealerVal: s.dealer.length ? (hideHole ? val([s.dealer[0]]) + ' + ?' : val(s.dealer)) : '–',
+      playerVal: s.player.length ? val(s.player) : '–', bet:fmt(s.bet),
+      wheel, rouletteHistory: s.rHist.join(' · '), roulettePickLabel: s.rPick==='green'?'zero':s.rPick,
+      reels: s.reels.map(x=>({s:x, color: x==='7'?'oklch(0.74 0.17 350)':x==='★'?'oklch(0.84 0.13 85)':'#f0eee9'})),
+      msg:s.msg, msgColor: s.msgTone==='win'?'oklch(0.84 0.13 85)':s.msgTone==='lose'?'oklch(0.7 0.17 25)':'#9a9aa0',
+      actions, hasWin:!!s.win, winAmount: s.win?fmt(s.win.amount):'', winGame: s.win?s.win.game:'',
+      shareX:()=>this.share(), shareMsg:s.shareMsg,
+      sponsor: this.props.sponsorName ?? 'Northwind Cloud',
+      showSide, sideCol: showSide?'260px':'0px',
+      board:[{r:1,n:'@0xkira',c:'412,900'},{r:2,n:'@segfault_sam',c:'388,120'},{r:3,n:'@tabs_not_spaces',c:'351,004'}],
+      inputHint: done ? 'Ask a follow-up, or keep playing' : 'Agent is working · your keys go to Tilt',
+    };
+  }
+}
+</script>
+</body>
+</html>

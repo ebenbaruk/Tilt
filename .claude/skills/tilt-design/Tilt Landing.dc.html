@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0b0b0c;-webkit-font-smoothing:antialiased}
+a{color:oklch(0.74 0.17 350);text-decoration:none}a:hover{color:oklch(0.84 0.13 85)}
+html{scroll-behavior:smooth}
+</style>
+</helmet>
+<div style="background:#0b0b0c;color:#d6d4cf;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:15px;line-height:1.6;">
+
+  <nav style="position:sticky;top:0;z-index:10;background:#0b0b0c;border-bottom:1px solid #1f2023;">
+    <div style="max-width:1160px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;gap:28px;flex-wrap:wrap;">
+      <a href="#top" style="color:oklch(0.74 0.17 350);font-weight:800;letter-spacing:.12em;font-size:18px;">TILT</a>
+      <div style="display:flex;gap:22px;flex-wrap:wrap;font-size:13.5px;">
+        <a href="#how" style="color:#9a9aa0;" style-hover="color:#f0eee9;">how it works</a>
+        <a href="#prizes" style="color:#9a9aa0;" style-hover="color:#f0eee9;">prizes</a>
+        <a href="#sponsors" style="color:#9a9aa0;" style-hover="color:#f0eee9;">sponsors</a>
+        <a href="#faq" style="color:#9a9aa0;" style-hover="color:#f0eee9;">faq</a>
+      </div>
+      <span style="flex:1;"></span>
+      <span style="font-size:13px;color:#7d7e84;white-space:nowrap;">S3 pool <span style="color:oklch(0.84 0.13 85);">$25,000</span> · {{ countdownShort }}</span>
+      <a href="#install" style="padding:7px 14px;background:#f0eee9;color:#141517;border-radius:4px;font-weight:700;font-size:13.5px;white-space:nowrap;" style-hover="background:oklch(0.84 0.13 85);color:#141517;">Install free</a>
+    </div>
+  </nav>
+
+  <header id="top" style="max-width:1160px;margin:0 auto;padding:96px 24px 56px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:26px;">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center;padding:5px 12px;border:1px solid #2a2b2f;border-radius:999px;font-size:13px;color:#9a9aa0;">
+      <span style="color:oklch(0.78 0.12 150);">●</span> Season 3 is live · works in Claude Code and Codex
+    </div>
+    <sc-if value="{{ hPlay }}" hint-placeholder-val="{{ true }}">
+      <h1 style="margin:0;font-size:clamp(44px,7.4vw,92px);line-height:1;letter-spacing:-.045em;font-weight:800;color:#f0eee9;text-wrap:balance;">Your agent codes.<br><span style="color:oklch(0.74 0.17 350);">You play.</span></h1>
+    </sc-if>
+    <sc-if value="{{ hWin }}">
+      <h1 style="margin:0;font-size:clamp(44px,7.4vw,92px);line-height:1;letter-spacing:-.045em;font-weight:800;color:#f0eee9;text-wrap:balance;">Win real money <span style="color:oklch(0.74 0.17 350);">while your AI codes.</span></h1>
+    </sc-if>
+    <sc-if value="{{ hWait }}">
+      <h1 style="margin:0;font-size:clamp(44px,7.4vw,92px);line-height:1;letter-spacing:-.045em;font-weight:800;color:#f0eee9;text-wrap:balance;">Waiting on your agent?<br><span style="color:oklch(0.74 0.17 350);">Deal a hand.</span></h1>
+    </sc-if>
+    <p style="margin:0;max-width:640px;font-size:17px;line-height:1.6;color:#c8c6c1;text-wrap:pretty;">Tilt is a free casino that lives inside your AI coding tool. Play blackjack, roulette and slots while your agent works. The top players split a <span style="color:oklch(0.84 0.13 85);">real cash prize</span> every season.</p>
+
+    <div id="install" style="width:100%;max-width:720px;text-align:left;border:1px solid oklch(0.74 0.17 350 / .55);border-radius:10px;background:#141517;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.5);margin-top:8px;">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 12px;background:oklch(0.74 0.17 350 / .08);border-bottom:1px solid oklch(0.74 0.17 350 / .3);">
+        <span style="font-size:12px;color:#7d7e84;letter-spacing:.14em;margin-right:6px;">PASTE INTO</span>
+        <sc-for list="{{ installTabs }}" as="t" hint-placeholder-count="3">
+          <span onClick="{{ t.go }}" style="cursor:pointer;white-space:nowrap;padding:3px 10px;border-radius:3px;font-size:13.5px;color:{{ t.color }};background:{{ t.bg }};">{{ t.label }}</span>
+        </sc-for>
+      </div>
+      <div style="padding:18px 18px 16px;display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;gap:12px;align-items:flex-start;">
+          <span style="color:#6f7076;font-size:16px;line-height:1.55;">›</span>
+          <div style="flex:1;min-width:0;color:#f0eee9;font-size:16px;line-height:1.55;word-break:break-word;">{{ installText }}</div>
+        </div>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+          <span onClick="{{ copy }}" style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;padding:10px 18px;background:{{ copyBg }};color:#141517;border-radius:4px;font-weight:800;font-size:14px;white-space:nowrap;" style-hover="background:oklch(0.84 0.13 85);">{{ copyLabel }}</span>
+          <span style="color:#9a9aa0;font-size:13.5px;flex:1;min-width:220px;">{{ installNote }}</span>
+        </div>
+      </div>
+      <div style="padding:10px 18px;border-top:1px solid #2a2b2f;font-size:12.5px;color:#7d7e84;display:flex;gap:16px;flex-wrap:wrap;">
+        <span><span style="color:oklch(0.78 0.12 150);">✓</span> free, nothing to buy</span>
+        <span><span style="color:oklch(0.78 0.12 150);">✓</span> your agent asks before changing anything</span>
+        <span><span style="color:oklch(0.78 0.12 150);">✓</span> uninstall with one line</span>
+      </div>
+    </div>
+  </header>
+
+  <sc-if value="{{ showDemo }}" hint-placeholder-val="{{ true }}">
+    <section style="max-width:1160px;margin:0 auto;padding:24px 24px 100px;display:flex;flex-direction:column;align-items:center;gap:18px;">
+      <div style="font-size:13px;color:#7d7e84;text-align:center;">This is what it looks like. <span style="color:#f0eee9;">It's playable:</span> hover the window and press <span style="color:oklch(0.84 0.13 85);">H</span> to hit, <span style="color:oklch(0.84 0.13 85);">S</span> to stand.</div>
+      <dc-import name="TiltDemo" hint-size="100%,720px" agent-speed="normal" sponsor-name="Northwind Cloud" style="width:100%;"></dc-import>
+    </section>
+  </sc-if>
+
+  <section id="how" style="border-top:1px solid #1f2023;">
+    <div style="max-width:1160px;margin:0 auto;padding:100px 24px;display:flex;flex-direction:column;gap:48px;">
+      <div style="display:flex;flex-direction:column;gap:12px;max-width:640px;">
+        <span style="font-size:12px;letter-spacing:.14em;color:#6f7076;">HOW IT WORKS</span>
+        <h2 style="margin:0;font-size:clamp(30px,4.2vw,48px);line-height:1.05;letter-spacing:-.035em;font-weight:800;color:#f0eee9;text-wrap:balance;">Set up in one message. No code, no settings.</h2>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">
+        <div style="border:1px solid #2a2b2f;border-radius:6px;padding:24px;background:#141517;display:flex;flex-direction:column;gap:12px;">
+          <span style="color:oklch(0.84 0.13 85);font-weight:800;">01</span>
+          <span style="color:#f0eee9;font-size:19px;font-weight:700;letter-spacing:-.01em;">Copy one line</span>
+          <span style="color:#9a9aa0;text-wrap:pretty;">Paste it into Claude Code or Codex, the same way you'd ask for anything. Your agent reads the guide and installs Tilt for you.</span>
+        </div>
+        <div style="border:1px solid #2a2b2f;border-radius:6px;padding:24px;background:#141517;display:flex;flex-direction:column;gap:12px;">
+          <span style="color:oklch(0.84 0.13 85);font-weight:800;">02</span>
+          <span style="color:#f0eee9;font-size:19px;font-weight:700;letter-spacing:-.01em;">Start a task, play a hand</span>
+          <span style="color:#9a9aa0;text-wrap:pretty;">While the agent reads, thinks and runs tests, Tilt opens right under it. One key per move. A hand takes seconds.</span>
+        </div>
+        <div style="border:1px solid #2a2b2f;border-radius:6px;padding:24px;background:#141517;display:flex;flex-direction:column;gap:12px;">
+          <span style="color:oklch(0.84 0.13 85);font-weight:800;">03</span>
+          <span style="color:#f0eee9;font-size:19px;font-weight:700;letter-spacing:-.01em;">Agent's done, you're back</span>
+          <span style="color:#9a9aa0;text-wrap:pretty;">A green bar tells you the work is ready. Your hand is saved, so nothing is lost when you go back.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section style="border-top:1px solid #1f2023;">
+    <div style="max-width:1160px;margin:0 auto;padding:100px 24px;display:flex;flex-direction:column;gap:48px;">
+      <div style="display:flex;flex-direction:column;gap:12px;max-width:640px;">
+        <span style="font-size:12px;letter-spacing:.14em;color:#6f7076;">THE GAMES</span>
+        <h2 style="margin:0;font-size:clamp(30px,4.2vw,48px);line-height:1.05;letter-spacing:-.035em;font-weight:800;color:#f0eee9;text-wrap:balance;">Three classics, built for a two-minute wait.</h2>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">
+        <div style="border:1px solid #2a2b2f;border-radius:6px;overflow:hidden;background:#141517;display:flex;flex-direction:column;">
+          <div style="height:150px;display:flex;align-items:center;justify-content:center;gap:6px;background:#0f1012;border-bottom:1px solid #2a2b2f;">
+            <pre style="margin:0;font-family:inherit;font-size:13.5px;line-height:1.15;color:oklch(0.7 0.17 25);">┌─────┐
+│A    │
+│  ♥  │
+│    A│
+└─────┘</pre>
+            <pre style="margin:0;font-family:inherit;font-size:13.5px;line-height:1.15;color:#f0eee9;">┌─────┐
+│K    │
+│  ♠  │
+│    K│
+└─────┘</pre>
+          </div>
+          <div style="padding:20px 22px;display:flex;flex-direction:column;gap:6px;">
+            <span style="color:#f0eee9;font-size:18px;font-weight:700;">Blackjack</span>
+            <span style="color:#9a9aa0;">Beat the dealer to 21. Hit, stand or double down.</span>
+          </div>
+        </div>
+        <div style="border:1px solid #2a2b2f;border-radius:6px;overflow:hidden;background:#141517;display:flex;flex-direction:column;">
+          <div style="height:150px;display:flex;align-items:center;justify-content:center;gap:6px;background:#0f1012;border-bottom:1px solid #2a2b2f;">
+            <span style="width:40px;text-align:center;padding:7px 0;border-radius:3px;background:#2a2b2f;color:#f0eee9;font-weight:700;opacity:.35;">4</span>
+            <span style="width:40px;text-align:center;padding:7px 0;border-radius:3px;background:oklch(0.52 0.17 25);color:#f0eee9;font-weight:700;opacity:.5;">21</span>
+            <span style="width:40px;text-align:center;padding:7px 0;border-radius:3px;background:oklch(0.5 0.12 150);color:#f0eee9;font-weight:700;outline:2px solid oklch(0.84 0.13 85);">0</span>
+            <span style="width:40px;text-align:center;padding:7px 0;border-radius:3px;background:oklch(0.52 0.17 25);color:#f0eee9;font-weight:700;opacity:.5;">32</span>
+            <span style="width:40px;text-align:center;padding:7px 0;border-radius:3px;background:#2a2b2f;color:#f0eee9;font-weight:700;opacity:.35;">15</span>
+          </div>
+          <div style="padding:20px 22px;display:flex;flex-direction:column;gap:6px;">
+            <span style="color:#f0eee9;font-size:18px;font-weight:700;">Roulette</span>
+            <span style="color:#9a9aa0;">Red, black, or chase the zero for 36×.</span>
+          </div>
+        </div>
+        <div style="border:1px solid #2a2b2f;border-radius:6px;overflow:hidden;background:#141517;display:flex;flex-direction:column;">
+          <div style="height:150px;display:flex;align-items:center;justify-content:center;gap:10px;background:#0f1012;border-bottom:1px solid #2a2b2f;">
+            <span style="width:62px;height:62px;display:flex;align-items:center;justify-content:center;border:1px solid #3a3b40;border-radius:4px;background:#141517;font-size:28px;font-weight:800;color:oklch(0.74 0.17 350);">7</span>
+            <span style="width:62px;height:62px;display:flex;align-items:center;justify-content:center;border:1px solid #3a3b40;border-radius:4px;background:#141517;font-size:28px;font-weight:800;color:oklch(0.74 0.17 350);">7</span>
+            <span style="width:62px;height:62px;display:flex;align-items:center;justify-content:center;border:1px solid #3a3b40;border-radius:4px;background:#141517;font-size:28px;font-weight:800;color:oklch(0.74 0.17 350);">7</span>
+          </div>
+          <div style="padding:20px 22px;display:flex;flex-direction:column;gap:6px;">
+            <span style="color:#f0eee9;font-size:18px;font-weight:700;">Slots</span>
+            <span style="color:#9a9aa0;">One key to spin. Three sevens pay 50×.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="prizes" style="border-top:1px solid #1f2023;">
+    <div style="max-width:1160px;margin:0 auto;padding:100px 24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:48px;align-items:start;">
+      <div style="display:flex;flex-direction:column;gap:18px;">
+        <span style="font-size:12px;letter-spacing:.14em;color:#6f7076;">PRIZES</span>
+        <h2 style="margin:0;font-size:clamp(30px,4.2vw,48px);line-height:1.05;letter-spacing:-.035em;font-weight:800;color:#f0eee9;text-wrap:balance;">Free chips. <span style="color:oklch(0.84 0.13 85);">Real money.</span></h2>
+        <p style="margin:0;color:#c8c6c1;max-width:480px;text-wrap:pretty;">Everyone starts the season with 10,000 free chips and gets a refill every day. Climb the public leaderboard. When the season ends, the top 100 players split the cash pool.</p>
+        <p style="margin:0;color:#9a9aa0;max-width:480px;text-wrap:pretty;">You never deposit money and you can't lose any. The pool is paid for by sponsors.</p>
+        <div style="display:flex;flex-direction:column;gap:2px;margin-top:6px;">
+          <span style="font-size:12px;letter-spacing:.14em;color:#6f7076;">SEASON 3 ENDS IN</span>
+          <span style="font-size:clamp(28px,3.6vw,40px);font-weight:800;letter-spacing:-.02em;color:#f0eee9;">{{ countdown }}</span>
+        </div>
+      </div>
+      <div style="border:1px solid oklch(0.74 0.17 350 / .55);border-radius:6px;overflow:hidden;background:#141517;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 18px;background:oklch(0.74 0.17 350 / .08);border-bottom:1px solid oklch(0.74 0.17 350 / .3);">
+          <span><span style="color:oklch(0.74 0.17 350);font-weight:800;letter-spacing:.12em;">TILT</span> <span style="color:#6f7076;">S3 pool</span></span>
+          <span style="color:oklch(0.84 0.13 85);font-weight:800;font-size:20px;">$25,000</span>
+        </div>
+        <div style="padding:8px 18px 4px;">
+          <sc-for list="{{ payouts }}" as="p" hint-placeholder-count="3">
+            <div style="display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #222326;">
+              <span style="color:#c8c6c1;">{{ p.place }}</span><span style="color:oklch(0.84 0.13 85);">{{ p.prize }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="padding:14px 18px 18px;display:flex;flex-direction:column;gap:4px;">
+          <span style="font-size:11px;letter-spacing:.14em;color:#6f7076;padding-bottom:4px;">LIVE LEADERBOARD</span>
+          <sc-for list="{{ board }}" as="b" hint-placeholder-count="3">
+            <div style="display:flex;gap:10px;"><span style="color:#6f7076;width:28px;">{{ b.r }}</span><span style="flex:1;color:#c8c6c1;">{{ b.n }}</span><span style="color:#9a9aa0;">{{ b.c }}</span></div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section style="border-top:1px solid #1f2023;">
+    <div style="max-width:1160px;margin:0 auto;padding:100px 24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:48px;align-items:center;">
+      <div style="display:flex;flex-direction:column;gap:18px;">
+        <span style="font-size:12px;letter-spacing:.14em;color:#6f7076;">SHARE</span>
+        <h2 style="margin:0;font-size:clamp(30px,4.2vw,48px);line-height:1.05;letter-spacing:-.035em;font-weight:800;color:#f0eee9;text-wrap:balance;">Every big win is a post.</h2>
+        <p style="margin:0;color:#c8c6c1;max-width:460px;text-wrap:pretty;">Hit a big one and Tilt makes a share card for X or TikTok, with what your agent was doing at the time. One key to post.</p>
+      </div>
+      <div style="border:1px solid oklch(0.84 0.13 85 / .6);border-radius:6px;padding:20px 22px;background:oklch(0.84 0.13 85 / .06);display:flex;flex-direction:column;gap:10px;">
+        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+          <span style="color:oklch(0.84 0.13 85);font-weight:800;letter-spacing:.08em;font-size:18px;">★ BIG WIN +1,250</span>
+          <span style="color:#7d7e84;font-size:13.5px;">win powered by <span style="color:#f0eee9;">Northwind Cloud</span></span>
+        </div>
+        <div style="color:#f0eee9;font-size:17px;">“won 1,250 on blackjack while my agent fixed flaky tests”</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
+          <span style="padding:4px 12px;background:#f0eee9;color:#141517;border-radius:3px;font-weight:700;font-size:13.5px;">[x] post to X</span>
+          <span style="padding:4px 12px;border:1px solid #3a3b40;color:#f0eee9;border-radius:3px;font-size:13.5px;">[k] TikTok</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="sponsors" style="border-top:1px solid #1f2023;background:#111214;">
+    <div style="max-width:1160px;margin:0 auto;padding:90px 24px;display:flex;flex-wrap:wrap;gap:32px;align-items:flex-end;justify-content:space-between;">
+      <div style="display:flex;flex-direction:column;gap:14px;max-width:620px;">
+        <span style="font-size:12px;letter-spacing:.14em;color:#6f7076;">FOR BRANDS</span>
+        <h2 style="margin:0;font-size:clamp(28px,3.8vw,42px);line-height:1.08;letter-spacing:-.03em;font-weight:800;color:#f0eee9;text-wrap:balance;">Be the name on the table when someone wins.</h2>
+        <p style="margin:0;color:#9a9aa0;text-wrap:pretty;">Sponsor a season and appear on tables, machines and win cards, in front of developers and early AI adopters while they're looking at the screen. Part of your budget goes back to players as prizes.</p>
+      </div>
+      <a href="mailto:sponsors@tilt.gg" style="padding:12px 20px;border:1px solid #3a3b40;border-radius:4px;color:#f0eee9;font-weight:700;white-space:nowrap;" style-hover="border-color:oklch(0.74 0.17 350);color:oklch(0.74 0.17 350);">Become a sponsor →</a>
+    </div>
+  </section>
+
+  <section id="faq" style="border-top:1px solid #1f2023;">
+    <div style="max-width:820px;margin:0 auto;padding:100px 24px;display:flex;flex-direction:column;gap:32px;">
+      <h2 style="margin:0;font-size:clamp(30px,4.2vw,48px);line-height:1.05;letter-spacing:-.035em;font-weight:800;color:#f0eee9;">Questions</h2>
+      <div style="display:flex;flex-direction:column;border-top:1px solid #2a2b2f;">
+        <sc-for list="{{ faq }}" as="f" hint-placeholder-count="6">
+          <div style="border-bottom:1px solid #2a2b2f;">
+            <div onClick="{{ f.toggle }}" style="cursor:pointer;display:flex;justify-content:space-between;gap:16px;padding:20px 0;color:#f0eee9;font-size:16.5px;font-weight:700;" style-hover="color:oklch(0.74 0.17 350);">
+              <span>{{ f.q }}</span><span style="color:#6f7076;font-weight:400;">{{ f.sign }}</span>
+            </div>
+            <sc-if value="{{ f.open }}">
+              <div style="padding:0 0 22px;color:#9a9aa0;max-width:680px;text-wrap:pretty;">{{ f.a }}</div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+  <section style="border-top:1px solid #1f2023;">
+    <div style="max-width:1160px;margin:0 auto;padding:110px 24px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:24px;">
+      <h2 style="margin:0;font-size:clamp(34px,5.4vw,64px);line-height:1;letter-spacing:-.045em;font-weight:800;color:#f0eee9;text-wrap:balance;">Your next wait <span style="color:oklch(0.74 0.17 350);">could pay.</span></h2>
+      <p style="margin:0;color:#9a9aa0;">Copy the line, paste it to your agent, deal.</p>
+      <div style="width:100%;max-width:720px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;text-align:left;border:1px solid oklch(0.74 0.17 350 / .55);border-radius:8px;background:#141517;padding:14px 14px 14px 18px;">
+        <span style="color:#6f7076;">›</span>
+        <span style="flex:1;min-width:240px;color:#f0eee9;word-break:break-word;">{{ installText }}</span>
+        <span onClick="{{ copy }}" style="cursor:pointer;padding:9px 16px;background:{{ copyBg }};color:#141517;border-radius:4px;font-weight:800;font-size:14px;white-space:nowrap;" style-hover="background:oklch(0.84 0.13 85);">{{ copyLabel }}</span>
+      </div>
+    </div>
+  </section>
+
+  <footer style="border-top:1px solid #1f2023;">
+    <div style="max-width:1160px;margin:0 auto;padding:28px 24px 40px;display:flex;flex-wrap:wrap;gap:20px;align-items:center;font-size:12.5px;color:#6f7076;">
+      <span style="color:oklch(0.74 0.17 350);font-weight:800;letter-spacing:.12em;">TILT</span>
+      <span>free to play · real prizes · 18+</span>
+      <span style="flex:1;"></span>
+      <a href="#" style="color:#7d7e84;">rules</a><a href="#" style="color:#7d7e84;">privacy</a><a href="#" style="color:#7d7e84;">uninstall</a><a href="mailto:sponsors@tilt.gg" style="color:#7d7e84;">sponsors</a>
+    </div>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;headline&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;play&quot;,&quot;win&quot;,&quot;wait&quot;],&quot;default&quot;:&quot;play&quot;,&quot;tsType&quot;:&quot;'play'|'win'|'wait'&quot;},&quot;defaultInstall&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;claude&quot;,&quot;codex&quot;,&quot;terminal&quot;],&quot;default&quot;:&quot;claude&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;showDemo&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+const INSTALL = {
+  claude: { label: 'Claude Code', text: 'Install Tilt for me: read https://tilt.gg/install and follow the steps. Ask me before you change anything.', note: 'Paste it into Claude Code and press Enter. Your agent does the rest.' },
+  codex: { label: 'Codex', text: 'Install Tilt for me: read https://tilt.gg/install and follow the steps. Ask me before you change anything.', note: 'Paste it into Codex and press Enter. Your agent does the rest.' },
+  terminal: { label: 'Terminal', text: 'npx tilt-cli@latest install', note: 'Prefer doing it yourself? Run this in any terminal. Needs Node 18+.' }
+};
+const FAQ = [
+  ['Is it actually free?', 'Yes. You get 10,000 chips at the start of each season and a refill every day. There is nothing to buy and no way to deposit money.'],
+  ['Then how is the prize real?', 'Sponsors pay to appear on the tables and win cards. Part of that money becomes the season prize pool, paid out to the top 100 players.'],
+  ["I'm not a developer. Can I still use it?", "If you use Claude Code or Codex, yes. Copy the line above, paste it to your agent, and it handles the setup. You don't have to touch any settings."],
+  ['Will it slow down my agent?', "No. Tilt runs next to your agent, not inside its work. When the agent needs you, the game steps aside and your hand is saved."],
+  ['How do winners get paid?', 'When the season ends, winners verify their identity and choose bank transfer or PayPal. Payouts go out within 14 days.'],
+  ['Who can win?', 'Players 18 and over, in regions where prize contests are allowed. Eligibility is checked at payout, so anyone can play and climb.']
+];
+const END = new Date('2026-10-19T18:00:00Z').getTime();
+
+class Component extends DCLogic {
+  state = { tab: this.props.defaultInstall ?? 'claude', copied: false, open: 0, now: Date.now() };
+  componentDidMount() { this.t = setInterval(() => this.setState({ now: Date.now() }), 1000); }
+  componentWillUnmount() { clearInterval(this.t); clearTimeout(this.c); }
+  copy = () => {
+    const txt = INSTALL[this.state.tab].text;
+    try { navigator.clipboard.writeText(txt); } catch (e) {}
+    this.setState({ copied: true });
+    clearTimeout(this.c); this.c = setTimeout(() => this.setState({ copied: false }), 2000);
+  };
+  renderVals() {
+    const s = this.state, cur = INSTALL[s.tab];
+    let ms = Math.max(0, END - s.now);
+    const d = Math.floor(ms / 864e5), h = Math.floor(ms / 36e5) % 24, m = Math.floor(ms / 6e4) % 60, sec = Math.floor(ms / 1e3) % 60;
+    const p2 = n => String(n).padStart(2, '0');
+    const head = this.props.headline ?? 'play';
+    return {
+      hPlay: head === 'play', hWin: head === 'win', hWait: head === 'wait',
+      showDemo: this.props.showDemo ?? true,
+      countdown: d + 'd ' + p2(h) + 'h ' + p2(m) + 'm ' + p2(sec) + 's',
+      countdownShort: 'ends in ' + d + 'd ' + h + 'h',
+      installTabs: Object.keys(INSTALL).map(id => ({ label: INSTALL[id].label, go: () => this.setState({ tab: id, copied: false }),
+        color: s.tab === id ? '#141517' : '#9a9aa0', bg: s.tab === id ? 'oklch(0.74 0.17 350)' : 'transparent' })),
+      installText: cur.text, installNote: cur.note,
+      copy: this.copy, copyLabel: s.copied ? '✓ Copied' : 'Copy', copyBg: s.copied ? 'oklch(0.78 0.12 150)' : '#f0eee9',
+      payouts: [{ place: '1st place', prize: '$5,000' }, { place: '2nd – 10th', prize: '$1,000 each' }, { place: '11th – 100th', prize: '$11,000 split' }],
+      board: [{ r: 1, n: '@0xkira', c: '412,900' }, { r: 2, n: '@segfault_sam', c: '388,120' }, { r: 3, n: '@tabs_not_spaces', c: '351,004' }, { r: 4, n: '@mira.builds', c: '340,550' }],
+      faq: FAQ.map(([q, a], i) => ({ q, a, open: s.open === i, sign: s.open === i ? '−' : '+', toggle: () => this.setState({ open: s.open === i ? -1 : i }) }))
+    };
+  }
+}
+</script>
+</body>
+</html>

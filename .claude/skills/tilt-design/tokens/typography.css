@@ -1,0 +1,22 @@
+:root {
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-body: var(--font-mono);
+
+  --text-2xs: 11px;   /* eyebrows: PRESENTED BY, LEADERBOARD */
+  --text-xs: 12px;    /* window title, footer hints */
+  --text-base: 13.5px;/* everything in the terminal */
+  --text-lg: 18px;    /* sponsor name */
+  --text-display: 34px;/* slot symbols */
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-bold: 700;   /* tool names, values */
+  --weight-black: 800;  /* TILT wordmark, BIG WIN, sponsor */
+
+  --leading-body: 1.55;
+  --leading-card: 1.15; /* ASCII playing cards */
+
+  --tracking-wordmark: .12em;
+  --tracking-eyebrow: .14em;
+  --tracking-banner: .08em;
+}
