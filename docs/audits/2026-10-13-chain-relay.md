@@ -28,11 +28,12 @@ Ce n'est **pas** un audit externe (spec M5) : il le prépare.
 | `pnpm -r typecheck` | ✅ | ✅ |
 | Contrat (vitest) | ✅ 5/5 | ✅ 7/7 |
 | Relais (vitest + Postgres 17) | ✅ 16/16 | ✅ 25/25 |
-| E2E programme + relais (stack locale MagicBlock) | ⏳ via la CI Linux | ⏳ via la CI Linux |
+| E2E programme (stack locale MagicBlock, native macOS) | ✅ 50/50 | ✅ 50/50 |
+| E2E relais (même stack + Postgres) | ✅ 29/29 | ✅ 30/30 |
 
 **`chain/scripts/local-stack.sh` ne marche pas sur macOS.** Il utilise `grep -P`, `--network host` et des binaires Linux. Dans Docker sur Mac, le validateur exige `io_uring`, que l'émulation x86 ne fournit pas.
 
-En natif, la base L1 démarre. Le rollup exige en plus `sudo launchctl limit maxfiles 1000000 1000000`.
+En natif, ça marche : on lance les trois services soi-même (`mbTestValidator.js`, `ephemeralValidator.js`, `vrf-oracle`), on attend que les programmes de la base soient utilisables (quelques slots) avant le rollup, et on exécute `sudo launchctl limit maxfiles 1000000 1000000` une fois.
 
 ## Constats
 
@@ -46,7 +47,7 @@ Statut : ✅ corrigé dans `eli/armand-fixes` (commit) · 🟡 laissé à Armand
 | F2 | **Élevée** | Une clé fuitée vide le pool promo vers le wallet de l'attaquant : le relais n'a qu'un minimum par paiement (`app.ts`, `intents.ts`). | ✅ `c39ecc6` : `MAX_PROMO_PAYOUT` + `DAILY_PROMO_LIMIT`, sous verrou. |
 | F3 | Moyenne | Une erreur RPC sur une seule intention arrête tout le balayage, `expireRound` et `checkpoint` compris (`sweeper.ts`, `intents.ts`). | ✅ `e4bf095` |
 | F4 | Moyenne | Le monitoring partage le verrou du balayage : il saute pendant un balayage lent, et ses propres échecs ne sont pas des alertes (`main.ts`). | ✅ `e7ca199` : minuterie dédiée, `MONITOR_FAILED` (runbook à jour) |
-| F5 | Moyenne (soupçonnée) | Une intention rollup absente du cache de statuts du rollup peut être marquée `failed` alors qu'elle a abouti. Le client renvoie alors avec un nouvel id, et la mise ou le retrait passe deux fois (`chain.ts`, `intents.ts`). | ✅ `b4408dc` : jamais `failed` sur un statut absent côté rollup ; reste `pending` → `STUCK_INTENTS`. Effet de bord : le joueur reste `PLAYER_BUSY` jusqu'à un règlement manuel (runbook). |
+| F5 | Moyenne → **réfutée en local** | Crainte : une intention rollup absente de l'historique du rollup serait marquée `failed` alors qu'elle a abouti, et un nouvel envoi la rejouerait. Sur la stack locale, `getSignatureStatuses(searchTransactionHistory)` retrouve encore la transaction plus de 3 000 slots après. | 🟡 à revérifier sur le rollup devnet (correctif tenté puis retiré : il bloquait le joueur pour rien) |
 | F6 | Faible | Aucune limite de taille des requêtes. | ✅ `dc317f1` : 8 Ko, réponse 413 |
 | F7 | Faible | `userId` non validé : les ids inconnus coûtent un appel Privy, et `.`/`..` provoquent une 500. | ✅ `e433836` : `PrivyUserId` dans le contrat |
 | F8 | Faible | Texte d'erreur interne brut stocké et renvoyé (corps Privy et RPC, noms de contraintes). La fuite d'URL RPC est réfutée. | ✅ `348abef` |
