@@ -145,17 +145,22 @@ export class Intents {
     );
     let settled = 0;
     for (const row of rows) {
-      const outcome = row.signature && row.network && row.last_valid_block_height
-        ? settledOutcome(await chain.transactionStatus({ signature: row.signature, network: row.network, lastValidBlockHeight: Number(row.last_valid_block_height) }))
-        : { status: "failed" as const, code: "NETWORK_ERROR" as const, message: "interrupted before sending" };
-      if (!outcome) continue;
-      // Guarded on the signature read above: an execution that resumed and recorded one since wins.
-      const { rowCount } = await this.db.query(
-        `UPDATE intents SET status = $2, error_code = $3, error_message = $4, updated_at = now()
-         WHERE intent_id = $1 AND status = 'pending' AND signature IS NOT DISTINCT FROM $5`,
-        [row.intent_id, outcome.status, outcome.code, outcome.message, row.signature],
-      );
-      settled += rowCount ?? 0;
+      // One failing RPC call must not hold up the other intents; the next sweep retries this one.
+      try {
+        const outcome = row.signature && row.network && row.last_valid_block_height
+          ? settledOutcome(await chain.transactionStatus({ signature: row.signature, network: row.network, lastValidBlockHeight: Number(row.last_valid_block_height) }))
+          : { status: "failed" as const, code: "NETWORK_ERROR" as const, message: "interrupted before sending" };
+        if (!outcome) continue;
+        // Guarded on the signature read above: an execution that resumed and recorded one since wins.
+        const { rowCount } = await this.db.query(
+          `UPDATE intents SET status = $2, error_code = $3, error_message = $4, updated_at = now()
+           WHERE intent_id = $1 AND status = 'pending' AND signature IS NOT DISTINCT FROM $5`,
+          [row.intent_id, outcome.status, outcome.code, outcome.message, row.signature],
+        );
+        settled += rowCount ?? 0;
+      } catch (e) {
+        console.error(JSON.stringify({ level: "error", msg: "reconcile failed for intent", intentId: row.intent_id, error: e instanceof Error ? e.message : String(e) }));
+      }
     }
     return settled;
   }

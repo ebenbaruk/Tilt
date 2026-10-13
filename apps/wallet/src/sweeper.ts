@@ -26,7 +26,13 @@ function unforfeitedLoss(a: PlayerAccount): bigint {
 }
 
 export async function sweep(db: Db, chain: TiltChain, intents: Intents, options: SweepOptions, nowMs = Date.now()): Promise<SweepReport> {
-  const report: SweepReport = { reconciled: await intents.reconcile(chain), expired: 0, checkpointed: 0, failed: 0 };
+  const report: SweepReport = { reconciled: 0, expired: 0, checkpointed: 0, failed: 0 };
+  // A reconciliation failure must not stop rounds from expiring or losses from being released.
+  report.reconciled = await intents.reconcile(chain).catch((e: unknown) => {
+    report.failed++;
+    console.error(JSON.stringify({ level: "error", msg: "reconcile failed", error: e instanceof Error ? e.message : String(e) }));
+    return 0;
+  });
   const timeoutSecs = Number((await chain.fetchVault()).config.roundTimeoutSecs.toString());
   // Only players whose account opening landed have anything to sweep.
   const { rows } = await db.query<{ user_id: string; address: string; last_checkpoint_at: Date | null }>(

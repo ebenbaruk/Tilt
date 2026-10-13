@@ -7,10 +7,11 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
-import { IntentError, type RecordSend, type SentTransaction, type TransactionStatus, UnconfirmedError } from "../src/chain";
+import { IntentError, type RecordSend, type SentTransaction, type TiltChain, type TransactionStatus, UnconfirmedError } from "../src/chain";
 import { createDb, migrate, type Db } from "../src/db";
 import { Intents, type Executor, type RelayLimits } from "../src/intents";
 import type { PlayerWallet, PlayerWallets } from "../src/players";
+import { sweep } from "../src/sweeper";
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL ?? "postgres://postgres:tilt@127.0.0.1:55432/tilt_test";
 const API_KEY = "k".repeat(40);
@@ -159,6 +160,36 @@ describe("intents", () => {
     expect(await intents.get(ids.justStarted)).toMatchObject({ status: "pending" });
     // A settled player can play again.
     expect((await intents.submit(intent(bet, randomUUID(), "u1"))).status).toBe("submitted");
+  });
+
+  it("keeps reconciling past an intent whose status cannot be read", async () => {
+    const insert = async (userId: string, signature: string) => {
+      const intentId = randomUUID();
+      await db.query(
+        `INSERT INTO intents (intent_id, user_id, action, status, signature, network, last_valid_block_height, updated_at)
+         VALUES ($1, $2, $3, 'pending', $4, 'rollup', 100, now() - interval '300 seconds')`,
+        [intentId, userId, bet, signature],
+      );
+      return intentId;
+    };
+    const unreachable = await insert("u1", "unreachable");
+    const landed = await insert("u2", "landed");
+    const intents = new Intents(db, new FakeExecutor(), LIMITS);
+    const chain = {
+      transactionStatus: async (tx: SentTransaction): Promise<TransactionStatus> => {
+        if (tx.signature === "unreachable") throw new Error("fetch failed");
+        return { state: "landed" };
+      },
+    };
+    expect(await intents.reconcile(chain)).toBe(1);
+    expect(await intents.get(unreachable)).toMatchObject({ status: "pending" });
+    expect(await intents.get(landed)).toMatchObject({ status: "submitted" });
+  });
+
+  it("sweeps players even when reconciliation fails", async () => {
+    const intents = { reconcile: () => Promise.reject(new Error("database unreachable")) } as unknown as Intents;
+    const chain = { fetchVault: async () => ({ config: { roundTimeoutSecs: 60 } }) } as unknown as TiltChain;
+    expect(await sweep(db, chain, intents, { checkpointMinLoss: 1n, checkpointIntervalMs: 1 })).toEqual({ reconciled: 0, expired: 0, checkpointed: 0, failed: 1 });
   });
 
   it("lets an execution that saw its transaction land correct a reconciliation failure", async () => {
