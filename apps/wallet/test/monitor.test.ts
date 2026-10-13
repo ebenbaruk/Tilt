@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { evaluate, type MonitorThresholds, type Snapshot } from "../src/monitor";
+import type { TiltChain } from "../src/chain";
+import type { Db } from "../src/db";
+import { check, evaluate, type MonitorThresholds, type Snapshot } from "../src/monitor";
 
 const thresholds: MonitorThresholds = { minRelayerLamports: 100n, minEscrowLamports: 10n, minFreeBankroll: 1_000n };
 const healthy: Snapshot = {
@@ -29,5 +31,10 @@ describe("monitor", () => {
       "STUCK_INTENTS",
       "PAUSED",
     ]);
+  });
+
+  it("reports a failed check as a critical alert, not a silent error", async () => {
+    const chain = { fetchVault: () => Promise.reject(new Error("fetch failed")) } as unknown as TiltChain;
+    expect(await check({} as Db, chain, thresholds)).toEqual([expect.objectContaining({ code: "MONITOR_FAILED", severity: "critical" })]);
   });
 });

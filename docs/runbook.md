@@ -4,7 +4,7 @@ Pour l'équipe d'astreinte. Outil : `cd chain && BASE_RPC=<rpc> npx tsx scripts/
 
 ## Alertes du relais
 
-Le relais (`apps/wallet`) écrit une ligne JSON `{"level":"alert","code":…}` à chaque passage du cron (30 s par défaut).
+Le relais (`apps/wallet`) écrit une ligne JSON `{"level":"alert","code":…}` à chaque passage du monitoring (30 s par défaut, indépendant du cron de réconciliation).
 
 | Code | Gravité | Ce que ça veut dire | Action |
 | --- | --- | --- | --- |
@@ -14,6 +14,7 @@ Le relais (`apps/wallet`) écrit une ligne JSON `{"level":"alert","code":…}` �
 | `LOW_ESCROW` | critique | L'escrow MagicBlock du relayer paie les Magic Actions : sans lui, retraits et checkpoints restent bloqués. | Recharger l'escrow (`createTopUpEscrowInstruction` du SDK MagicBlock, voir `scripts/e2e.ts`). |
 | `STUCK_INTENTS` | avertissement | Des intentions sont `pending` depuis plus de 10 min : la réconciliation n'arrive pas à trancher. | Regarder les signatures en base (`intents`) sur l'explorateur ; vérifier les RPC. |
 | `PAUSED` | avertissement | Une pause est active. | Normal pendant un incident ; sinon `resume`. |
+| `MONITOR_FAILED` | critique | Le relais n'a pas pu lire l'état (RPC Solana ou Postgres injoignable) : toutes les autres alertes sont muettes tant que ça dure. | Vérifier les RPC et la base (`/health`) ; surveiller le coffre à la main (`status`) en attendant. |
 
 Les lignes `sweep stuck` (un passage du cron dure plus de 5 min) et `intent settled differently by reconciliation` sont à traiter comme des alertes.
 

@@ -7,7 +7,7 @@ import { loadConfig } from "./config";
 import { createDb, migrate } from "./db";
 import { ChainExecutor } from "./executor";
 import { Intents } from "./intents";
-import { evaluate, snapshot } from "./monitor";
+import { check } from "./monitor";
 import { PrivyPlayerWallets } from "./players";
 import { sweep } from "./sweeper";
 
@@ -52,30 +52,41 @@ const thresholds = {
   minFreeBankroll: config.MIN_FREE_BANKROLL,
 };
 let sweepStartedAt: number | undefined;
-const timer = setInterval(() => {
+const sweepTimer = setInterval(() => {
   if (sweepStartedAt !== undefined) {
     if (Date.now() - sweepStartedAt > SWEEP_STUCK_MS) logError("sweep stuck", new Error(`running for ${Date.now() - sweepStartedAt} ms`));
     return;
   }
   sweepStartedAt = Date.now();
-  const sweeping = sweep(db, chain, intents, { checkpointMinLoss: config.CHECKPOINT_MIN_LOSS, checkpointIntervalMs: config.CHECKPOINT_INTERVAL_MS })
+  void sweep(db, chain, intents, { checkpointMinLoss: config.CHECKPOINT_MIN_LOSS, checkpointIntervalMs: config.CHECKPOINT_INTERVAL_MS })
     .then((report) => {
       if (report.reconciled || report.expired || report.checkpointed || report.failed) log("sweep", { ...report });
-    }, (e: unknown) => logError("sweep failed", e));
-  const monitoring = snapshot(db, chain)
-    .then((s) => {
-      for (const alert of evaluate(s, thresholds)) console.error(JSON.stringify({ level: "alert", ...alert }));
-    }, (e: unknown) => logError("monitoring failed", e));
-  void Promise.all([sweeping, monitoring]).finally(() => {
-    sweepStartedAt = undefined;
-  });
+    }, (e: unknown) => logError("sweep failed", e))
+    .finally(() => {
+      sweepStartedAt = undefined;
+    });
+}, config.CRON_INTERVAL_MS);
+
+// Separate from the sweep, so a slow sweep (many players, slow RPC) never silences the alerts.
+let monitoring = false;
+const monitorTimer = setInterval(() => {
+  if (monitoring) return;
+  monitoring = true;
+  void check(db, chain, thresholds)
+    .then((alerts) => {
+      for (const alert of alerts) console.error(JSON.stringify({ level: "alert", ...alert }));
+    })
+    .finally(() => {
+      monitoring = false;
+    });
 }, config.CRON_INTERVAL_MS);
 
 let stopping = false;
 const shutdown = () => {
   if (stopping) return;
   stopping = true;
-  clearInterval(timer);
+  clearInterval(sweepTimer);
+  clearInterval(monitorTimer);
   server.close(() => void db.end().then(() => process.exit(0)));
 };
 process.on("SIGTERM", shutdown);

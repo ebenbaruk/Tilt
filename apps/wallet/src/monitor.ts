@@ -25,7 +25,7 @@ export interface Snapshot {
   paused: { deposits: boolean; bets: boolean; payouts: boolean };
 }
 
-export type AlertCode = "INSOLVENT" | "LOW_FREE_BANKROLL" | "LOW_RELAYER_SOL" | "LOW_ESCROW" | "STUCK_INTENTS" | "PAUSED";
+export type AlertCode = "INSOLVENT" | "LOW_FREE_BANKROLL" | "LOW_RELAYER_SOL" | "LOW_ESCROW" | "STUCK_INTENTS" | "PAUSED" | "MONITOR_FAILED";
 
 export interface Alert {
   code: AlertCode;
@@ -75,4 +75,12 @@ export async function snapshot(db: Db, chain: TiltChain): Promise<Snapshot> {
     stuckIntents: Number(stuck.rows[0].n),
     paused: { deposits: vault.config.depositsPaused, bets: vault.config.betsPaused, payouts: vault.config.payoutsPaused },
   };
+}
+
+/** The alerts of one monitoring pass. Failing to look is itself critical: it would hide every other alert. */
+export async function check(db: Db, chain: TiltChain, t: MonitorThresholds): Promise<Alert[]> {
+  return snapshot(db, chain).then(
+    (s) => evaluate(s, t),
+    (e: unknown) => [{ code: "MONITOR_FAILED", severity: "critical", message: `monitoring failed: ${e instanceof Error ? e.message : String(e)}` }],
+  );
 }
