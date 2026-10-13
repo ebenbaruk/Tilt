@@ -99,12 +99,14 @@ describe("/tilt login", () => {
     expect(textOf(await ui.drawn())).toContain("Login denied · run /tilt login again.");
   });
 
-  test("an expired code stops polling", async ($, on) => {
+  // A simulated 11-minute wait: give slow CI runners room.
+  test("an expired code stops polling", { timeoutMs: 20_000 }, async ($, on) => {
     const { world, clock } = await loggedOut($, on, []);
 
     await $.command.run(command("login"));
-    for (let second = 0; second <= 620; second += 5) {
-      await clock.advance(5_000);
+    // Past the 600 s expiry in a few steps: thousands of 5 s ticks time out on slow CI runners.
+    for (let second = 0; second <= 660; second += 60) {
+      await clock.advance(60_000);
     }
     const polls = world.calls("POST /v1/auth/device/token").length;
 

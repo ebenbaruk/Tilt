@@ -11,3 +11,17 @@ allowBuilds:
   esbuild: false
   keccak: false
   utf-8-validate: false
+
+# Patched versions of transitive dependencies flagged by `pnpm audit` (high).
+overrides:
+  # GHSA-96hv-2xvq-fx4p (memory exhaustion), via Privy's wallet connectors and web3.js.
+  ws@>=8.0.0 <8.21.0: ^8.21.3
+  # GHSA-82x6-q7mm-w9cf, GHSA-v5mp-jgw5-2x6j; only Anchor's `workspace` helper parses TOML.
+  toml: ^4.2.0
+
+# No patched release exists. bigint-buffer's toBigIntLE() reads past a buffer shorter than
+# the requested width; @solana/buffer-layout-utils only passes it fixed-size slices of
+# account data. Revisit when spl-token drops it.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-3gc7-fjrx-p6mg
