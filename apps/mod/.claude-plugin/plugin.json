@@ -10,7 +10,7 @@
     "apiUrl": {
       "type": "string",
       "title": "Tilt API URL",
-      "description": "Base URL of the Tilt API. Change it only for local development, e.g. http://127.0.0.1:8788.",
+      "description": "Base URL of the Tilt API. Change it only for local development, e.g. http://127.0.0.1:8080.",
       "default": "https://api.tilt.example"
     }
   }

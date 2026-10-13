@@ -47,7 +47,7 @@ When a turn starts, the pane opens without taking the keyboard. When it ends you
 claude --plugin-dir apps/mod
 ```
 
-Point the mod at a local API with its `apiUrl` setting (`/config`, or `pluginConfigs.tilt.options.apiUrl` in `~/.claude/settings.json`), for example `http://127.0.0.1:8788`. Plain `http` is accepted only for `localhost` and `127.0.0.1`.
+Point the mod at a local API with its `apiUrl` setting (`/config`, or `pluginConfigs.tilt.options.apiUrl` in `~/.claude/settings.json`), for example `http://127.0.0.1:8080`. Plain `http` is accepted only for `localhost` and `127.0.0.1`.
 
 Checks, from this folder:
 

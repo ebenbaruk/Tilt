@@ -1,0 +1,107 @@
+# Développer Tilt en local
+
+Tout tourne sur la machine : Solana + rollup MagicBlock + oracle VRF, Postgres, le relais (`apps/wallet`), `api`, le web et le mod Claude Code.
+
+## Prérequis
+
+| Outil | Version |
+| --- | --- |
+| Node | 22+ |
+| pnpm | 12.3.4 (`npm i -g pnpm@12.3.4`) |
+| Rust | 1.89.0 (`rustup toolchain install 1.89.0`) |
+| Agave (Solana CLI) | 3.1.x |
+| Anchor | 1.0.2 (`avm install 1.0.2 && avm use 1.0.2`) |
+| Docker | pour Postgres |
+| Claude Code | ≥ 2.1.287 (mods) |
+
+```sh
+pnpm install --frozen-lockfile
+```
+
+pnpm refuse les paquets publiés il y a moins d'un jour (règle de la chaîne d'approvisionnement). Si un ajout échoue pour cette raison, épingle la version précédente. Ne relâche pas la règle.
+
+## 1. Postgres
+
+```sh
+docker run -d --name tilt-pg -e POSTGRES_PASSWORD=tilt -e POSTGRES_DB=tilt_test -p 55432:5432 postgres:17
+docker exec tilt-pg psql -U postgres -c "create database tilt_api_test" -c "create database tilt_api" -c "create database tilt"
+```
+
+## 2. Stack Solana + rollup + VRF
+
+- **Linux (et CI) :** `chain/scripts/local-stack.sh`.
+- **macOS :** `scripts/local-stack-macos.sh`. Le script Linux exige le réseau hôte Docker et `io_uring`, absents sur Mac.
+
+```sh
+sudo launchctl limit maxfiles 1000000 1000000                     # une fois par démarrage du Mac
+solana-keygen new --no-bip39-passphrase -o /tmp/tilt-admin.json   # clé admin jetable
+(cd chain && anchor build --ignore-keys)
+ANCHOR_WALLET=/tmp/tilt-admin.json scripts/local-stack-macos.sh   # laisse tourner
+ANCHOR_WALLET=/tmp/tilt-admin.json pnpm --filter @tilt/chain e2e  # installe la maison (vault, relais, USDC de test)
+```
+
+Ports : Solana `8899`/`8900`, rollup `7799`/`7800`.
+
+## 3. Tests
+
+```sh
+pnpm -r typecheck && pnpm lint && pnpm format:check
+pnpm --filter @tilt/contract test
+TEST_DATABASE_URL=postgres://postgres:tilt@127.0.0.1:55432/tilt_test pnpm --filter @tilt/wallet test
+TEST_DATABASE_URL=postgres://postgres:tilt@127.0.0.1:55432/tilt_api_test pnpm --filter @tilt/api test
+pnpm --filter @tilt/mod test           # claude plugin validate + test
+pnpm --filter @tilt/web test && pnpm --filter @tilt/web e2e
+(cd chain && cargo +1.89.0 test)
+```
+
+De bout en bout, sur la stack de l'étape 2 :
+
+```sh
+ANCHOR_WALLET=/tmp/tilt-admin.json pnpm --filter @tilt/chain e2e   # programme
+ANCHOR_WALLET=/tmp/tilt-admin.json TEST_DATABASE_URL=postgres://postgres:tilt@127.0.0.1:55432/tilt_test pnpm --filter @tilt/wallet e2e   # relais
+ANCHOR_WALLET=/tmp/tilt-admin.json pnpm --filter @tilt/api e2e     # api → relais → programme
+```
+
+Chaque suite remet ses propres tables à zéro. N'utilise pas la même base pour deux branches différentes : leurs migrations divergent.
+
+## 4. Lancer les apps
+
+Copie les `.env.example` en `.env` dans `apps/wallet`, `apps/api` et `apps/web` (les `.env` ne sont jamais commités), puis :
+
+```sh
+pnpm --filter @tilt/wallet start   # relais, 127.0.0.1:8787 (réseau privé uniquement)
+pnpm --filter @tilt/api start      # api, :8080
+pnpm --filter @tilt/web dev        # web, http://localhost:3000
+```
+
+**Config :**
+- `RELAY_API_KEY` (api) doit être l'une des `RELAY_API_KEYS` (relais).
+- Privy : une app de développement. Le relais a besoin de `PRIVY_AUTHORIZATION_KEY` (quorum de clés) ; `api` et le web ont besoin de l'id de l'app ; `api` a aussi besoin de `PRIVY_KEY_QUORUM_ID` / `PRIVY_POLICY_ID`. Le script `apps/wallet/scripts/privy-setup.ts` crée le quorum et la policy.
+
+## 5. Le mod dans Claude Code
+
+```sh
+claude --plugin-dir apps/mod
+```
+
+Dans la session :
+1. Règle `apiUrl` sur `http://127.0.0.1:8080` (`/config`, ou `pluginConfigs.tilt.options.apiUrl` dans `~/.claude/settings.json`).
+2. `/tilt login`, puis approuve le code dans le navigateur.
+3. Envoie un prompt : le panneau s'ouvre pendant que l'agent travaille.
+
+Touches : `1`–`4` pour les jeux, `n` pour donner ou lancer, `h`/`s`/`d` au blackjack, `b` pour la mise. Le focus passe au panneau avec `Ctrl+X Tab`.
+
+Le premier chargement dépose les types du moteur dans `apps/mod/.claude-plugin/types/` (ignorés par git), ce qui rend utile `pnpm --filter @tilt/mod typecheck`.
+
+## 6. Admin (sponsors, compétitions, prix)
+
+```sh
+pnpm --filter @tilt/api admin campaign:create …
+pnpm --filter @tilt/api admin competition:open …
+pnpm --filter @tilt/api admin competition:close …
+pnpm --filter @tilt/api admin prize:list
+pnpm --filter @tilt/api admin prize:approve …
+pnpm --filter @tilt/api admin prize:pay   # idempotent : relancer ne paie rien deux fois
+```
+
+`pnpm --filter @tilt/api admin` sans argument affiche l'aide.

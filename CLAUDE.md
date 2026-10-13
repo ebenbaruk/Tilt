@@ -6,13 +6,14 @@ Act like a pragmatic senior engineer. Write code a strong teammate would approve
 
 - **Name:** Tilt
 - **What:** A crypto casino on Solana, played inside Claude Code (a Claude Code mod) while the agent works, with a sponsor always visible. Spec: `docs/spec.md` (source of truth). Background: `docs/idea.md`, `docs/integrations.md`.
-- **Status:** Spec draft v0.1, pending validation. Armand's zone is implemented and running on devnet: `chain/` (Anchor program + MagicBlock rollup, see `chain/README.md`), `apps/wallet` (relay), `packages/contract`; ops in `docs/runbook.md`. Eli's zone has no code yet. Open decisions are listed in the spec (§13); don't settle them in code. Ask instead.
+- **Status:** Spec draft v0.1, pending validation. Armand's zone is implemented and running on devnet: `chain/` (Anchor program + MagicBlock rollup, see `chain/README.md`), `apps/wallet` (relay), `packages/contract`; ops in `docs/runbook.md`. Eli's zone is implemented: `apps/api`, `apps/mod` (Claude Code mod), `apps/web`; how to run everything locally: `docs/dev.md`. Open decisions are listed in the spec (§13); don't settle them in code. Ask instead.
 - **Team:** Eli and Armand, each working with their own AI.
 - **Ownership:** Stay inside the zone you're working for (spec §8). Never edit the other person's zone; open an issue or ask.
   - **Armand:** everything that touches money or game rules: `chain/` (Anchor program: games, VRF, bankroll) and `apps/wallet` (relay: Privy, signers, fee payer, transaction sending).
   - **Eli:** `apps/mod` (Claude Code mod, displays on-chain state), `apps/api` (mod sessions, reads program events, competitions, sponsors) and `apps/web`.
   - **Shared:** `packages/contract` (program IDL + relay API), the only boundary between the two zones. Changes need both to agree.
-- **Proposed stack:** TypeScript monorepo (pnpm), Node + Postgres, Next.js for web, Privy, `@solana/kit`. Not final until spec D7 is decided.
+- **Stack:** pnpm monorepo, TypeScript (Node 22, Hono, Postgres, Next.js, Privy) and Rust/Anchor for `chain/`. Spec D7 still to confirm formally.
+- **Design:** the Tilt design system is the project skill `.claude/skills/tilt-design/` (brand, tokens, components); use it for any UI.
 - **Repo:** Private GitHub repo `ebenbaruk/Tilt`. It must stay **private**. Never make it public or publish this code anywhere else.
 
 ## Core principles
@@ -46,7 +47,7 @@ Act like a pragmatic senior engineer. Write code a strong teammate would approve
   - **Money integrity:**
     - Amounts are integer base units, never floats.
     - Every money movement is idempotent (unique key) and audit-logged.
-    - Balances can never go negative, enforced by a DB constraint, not just app code.
+    - Balances can never go negative, enforced where they live: by the program on-chain, by DB constraints for off-chain records, not just by app code.
     - Guard against concurrent requests with locks or serializable transactions.
   - **No private keys** in code, local `.env` files, or logs.
   - **Rate-limit every endpoint.** Assume bots, replayed requests, and people reading the mod's source.

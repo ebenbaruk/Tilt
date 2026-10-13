@@ -268,6 +268,10 @@ GET  /payouts/promo/:payoutId -> même réponse
 
 **Développement en parallèle :** Armand publie très tôt l'IDL v0 (forme des comptes et événements) et le contrat du relais. Eli code le mod et `api` contre un **faux relais** qui rejoue des événements enregistrés. On branche tout sur devnet en M3.
 
+**3. Le protocole mod ↔ `api` et web ↔ `api` (Eli).** Le mod ne peut importer que ses propres fichiers : ses types sont dans `apps/mod/hooks/protocol.ts` (source de vérité, sans import), ceux du web dans `apps/api/src/public.ts`. `api` vérifie ses schémas zod contre ces types à la compilation.
+- **Connexion du mod :** flux par code (`/tilt login` → `/connect?code=` sur le web → approbation avec le jeton Privy). Le jeton du mod est opaque, haché en base, valable 30 jours, révocable, **limité au jeu**.
+- **Consentement (mouvements d'argent) :** le web envoie un jeton d'identité Privy frais (`X-Privy-Identity-Token`) ; `api` le vérifie puis le transmet au relais (`IntentRequest.consent`), qui le vérifie à son tour (moins de 5 min, même joueur). Le jeton n'est jamais stocké.
+
 ## 8. Répartition du travail
 
 | Zone | Dossier | Propriétaire |
@@ -330,16 +334,18 @@ On gère l'argent des joueurs et une bankroll. **On part du principe que des att
 | Bug du programme on-chain | Audits externes avant le mainnet, fuzzing, autorité d'upgrade sur le multisig, build vérifiable, limites dans le programme lui-même. |
 | Arrêt d'urgence | **Kill switches** séparés : dépôts, paris, retraits, payouts promo. Activables en une commande par l'un ou l'autre. |
 
-### 10.3 Ne pas se faire exploiter côté jeu (Eli)
+### 10.3 Ne pas se faire exploiter côté jeu
 
-| Risque | Parade |
-| --- | --- |
-| Triche sur l'état (envoyer « j'ai gagné », rejouer une action) | Chaque main est une **machine à états** côté serveur. Une action n'est valide que dans l'état attendu. Transitions atomiques en base. Une main ne peut être soldée qu'**une seule fois** (`betId` unique). |
-| Requêtes concurrentes (deux mises en parallèle, double `stand`) | Verrou par utilisateur et par main. Tests de concurrence dédiés (§11). |
-| Prédire l'aléa | `serverSeed` issu d'un CSPRNG, jamais révélé avant rotation. Nonce strictement croissant. Aucun aléa côté client. |
-| Erreur dans les gains (RTP réel ≠ annoncé) | Table de gains en un seul endroit. **Tests de simulation** sur des millions de mains : le RTP mesuré doit rester dans la tolérance annoncée. Gain max par pari plafonné (§6.3). |
-| Option gratuite (laisser une main ouverte pour attendre) | Expiration des mains avec règlement automatique et défavorable à l'attente (stratégie de base). Pas de mise sur une main déjà commencée. |
-| Abus des compétitions et des drops | Une main ne compte que si elle respecte la mise minimum. Plafond de tickets par heure. Prix retenus pendant une revue anti-fraude avant paiement. Aucun prix pour les mains annulées ou remboursées. |
+Depuis D2, les règles, les tirages et les gains sont dans le programme (Armand). `api` ne décide d'aucun résultat : il affiche l'état lu sur la chaîne et transmet des intentions.
+
+| Risque | Parade | Qui |
+| --- | --- | --- |
+| Triche sur l'état (« j'ai gagné », rejouer une action) | Machine à états **dans le programme** : chaque instruction n'est valide que dans le statut attendu ; une manche se solde une fois (`request_id`) ; le mod n'envoie que des intentions. | Armand |
+| Requêtes concurrentes | Une intention en vol par joueur (relais) ; `intentId` idempotent de bout en bout (mod → `api` → relais). | Armand + Eli |
+| Prédire ou choisir l'aléa | VRF MagicBlock, callback limité à l'oracle et à la requête en cours (§6.4) ; `expire_round` ne doit pas permettre de relancer un tirage favorable (point ouvert, audit). | Armand |
+| RTP réel ≠ annoncé | RTP exact testé dans le programme ; `api` rejoue chaque manche avec les règles portées en TS, vérifiées contre le code Rust (380 vecteurs). | Armand + Eli |
+| Option gratuite (main laissée ouverte) | `expire_round` : stand automatique après le délai. | Armand |
+| Abus des compétitions et des drops | Mise minimum pour qu'une manche compte, plafond de tickets par heure, un drop max par joueur, prix bloqués en revue avant paiement, `payoutId` déterministe (payé une fois). | Eli |
 
 ### 10.4 Anti-spam, anti-bots, anti-multicomptes
 
@@ -358,7 +364,8 @@ On gère l'argent des joueurs et une bankroll. **On part du principe que des att
 
 ### 10.6 Le mod et la chaîne d'approvisionnement
 
-- Le mod **ne lit pas** les prompts, le code ni les appels d'outils ; il n'utilise que les événements de début et de fin de tour. Il n'exécute aucune commande shell.
+- Le mod **ne lit pas** les prompts, le code ni les appels d'outils ; il n'utilise que les événements de début et de fin de tour. La seule commande qu'il lance est `open <url>` pour la connexion (`/tilt login`) ; il n'accède pas aux fichiers.
+- Le jeton du mod ne permet que de jouer (aucun dépôt, retrait ni changement de compte) ; il est révocable depuis le web. `http` n'est accepté que vers `127.0.0.1` (développement).
 - Code du mod lisible et relu ; versions publiées depuis la CI uniquement, avec un tag Git.
 - Dépendances : lockfile commité, versions épinglées, mises à jour automatiques relues (Renovate/Dependabot), `pnpm audit` en CI, scripts `postinstall` des dépendances désactivés.
 
@@ -384,25 +391,25 @@ Objectif : un code qu'une équipe pro relirait sans grimacer, et une **chaîne t
 ### 11.1 Standards
 
 - TypeScript `strict`, aucun `any`, ESLint + Prettier, imports propres.
-- Fonctions courtes, logique pure séparée des entrées/sorties (moteur de jeu et calcul du ledger testables sans base ni réseau).
+- Fonctions courtes, logique pure séparée des entrées/sorties (règles des jeux, vues et classements testables sans base ni réseau).
 - Erreurs typées, jamais avalées. Logs structurés, sans secrets ni données personnelles.
 - Les règles de `CLAUDE.md` s'appliquent à tout le monde, humains et IA.
 
 ### 11.2 Pyramide de tests
 
-| Niveau | Quoi | Outil proposé |
+| Niveau | Quoi | Où |
 | --- | --- | --- |
-| Unitaires | Règles de chaque jeu, calcul des gains, provably fair, limites | Vitest |
-| Propriétés | Invariants : solde jamais négatif, somme du ledger = 0, une main soldée une seule fois, déterminisme du RNG | fast-check |
-| Simulation | RTP sur des millions de mains, dans la tolérance | Vitest (job dédié) |
-| Intégration | api et wallet contre un **vrai Postgres** | Testcontainers |
-| Concurrence | Requêtes parallèles : double mise, double retrait, double settle | Tests dédiés |
-| Contrat | api et wallet testés chacun contre `packages/contract` (le mock d'Eli et le vrai wallet d'Armand passent les mêmes tests) | Vitest |
-| Mod | Rendu, touches, cycle de tour | `claude plugin test` |
-| Web | Parcours login, dépôt, retrait | Playwright |
-| Bout en bout | Devnet : login → dépôt → mains → gain → retrait, en CI | Script E2E |
+| Unitaires | Règles des jeux, gains, frais, plafonds (programme) ; vues, formats, sessions, classements (`api`, mod, web) | `cargo test`, Vitest, `claude plugin test` |
+| Propriétés | Réservation de la trésorerie toujours couverte ; classement et drops déterministes | Rust, fast-check |
+| Simulation / vecteurs | RTP exact par jeu (programme) ; règles TS de `api` = règles Rust (vecteurs générés depuis le Rust) | `cargo test`, Vitest |
+| Intégration | Relais et `api` contre un **vrai Postgres** | Vitest + Postgres 17 |
+| Concurrence | Même `intentId` en parallèle, double paiement de prix, double approbation de code | Vitest |
+| Contrat | `api` testée contre un faux relais construit sur les schémas de `packages/contract` ; le relais valide les mêmes schémas | Vitest |
+| Mod | Rendu des 4 jeux, touches, cycle de tour, connexion | `claude plugin test` |
+| Web | Landing, connexion, vérification, classement, en-têtes de sécurité | Playwright |
+| Bout en bout | Stack locale (Solana + rollup + VRF) : programme, relais, puis `api` → relais → programme (connexion, dépôt, 4 jeux, indexation, vérification, retrait, prix) | scripts `e2e` |
 
-**Couverture :** ≥ 90 % sur le code argent et jeux (`wallet`, moteurs de jeu, ledger, RNG). Pas d'objectif de vanité ailleurs. Chaque bug corrigé arrive avec un test de régression.
+**Couverture :** ≥ 90 % sur le code argent et jeux (programme, relais, règles et vues de `api`). Pas d'objectif de vanité ailleurs. Chaque bug corrigé arrive avec un test de régression.
 
 ### 11.3 CI et branches
 
@@ -449,7 +456,7 @@ Une feature est finie quand :
 | D10 | Classement des compétitions | gain net / volume / solde | Gain net |
 | D11 | Split au blackjack v1 | oui / non | Non (v1.1) |
 | D12 | Nom de domaine et marque | — | — |
-| D13 | Répartition après D2 on-chain | qui porte la logique des jeux (`chain/`), que devient `api`, contrat §7 | Proposé par Armand (§5, §7, §8, §14) : jeux on-chain chez Armand, `api` en lecture + produit chez Eli. **À valider par Eli** |
+| D13 | Répartition après D2 on-chain | qui porte la logique des jeux (`chain/`), que devient `api`, contrat §7 | ✅ **Validé par Eli** (2026-10-13) : jeux on-chain chez Armand, `api` en lecture + produit chez Eli |
 
 ## 14. Jalons
 
