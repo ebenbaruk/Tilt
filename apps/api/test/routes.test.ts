@@ -19,6 +19,8 @@ import {
   identity,
   json,
   must,
+  EDGE,
+  EDGE_SECRET,
   OK_COUNTRY,
   resetDb,
   testApp,
@@ -626,11 +628,25 @@ describe.skipIf(!db)("api routes", () => {
         allowed: true,
         country: "DE",
       });
-      expect(await (await app.request("/v1/geo", { headers: { "x-country": "fr" } })).json()).toEqual({
+      expect(await (await app.request("/v1/geo", { headers: { ...EDGE, "x-country": "fr" } })).json()).toEqual({
         allowed: false,
         country: "FR",
       });
       expect(await (await app.request("/v1/geo")).json()).toEqual({ allowed: false, country: null });
+    });
+
+    it("trusts the country header only from our edge", async () => {
+      const geo = async (headers: Record<string, string>) => (await app.request("/v1/geo", { headers })).json();
+      const unknown = { allowed: false, country: null };
+      expect(await geo({ "x-country": "DE" })).toEqual(unknown);
+      expect(await geo({ "x-tilt-edge": "wrong", "x-country": "DE" })).toEqual(unknown);
+      expect(await geo({ "x-tilt-edge": `${EDGE_SECRET}x`, "x-country": "DE" })).toEqual(unknown);
+      const { deps } = testApp(db, relay, chain);
+      const open = testApp(db, relay, chain, { geo: { ...deps.geo, allowUnknown: true } }).app;
+      expect(await (await open.request("/v1/geo", { headers: { "x-country": "US" } })).json()).toEqual({
+        allowed: true,
+        country: null,
+      });
     });
 
     it("reports health, unknown routes and oversized bodies", async () => {

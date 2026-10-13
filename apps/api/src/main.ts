@@ -4,6 +4,7 @@ import { createApp } from "./app";
 import { RpcChainReader } from "./chain";
 import { loadConfig } from "./config";
 import { createDb, migrate } from "./db";
+import { geoPolicy } from "./http";
 import { ConnectionSource, Indexer } from "./indexer";
 import { Intents } from "./intents";
 import { log } from "./log";
@@ -44,7 +45,7 @@ const app = createApp({
     play: RateLimiter.perMinute(config.RATE_PLAY_PER_MIN),
     money: RateLimiter.perMinute(config.RATE_MONEY_PER_MIN),
   },
-  geo: { header: config.COUNTRY_HEADER, blocked: config.BLOCKED_COUNTRIES, allowUnknown: config.GEO_ALLOW_UNKNOWN },
+  geo: geoPolicy(config),
   config,
   now: Date.now,
 });

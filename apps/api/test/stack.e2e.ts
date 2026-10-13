@@ -46,7 +46,7 @@ import { ConnectionSource, Indexer } from "../src/indexer";
 import { Intents } from "../src/intents";
 import type { LeaderboardResponse, MoneyIntentResponse, VerifyResponse } from "../src/public";
 import { HttpRelay } from "../src/relay";
-import { FakePrivy, generousLimits } from "./helpers";
+import { EDGE, EDGE_SECRET, FakePrivy, generousLimits } from "./helpers";
 
 const env = (key: string, fallback: string) => process.env[key] ?? fallback;
 const usdc = (x: number) => BigInt(Math.round(x * 1_000_000));
@@ -54,7 +54,7 @@ const loadKeypair = (path: string) =>
   Keypair.fromSecretKey(Uint8Array.from(JSON.parse(fs.readFileSync(path, "utf8")) as number[]));
 const POLL_MS = 100;
 const RELAY_KEY = "s".repeat(40);
-const COUNTRY = { "x-country": "DE" };
+const COUNTRY = { ...EDGE, "x-country": "DE" };
 const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 const FEE_BPS = 100n;
@@ -202,7 +202,7 @@ async function main() {
     privy: new FakePrivy(),
     intents: new Intents(db, relay),
     limiters: generousLimits(),
-    geo: { header: "x-country", blocked: ["US"], allowUnknown: false },
+    geo: { header: "x-country", blocked: ["US"], allowUnknown: false, edgeSecret: EDGE_SECRET },
     config: {
       WEB_ORIGIN: "https://tilt.test",
       WEB_URL: "https://tilt.test",

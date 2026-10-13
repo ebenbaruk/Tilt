@@ -76,6 +76,7 @@ pnpm --filter @tilt/web dev        # web, http://localhost:3000
 
 **Config :**
 - `RELAY_API_KEY` (api) doit être l'une des `RELAY_API_KEYS` (relais).
+- Géo-blocage et IP client : en local, il n'y a pas de proxy, donc `GEO_ALLOW_UNKNOWN=true`. En production, `api` doit être derrière un proxy (edge) qui écrase l'en-tête pays (`COUNTRY_HEADER`), ajoute `x-tilt-edge: <EDGE_SECRET>` et ajoute l'IP du client à `X-Forwarded-For`. Mets alors `TRUST_PROXY=true`, `EDGE_SECRET` (32 caractères ou plus), `TRUSTED_PROXY_HOPS` (nombre de proxys qui ajoutent une entrée à `X-Forwarded-For`, 1 par défaut) et `GEO_ALLOW_UNKNOWN=false`. Sans le bon secret, le pays est inconnu, donc refusé.
 - Privy : une app de développement. Le relais a besoin de `PRIVY_AUTHORIZATION_KEY` (quorum de clés) ; `api` et le web ont besoin de l'id de l'app ; `api` a aussi besoin de `PRIVY_KEY_QUORUM_ID` / `PRIVY_POLICY_ID`. Le script `apps/wallet/scripts/privy-setup.ts` crée le quorum et la policy.
 
 ## 5. Le mod dans Claude Code

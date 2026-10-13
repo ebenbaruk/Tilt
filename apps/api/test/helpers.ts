@@ -265,7 +265,7 @@ export function testApp(db: Db, relay: FakeRelay, chain: FakeChain, overrides: P
     privy: new FakePrivy(),
     intents: new Intents(db, relayClient),
     limiters: generousLimits(),
-    geo: { header: "x-country", blocked: ["US", "FR"], allowUnknown: false },
+    geo: { header: "x-country", blocked: ["US", "FR"], allowUnknown: false, edgeSecret: EDGE_SECRET },
     config: {
       WEB_ORIGIN: "https://tilt.test",
       WEB_URL: "https://tilt.test",
@@ -280,8 +280,11 @@ export function testApp(db: Db, relay: FakeRelay, chain: FakeChain, overrides: P
   return { app: createApp(deps), deps };
 }
 
+export const EDGE_SECRET = "e".repeat(32);
+/** What our edge proxy adds to every request: its secret, then the caller's country. */
+export const EDGE = { "x-tilt-edge": EDGE_SECRET };
 /** Allowed country, as the edge proxy would set it. */
-export const OK_COUNTRY = { "x-country": "DE" };
+export const OK_COUNTRY = { ...EDGE, "x-country": "DE" };
 
 export const json = (body: unknown, headers: Record<string, string> = {}) => ({
   method: "POST",

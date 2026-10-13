@@ -1,6 +1,7 @@
 // Shared HTTP pieces: context variables, body parsing, client IP, rate limits, geo-blocking and
 // the two kinds of authentication (mod session token, Privy access token).
 import type { Context, MiddlewareHandler } from "hono";
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import type { z } from "zod";
 import { authenticate } from "./auth/sessions";
@@ -50,13 +51,39 @@ export function rateLimit(limiter: RateLimiter, key: (c: Ctx) => string): Middle
   };
 }
 
+/** Header our edge proxy adds with EDGE_SECRET: proof the country header was set by it. */
+export const EDGE_HEADER = "x-tilt-edge";
+
 export interface GeoPolicy {
   header: string;
   blocked: readonly string[];
   allowUnknown: boolean;
+  /** What the edge sends in EDGE_HEADER; null when there is no trusted edge (country unknown). */
+  edgeSecret: string | null;
 }
 
+export function geoPolicy(
+  config: Pick<Config, "COUNTRY_HEADER" | "BLOCKED_COUNTRIES" | "GEO_ALLOW_UNKNOWN" | "TRUST_PROXY" | "EDGE_SECRET">,
+): GeoPolicy {
+  return {
+    header: config.COUNTRY_HEADER,
+    blocked: config.BLOCKED_COUNTRIES,
+    allowUnknown: config.GEO_ALLOW_UNKNOWN,
+    edgeSecret: config.TRUST_PROXY ? (config.EDGE_SECRET ?? null) : null,
+  };
+}
+
+const digest = (s: string) => createHash("sha256").update(s).digest();
+
+/** Whether the request came through our edge (constant time, whatever the lengths). */
+function fromEdge(c: Context, secret: string | null): boolean {
+  const sent = c.req.header(EDGE_HEADER);
+  return secret !== null && sent !== undefined && timingSafeEqual(digest(sent), digest(secret));
+}
+
+/** The caller's country, trusted only from our edge: a client can set the header itself. */
 export function country(c: Context, policy: GeoPolicy): string | null {
+  if (!fromEdge(c, policy.edgeSecret)) return null;
   const value = c.req.header(policy.header)?.trim().toUpperCase();
   return value && /^[A-Z]{2}$/.test(value) ? value : null;
 }

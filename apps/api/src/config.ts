@@ -41,7 +41,10 @@ const Env = z.object({
   BLOCKED_COUNTRIES: CountryList.default(DEFAULT_BLOCKED_COUNTRIES),
   /** Header the edge proxy sets with the caller's country (Vercel's by default). */
   COUNTRY_HEADER: z.string().min(1).default("x-vercel-ip-country"),
-  /** Without a country header, refuse (fail closed) unless this is true (local development). */
+  /** Secret the edge proxy sends in `x-tilt-edge`. The country header is read only when it
+   *  matches (and TRUST_PROXY is on); otherwise the country is unknown. */
+  EDGE_SECRET: z.string().min(32).optional(),
+  /** With an unknown country, refuse (fail closed) unless this is true (local development). */
   GEO_ALLOW_UNKNOWN: Bool.default("false"),
   /** Trust X-Forwarded-For for the client IP (only behind a proxy that overwrites it). */
   TRUST_PROXY: Bool.default("false"),
