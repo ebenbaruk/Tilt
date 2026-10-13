@@ -1,0 +1,5 @@
+.wrap {
+  max-width: 880px;
+  margin: 48px auto 0;
+  padding: 0 var(--space-8);
+}

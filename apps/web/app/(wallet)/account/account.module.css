@@ -1,0 +1,105 @@
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: var(--space-8);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-6) var(--space-8);
+}
+
+.figure {
+  display: flex;
+  flex-direction: column;
+}
+
+.value {
+  color: var(--fg-1);
+}
+
+.money {
+  color: var(--tilt-gold);
+  font-weight: var(--weight-bold);
+}
+
+.muted {
+  color: var(--fg-5);
+}
+
+.note {
+  color: var(--fg-3);
+}
+
+.address {
+  word-break: break-all;
+}
+
+.fund {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border-default);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.listItem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4) var(--space-8);
+  padding: var(--space-5) 0;
+  border-top: 1px solid var(--border-default);
+  color: var(--fg-3);
+}
+
+.fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.radio {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--fg-2);
+  cursor: pointer;
+}
+
+.radio input {
+  accent-color: var(--tilt-gold);
+  margin: 0;
+}

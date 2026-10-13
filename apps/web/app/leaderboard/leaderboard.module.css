@@ -1,0 +1,86 @@
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--side-column);
+  gap: var(--space-10);
+  align-items: start;
+}
+
+.main,
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.muted {
+  color: var(--fg-5);
+}
+
+.strong {
+  color: var(--fg-1);
+}
+
+.money {
+  color: var(--tilt-gold);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.table thead th {
+  color: var(--fg-6);
+  font-weight: var(--weight-regular);
+}
+
+.table td {
+  color: var(--fg-3);
+}
+
+.table .right {
+  text-align: right;
+}
+
+.table .net {
+  color: var(--fg-1);
+}
+
+.table .you td {
+  color: var(--tilt-pink);
+}
+
+.table .you .net {
+  color: var(--tilt-gold);
+}
+
+.commit {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.commit dt {
+  color: var(--fg-6);
+}
+
+.commit dd {
+  margin: 0 0 var(--space-4);
+  color: var(--fg-1);
+  word-break: break-all;
+}
+
+@media (max-width: 760px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

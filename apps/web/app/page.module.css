@@ -1,0 +1,252 @@
+.page {
+  max-width: var(--window-max);
+  margin: 0 auto;
+  padding: 0 var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: 88px;
+}
+
+.hero {
+  padding-top: 56px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 40px;
+}
+
+.heroText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  max-width: 640px;
+}
+
+.eyebrow {
+  color: var(--tilt-pink);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+}
+
+.heroTitle {
+  font-size: clamp(28px, 5vw, 42px);
+  font-weight: var(--weight-black);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+.lede {
+  color: var(--fg-3);
+  max-width: 60ch;
+}
+
+.small {
+  color: var(--fg-6);
+  font-size: var(--text-xs);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.sectionTitle {
+  font-size: 22px;
+  font-weight: var(--weight-black);
+  line-height: 1.25;
+}
+
+.sectionLede {
+  color: var(--fg-3);
+  max-width: 72ch;
+}
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: var(--space-8);
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-8);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--fg-3);
+}
+
+.stepNumber {
+  color: var(--tilt-gold);
+}
+
+.stepTitle {
+  font-size: var(--text-base);
+}
+
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 560px;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  vertical-align: top;
+  padding: var(--space-5) var(--space-7);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.table tbody tr:last-child th,
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.table thead th {
+  color: var(--fg-6);
+  font-weight: var(--weight-regular);
+}
+
+.table tbody th {
+  color: var(--fg-1);
+  white-space: nowrap;
+}
+
+.table td {
+  color: var(--fg-3);
+}
+
+.table .money,
+.money {
+  color: var(--tilt-gold);
+  white-space: nowrap;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: 40px;
+  align-items: center;
+}
+
+.splitText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  color: var(--fg-3);
+}
+
+.strong {
+  color: var(--fg-1);
+}
+
+.muted {
+  color: var(--fg-6);
+}
+
+.fairMock {
+  margin: 0;
+  padding: var(--space-8);
+  font-family: inherit;
+  color: var(--fg-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-terminal);
+  overflow-x: auto;
+}
+
+.ok {
+  color: var(--tilt-green-fg);
+}
+
+.sponsorMock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-8);
+  border: 1px solid var(--border-brand-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-brand-tint);
+  color: var(--fg-4);
+}
+
+.mockEyebrow {
+  color: var(--fg-6);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-eyebrow);
+}
+
+.sponsorName {
+  color: var(--fg-1);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-black);
+}
+
+.faq {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-default);
+}
+
+.faqItem {
+  border-bottom: 1px solid var(--border-default);
+}
+
+.faqQ {
+  cursor: pointer;
+  padding: var(--space-6) 0;
+  color: var(--fg-1);
+  list-style: none;
+}
+
+.faqQ::-webkit-details-marker {
+  display: none;
+}
+
+.faqQ::before {
+  content: "▸ ";
+  color: var(--tilt-gold);
+}
+
+.faqItem[open] .faqQ::before {
+  content: "▾ ";
+}
+
+.faqA {
+  padding: 0 0 var(--space-7) var(--space-9);
+  color: var(--fg-3);
+  max-width: 76ch;
+}
+
+.responsible {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-9) var(--space-10);
+  border: 1px solid oklch(0.7 0.17 25 / 0.45);
+  border-radius: var(--radius-md);
+  background: oklch(0.7 0.17 25 / 0.06);
+  color: var(--fg-3);
+}
+
+@media (max-width: 560px) {
+  .page {
+    gap: 64px;
+  }
+
+  .responsible {
+    padding: var(--space-8);
+  }
+}

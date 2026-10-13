@@ -1,0 +1,21 @@
+.success,
+.brand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+  align-items: center;
+  padding: 7px var(--space-7);
+  background: var(--surface-success-tint);
+  border-bottom: 1px solid var(--border-success);
+  color: var(--tilt-green-fg);
+}
+
+.brand {
+  background: var(--surface-brand-tint);
+  border-bottom-color: var(--border-brand-soft);
+  color: var(--fg-2);
+}
+
+.spacer {
+  flex: 1;
+}

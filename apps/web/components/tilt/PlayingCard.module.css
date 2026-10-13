@@ -1,0 +1,42 @@
+.black,
+.red,
+.hidden {
+  margin: 0;
+  font-family: inherit;
+  font-size: var(--text-base);
+  line-height: var(--leading-card);
+  color: var(--fg-1);
+}
+
+.red {
+  color: var(--tilt-red);
+}
+
+.hidden {
+  color: var(--line-4);
+}
+
+.hand {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.label {
+  color: var(--fg-5);
+}
+
+.total {
+  color: var(--fg-1);
+}
+
+.meta {
+  color: var(--fg-6);
+}
+
+.cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  min-height: 86px;
+}

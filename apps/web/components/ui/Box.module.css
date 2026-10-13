@@ -1,0 +1,38 @@
+.box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-7) var(--space-8);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-terminal);
+  min-width: 0;
+}
+
+.brand {
+  background: var(--surface-brand-tint);
+  border-color: var(--border-brand-soft);
+}
+
+.success {
+  background: var(--surface-success-tint);
+  border-color: var(--border-success);
+}
+
+.money {
+  background: var(--surface-win-tint);
+  border-color: var(--border-win);
+}
+
+.loss {
+  background: oklch(0.7 0.17 25 / 0.08);
+  border-color: oklch(0.7 0.17 25 / 0.45);
+}
+
+.title {
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--fg-5);
+  font-weight: var(--weight-bold);
+}

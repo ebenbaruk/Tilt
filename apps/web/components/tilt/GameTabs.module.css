@@ -1,0 +1,18 @@
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.tab,
+.active {
+  white-space: nowrap;
+  padding: var(--space-0) var(--space-4);
+  border-radius: var(--radius-xs);
+  color: var(--fg-4);
+}
+
+.active {
+  color: var(--text-on-light);
+  background: var(--tilt-pink);
+}

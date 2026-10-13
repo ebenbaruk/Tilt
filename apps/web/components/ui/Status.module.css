@@ -1,0 +1,15 @@
+.info {
+  color: var(--fg-4);
+}
+
+.success {
+  color: var(--tilt-green-fg);
+}
+
+.loss {
+  color: var(--tilt-red);
+}
+
+.pending {
+  color: var(--tilt-gold);
+}

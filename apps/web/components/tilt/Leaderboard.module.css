@@ -1,0 +1,49 @@
+.board {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.eyebrow {
+  color: var(--fg-6);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-eyebrow);
+}
+
+.row,
+.you {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.rank {
+  width: 34px;
+  color: var(--fg-6);
+}
+
+.handle {
+  flex: 1;
+  min-width: 0;
+  color: var(--fg-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.net {
+  color: var(--fg-4);
+}
+
+.you .rank,
+.you .handle {
+  color: var(--tilt-pink);
+}
+
+.you .net {
+  color: var(--tilt-gold);
+}
+
+.gap {
+  color: var(--line-4);
+  padding-left: var(--space-4);
+}

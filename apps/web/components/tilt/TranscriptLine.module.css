@@ -1,0 +1,39 @@
+.prompt {
+  display: flex;
+  gap: var(--space-5);
+}
+
+.chevron,
+.meta {
+  color: var(--fg-6);
+}
+
+.strong {
+  color: var(--fg-1);
+}
+
+.text {
+  color: var(--fg-2);
+}
+
+.agent {
+  color: var(--tilt-green);
+}
+
+.agentText {
+  color: var(--tilt-green-fg);
+}
+
+.tool {
+  color: var(--fg-1);
+  font-weight: var(--weight-bold);
+}
+
+.arg {
+  color: var(--fg-4);
+}
+
+.out {
+  color: var(--fg-5);
+  padding-left: var(--space-9);
+}

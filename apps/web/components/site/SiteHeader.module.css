@@ -1,0 +1,40 @@
+.header {
+  border-bottom: 1px solid var(--border-default);
+  background: var(--surface-page);
+}
+
+.inner {
+  max-width: var(--window-max);
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-8);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-6) var(--space-10);
+}
+
+.wordmark {
+  color: var(--tilt-pink);
+  font-weight: var(--weight-black);
+  letter-spacing: var(--tracking-wordmark);
+  text-decoration: none;
+}
+
+.wordmark:hover {
+  color: var(--tilt-pink);
+}
+
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-8);
+}
+
+.link {
+  color: var(--fg-4);
+  text-decoration: none;
+}
+
+.link:hover {
+  color: var(--fg-1);
+}

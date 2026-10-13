@@ -1,0 +1,66 @@
+.panel {
+  border: 1px solid var(--border-brand);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-7);
+  padding: var(--space-4) var(--space-7);
+  background: var(--surface-brand-tint);
+  border-bottom: 1px solid var(--border-brand-soft);
+}
+
+.wordmark {
+  color: var(--tilt-pink);
+  font-weight: var(--weight-black);
+  letter-spacing: var(--tracking-wordmark);
+}
+
+.season {
+  color: var(--fg-6);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.grid,
+.gridWithSide {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.gridWithSide {
+  grid-template-columns: minmax(0, 1fr) var(--side-column);
+}
+
+.main {
+  padding: var(--space-7) var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-height: var(--game-min-height);
+}
+
+.side {
+  border-left: 1px solid var(--border-default);
+  padding: var(--space-7) var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+@media (max-width: 720px) {
+  .gridWithSide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .side {
+    border-left: 0;
+    border-top: 1px solid var(--border-default);
+  }
+}

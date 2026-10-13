@@ -1,0 +1,17 @@
+.stat {
+  white-space: nowrap;
+  color: var(--fg-4);
+}
+
+.default {
+  color: var(--fg-1);
+}
+
+.money {
+  color: var(--tilt-gold);
+  font-weight: var(--weight-bold);
+}
+
+.brand {
+  color: var(--tilt-pink);
+}

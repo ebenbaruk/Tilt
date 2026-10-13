@@ -1,0 +1,58 @@
+.default,
+.solid,
+.danger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  white-space: nowrap;
+  padding: var(--space-3) var(--space-6);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--fg-1);
+  font: inherit;
+  cursor: pointer;
+}
+
+.default:hover:not(:disabled),
+.danger:hover:not(:disabled) {
+  border-color: var(--tilt-pink);
+  color: var(--tilt-pink);
+}
+
+.solid {
+  background: var(--fg-1);
+  border-color: var(--fg-1);
+  color: var(--text-on-light);
+  font-weight: var(--weight-bold);
+}
+
+.solid:hover:not(:disabled) {
+  background: var(--tilt-pink);
+  border-color: var(--tilt-pink);
+}
+
+.danger {
+  border-color: oklch(0.7 0.17 25 / 0.6);
+  color: var(--tilt-red);
+}
+
+.default:disabled,
+.solid:disabled,
+.danger:disabled {
+  opacity: 0.6;
+  cursor: default;
+  color: var(--fg-7);
+}
+
+.solid:disabled {
+  color: var(--text-on-light);
+}
+
+.key {
+  color: var(--tilt-gold);
+}
+
+.solid .key {
+  color: inherit;
+}

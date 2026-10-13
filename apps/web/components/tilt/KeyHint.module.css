@@ -1,0 +1,14 @@
+.hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  white-space: nowrap;
+  padding: 3px var(--space-5);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-xs);
+  color: var(--fg-1);
+}
+
+.key {
+  color: var(--tilt-gold);
+}
