@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Amount, IntentRequest } from "./relay";
+import { Amount, IntentRequest, PrivyUserId } from "./relay";
 
 describe("Amount", () => {
   it("accepts positive integers in base units up to u64", () => {
@@ -15,7 +15,7 @@ describe("Amount", () => {
 });
 
 describe("IntentRequest", () => {
-  const base = { intentId: "6f9619ff-8b86-4011-b42d-00c04fc964ff", userId: "did:privy:abc" };
+  const base = { intentId: "6f9619ff-8b86-4011-b42d-00c04fc964ff", userId: "did:privy:cm3np4u9j001rc8b73seqmqqk" };
 
   it("parses every action shape", () => {
     const actions = [
@@ -51,5 +51,14 @@ describe("IntentRequest", () => {
 
   it("requires a UUID intent id for idempotency", () => {
     expect(IntentRequest.safeParse({ ...base, intentId: "1", action: { type: "blackjack_hit" } }).success).toBe(false);
+  });
+});
+
+describe("PrivyUserId", () => {
+  it("accepts Privy DIDs only", () => {
+    expect(PrivyUserId.safeParse("did:privy:cm3np4u9j001rc8b73seqmqqk").success).toBe(true);
+    for (const bad of ["", "did:privy:", "did:privy:abc", "did:privy:CM3NP4U9J001RC8B73SEQMQQK", "did:privy:cm3np4u9j001rc8b73seqmqqk/../x", "did:privy:" + "a".repeat(41), "cm3np4u9j001rc8b73seqmqqk"]) {
+      expect(PrivyUserId.safeParse(bad).success, bad).toBe(false);
+    }
   });
 });

@@ -95,7 +95,7 @@ async function main() {
   const vault = await chain.fetchVault();
   console.log(`base=${chain.base.rpcEndpoint} rollup=${chain.rollup.rpcEndpoint}`);
   check("le relais est bien le relayer du coffre", vault.relayer.equals(relayer.publicKey));
-  const user = `did:privy:e2e-${randomUUID()}`;
+  const user = `did:privy:e2e${randomUUID().replaceAll("-", "")}`;
   const key = Keypair.generate();
   players.keys.set(user, key);
   const playerToken = await createAssociatedTokenAccountIdempotent(chain.base, admin, vault.mint, key.publicKey);
@@ -104,7 +104,7 @@ async function main() {
   const account = () => chain.fetchPlayerAccount(key.publicKey) as Promise<PlayerAccount>;
 
   console.log("\n--- Utilisateur et ouverture ---");
-  check("utilisateur inconnu → 404", (await api("/users/did:privy:nobody")).status === 404);
+  check("utilisateur inconnu → 404", (await api(`/users/did:privy:${"0".repeat(25)}`)).status === 404);
   const before = await api<UserResponse>(`/users/${user}`);
   check("utilisateur connu, compte pas encore ouvert", before.status === 200 && !before.json.accountOpen && before.json.solanaAddress === key.publicKey.toBase58());
   check("dépôt avant ouverture refusé", (await submit(user, { type: "deposit", amount: String(usdc(5)) })).error?.code === "ACCOUNT_NOT_OPEN");

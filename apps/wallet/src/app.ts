@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import {
   ErrorResponse,
   IntentRequest,
+  PrivyUserId,
   PromoPayoutRequest,
   type ErrorCode,
   type IntentResponse,
@@ -69,7 +70,9 @@ export function createApp(deps: AppDeps): Hono {
   });
 
   app.get("/users/:userId", async (c) => {
-    const userId = c.req.param("userId");
+    const parsed = PrivyUserId.safeParse(c.req.param("userId"));
+    if (!parsed.success) return c.json(error("INVALID_REQUEST", "userId must be a Privy user id"), 400);
+    const userId = parsed.data;
     const wallet = await deps.players.find(userId);
     if (!wallet) return c.json(error("UNKNOWN_USER", "no Solana wallet for this user"), 404);
     const body: UserResponse = { userId, solanaAddress: wallet.address.toBase58(), accountOpen: await deps.chain.isOpen(wallet.address) };

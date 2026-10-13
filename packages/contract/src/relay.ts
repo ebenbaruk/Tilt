@@ -43,14 +43,17 @@ export const Action = z.discriminatedUnion("type", [
 ]);
 export type Action = z.infer<typeof Action>;
 
+/** Privy user id, e.g. `did:privy:cm3np4u9j001rc8b73seqmqqk` (a lowercase cuid). Strict, as it
+ *  ends up in URLs, logs and database keys. */
+export const PrivyUserId = z.string().regex(/^did:privy:[a-z0-9]{20,40}$/, "Privy user id (did:privy:…)");
+
 /** Lowercased, so the same UUID in another case is the same intent, not a conflict. */
 const Uuid = z.string().uuid().transform((s) => s.toLowerCase());
 
 export const IntentRequest = z.object({
   /** Client-generated; replaying the same id never runs the action twice. */
   intentId: Uuid,
-  /** Privy user id (`did:privy:…`). */
-  userId: z.string().min(1).max(200),
+  userId: PrivyUserId,
   action: Action,
 });
 export type IntentRequest = z.infer<typeof IntentRequest>;
@@ -95,7 +98,7 @@ export const PromoPayoutRequest = z.object({
    *  INTENT_CONFLICT means the id is already taken: read GET /payouts/promo/:id, never re-issue
    *  the same prize under a new id. */
   payoutId: Uuid,
-  userId: z.string().min(1).max(200),
+  userId: PrivyUserId,
   amount: Amount,
   /** Which competition or drop pool this comes from (bookkeeping, not on-chain). */
   poolId: z.string().min(1).max(100),

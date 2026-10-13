@@ -15,7 +15,8 @@ import { sweep } from "../src/sweeper";
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL ?? "postgres://postgres:tilt@127.0.0.1:55432/tilt_test";
 const API_KEY = "k".repeat(40);
-const USER = "did:privy:test-user";
+const USER = "did:privy:cm0testuser000000000000001";
+const NOBODY = "did:privy:cm0nobody00000000000000001";
 const ADDRESS = new PublicKey("6aEPgBvxq7QBzC4VZ8vL6epiXn24eHbPyq2sVZY93t2N");
 const LIMITS: RelayLimits = {
   maxDeposit: 100_000_000n,
@@ -284,11 +285,15 @@ describe("HTTP API", () => {
     expect(res.status).toBe(400);
     expect(await res.json()).toMatchObject({ error: { code: "INVALID_REQUEST" } });
     expect((await call(`/intents/${"-".repeat(36)}`)).status).toBe(400);
+    expect((await post(intent(bet, randomUUID(), "did:privy:test-user"))).status).toBe(400);
+    const payout = { payoutId: randomUUID(), userId: "x".repeat(200), amount: "5000000", poolId: "weekly", reason: "1st place" };
+    expect((await call("/payouts/promo", { method: "POST", body: JSON.stringify(payout) })).status).toBe(400);
   });
 
   it("returns users and intents", async () => {
     expect(await (await call(`/users/${USER}`)).json()).toEqual({ userId: USER, solanaAddress: ADDRESS.toBase58(), accountOpen: true });
-    expect((await call("/users/did:privy:nobody")).status).toBe(404);
+    expect((await call(`/users/${NOBODY}`)).status).toBe(404);
+    expect((await call("/users/did:privy:..%2Fadmin")).status).toBe(400);
     const request = intent(bet);
     expect((await post(request)).status).toBe(200);
     expect(await (await call(`/intents/${request.intentId}`)).json()).toMatchObject({ status: "submitted" });
