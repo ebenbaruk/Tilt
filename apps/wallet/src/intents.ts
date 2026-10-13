@@ -4,7 +4,7 @@
 // `reconcile` settles whatever was left pending.
 import type { Action, IntentResponse, PromoPayoutRequest } from "@tilt/contract";
 import pg from "pg";
-import { IntentError, type RecordSend, type SentTransaction, type TransactionStatus, UnconfirmedError } from "./chain";
+import { IntentError, type Network, type RecordSend, type SentTransaction, type TransactionStatus, UnconfirmedError } from "./chain";
 import type { Db } from "./db";
 
 /** A promo payout, run and stored like an intent: its payout id is the intent id. */
@@ -84,13 +84,16 @@ function outcomeOf(e: unknown, sent: boolean): Outcome {
   return { status: "failed", code: "NETWORK_ERROR", message };
 }
 
-function settledOutcome(status: TransactionStatus): Outcome | undefined {
+function settledOutcome(status: TransactionStatus, network: Network): Outcome | undefined {
   switch (status.state) {
     case "landed":
       return { status: "submitted", code: null, message: null };
     case "failed":
       return { status: "failed", code: "PROGRAM_ERROR", message: status.reason };
     case "expired":
+      // The rollup's signature history cannot be relied on: a transaction it does not report may
+      // well have landed. Left pending (STUCK_INTENTS) rather than risk calling a played round failed.
+      if (network === "rollup") return undefined;
       return { status: "failed", code: "NETWORK_ERROR", message: "transaction expired without landing" };
     case "in_flight":
       return undefined;
@@ -148,7 +151,7 @@ export class Intents {
       // One failing RPC call must not hold up the other intents; the next sweep retries this one.
       try {
         const outcome = row.signature && row.network && row.last_valid_block_height
-          ? settledOutcome(await chain.transactionStatus({ signature: row.signature, network: row.network, lastValidBlockHeight: Number(row.last_valid_block_height) }))
+          ? settledOutcome(await chain.transactionStatus({ signature: row.signature, network: row.network, lastValidBlockHeight: Number(row.last_valid_block_height) }), row.network)
           : { status: "failed" as const, code: "NETWORK_ERROR" as const, message: "interrupted before sending" };
         if (!outcome) continue;
         // Guarded on the signature read above: an execution that resumed and recorded one since wins.

@@ -129,19 +129,21 @@ describe("intents", () => {
       expired: { state: "expired" },
       flying: { state: "in_flight" },
     };
-    const insert = async (userId: string, signature: string | null, ageSecs = 0) => {
+    const insert = async (userId: string, signature: string | null, ageSecs = 0, network = "rollup") => {
       const intentId = randomUUID();
       await db.query(
         `INSERT INTO intents (intent_id, user_id, action, status, signature, network, last_valid_block_height, updated_at)
          VALUES ($1, $2, $3, 'pending', $4, $5, 100, now() - make_interval(secs => $6))`,
-        [intentId, userId, bet, signature, signature && "rollup", ageSecs],
+        [intentId, userId, bet, signature, signature && network, ageSecs],
       );
       return intentId;
     };
     const ids = {
       landed: await insert("u1", "landed", 300),
       refused: await insert("u2", "refused", 300),
-      expired: await insert("u3", "expired", 300),
+      expired: await insert("u3", "expired", 300, "solana"),
+      // Not seen by the rollup is not proof it did not land there.
+      unseenInRollup: await insert("u8", "expired", 300),
       flying: await insert("u4", "flying", 300),
       // Still within its own execution's confirmation window: left to it.
       justSent: await insert("u7", "landed"),
@@ -155,6 +157,7 @@ describe("intents", () => {
     expect(await intents.get(ids.refused)).toMatchObject({ status: "failed", error: { code: "PROGRAM_ERROR", message: "InsufficientBalance" } });
     expect(await intents.get(ids.expired)).toMatchObject({ status: "failed", error: { code: "NETWORK_ERROR" } });
     expect(await intents.get(ids.flying)).toMatchObject({ status: "pending" });
+    expect(await intents.get(ids.unseenInRollup)).toMatchObject({ status: "pending" });
     expect(await intents.get(ids.justSent)).toMatchObject({ status: "pending" });
     expect(await intents.get(ids.crashedBeforeSend)).toMatchObject({ status: "failed", error: { message: "interrupted before sending" } });
     expect(await intents.get(ids.justStarted)).toMatchObject({ status: "pending" });
