@@ -34,7 +34,7 @@ Then `/tilt login`, confirm the code in your browser, and play.
 
 - `/tilt` opens the pane. `/tilt login` and `/tilt logout` manage your session.
 - `ctrl+x tab` gives the pane (or the band) the keyboard; `Esc` hands it back.
-- `1`–`4` switch game, `b` cycles the bet, `n` deals or spins.
+- `1`–`4` switch game, `v` / `b` lower / raise the bet (held at the table's limits), `n` deals or spins.
 - Blackjack: `h` hit, `s` stand, `d` double.
 - Roulette: `r` red, `k` black, `o` odd, `e` even, `l` low, `g` high, `z` dozen, `c` column.
 - Baccarat: `p` player, `y` banker, `t` tie.

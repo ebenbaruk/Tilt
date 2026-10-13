@@ -85,9 +85,10 @@ Référence visuelle : la maquette d'Eli (image partagée dans la conversation, 
 **Touches :**
 - `1`/`2`/`3` : changer de jeu.
 - `h`/`s`/`d` : actions du blackjack.
-- `b` : changer la mise.
+- `v` / `b` : baisser / monter la mise (bloquée au minimum et au maximum de la table).
 - `Ctrl+X Tab` : donner ou rendre le focus au panneau.
 - Tab et les flèches sont réservés par Claude Code.
+- Un raccourci ne peut être qu'un chiffre ou une lettre minuscule : Espace, Entrée, `+` et `-` sont refusés par Claude Code.
 
 **Contraintes techniques (mods Claude Code) :**
 - Claude Code ≥ v2.1.287.

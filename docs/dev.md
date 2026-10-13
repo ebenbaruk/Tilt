@@ -90,7 +90,7 @@ Dans la session :
 2. `/tilt login`, puis approuve le code dans le navigateur.
 3. Envoie un prompt : le panneau s'ouvre pendant que l'agent travaille.
 
-Touches : `1`–`4` pour les jeux, `n` pour donner ou lancer, `h`/`s`/`d` au blackjack, `b` pour la mise. Le focus passe au panneau avec `Ctrl+X Tab`.
+Touches : `1`–`4` pour les jeux, `n` pour donner ou lancer, `h`/`s`/`d` au blackjack, `v`/`b` pour baisser/monter la mise. Le focus passe au panneau avec `Ctrl+X Tab`.
 
 Le premier chargement dépose les types du moteur dans `apps/mod/.claude-plugin/types/` (ignorés par git), ce qui rend utile `pnpm --filter @tilt/mod typecheck`.
 

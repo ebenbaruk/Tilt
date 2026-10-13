@@ -78,18 +78,14 @@ export function isRedSuit(suit: Card["suit"]): boolean {
   return suit === "♥" || suit === "♦";
 }
 
-/** "A♠ 10♥", for one-line summaries. */
-export function cardsInline(cards: readonly Card[]): string {
-  return cards.map((card) => `${rankLabel(card.rank)}${card.suit}`).join(" ");
+/** "A♠", "10♥": a card's rank and suit, as the table and the summaries draw it. */
+export function cardFace(card: Card): string {
+  return `${rankLabel(card.rank)}${card.suit}`;
 }
 
-export const HIDDEN_CARD_ART = "┌─────┐\n│░░░░░│\n│░░░░░│\n│░░░░░│\n└─────┘";
-
-/** The five-row card of the design system's PlayingCard. */
-export function cardArt(card: Card): string {
-  const rank = rankLabel(card.rank);
-
-  return `┌─────┐\n│${rank.padEnd(2)}   │\n│  ${card.suit}  │\n│   ${rank.padStart(2)}│\n└─────┘`;
+/** "A♠ 10♥", for one-line summaries. */
+export function cardsInline(cards: readonly Card[]): string {
+  return cards.map(cardFace).join(" ");
 }
 
 const RED_POCKETS = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);

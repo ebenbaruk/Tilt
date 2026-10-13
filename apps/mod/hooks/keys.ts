@@ -6,7 +6,8 @@ import type { BaccaratBet, Game, Limits, PlayAction, RouletteBet, StateResponse 
 
 export type Command =
   | { kind: "switch"; game: Game }
-  | { kind: "cycle-bet" }
+  /** Moves the bet one preset down (-1) or up (+1), held at the table's bounds. */
+  | { kind: "bet"; step: -1 | 1 }
   | { kind: "roulette-bet"; bet: RouletteBet }
   | { kind: "roulette-cycle"; target: "dozen" | "column" }
   | { kind: "baccarat-bet"; bet: BaccaratBet }
@@ -35,7 +36,7 @@ export const GAME_LABELS: Record<Game, string> = {
 const BASE_UNITS_PER_USDC = 1_000_000n;
 const BET_PRESETS = [1n, 2n, 5n, 10n, 25n].map((usdc) => usdc * BASE_UNITS_PER_USDC);
 
-/** The bets `b` cycles through: the table minimum, then the presets the limits allow. */
+/** The bets `v` and `b` step through: the table minimum, then the presets the limits allow. */
 export function betOptions(limits: Limits): string[] {
   const min = BigInt(limits.minBet);
   const max = BigInt(limits.maxBet);
@@ -44,10 +45,17 @@ export function betOptions(limits: Limits): string[] {
   return [min, ...presets].map((amount) => amount.toString());
 }
 
-export function currentBet(limits: Limits, betIndex: number): string {
-  const options = betOptions(limits);
+function clampBetIndex(limits: Limits, betIndex: number): number {
+  return Math.max(0, Math.min(betIndex, betOptions(limits).length - 1));
+}
 
-  return options[betIndex % options.length] ?? limits.minBet;
+export function currentBet(limits: Limits, betIndex: number): string {
+  return betOptions(limits)[clampBetIndex(limits, betIndex)] ?? limits.minBet;
+}
+
+/** The bet index one step down or up, never past the lowest or highest bet the limits allow. */
+export function stepBetIndex(limits: Limits, betIndex: number, step: -1 | 1): number {
+  return clampBetIndex(limits, clampBetIndex(limits, betIndex) + step);
 }
 
 /** A round in flight pins the game it was started in. */
@@ -191,7 +199,8 @@ function idleKeys(game: Game, state: StateResponse, prefs: Prefs): KeyAction[] {
 
   return [
     ...choices,
-    { key: "bet", hotkey: "b", label: "bet", isSelected: false, command: { kind: "cycle-bet" } },
+    { key: "bet-down", hotkey: "v", label: "bet −", isSelected: false, command: { kind: "bet", step: -1 } },
+    { key: "bet-up", hotkey: "b", label: "bet +", isSelected: false, command: { kind: "bet", step: 1 } },
     {
       key: "start",
       hotkey: "n",

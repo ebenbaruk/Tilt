@@ -1,7 +1,7 @@
 import { describe, expect, test } from "claude-code/testing";
 
 import { isPlayAction, isStateResponse } from "../hooks/guards";
-import { betOptions, GAMES, nextRouletteBet, planKeys } from "../hooks/keys";
+import { betOptions, currentBet, GAMES, nextRouletteBet, planKeys, stepBetIndex } from "../hooks/keys";
 import type { Prefs } from "../hooks/model";
 import type { StateResponse } from "../hooks/protocol";
 import * as fixtures from "./fixtures";
@@ -36,10 +36,10 @@ describe("the key plan", () => {
         .map((key) => key.hotkey)
         .join("");
 
-    expect(hotkeysOf("blackjack")).toBe("1234bn");
-    expect(hotkeysOf("roulette")).toBe("1234rkoelgzcbn");
-    expect(hotkeysOf("baccarat")).toBe("1234pytbn");
-    expect(hotkeysOf("slots")).toBe("1234bn");
+    expect(hotkeysOf("blackjack")).toBe("1234vbn");
+    expect(hotkeysOf("roulette")).toBe("1234rkoelgzcvbn");
+    expect(hotkeysOf("baccarat")).toBe("1234pytvbn");
+    expect(hotkeysOf("slots")).toBe("1234vbn");
   });
 
   test("blackjack in turn: hit, stand and double as the hand allows", () => {
@@ -61,7 +61,7 @@ describe("the key plan", () => {
 });
 
 describe("bets", () => {
-  test("b cycles the table minimum, then the presets within the limits", () => {
+  test("v and b step through the table minimum, then the presets within the limits", () => {
     expect(betOptions({ minBet: "500000", maxBet: "25000000" })).toEqual([
       "500000",
       "1000000",
@@ -72,6 +72,18 @@ describe("bets", () => {
     ]);
     expect(betOptions({ minBet: "1000000", maxBet: "5000000" })).toEqual(["1000000", "2000000", "5000000"]);
     expect(betOptions({ minBet: "100000", maxBet: "100000" })).toEqual(["100000"]);
+  });
+
+  test("v and b stop at the lowest and highest bet instead of wrapping", () => {
+    const limits = { minBet: "1000000", maxBet: "5000000" };
+
+    expect(stepBetIndex(limits, 0, -1)).toBe(0);
+    expect(stepBetIndex(limits, 0, 1)).toBe(1);
+    expect(stepBetIndex(limits, 2, 1)).toBe(2);
+    expect(stepBetIndex(limits, 2, -1)).toBe(1);
+    // An index left past the end by tighter limits counts as the highest bet.
+    expect(currentBet(limits, 9)).toBe("5000000");
+    expect(stepBetIndex(limits, 9, -1)).toBe(1);
   });
 
   test("z and c step through dozens and columns", () => {

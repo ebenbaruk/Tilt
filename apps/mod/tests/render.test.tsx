@@ -23,10 +23,10 @@ const cases: [string, StateResponse, string[]][] = [
   [
     "blackjack, the player to act",
     BLACKJACK_TURN,
-    ["DEALER 9 + ?", "│3    │", "│  ♦  │", "│░░░░░│", "YOU 11 · bet 1.00", "hit", "stand", "double", "rtp 99.00%"],
+    ["DEALER 9 + ?", " 9♥ ", " ? ", "YOU 11 · bet 1.00", " 3♣ ", " 8♦ ", "hit", "stand", "double", "rtp 99.00%"],
   ],
-  ["blackjack, a settled win", BLACKJACK_WIN, ["19 beats 17.", "+0.99", "fee 0.01", "│10   │", "deal · 0.50"]],
-  ["blackjack, a settled loss", BLACKJACK_LOSS, ["Bust at 24.", "−1.00", "│K    │"]],
+  ["blackjack, a settled win", BLACKJACK_WIN, ["19 beats 17.", "+0.99", "fee 0.01", " 10♠ ", "deal · 0.50"]],
+  ["blackjack, a settled loss", BLACKJACK_LOSS, ["YOU 24 BUST", "Bust at 24.", "−1.00", " K♣ "]],
   ["roulette, settled", ROULETTE, ["bet red", "Ball on 17 black.", "−1.00", " 17 ", "spin · 0.50", "rtp 97.30%"]],
   ["baccarat, settled", BACCARAT, ["bet banker", "PLAYER 5", "BANKER 7", "Player 5 · banker 7.", "+0.94"]],
   ["slots, settled", SLOTS, ["7", "★", "+3.96", "spin · 0.50", "rtp 96.16%"]],
@@ -79,7 +79,7 @@ describe("the pane draws each state the api sends", () => {
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
 
     expect(await ui.find({ key: "start" })).toBeUndefined();
-    expect(await ui.find({ key: "bet" })).toBeUndefined();
+    expect(await ui.find({ key: "bet-up" })).toBeUndefined();
     expect(await ui.find({ key: "game-roulette" })).toBeDefined();
   });
 

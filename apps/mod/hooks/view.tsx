@@ -3,13 +3,12 @@
 import type { Elements, RenderElement } from "claude-code";
 
 import {
-  cardArt,
+  cardFace,
   cardsInline,
   cleanText,
   formatCountdown,
   formatSigned,
   formatUsdc,
-  HIDDEN_CARD_ART,
   isRedSuit,
   pocketColor,
   rouletteBetLabel,
@@ -43,6 +42,11 @@ const FG6 = "#6f7076";
 const LINE3 = "#3a3b40";
 const LINE4 = "#4a4b50";
 const FELT: Record<"red" | "black" | "green", string> = { red: "#b63132", black: "#2a2b2f", green: "#21763c" };
+// A card is one row: its face on a light chip, the suit's color as ink, so a hand fits the pane's height.
+const CARD_FACE = FG1;
+const CARD_INK: Record<"red" | "black", string> = { red: "#c4302b", black: "#1b1c1f" };
+const BLACKJACK = 21;
+const NATURAL_CARDS = 2;
 
 const SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
 /** Under this many body columns the sidebar (design: 260px, dropped under ~720px) goes below the game. */
@@ -138,21 +142,59 @@ function cardRow(ui: Ui, cards: readonly Card[], hiddenAfter = false): RenderEle
   return (
     <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
       {cards.map((card) => (
-        <Text color={isRedSuit(card.suit) ? RED : FG1}>{cardArt(card)}</Text>
+        <Text backgroundColor={CARD_FACE} color={CARD_INK[isRedSuit(card.suit) ? "red" : "black"]} bold>
+          {` ${cardFace(card)} `}
+        </Text>
       ))}
-      {hiddenAfter && <Text color={LINE4}>{HIDDEN_CARD_ART}</Text>}
+      {hiddenAfter && (
+        <Text backgroundColor={LINE4} color={FG4}>
+          {" ? "}
+        </Text>
+      )}
     </Box>
   );
 }
 
-function handLabel(ui: Ui, label: string, total: string, meta: string | null): RenderElement {
+/** A total's verdict, drawn beside it: over 21 busts, 21 on the first two cards is a blackjack. */
+function handTag(ui: Ui, total: number, cardCount: number): RenderElement | null {
   const { Text } = ui;
 
+  if (total > BLACKJACK) {
+    return (
+      <Text color={RED} bold>
+        {" BUST"}
+      </Text>
+    );
+  }
+
+  if (total === BLACKJACK && cardCount === NATURAL_CARDS) {
+    return (
+      <Text color={GOLD} bold>
+        {" BLACKJACK"}
+      </Text>
+    );
+  }
+
+  return null;
+}
+
+/** One row per hand: who, the total and its verdict, then the cards. */
+function handRow(
+  ui: Ui,
+  hand: { label: string; total: string; tag: RenderElement | null; meta: string | null },
+  cards: RenderElement,
+): RenderElement {
+  const { Box, Text } = ui;
+
   return (
-    <Text color={FG4}>
-      {label} <Text color={FG1}>{total}</Text>
-      {meta !== null && <Text color={FG6}>{`${SEPARATOR}${meta}`}</Text>}
-    </Text>
+    <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+      <Text color={FG4}>
+        {hand.label} <Text color={FG1}>{hand.total}</Text>
+        {hand.tag}
+        {hand.meta !== null && <Text color={FG6}>{`${SEPARATOR}${hand.meta}`}</Text>}
+      </Text>
+      {cards}
+    </Box>
   );
 }
 
@@ -227,15 +269,22 @@ function blackjackTable(ui: Ui, round: RoundView | null): RenderElement {
     .join(SEPARATOR);
 
   return (
-    <Box flexDirection="column" gap={1}>
-      <Box flexDirection="column">
-        {handLabel(ui, "DEALER", dealerHidden ? `${hand.dealerTotal} + ?` : String(hand.dealerTotal), null)}
-        {cardRow(ui, hand.dealer, dealerHidden)}
-      </Box>
-      <Box flexDirection="column">
-        {handLabel(ui, "YOU", String(hand.playerTotal), meta)}
-        {cardRow(ui, hand.player)}
-      </Box>
+    <Box flexDirection="column">
+      {handRow(
+        ui,
+        {
+          label: "DEALER",
+          total: dealerHidden ? `${hand.dealerTotal} + ?` : String(hand.dealerTotal),
+          tag: dealerHidden ? null : handTag(ui, hand.dealerTotal, hand.dealer.length),
+          meta: null,
+        },
+        cardRow(ui, hand.dealer, dealerHidden),
+      )}
+      {handRow(
+        ui,
+        { label: "YOU", total: String(hand.playerTotal), tag: handTag(ui, hand.playerTotal, hand.player.length), meta },
+        cardRow(ui, hand.player),
+      )}
     </Box>
   );
 }
@@ -288,7 +337,7 @@ function baccaratTable(ui: Ui, round: RoundView | null, prefs: Prefs): RenderEle
   const bet = round !== null && round.phase !== "idle" && detail !== null ? detail.bet : prefs.baccarat;
 
   return (
-    <Box flexDirection="column" gap={1}>
+    <Box flexDirection="column">
       <Text color={FG4}>
         bet <Text color={FG1}>{bet}</Text>
       </Text>
@@ -296,10 +345,16 @@ function baccaratTable(ui: Ui, round: RoundView | null, prefs: Prefs): RenderEle
         <Text color={FG6}>Pick player, banker or tie, then deal with n.</Text>
       ) : (
         <Box flexDirection="column">
-          {handLabel(ui, "PLAYER", String(detail.playerPoints), null)}
-          {cardRow(ui, detail.player)}
-          {handLabel(ui, "BANKER", String(detail.bankerPoints), null)}
-          {cardRow(ui, detail.banker)}
+          {handRow(
+            ui,
+            { label: "PLAYER", total: String(detail.playerPoints), tag: null, meta: null },
+            cardRow(ui, detail.player),
+          )}
+          {handRow(
+            ui,
+            { label: "BANKER", total: String(detail.bankerPoints), tag: null, meta: null },
+            cardRow(ui, detail.banker),
+          )}
         </Box>
       )}
     </Box>
@@ -434,11 +489,29 @@ function leaderboard(ui: Ui, state: StateResponse): RenderElement {
   );
 }
 
-function footer(ui: Ui, state: StateResponse, game: Game, isFocused: boolean): RenderElement {
+function footer(ui: Ui, state: StateResponse, game: Game): RenderElement {
   const { Text } = ui;
-  const hint = isFocused ? "" : `${SEPARATOR}ctrl+x tab to play`;
 
-  return <Text color={FG6}>{`rtp ${cleanText(state.rtp[game])}% · 1% fee on wins${hint}`}</Text>;
+  return <Text color={FG6}>{`rtp ${cleanText(state.rtp[game])}% · 1% fee on wins`}</Text>;
+}
+
+/** The play keys on one row, led by how to arm them while the pane does not hold the keyboard. */
+function keyBar(ui: Ui, keys: readonly KeyAction[], isFocused: boolean, onCommand: OnCommand): RenderElement {
+  const { Box, Text } = ui;
+
+  return (
+    <Box flexDirection="row" flexWrap="wrap" columnGap={2} marginTop={1}>
+      {!isFocused && (
+        <Text color={FG4}>
+          <Text color={GOLD} bold>
+            ctrl+x tab
+          </Text>{" "}
+          to use keys:
+        </Text>
+      )}
+      {keyButtons(ui, keys, onCommand)}
+    </Box>
+  );
 }
 
 /** Everything the pane or band says before there is a game to show. */
@@ -506,17 +579,13 @@ export function renderPane(ui: Ui, snap: Snapshot, layout: PaneLayout, onCommand
   const playKeys = keys.filter((action) => action.command.kind !== "switch");
   const side = state.sponsor !== null || state.leaderboard.length > 0;
   const gameColumn = (
-    <Box flexDirection="column" flexGrow={1} gap={1}>
+    <Box flexDirection="column" flexGrow={1}>
       {state.blocked !== null && <Text color={RED}>{`Play paused · ${cleanText(state.blocked)}`}</Text>}
       {gameTable(ui, state, snap.prefs, isWide)}
       {outcomeLine(ui, roundOf(state, game))}
       {statusLine(ui, snap, state)}
-      {playKeys.length > 0 && (
-        <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-          {keyButtons(ui, playKeys, onCommand)}
-        </Box>
-      )}
-      {footer(ui, state, game, layout.isFocused)}
+      {playKeys.length > 0 && keyBar(ui, playKeys, layout.isFocused, onCommand)}
+      {footer(ui, state, game)}
     </Box>
   );
 

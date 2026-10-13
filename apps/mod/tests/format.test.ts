@@ -2,7 +2,6 @@ import { describe, expect, test } from "claude-code/testing";
 
 import { apiBase, trustedVerifyUrl } from "../hooks/api";
 import {
-  cardArt,
   cleanText,
   formatCountdown,
   formatDuration,
@@ -68,9 +67,7 @@ describe("time", () => {
 });
 
 describe("cards and pockets", () => {
-  test("the design system card, faces and tens aligned", () => {
-    expect(cardArt({ rank: 1, suit: "♠" })).toBe("┌─────┐\n│A    │\n│  ♠  │\n│    A│\n└─────┘");
-    expect(cardArt({ rank: 10, suit: "♥" })).toBe("┌─────┐\n│10   │\n│  ♥  │\n│   10│\n└─────┘");
+  test("face cards and aces by letter, the rest by number", () => {
     expect([1, 11, 12, 13, 7].map(rankLabel)).toEqual(["A", "J", "Q", "K", "7"]);
   });
 

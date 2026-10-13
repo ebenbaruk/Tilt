@@ -22,7 +22,7 @@ import {
   trustedVerifyUrl,
 } from "./api";
 import { cleanText, formatDuration, SEPARATOR } from "./format";
-import { activeGame, betOptions, type Command, currentBet, nextRouletteBet, startAction } from "./keys";
+import { activeGame, type Command, currentBet, nextRouletteBet, startAction, stepBetIndex } from "./keys";
 import {
   type AgentView,
   type AuthView,
@@ -425,11 +425,17 @@ async function runCommand($: EngineInterface, rt: Runtime, command: Command): Pr
       await setPrefs($, (value) => ({ ...value, game: command.game }));
 
       return;
-    case "cycle-bet": {
+    case "bet": {
       const state = (await readRemote($)).state;
-      const count = state === null ? 1 : betOptions(state.limits).length;
 
-      await setPrefs($, (value) => ({ ...value, betIndex: (value.betIndex + 1) % count }));
+      if (state === null) {
+        return;
+      }
+
+      await setPrefs($, (value) => ({
+        ...value,
+        betIndex: stepBetIndex(state.limits, value.betIndex, command.step),
+      }));
 
       return;
     }

@@ -36,12 +36,14 @@ describe("keys send moves", () => {
     expect((sent?.body as PlayRequest).intentId).toMatch(UUID);
   });
 
-  test("b raises the bet before the deal", async ($, on) => {
+  test("b raises the bet before the deal, v lowers it", async ($, on) => {
     const { world } = await seat($, on, BASE, { "POST /v1/play": answering(SUBMITTED) });
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
 
-    await ui.press({ key: "bet" });
-    await ui.press({ key: "bet" });
+    await ui.press({ key: "bet-up" });
+    await ui.press({ key: "bet-up" });
+    await ui.press({ key: "bet-up" });
+    await ui.press({ key: "bet-down" });
     expect(textOf(await ui.drawn())).toContain("deal · 2.00");
     await ui.press({ key: "start" });
 
