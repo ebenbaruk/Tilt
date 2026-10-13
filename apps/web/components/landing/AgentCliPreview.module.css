@@ -268,6 +268,7 @@
 
 .caption {
   font-size: 14px;
+  text-align: center;
 }
 
 /* The design drops the sidebar under ~720px of terminal width. */
