@@ -3,7 +3,7 @@
 // and the mod sees which intent is still in flight.
 import type { Action, IntentRequest } from "@tilt/contract";
 import type { IntentStatus } from "@tilt/mod/protocol";
-import type { Db } from "./db";
+import { transaction, type Db, type Queryable } from "./db";
 import { ApiError } from "./errors";
 import { NOT_RECORDED, safeIntentError, type Relay } from "./relay";
 
@@ -26,6 +26,17 @@ interface IntentRow {
 
 /** A pending intent the relay has never heard of after this long was lost before reaching it. */
 const LOST_AFTER = "2 minutes";
+/** Namespace of the per-player advisory locks taken around guarded intents. */
+const GUARD_LOCK = 7_349_202;
+
+export interface SubmitOptions {
+  /** The player's identity token, forwarded to the relay for money moves, never stored. */
+  consent?: IntentRequest["consent"];
+  /** Runs under a per-player lock with the intent's insert, so what it checks (e.g. the daily
+   *  deposit limit, which counts recorded intents) cannot change before the intent is recorded.
+   *  Throws to refuse the intent. */
+  guard?: (db: Queryable) => Promise<void>;
+}
 
 const amountOf = (action: Action) => ("amount" in action ? action.amount : null);
 
@@ -45,15 +56,14 @@ export class Intents {
     private readonly relay: Relay,
   ) {}
 
-  /** `consent` (the player's identity token) is forwarded to the relay for money moves, never stored. */
   async submit(
     userId: string,
     rawIntentId: string,
     action: Action,
-    consent?: IntentRequest["consent"],
+    { consent, guard }: SubmitOptions = {},
   ): Promise<IntentOutcome> {
     const intentId = rawIntentId.toLowerCase();
-    const existing = await this.record(userId, intentId, action);
+    const existing = await this.record(userId, intentId, action, guard);
     if (existing && existing.status !== "pending") return fromRow(intentId, existing);
     const running = this.inflight.get(intentId);
     if (running) return running;
@@ -96,16 +106,30 @@ export class Intents {
   }
 
   /** Inserts the intent, or returns the existing row when this exact intent was seen before. */
-  private async record(userId: string, intentId: string, action: Action, retried = false): Promise<IntentRow | null> {
-    const inserted = await this.db.query(
-      `INSERT INTO intents (intent_id, user_id, kind, action, amount, status)
-       VALUES ($1, $2, $3, $4, $5, 'pending') ON CONFLICT (intent_id) DO NOTHING`,
-      [intentId, userId, action.type, action, amountOf(action)],
-    );
+  private async record(
+    userId: string,
+    intentId: string,
+    action: Action,
+    guard: SubmitOptions["guard"],
+    retried = false,
+  ): Promise<IntentRow | null> {
+    const insert = (db: Queryable) =>
+      db.query(
+        `INSERT INTO intents (intent_id, user_id, kind, action, amount, status)
+         VALUES ($1, $2, $3, $4, $5, 'pending') ON CONFLICT (intent_id) DO NOTHING`,
+        [intentId, userId, action.type, action, amountOf(action)],
+      );
+    const inserted = guard
+      ? await transaction(this.db, async (tx) => {
+          await tx.query("SELECT pg_advisory_xact_lock($1, hashtext($2))", [GUARD_LOCK, userId]);
+          await guard(tx);
+          return insert(tx);
+        })
+      : await insert(this.db);
     if (inserted.rowCount === 1) return null;
     const row = await this.find(intentId, action);
     // Deleted in between by a refused replay: record it afresh.
-    if (!row && !retried) return this.record(userId, intentId, action, true);
+    if (!row && !retried) return this.record(userId, intentId, action, guard, true);
     if (!row) throw new ApiError("PLAYER_BUSY", "intent busy, retry with the same id");
     if (row.user_id !== userId || !row.same_action) {
       throw new ApiError("INTENT_CONFLICT", "intent id already used for another action");

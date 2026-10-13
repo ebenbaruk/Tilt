@@ -255,6 +255,17 @@ describe.skipIf(!db)("api routes", () => {
       expect((await deposit("1000000")).status).toBe(200);
     });
 
+    it("the daily deposit limit holds against parallel deposits", async () => {
+      await putLimits({ dailyDeposit: "6000000", dailyLoss: null });
+      relay.delayMs = 50;
+      const consent = { ...access(ALICE), ...identity(ALICE) };
+      const deposit = () =>
+        app.request("/v1/account/deposit", json({ intentId: randomUUID(), amount: "4000000" }, consent));
+      const statuses = (await Promise.all([deposit(), deposit()])).map((r) => r.status).sort();
+      expect(statuses).toEqual([200, 403]);
+      expect(relay.actions()).toHaveLength(1);
+    });
+
     it("lowers limits at once and raises them only after 24 h", async () => {
       expect(await (await putLimits({ dailyDeposit: "5000000", dailyLoss: "2000000" })).json()).toMatchObject({
         dailyDeposit: "5000000",

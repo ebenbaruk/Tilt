@@ -4,6 +4,7 @@ import type { PublicKey } from "@solana/web3.js";
 import type { Action } from "@tilt/contract";
 import type { Hono } from "hono";
 import { listSessions, revokeSession } from "../auth/sessions";
+import type { Queryable } from "../db";
 import type { AppDeps } from "../deps";
 import { ApiError } from "../errors";
 import { geoBlock, parseBody, parseParam, rateLimit, requireConsent, webAuth, type Ctx, type Env } from "../http";
@@ -88,9 +89,13 @@ export function webRoutes(app: Hono<Env>, deps: AppDeps): void {
     if ((action.type !== "open_account" && action.type !== "deposit") || action.amount !== amount) {
       throw new ApiError("INTENT_CONFLICT", "intent id already used for another action");
     }
-    const reason = await blockReason(deps.db, userId, { kind: "deposit", amount: BigInt(amount), intentId });
-    if (reason) throw new ApiError("BLOCKED", reason);
-    return c.json(toMoneyResponse(await deps.intents.submit(userId, intentId, action, { identityToken })));
+    // Checked under the intent's insert: two parallel deposits cannot both fit the daily limit.
+    const guard = async (db: Queryable) => {
+      const reason = await blockReason(db, userId, { kind: "deposit", amount: BigInt(amount), intentId });
+      if (reason) throw new ApiError("BLOCKED", reason);
+    };
+    const consent = { identityToken };
+    return c.json(toMoneyResponse(await deps.intents.submit(userId, intentId, action, { consent, guard })));
   });
 
   // Not geo-blocked: withdrawing is always allowed, a player must be able to take their money out.
@@ -100,7 +105,7 @@ export function webRoutes(app: Hono<Env>, deps: AppDeps): void {
     const { intentId, amount } = await parseBody(c, WithdrawSchema);
     await requireWallet(deps, userId);
     const action = { type: "withdraw", amount } as const;
-    return c.json(toMoneyResponse(await deps.intents.submit(userId, intentId, action, { identityToken })));
+    return c.json(toMoneyResponse(await deps.intents.submit(userId, intentId, action, { consent: { identityToken } })));
   });
 
   app.get("/v1/account/intents/:intentId", async (c) => {
