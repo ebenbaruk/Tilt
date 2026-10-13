@@ -14,7 +14,7 @@ import {
   type CompetitionInput,
 } from "../src/competitions/store";
 import { prizeId } from "../src/competitions/uuid";
-import { saveRound } from "../src/rounds";
+import { saveDetail, saveRound } from "../src/rounds";
 import { ensureUser, recordWallet } from "../src/users";
 import { FakeRelay, resetDb, testDb } from "./helpers";
 
@@ -23,11 +23,11 @@ const HOUR = 3_600_000;
 const players = Array.from({ length: 4 }, () => Keypair.generate().publicKey);
 
 let sigCounter = 0;
-const round = (player: string, at: Date, stake: bigint, payout: bigint) => ({
+const round = (player: string, at: Date, stake: bigint, payout: bigint, game: "slots" | "blackjack" = "slots") => ({
   signature: `sig${++sigCounter}`.padEnd(88, "1"),
   player,
   round: sigCounter,
-  game: "slots" as const,
+  game,
   stake,
   payout,
   fee: 0n,
@@ -70,7 +70,19 @@ describe.skipIf(!db)("competitions", () => {
     ...overrides,
   });
 
-  it("ranks by net gain over the window, counting only rounds at the minimum stake", async () => {
+  /** Saves a round; a blackjack one gets its snapshot unless `doubled` is null (snapshot missed). */
+  const saveWithDetail = async (r: ReturnType<typeof round>, doubled: boolean | null) => {
+    await saveRound(db, r);
+    if (r.game !== "blackjack" || doubled === null) return;
+    await saveDetail(db, r.player, r.round, r.requestId, {
+      game: "blackjack",
+      player: [10, 9],
+      dealer: [10, 7],
+      doubled,
+    });
+  };
+
+  it("ranks eligible players by net gain over all their rounds in the window", async () => {
     const start = new Date(Date.now() - 10 * HOUR);
     const window = { startsAt: start, endsAt: new Date(start.getTime() + 5 * HOUR), minStake: 5n };
     await fc.assert(
@@ -79,22 +91,28 @@ describe.skipIf(!db)("competitions", () => {
           fc.record({
             player: fc.integer({ min: 0, max: 3 }),
             minute: fc.integer({ min: -60, max: 6 * 60 }),
-            stake: fc.integer({ min: 1, max: 10 }),
+            game: fc.constantFrom("slots" as const, "blackjack" as const),
+            doubled: fc.option(fc.boolean()),
+            stake: fc.integer({ min: 1, max: 20 }),
             payout: fc.integer({ min: 0, max: 30 }),
           }),
           { maxLength: 40 },
         ),
         async (rows) => {
           await db.query("TRUNCATE rounds");
-          const expected = new Map<string, bigint>();
+          const net = new Map<string, bigint>();
+          const eligible = new Set<string>();
           for (const r of rows) {
             const at = new Date(start.getTime() + r.minute * 60_000);
             const player = players[r.player].toBase58();
-            await saveRound(db, round(player, at, BigInt(r.stake), BigInt(r.payout)));
-            if (at >= window.startsAt && at < window.endsAt && r.stake >= 5) {
-              expected.set(player, (expected.get(player) ?? 0n) + BigInt(r.payout - r.stake));
-            }
+            await saveWithDetail(round(player, at, BigInt(r.stake), BigInt(r.payout), r.game), r.doubled);
+            if (at < window.startsAt || at >= window.endsAt) continue;
+            net.set(player, (net.get(player) ?? 0n) + BigInt(r.payout - r.stake));
+            // Initial bet: half the stake of a doubled (or unknown) blackjack hand.
+            const halved = r.game === "blackjack" && r.doubled !== false;
+            if ((halved ? r.stake / 2 : r.stake) >= 5) eligible.add(player);
           }
+          const expected = new Map([...net].filter(([player]) => eligible.has(player)));
           const ranking = await standings(db, window, null);
           expect(new Map(ranking.map((s) => [s.player, s.net]))).toEqual(expected);
           expect(ranking.map((s) => s.rank)).toEqual(ranking.map((_, i) => i + 1));
@@ -103,6 +121,21 @@ describe.skipIf(!db)("competitions", () => {
       ),
       { numRuns: 25 },
     );
+  });
+
+  it("judges the minimum stake on the initial bet: a double cannot lift a small hand over it", async () => {
+    const t = new Date(Date.now() - HOUR);
+    const window = { startsAt: new Date(t.getTime() - HOUR), endsAt: new Date(), minStake: 10n };
+    const [a, b, c] = players.map((p) => p.toBase58());
+    await saveWithDetail(round(a, t, 10n, 40n, "blackjack"), true); // bet 5, doubled to 10
+    await saveWithDetail(round(b, t, 10n, 20n, "blackjack"), false); // bet 10
+    await saveWithDetail(round(c, t, 10n, 20n, "blackjack"), null); // snapshot missed
+    await saveWithDetail(round(c, t, 3n, 0n), null); // below the minimum, still in c's net
+    await saveWithDetail(round(c, t, 20n, 0n, "blackjack"), null);
+    expect((await standings(db, window, null)).map((s) => [s.player, s.net])).toEqual([
+      [b, 10n],
+      [c, -13n],
+    ]);
   });
 
   it("keeps the pools within the campaign budget after commission", async () => {

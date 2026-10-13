@@ -1,6 +1,8 @@
 // Campaigns, competitions and their standings, in Postgres. Rankings are computed from the
-// indexed rounds: net gain (payout − stake, the program's payout being net of the fee) over the
-// competition window, counting only rounds staked at least `min_stake` (spec §9.2).
+// indexed rounds: net gain (payout − stake, the program's payout being net of the fee) over
+// every round of the competition window. `min_stake` (spec §9.2) gates, on the round's initial
+// bet, whether a player is ranked at all (at least one such round) and which rounds earn a drop
+// ticket. It never filters the net: a player cannot pick which hands count.
 import type { LeaderboardEntry, SponsorView } from "@tilt/mod/protocol";
 import { audit, transaction, type Db, type Queryable } from "../db";
 import { capTickets, drawWinners, newSeed, type Ticket } from "./drops";
@@ -104,7 +106,14 @@ export interface RankedStanding extends Standing {
   rank: number;
 }
 
-/** Ranking by net gain; ties broken by wallet so the order is stable. `limit` null = everyone. */
+/** A round's initial bet. RoundSettled's stake includes a blackjack double, so a doubled hand bet
+ *  half of it; without the snapshot that shows `doubled`, a blackjack round counts as doubled
+ *  (a player could make the snapshot miss by starting the next round at once). */
+const INITIAL_BET = `CASE WHEN game = 'blackjack' AND coalesce((detail->>'doubled')::boolean, true)
+                          THEN stake / 2 ELSE stake END`;
+
+/** Ranking by net gain over all the window's rounds, among players with at least one round bet
+ *  at `minStake`; ties broken by wallet so the order is stable. `limit` null = everyone. */
 export async function standings(
   db: Queryable,
   c: Pick<Competition, "startsAt" | "endsAt" | "minStake">,
@@ -114,8 +123,8 @@ export async function standings(
   const { rows } = await db.query<{ player: string; net: string; rank: string }>(
     `WITH totals AS (
        SELECT player, sum(payout - stake) AS net FROM rounds
-       WHERE settled_at >= $1 AND settled_at < $2 AND stake >= $3
-       GROUP BY player
+       WHERE settled_at >= $1 AND settled_at < $2
+       GROUP BY player HAVING bool_or(${INITIAL_BET} >= $3)
      ), ranked AS (
        SELECT player, net, row_number() OVER (ORDER BY net DESC, player) AS rank FROM totals
      )
@@ -211,7 +220,7 @@ export async function openCompetition(db: Db, input: CompetitionInput, actor: st
 async function eligibleTickets(db: Queryable, c: Competition): Promise<Ticket[]> {
   const { rows } = await db.query<{ signature: string; player: string; settled_at: Date }>(
     `SELECT signature, player, settled_at FROM rounds
-     WHERE settled_at >= $1 AND settled_at < $2 AND stake >= $3`,
+     WHERE settled_at >= $1 AND settled_at < $2 AND ${INITIAL_BET} >= $3`,
     [c.startsAt, c.endsAt, c.minStake.toString()],
   );
   return capTickets(
