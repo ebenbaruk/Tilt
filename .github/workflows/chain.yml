@@ -61,7 +61,7 @@ jobs:
           POSTGRES_PASSWORD: tilt
           POSTGRES_DB: tilt_test
         ports: ["5432:5432"]
-        options: --health-cmd pg_isready --health-interval 2s --health-timeout 5s --health-retries 15
+        options: --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 15
     defaults:
       run:
         working-directory: chain
@@ -80,7 +80,8 @@ jobs:
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
       - name: Install Anchor
         run: command -v anchor || cargo install --git https://github.com/solana-foundation/anchor --tag "$ANCHOR_VERSION" anchor-cli --locked
-      - run: anchor build
+      # The program keypair is not versioned (chain/README.md): keep the declared id.
+      - run: anchor build --ignore-keys
       - name: The IDL in packages/contract matches the program
         run: |
           ./scripts/sync-idl.sh
