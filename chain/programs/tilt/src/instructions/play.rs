@@ -173,9 +173,9 @@ pub fn slots_spin(mut ctx: Context<Play>, amount: u64, client_seed: [u8; 32]) ->
     request_draw(&mut ctx, Draw::Spin, client_seed)
 }
 
-/// Relay cron. A round untouched for `round_timeout_secs` is closed: a blackjack hand
-/// waiting for the player stands, and a draw that never arrived is requested again under
-/// a new id (the late answer to the old one, if it ever comes, is refused).
+/// Relay cron. A draw that never arrived within `round_timeout_secs` is requested again
+/// under a new id (the late answer to the old one, if it ever comes, is refused). A hand
+/// waiting for the player is never closed for them: they come back to it whenever they want.
 pub fn expire_round(mut ctx: Context<Play>, client_seed: [u8; 32]) -> Result<()> {
     let round = &ctx.accounts.account.round;
     let timeout = ctx.accounts.vault.config.round_timeout_secs;
@@ -183,12 +183,16 @@ pub fn expire_round(mut ctx: Context<Play>, client_seed: [u8; 32]) -> Result<()>
         now()? - round.last_action >= timeout,
         TiltError::RoundNotExpired
     );
-    let draw = match round.status {
-        RoundStatus::PlayerTurn => Draw::Dealer,
-        RoundStatus::AwaitingDraw(draw) => draw,
-        RoundStatus::Idle => return err!(TiltError::WrongState),
-    };
+    let draw = draw_to_retry(round.status)?;
     request_draw(&mut ctx, draw, client_seed)
+}
+
+/// The draw `expire_round` requests again: only one that is still awaited.
+fn draw_to_retry(status: RoundStatus) -> Result<Draw> {
+    match status {
+        RoundStatus::AwaitingDraw(draw) => Ok(draw),
+        RoundStatus::PlayerTurn | RoundStatus::Idle => err!(TiltError::WrongState),
+    }
 }
 
 /// VRF callback (only the VRF program can call it): plays the pending draw if this is the
@@ -224,4 +228,33 @@ pub fn consume_randomness(
         randomness,
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_pending_draw_is_retried_never_a_hand_waiting_for_the_player() {
+        for draw in [
+            Draw::Deal,
+            Draw::Hit,
+            Draw::Double,
+            Draw::Dealer,
+            Draw::Spin,
+        ] {
+            assert_eq!(
+                draw_to_retry(RoundStatus::AwaitingDraw(draw)).unwrap(),
+                draw
+            );
+        }
+        assert_eq!(
+            draw_to_retry(RoundStatus::PlayerTurn).unwrap_err(),
+            TiltError::WrongState.into()
+        );
+        assert_eq!(
+            draw_to_retry(RoundStatus::Idle).unwrap_err(),
+            TiltError::WrongState.into()
+        );
+    }
 }
