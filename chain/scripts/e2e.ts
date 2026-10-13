@@ -476,9 +476,11 @@ async function run(): Promise<number> {
   await rejectsInRollup("expiration refusée avant le délai", () =>
     erProgram.methods.expireRound(seed()).accountsPartial(playAccounts()).transaction(), /RoundNotExpired|6011/);
   await sleep((ROUND_TIMEOUT_SECS + 1) * 1_000);
+  await rejectsInRollup("main en attente du joueur jamais clôturée à sa place, même après le délai", () =>
+    erProgram.methods.expireRound(seed()).accountsPartial(playAccounts()).transaction(), /WrongState|6005/);
   const roundsBefore = a.rounds;
-  a = await act("expiration (stand auto)", erProgram.methods.expireRound(seed()).accountsPartial(playAccounts()).transaction(), (x) => x.rounds === roundsBefore + 1);
-  check("main abandonnée réglée par un stand automatique", isIdle(a.round) && a.round.blackjack.nDealer >= 2);
+  a = await act("stand du joueur après le délai", erProgram.methods.blackjackStand(seed()).accountsPartial(playAccounts()).transaction(), (x) => x.rounds === roundsBefore + 1);
+  check("le joueur reprend sa main quand il veut", isIdle(a.round) && a.round.blackjack.nDealer >= 2);
   check("chaque tirage porte un identifiant de requête qui ne fait que croître", a.round.requestId.gtn(0));
 
   console.log("\n--- 8. Retraits vérifiés, plafonnés, mis en attente ---");
