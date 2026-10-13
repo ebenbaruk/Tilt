@@ -38,6 +38,8 @@ const intents = new Intents(db, new ChainExecutor(chain, players, db), {
   maxDeposit: config.MAX_DEPOSIT,
   dailyDepositLimit: config.DAILY_DEPOSIT_LIMIT,
   minPromoPayout: config.MIN_PROMO_PAYOUT,
+  maxPromoPayout: config.MAX_PROMO_PAYOUT,
+  dailyPromoLimit: config.DAILY_PROMO_LIMIT,
 });
 const app = createApp({ apiKeys: config.RELAY_API_KEYS, intents, players, chain, db });
 

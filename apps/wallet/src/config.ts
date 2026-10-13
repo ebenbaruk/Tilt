@@ -58,6 +58,10 @@ const Env = z.object({
   DAILY_DEPOSIT_LIMIT: UsdcAmount.default(5_000_000_000n),
   /** Smallest promo payout (USDC base units): each one costs the relayer rent. */
   MIN_PROMO_PAYOUT: UsdcAmount.default(1_000_000n),
+  /** Largest single promo payout (USDC base units). */
+  MAX_PROMO_PAYOUT: UsdcAmount.default(1_000_000_000n),
+  /** Largest total of promo payouts, all players together, per rolling 24 h (USDC base units). */
+  DAILY_PROMO_LIMIT: UsdcAmount.default(5_000_000_000n),
   /** How often the cron settles intents, expires stale rounds and checkpoints losses. */
   CRON_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
   /** Losses (USDC base units) worth a checkpoint; each one costs a commit. */

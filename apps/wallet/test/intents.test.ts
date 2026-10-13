@@ -17,7 +17,13 @@ const DATABASE_URL = process.env.TEST_DATABASE_URL ?? "postgres://postgres:tilt@
 const API_KEY = "k".repeat(40);
 const USER = "did:privy:test-user";
 const ADDRESS = new PublicKey("6aEPgBvxq7QBzC4VZ8vL6epiXn24eHbPyq2sVZY93t2N");
-const LIMITS: RelayLimits = { maxDeposit: 100_000_000n, dailyDepositLimit: 150_000_000n, minPromoPayout: 1_000_000n };
+const LIMITS: RelayLimits = {
+  maxDeposit: 100_000_000n,
+  dailyDepositLimit: 150_000_000n,
+  minPromoPayout: 1_000_000n,
+  maxPromoPayout: 10_000_000n,
+  dailyPromoLimit: 20_000_000n,
+};
 
 let db: Db;
 beforeAll(async () => {
@@ -217,6 +223,17 @@ describe("intents", () => {
     await expect(intents.submit(intent(deposit(1)))).rejects.toMatchObject({ code: "LIMIT_EXCEEDED" });
     expect((await intents.submit(intent(deposit(1), randomUUID(), "did:privy:other"))).status).toBe("submitted");
     expect((await intents.submit(intent(bet))).status).toBe("submitted");
+  });
+
+  it("caps promo payouts per payout and for all players per 24 h, even when concurrent", async () => {
+    const intents = new Intents(db, new FakeExecutor(), LIMITS);
+    await expect(intents.submit(promo(10_000_001))).rejects.toMatchObject({ code: "LIMIT_EXCEEDED" });
+    await db.query("INSERT INTO intents (intent_id, user_id, action, status) VALUES ($1, $2, $3, 'failed')", [randomUUID(), USER, promo(10_000_000).action]);
+    const results = await Promise.all(
+      Array.from({ length: 10 }, (_, i) => intents.submit(promo(5_000_000, `did:privy:winner${i}`)).then((r) => r.status, (e: IntentError) => e.code)),
+    );
+    expect(results.filter((r) => r === "submitted")).toHaveLength(4);
+    expect(results.filter((r) => r === "LIMIT_EXCEEDED")).toHaveLength(6);
   });
 
   it("pays a prize while the player is mid-round, and lets them play meanwhile", async () => {

@@ -79,7 +79,7 @@ async function main() {
   await migrate(db);
   await db.query("TRUNCATE intents, players");
   const players = new LocalPlayerWallets();
-  const intents = new Intents(db, new ChainExecutor(chain, players, db), { maxDeposit: BigInt(usdc(50)), dailyDepositLimit: BigInt(usdc(100)), minPromoPayout: BigInt(usdc(1)) });
+  const intents = new Intents(db, new ChainExecutor(chain, players, db), { maxDeposit: BigInt(usdc(50)), dailyDepositLimit: BigInt(usdc(100)), minPromoPayout: BigInt(usdc(1)), maxPromoPayout: BigInt(usdc(20)), dailyPromoLimit: BigInt(usdc(50)) });
   const app = createApp({ apiKeys: [API_KEY], intents, players, chain, db });
   const api = async <T>(path: string, body?: unknown): Promise<{ status: number; json: T }> => {
     const res = await app.request(path, {

@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS intents (
   updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS intents_user_created ON intents (user_id, created_at);
+-- Global 24 h caps (promo payouts) sum over every player.
+CREATE INDEX IF NOT EXISTS intents_created ON intents (created_at);
 -- One intent in flight per player: rounds are sequential and deposits must not overlap.
 -- Promo payouts (relayer-signed, on Solana) are left out: a prize must not make the player busy.
 DROP INDEX IF EXISTS intents_one_pending_per_user;
