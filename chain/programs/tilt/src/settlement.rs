@@ -27,9 +27,11 @@ pub fn settle(stake: u64, gross: u64) -> Settlement {
     }
 }
 
-/// `stake * numerator / denominator`, rounded down, without intermediate overflow.
+/// `stake * numerator / denominator`, rounded down, without intermediate overflow. A result
+/// beyond u64 panics like any other overflow here (`overflow-checks`), never wraps.
 pub fn mul_div(stake: u64, numerator: u64, denominator: u64) -> u64 {
-    (stake as u128 * numerator as u128 / denominator as u128) as u64
+    u64::try_from(stake as u128 * numerator as u128 / denominator as u128)
+        .expect("mul_div result exceeds u64")
 }
 
 #[cfg(test)]
@@ -72,5 +74,11 @@ mod tests {
     #[test]
     fn mul_div_handles_large_values() {
         assert_eq!(mul_div(u64::MAX / 2, 4, 2), u64::MAX - 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "mul_div result exceeds u64")]
+    fn mul_div_never_truncates() {
+        mul_div(u64::MAX, 5, 2);
     }
 }
