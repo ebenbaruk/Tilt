@@ -41,7 +41,10 @@ CREATE TABLE IF NOT EXISTS intents (
 );
 CREATE INDEX IF NOT EXISTS intents_user_created ON intents (user_id, created_at);
 -- One intent in flight per player: rounds are sequential and deposits must not overlap.
-CREATE UNIQUE INDEX IF NOT EXISTS intents_one_pending_per_user ON intents (user_id) WHERE status = 'pending';
+-- Promo payouts (relayer-signed, on Solana) are left out: a prize must not make the player busy.
+DROP INDEX IF EXISTS intents_one_pending_per_user;
+CREATE UNIQUE INDEX IF NOT EXISTS intents_one_pending_play_per_user ON intents (user_id)
+  WHERE status = 'pending' AND action->>'type' <> 'promo_payout';
 `;
 
 export async function migrate(db: Db): Promise<void> {

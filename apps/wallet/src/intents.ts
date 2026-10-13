@@ -194,7 +194,7 @@ export class Intents {
     } catch (e) {
       await client.query("ROLLBACK").catch(() => undefined);
       if (!(e instanceof pg.DatabaseError) || e.code !== UNIQUE_VIOLATION) throw e;
-      if (e.constraint === "intents_one_pending_per_user") throw new IntentError("PLAYER_BUSY", "another intent of this player is in flight");
+      if (e.constraint === "intents_one_pending_play_per_user") throw new IntentError("PLAYER_BUSY", "another intent of this player is in flight");
       // Same intent id inserted concurrently under another user's lock.
       const { rows } = await this.db.query<IntentRow>("SELECT * FROM intents WHERE intent_id = $1", [request.intentId]);
       if (!rows[0]) throw e;

@@ -57,6 +57,10 @@ const players: PlayerWallets = {
 const intent = (action: Action, intentId = randomUUID(), userId = USER) => ({ intentId, userId, action });
 const bet: Action = { type: "slots_spin", amount: "1000000" };
 const deposit = (amount: number): Action => ({ type: "deposit", amount: String(amount) });
+const promo = (amount: number, userId = USER) => {
+  const payoutId = randomUUID();
+  return { intentId: payoutId, userId, action: { type: "promo_payout" as const, payoutId, amount: String(amount), poolId: "weekly", reason: "1st place" } };
+};
 
 describe("intents", () => {
   it("runs an intent once, however often it is submitted", async () => {
@@ -213,6 +217,33 @@ describe("intents", () => {
     await expect(intents.submit(intent(deposit(1)))).rejects.toMatchObject({ code: "LIMIT_EXCEEDED" });
     expect((await intents.submit(intent(deposit(1), randomUUID(), "did:privy:other"))).status).toBe("submitted");
     expect((await intents.submit(intent(bet))).status).toBe("submitted");
+  });
+
+  it("pays a prize while the player is mid-round, and lets them play meanwhile", async () => {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const intents = new Intents(db, new FakeExecutor(async (_action, record) => {
+      await record(sent());
+      await held;
+      return "sig";
+    }), LIMITS);
+    // Both in flight at once for the same player; a second round still has to wait.
+    const round = intents.submit(intent(bet));
+    await sleep(50);
+    const prize = intents.submit(promo(5_000_000));
+    await sleep(50);
+    await expect(intents.submit(intent(bet))).rejects.toMatchObject({ code: "PLAYER_BUSY" });
+    release();
+    expect((await round).status).toBe("submitted");
+    expect((await prize).status).toBe("submitted");
+  });
+
+  it("migrates a database that still has the old one-pending index", async () => {
+    await db.query("CREATE UNIQUE INDEX IF NOT EXISTS intents_one_pending_per_user ON intents (user_id) WHERE status = 'pending'");
+    await migrate(db);
+    await migrate(db);
+    const { rows } = await db.query<{ indexname: string }>("SELECT indexname FROM pg_indexes WHERE tablename = 'intents' AND indexname LIKE 'intents_one_pending%'");
+    expect(rows.map((r) => r.indexname)).toEqual(["intents_one_pending_play_per_user"]);
   });
 });
 
