@@ -107,6 +107,24 @@ describe("decoding", () => {
     expect(parseSettled("sig", [`Program ${other} invoke [1]`, `Program ${other} success`], new Date(0))).toEqual([]);
   });
 
+  it("parses RoundSettled emitted inside the VRF program's callback CPI (real log shape)", () => {
+    const player = Keypair.generate().publicKey;
+    const vrf = Keypair.generate().publicKey.toBase58();
+    const [, ...inner] = settledLogs(player, 3, 9, 1);
+    const logs = [
+      "Program ComputeBudget111111111111111111111111111111 invoke [1]",
+      "Program ComputeBudget111111111111111111111111111111 success",
+      `Program ${vrf} invoke [1]`,
+      `Program ${PROGRAM} invoke [2]`,
+      ...inner,
+      `Program ${vrf} success`,
+    ];
+    expect(parseSettled("sig", logs, new Date(0))).toMatchObject([{ round: 3, requestId: 9n }]);
+    // The same payload logged by another program is not ours.
+    const spoofed = [`Program ${vrf} invoke [1]`, inner[1], `Program ${vrf} success`];
+    expect(parseSettled("sig", spoofed, new Date(0))).toEqual([]);
+  });
+
   it("finds consume_randomness calls among a transaction's instructions", () => {
     const account = Keypair.generate().publicKey;
     const draws = decodeCallbacks([

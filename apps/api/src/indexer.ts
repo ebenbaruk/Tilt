@@ -13,8 +13,11 @@ import { log } from "./log";
 import { saveDetail, saveDraw, saveRound, type DrawRecord, type SettledRound } from "./rounds";
 
 const coder = new anchor.BorshCoder(idl as anchor.Idl);
-const eventParser = new anchor.EventParser(PROGRAM_ID, coder);
 const CALLBACK_LOG = "Program log: Instruction: ConsumeRandomness";
+const PROGRAM = PROGRAM_ID.toBase58();
+const PROGRAM_DATA = "Program data: ";
+const INVOKE_LOG = /^Program ([1-9A-HJ-NP-Za-km-z]+) invoke \[\d+\]$/;
+const EXIT_LOG = /^Program [1-9A-HJ-NP-Za-km-z]+ (success|failed)/;
 const CURSOR = "rollup";
 const PAGE = 1_000;
 /** Pages per backfill run; beyond, the gap is logged (the live feed covers normal operation). */
@@ -54,11 +57,27 @@ function randomnessOf(v: unknown): Buffer {
   return Buffer.from(v as number[]);
 }
 
+/** `Program data:` payloads emitted by the Tilt program itself, at any CPI depth. Anchor's
+ *  EventParser drops events of a program invoked by another one, and every VRF callback (the
+ *  instruction that settles rounds) is a CPI from the VRF program. */
+function programData(logs: string[]): string[] {
+  const stack: string[] = [];
+  const payloads: string[] = [];
+  for (const line of logs) {
+    const invoked = INVOKE_LOG.exec(line);
+    if (invoked) stack.push(invoked[1]);
+    else if (EXIT_LOG.test(line)) stack.pop();
+    else if (line.startsWith(PROGRAM_DATA) && stack.at(-1) === PROGRAM) payloads.push(line.slice(PROGRAM_DATA.length));
+  }
+  return payloads;
+}
+
 /** RoundSettled events in a transaction's logs (snake_case fields, as the IDL names them). */
 export function parseSettled(signature: string, logs: string[], settledAt: Date): SettledRound[] {
   const rounds: SettledRound[] = [];
-  for (const event of eventParser.parseLogs(logs)) {
-    if (event.name !== "RoundSettled") continue;
+  for (const payload of programData(logs)) {
+    const event = coder.events.decode(payload);
+    if (event?.name !== "RoundSettled") continue;
     const d = event.data as Record<string, unknown>;
     const game = GAMES[Object.keys(d.game as object)[0]];
     if (!game) throw new Error("unknown game in RoundSettled");

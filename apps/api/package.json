@@ -9,7 +9,8 @@
     "start": "tsx src/main.ts",
     "admin": "tsx src/admin.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "e2e": "tsx test/stack.e2e.ts"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
