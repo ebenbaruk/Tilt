@@ -1,10 +1,16 @@
+/* A card face: 1px frame, rank in two corners, suit in the middle. */
 .black,
 .red,
 .hidden {
-  margin: 0;
-  font-family: inherit;
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 52px;
+  height: 64px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
   font-size: var(--text-base);
-  line-height: var(--leading-card);
+  line-height: 1;
   color: var(--fg-1);
 }
 
@@ -14,6 +20,34 @@
 
 .hidden {
   color: var(--line-4);
+  /* The ░ fill of the terminal card, as a dot grid. */
+  background-image: radial-gradient(currentColor 1px, transparent 1.2px);
+  background-size: 4px 4px;
+  background-position: 2px 2px;
+  background-clip: content-box;
+  padding: 4px;
+}
+
+.corner,
+.cornerEnd,
+.suit {
+  position: absolute;
+}
+
+.corner {
+  top: 6px;
+  left: 6px;
+}
+
+.cornerEnd {
+  right: 6px;
+  bottom: 6px;
+}
+
+.suit {
+  inset: 0;
+  display: grid;
+  place-items: center;
 }
 
 .hand {
@@ -38,5 +72,5 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-3);
-  min-height: 86px;
+  min-height: 66px;
 }

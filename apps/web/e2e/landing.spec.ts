@@ -28,7 +28,11 @@ test("landing shows the pitch, install commands and key sections", async ({ page
     await expect(page.locator("#games").getByText(rtp)).toBeVisible();
   }
   await expect(page.getByText("1% of the gain, on winning rounds only")).toBeVisible();
-  await expect(page.getByRole("region", { name: "Tilt panel" })).toContainText("agent finished");
+  const panel = page.getByRole("region", { name: "Tilt panel" });
+  await expect(panel).toContainText("[4] Slots");
+  await expect(panel).toContainText("Hit, stand or double.");
+  // The mock must stay monospace whatever font the landing uses.
+  expect(await panel.evaluate((el) => getComputedStyle(el).fontFamily)).toMatch(/JetBrains|mono/i);
   await expect(page.getByRole("link", { name: "Verify a round" })).toHaveAttribute("href", "/verify");
   await expect(page.locator("#responsible")).toContainText("United Kingdom, France");
 });

@@ -1,10 +1,10 @@
 import type { Viewport } from "next";
 import Link from "next/link";
+import { AgentCliPreview } from "@/components/landing/AgentCliPreview";
 import { Badge } from "@/components/landing/Badge";
 import { CopyPill } from "@/components/landing/CopyPill";
 import { Burst, CardBuddy, Chip, Die, Fan, Reels, Terminal, Wheel } from "@/components/landing/Illustrations";
 import { INSTALL_COMMANDS } from "@/components/landing/InstallSnippet";
-import { TerminalDemo } from "@/components/landing/TerminalDemo";
 import { WavyWordmark } from "@/components/landing/WavyWordmark";
 import styles from "./landing.module.css";
 
@@ -195,7 +195,7 @@ export default function Landing() {
               <p className={styles.note}>Needs Claude Code 2.1.287 or later, in the terminal or the desktop app.</p>
             </div>
             <div className={styles.demo}>
-              <TerminalDemo />
+              <AgentCliPreview />
             </div>
           </div>
         </section>

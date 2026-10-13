@@ -11,27 +11,29 @@ export function rankLabel(rank: number): string {
   return RANKS[rank - 1] ?? "?";
 }
 
-const HIDDEN_ART = "┌─────┐\n│░░░░░│\n│░░░░░│\n│░░░░░│\n└─────┘";
-
-function art(rank: string, suit: Suit): string {
-  return `┌─────┐\n│${rank.padEnd(2)}   │\n│  ${suit}  │\n│   ${rank.padStart(2)}│\n└─────┘`;
-}
-
 export type CardFace = { rank: string; suit: Suit } | { hidden: true };
 
+/** A card drawn with CSS borders, not box-drawing glyphs: web fonts subset to Latin don't carry
+ *  `┌─│`, and the fallback font's widths broke the frame. Same look as the terminal's. */
 export function PlayingCard({ card }: { card: CardFace }) {
-  if ("hidden" in card) {
-    return (
-      <pre role="img" aria-label="hidden card" className={styles.hidden}>
-        {HIDDEN_ART}
-      </pre>
-    );
-  }
+  if ("hidden" in card) return <span role="img" aria-label="hidden card" className={styles.hidden} />;
   const red = card.suit === "♥" || card.suit === "♦";
   return (
-    <pre role="img" aria-label={`${card.rank} of ${SUIT_NAMES[card.suit]}`} className={red ? styles.red : styles.black}>
-      {art(card.rank, card.suit)}
-    </pre>
+    <span
+      role="img"
+      aria-label={`${card.rank} of ${SUIT_NAMES[card.suit]}`}
+      className={red ? styles.red : styles.black}
+    >
+      <span className={styles.corner} aria-hidden="true">
+        {card.rank}
+      </span>
+      <span className={styles.suit} aria-hidden="true">
+        {card.suit}
+      </span>
+      <span className={styles.cornerEnd} aria-hidden="true">
+        {card.rank}
+      </span>
+    </span>
   );
 }
 

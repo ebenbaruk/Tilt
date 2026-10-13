@@ -1,0 +1,301 @@
+/* Values from the reference "Tilt in Agent CLI" (design system tokens, spelled out so the
+   landing's own font and colours can't leak in). */
+
+.figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.window {
+  background: #141517;
+  border: 1px solid #2a2b2f;
+  border-radius: 10px;
+  overflow: hidden;
+  font-family: var(--font-jetbrains), ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: #d6d4cf;
+  text-align: left;
+}
+
+.chrome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #1b1c1f;
+  border-bottom: 1px solid #2a2b2f;
+}
+
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #3a3b40;
+  flex: none;
+}
+
+.title {
+  flex: 1;
+  text-align: center;
+  font-size: 12px;
+  color: #8a8a90;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.body {
+  padding: 18px 22px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.meta,
+.dim,
+.chevron {
+  color: #6f7076;
+}
+
+.prompt,
+.input {
+  display: flex;
+  gap: 10px;
+}
+
+.strong {
+  color: #f0eee9;
+}
+
+.status {
+  color: oklch(0.84 0.13 85);
+}
+
+/* ---- panel ---- */
+
+.panel {
+  border: 1px solid oklch(0.74 0.17 350 / 0.55);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.panelHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding: 8px 14px;
+  background: oklch(0.74 0.17 350 / 0.08);
+  border-bottom: 1px solid oklch(0.74 0.17 350 / 0.3);
+}
+
+.wordmark {
+  color: oklch(0.74 0.17 350);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tab,
+.tabActive {
+  white-space: nowrap;
+  padding: 1px 8px;
+  border-radius: 3px;
+  color: #9a9aa0;
+}
+
+.tabActive {
+  color: #141517;
+  background: oklch(0.74 0.17 350);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.stat,
+.muted {
+  color: #9a9aa0;
+  white-space: nowrap;
+}
+
+.money {
+  color: oklch(0.84 0.13 85);
+  font-weight: 700;
+}
+
+.panelGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+}
+
+.game {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 250px;
+}
+
+.hand {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.label {
+  color: #7d7e84;
+}
+
+.cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 86px;
+}
+
+.message {
+  color: #9a9aa0;
+  min-height: 21px;
+}
+
+.keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.key {
+  padding: 3px 10px;
+  border: 1px solid #3a3b40;
+  border-radius: 3px;
+  color: #f0eee9;
+}
+
+.keyLetter {
+  color: oklch(0.84 0.13 85);
+}
+
+.side {
+  border-left: 1px solid #2a2b2f;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sponsor,
+.board {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.board {
+  gap: 3px;
+}
+
+.eyebrow {
+  color: #6f7076;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+}
+
+.sponsorName {
+  color: #f0eee9;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.boardRow {
+  display: flex;
+  gap: 8px;
+}
+
+.boardRank {
+  color: #6f7076;
+  width: 28px;
+  flex: none;
+}
+
+.boardHandle {
+  flex: 1;
+  min-width: 0;
+  color: #c8c6c1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.you {
+  color: oklch(0.74 0.17 350);
+}
+
+.gap {
+  color: #4a4b50;
+  padding-left: 2px;
+}
+
+.input {
+  border: 1px solid #34353a;
+  border-radius: 6px;
+  padding: 8px 12px;
+  align-items: center;
+}
+
+.placeholder {
+  color: #5d5e64;
+  flex: 1;
+}
+
+.hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  color: #5d5e64;
+  font-size: 12px;
+}
+
+.caption {
+  font-size: 14px;
+}
+
+/* The design drops the sidebar under ~720px of terminal width. */
+@container (max-width: 720px) {
+  .panelGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .side {
+    border-left: none;
+    border-top: 1px solid #2a2b2f;
+  }
+
+  .game {
+    min-height: 0;
+  }
+}
+
+@container (max-width: 460px) {
+  .window {
+    font-size: 12px;
+  }
+
+  .body {
+    padding: 14px 12px 12px;
+  }
+
+  .hints span:nth-child(3) {
+    display: none;
+  }
+}
