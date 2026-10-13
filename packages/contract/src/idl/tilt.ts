@@ -945,7 +945,32 @@ export type Tilt = {
         },
         {
           "name": "account",
-          "writable": true
+          "docs": [
+            "Must be a player account PDA. The VRF program only calls back with the account the",
+            "request named; this keeps the callback safe even if that ever changes."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
         }
       ],
       "args": [

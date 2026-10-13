@@ -42,7 +42,9 @@ pub struct Play<'info> {
 #[vrf_callback]
 #[derive(Accounts)]
 pub struct ConsumeRandomness<'info> {
-    #[account(mut)]
+    /// Must be a player account PDA. The VRF program only calls back with the account the
+    /// request named; this keeps the callback safe even if that ever changes.
+    #[account(mut, seeds = [ACCOUNT_SEED, account.player.as_ref()], bump)]
     pub account: Account<'info, PlayerAccount>,
 }
 
