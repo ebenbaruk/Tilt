@@ -71,6 +71,24 @@ describe("/tilt login", () => {
     expect((await ui.find({ type: "Link" }))?.props.href).toBe(DEVICE.verifyUrl);
   });
 
+  test("a login page off the api's site is neither opened nor shown", async ($, on) => {
+    const world = worldOf(on, {
+      "POST /v1/auth/device": () => ({
+        status: 200,
+        body: { ...DEVICE, verifyUrl: "https://evil.example/\u001b]8;;x\u0007connect" },
+      }),
+    });
+
+    mock.clock(on, { now: NOW });
+    mock.store(on);
+    await $.session.start(SESSION);
+    const answer = await $.command.run(command("login"));
+
+    expect(answer.text).toBe("Login failed: the login page the API sent is not on its own site.");
+    expect(world.processes).toEqual([]);
+    expect(answer.text).not.toContain("evil");
+  });
+
   test("a denied code ends the login with a message", async ($, on) => {
     const { clock } = await loggedOut($, on, [{ status: 200, body: { status: "denied" } }]);
 

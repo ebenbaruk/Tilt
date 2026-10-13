@@ -19,6 +19,7 @@ import {
   pollDevice,
   reportImpression,
   startDevice,
+  trustedVerifyUrl,
 } from "./api";
 import { cleanText, formatDuration, SEPARATOR } from "./format";
 import { activeGame, betOptions, type Command, currentBet, nextRouletteBet, startAction } from "./keys";
@@ -67,6 +68,7 @@ const RATE_LIMIT_BACKOFF_MS = 5_000;
 const OPEN_TIMEOUT_MS = 10_000;
 const MS_PER_MINUTE = 60_000;
 
+const UNTRUSTED_LOGIN_PAGE = "the login page the API sent is not on its own site.";
 const INVALID_API_URL = "The tilt apiUrl setting is not a valid https url (plain http only for localhost).";
 const LOGGED_OUT = "Session expired · run /tilt login again.";
 const PLAYER_BUSY = "Previous move still settling.";
@@ -212,7 +214,17 @@ async function login($: EngineInterface, rt: Runtime): Promise<string> {
     return `Login failed: ${failureText(started.failure)}`;
   }
 
-  const { deviceCode, userCode, verifyUrl, expiresIn, interval } = started.value;
+  const { deviceCode, userCode, expiresIn, interval } = started.value;
+  // Opened and shown only on the API's own site: a hostile or compromised API cannot send the
+  // player anywhere else, nor draw escape sequences in the terminal.
+  const verifyUrl = trustedVerifyUrl(started.value.verifyUrl, rt.base);
+
+  if (verifyUrl === null) {
+    await setAuth($, { status: "out", message: `Login failed · ${UNTRUSTED_LOGIN_PAGE}` });
+
+    return `Login failed: ${UNTRUSTED_LOGIN_PAGE}`;
+  }
+
   const now = await $.clock.now();
   const device: StoredDevice = { deviceCode, expiresAt: now + expiresIn * 1000, intervalMs: interval * 1000 };
 
@@ -224,9 +236,11 @@ async function login($: EngineInterface, rt: Runtime): Promise<string> {
 
   const code = cleanText(userCode);
 
+  const link = cleanText(verifyUrl);
+
   return (await openBrowser($, verifyUrl))
-    ? `Opened ${verifyUrl} · confirm code ${code} there.`
-    : `Open ${verifyUrl} and confirm code ${code}.`;
+    ? `Opened ${link} · confirm code ${code} there.`
+    : `Open ${link} and confirm code ${code}.`;
 }
 
 async function finishLogin($: EngineInterface, rt: Runtime, session: StoredSession): Promise<void> {

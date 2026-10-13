@@ -1,6 +1,6 @@
 import { describe, expect, test } from "claude-code/testing";
 
-import { apiBase } from "../hooks/api";
+import { apiBase, trustedVerifyUrl } from "../hooks/api";
 import {
   cardArt,
   cleanText,
@@ -94,5 +94,27 @@ describe("boundaries", () => {
     expect(apiBase("file:///etc/passwd")).toBeNull();
     expect(apiBase("not a url")).toBeNull();
     expect(apiBase(42)).toBeNull();
+  });
+
+  test("the login page must be on the api's own site", () => {
+    const api = "https://api.tilt.example";
+
+    expect(trustedVerifyUrl("https://tilt.example/connect?code=WDJB-MJHT", api)).toBe(
+      "https://tilt.example/connect?code=WDJB-MJHT",
+    );
+    expect(trustedVerifyUrl("https://api.tilt.example/connect", api)).toBe("https://api.tilt.example/connect");
+    expect(trustedVerifyUrl("https://evil.example/connect", api)).toBeNull();
+    expect(trustedVerifyUrl("https://tilt.example.evil.test/connect", api)).toBeNull();
+    expect(trustedVerifyUrl("https://eviltilt.example/connect", api)).toBeNull();
+    expect(trustedVerifyUrl("https://www.tilt.example/connect", api)).toBeNull();
+    expect(trustedVerifyUrl("https://example/connect", api)).toBeNull();
+    expect(trustedVerifyUrl("http://tilt.example/connect", api)).toBeNull();
+    expect(trustedVerifyUrl("https://user@tilt.example/connect", api)).toBeNull();
+    expect(trustedVerifyUrl("javascript:alert(1)", api)).toBeNull();
+    expect(trustedVerifyUrl("http://localhost:3000/connect", "http://127.0.0.1:8080")).toBe(
+      "http://localhost:3000/connect",
+    );
+    expect(trustedVerifyUrl("http://evil.example/connect", "http://127.0.0.1:8080")).toBeNull();
+    expect(trustedVerifyUrl("http://localhost:3000/connect", api)).toBeNull();
   });
 });

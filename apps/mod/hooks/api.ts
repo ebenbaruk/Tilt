@@ -39,6 +39,35 @@ export function apiBase(option: unknown): string | null {
   return isAllowed ? url.href.replace(/\/+$/, "") : null;
 }
 
+const isLoopback = (url: URL) => LOOPBACK_HOSTS.has(url.hostname);
+
+/**
+ * The login page link the API sent, as the mod may open and show it; null when it is not on the
+ * API's site. Allowed: https (plain http only on loopback, like `apiBase`) on the API's own host
+ * or on its parent domain (api.tilt.xyz -> tilt.xyz). Loopback hosts count as one site.
+ */
+export function trustedVerifyUrl(verifyUrl: string, base: string): string | null {
+  if (!URL.canParse(verifyUrl) || !URL.canParse(base)) {
+    return null;
+  }
+
+  const url = new URL(verifyUrl);
+  const api = new URL(base);
+
+  if (url.username !== "" || url.password !== "") {
+    return null;
+  }
+
+  if (isLoopback(api)) {
+    return isLoopback(url) && (url.protocol === "https:" || url.protocol === "http:") ? url.href : null;
+  }
+
+  const apiParent = api.hostname.slice(api.hostname.indexOf(".") + 1);
+  const onApiSite = url.hostname === api.hostname || (apiParent.includes(".") && url.hostname === apiParent);
+
+  return url.protocol === "https:" && onApiSite ? url.href : null;
+}
+
 interface Call<T> {
   method: "GET" | "POST";
   path: string;
