@@ -106,7 +106,8 @@ export const CONSENT_MAX_AGE_SECONDS = 300;
 const CLOCK_SKEW_SECONDS = 30;
 
 /** Consent proof for deposits and withdrawals (spec §7): a fresh identity token of this user. */
-export async function requireConsent(c: Ctx, privy: PrivyVerifier, now: () => number): Promise<void> {
+/** Checks the player's fresh identity token and returns it, for the relay to check again (spec §7). */
+export async function requireConsent(c: Ctx, privy: PrivyVerifier, now: () => number): Promise<string> {
   const token = c.req.header(IDENTITY_HEADER);
   if (!token) throw new ApiError("UNAUTHORIZED", "identity token required for this action");
   const claims = await privy.verifyIdentityToken(token).catch(() => {
@@ -117,4 +118,5 @@ export async function requireConsent(c: Ctx, privy: PrivyVerifier, now: () => nu
   if (age > CONSENT_MAX_AGE_SECONDS || age < -CLOCK_SKEW_SECONDS) {
     throw new ApiError("UNAUTHORIZED", "identity token too old, sign in again");
   }
+  return token;
 }

@@ -1,7 +1,7 @@
 // Intents forwarded to the relay, mirrored in Postgres: an id is bound to one user and one
 // action (replays return the recorded outcome), deposits are counted for the player's limits,
 // and the mod sees which intent is still in flight.
-import type { Action } from "@tilt/contract";
+import type { Action, IntentRequest } from "@tilt/contract";
 import type { IntentStatus } from "@tilt/mod/protocol";
 import type { Db } from "./db";
 import { ApiError } from "./errors";
@@ -45,13 +45,19 @@ export class Intents {
     private readonly relay: Relay,
   ) {}
 
-  async submit(userId: string, rawIntentId: string, action: Action): Promise<IntentOutcome> {
+  /** `consent` (the player's identity token) is forwarded to the relay for money moves, never stored. */
+  async submit(
+    userId: string,
+    rawIntentId: string,
+    action: Action,
+    consent?: IntentRequest["consent"],
+  ): Promise<IntentOutcome> {
     const intentId = rawIntentId.toLowerCase();
     const existing = await this.record(userId, intentId, action);
     if (existing && existing.status !== "pending") return fromRow(intentId, existing);
     const running = this.inflight.get(intentId);
     if (running) return running;
-    const forwarding = this.forward(userId, intentId, action).finally(() => this.inflight.delete(intentId));
+    const forwarding = this.forward(userId, intentId, action, consent).finally(() => this.inflight.delete(intentId));
     this.inflight.set(intentId, forwarding);
     return forwarding;
   }
@@ -118,9 +124,14 @@ export class Intents {
     return rows[0];
   }
 
-  private async forward(userId: string, intentId: string, action: Action): Promise<IntentOutcome> {
+  private async forward(
+    userId: string,
+    intentId: string,
+    action: Action,
+    consent: IntentRequest["consent"],
+  ): Promise<IntentOutcome> {
     try {
-      return await this.save(intentId, await this.relay.submitIntent({ intentId, userId, action }));
+      return await this.save(intentId, await this.relay.submitIntent({ intentId, userId, action, consent }));
     } catch (e) {
       // Nothing was recorded by the relay: forget the intent so the same id can be sent again.
       if (e instanceof ApiError && (NOT_RECORDED.has(e.code) || e.code === "INTENT_CONFLICT")) {

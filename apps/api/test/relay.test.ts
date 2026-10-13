@@ -13,7 +13,7 @@ beforeEach(() => {
   relay.down = false;
 });
 
-const USER = "did:privy:alice";
+const USER = "did:privy:cmalice00000000000000000a";
 const spin = { type: "slots_spin" as const, amount: "1000000" };
 
 describe("HttpRelay", () => {
@@ -24,7 +24,7 @@ describe("HttpRelay", () => {
       solanaAddress: address.toBase58(),
       accountOpen: false,
     });
-    expect(await relay.client().getUser("did:privy:nobody")).toBeNull();
+    expect(await relay.client().getUser("did:privy:cmnobody000000000000000n")).toBeNull();
   });
 
   it("submits and reads intents, null for one the relay never received", async () => {

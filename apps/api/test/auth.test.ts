@@ -4,8 +4,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { access, FakeChain, FakeRelay, json, resetDb, testApp, testDb } from "./helpers";
 
 const db = await testDb();
-const ALICE = "did:privy:alice";
-const BOB = "did:privy:bob";
+const ALICE = "did:privy:cmalice00000000000000000a";
+const BOB = "did:privy:cmbob0000000000000000000b";
 
 describe.skipIf(!db)("device login", () => {
   if (!db) return;

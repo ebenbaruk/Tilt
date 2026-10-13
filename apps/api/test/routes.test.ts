@@ -26,8 +26,8 @@ import {
 } from "./helpers";
 
 const db = await testDb();
-const ALICE = "did:privy:alice";
-const BOB = "did:privy:bob";
+const ALICE = "did:privy:cmalice00000000000000000a";
+const BOB = "did:privy:cmbob0000000000000000000b";
 const SIGNATURE = "5".repeat(88);
 
 describe.skipIf(!db)("api routes", () => {
@@ -290,7 +290,20 @@ describe.skipIf(!db)("api routes", () => {
       );
       expect(withdraw.status).toBe(401);
       expect(relay.intents.size).toBe(0);
-      expect((await deposit(consent())).status).toBe(200);
+      const headers = consent();
+      expect((await deposit(headers)).status).toBe(200);
+      // The relay checks the same token again (defence in depth), and nothing stores it.
+      expect(relay.consentTokens.at(-1)).toBe(headers["x-privy-identity-token"]);
+    });
+
+    it("maps a consent refused by the relay to 403, and the same id can be sent again", async () => {
+      relay.consentExpired = true;
+      const body = { intentId: randomUUID(), amount: "5000000" };
+      const refused = await deposit(consent(), body);
+      expect(refused.status).toBe(403);
+      expect(await refused.json()).toMatchObject({ error: { code: "FORBIDDEN" } });
+      relay.consentExpired = false;
+      expect((await deposit(consent(), body)).status).toBe(200);
     });
 
     it("opens the account on the first deposit, then deposits; retries reuse the first action", async () => {

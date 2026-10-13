@@ -24,7 +24,7 @@ export interface Relay {
 }
 
 /** Refusals of the request itself: the relay recorded nothing, the same id may be sent again. */
-export const NOT_RECORDED = new Set(["PLAYER_BUSY", "BLOCKED"]);
+export const NOT_RECORDED = new Set(["PLAYER_BUSY", "BLOCKED", "FORBIDDEN"]);
 
 const ANCHOR_ERROR_NAME = /^[A-Z][A-Za-z0-9]{0,63}$/;
 
@@ -57,6 +57,9 @@ function refusal(status: number, body: unknown): ApiError {
     return new ApiError("INTENT_CONFLICT", SAFE_MESSAGES.INTENT_CONFLICT ?? "");
   }
   if (status === 422 && code === "LIMIT_EXCEEDED") return new ApiError("BLOCKED", "deposit cap reached, try less");
+  // The relay checks the player's identity token again; it is only refused once it expired in between.
+  if (status === 403 && code === "CONSENT_REQUIRED")
+    return new ApiError("FORBIDDEN", "identity check expired, sign in again");
   // 400 / 401 / 5xx: our bug or the relay's; never shown, always logged.
   log.error("relay refused a request", new Error(`HTTP ${status}`), { code: code ?? "unparsed" });
   return upstream();

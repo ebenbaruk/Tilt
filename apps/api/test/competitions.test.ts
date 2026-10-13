@@ -119,7 +119,11 @@ describe.skipIf(!db)("competitions", () => {
     const hidden = await latestCompetition(db);
     expect(hidden).toMatchObject({ id, dropSeed: null, dropSeedHash: expect.stringMatching(/^[0-9a-f]{64}$/) });
     const [a, b, c, d] = players.map((p) => p.toBase58());
-    const users = ["did:privy:a", "did:privy:b", "did:privy:c"];
+    const users = [
+      "did:privy:cmplayera00000000000000a",
+      "did:privy:cmplayerb00000000000000b",
+      "did:privy:cmplayerc00000000000000c",
+    ];
     for (const [i, user] of users.entries()) {
       await ensureUser(db, user);
       await recordWallet(db, user, players[i]);
@@ -169,8 +173,8 @@ describe.skipIf(!db)("competitions", () => {
     const id = await openCompetition(db, ended({ dropCount: 0, dropPool: 0n }), "test");
     const t = new Date(Date.now() - 2 * HOUR);
     for (const [i, p] of players.slice(0, 3).entries()) {
-      await ensureUser(db, `did:privy:${i}`);
-      await recordWallet(db, `did:privy:${i}`, p);
+      await ensureUser(db, `did:privy:cmplayer${i}0000000000000000x`);
+      await recordWallet(db, `did:privy:cmplayer${i}0000000000000000x`, p);
       await saveRound(db, round(p.toBase58(), t, 1_000_000n, BigInt(5 - i) * 1_000_000n));
     }
     await closeCompetition(db, id, "test");

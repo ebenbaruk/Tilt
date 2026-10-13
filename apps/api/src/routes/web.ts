@@ -80,7 +80,7 @@ export function webRoutes(app: Hono<Env>, deps: AppDeps): void {
   app.get("/v1/account", async (c) => c.json(await account(deps, c.get("userId"))));
 
   app.post("/v1/account/deposit", ...money, async (c) => {
-    await requireConsent(c, deps.privy, deps.now);
+    const identityToken = await requireConsent(c, deps.privy, deps.now);
     const userId = c.get("userId");
     const { intentId, amount } = await parseBody(c, DepositSchema);
     const wallet = await requireWallet(deps, userId);
@@ -90,15 +90,16 @@ export function webRoutes(app: Hono<Env>, deps: AppDeps): void {
     }
     const reason = await blockReason(deps.db, userId, { kind: "deposit", amount: BigInt(amount), intentId });
     if (reason) throw new ApiError("BLOCKED", reason);
-    return c.json(toMoneyResponse(await deps.intents.submit(userId, intentId, action)));
+    return c.json(toMoneyResponse(await deps.intents.submit(userId, intentId, action, { identityToken })));
   });
 
   app.post("/v1/account/withdraw", ...money, async (c) => {
-    await requireConsent(c, deps.privy, deps.now);
+    const identityToken = await requireConsent(c, deps.privy, deps.now);
     const userId = c.get("userId");
     const { intentId, amount } = await parseBody(c, WithdrawSchema);
     await requireWallet(deps, userId);
-    return c.json(toMoneyResponse(await deps.intents.submit(userId, intentId, { type: "withdraw", amount })));
+    const action = { type: "withdraw", amount } as const;
+    return c.json(toMoneyResponse(await deps.intents.submit(userId, intentId, action, { identityToken })));
   });
 
   app.get("/v1/account/intents/:intentId", async (c) => {

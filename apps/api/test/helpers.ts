@@ -78,6 +78,10 @@ export class FakeRelay {
   down = false;
   /** Promo payout requests received, replays included. */
   payoutCalls = 0;
+  /** Identity tokens received with money moves, in order. */
+  readonly consentTokens: string[] = [];
+  /** Refuse money moves with 403 CONSENT_REQUIRED, as when the token expired on the way. */
+  consentExpired = false;
   private server: ServerType | undefined;
   url = "";
 
@@ -135,6 +139,11 @@ export class FakeRelay {
     app.post("/intents", async (c) => {
       const parsed = IntentRequest.safeParse(await c.req.json().catch(() => undefined));
       if (!parsed.success) return c.json(error("INVALID_REQUEST"), 400);
+      // Like the relay: money moves need the player's identity token (it is checked, never stored).
+      if (MONEY_MOVES.has(parsed.data.action.type)) {
+        if (!parsed.data.consent || this.consentExpired) return c.json(error("CONSENT_REQUIRED"), 403);
+        this.consentTokens.push(parsed.data.consent.identityToken);
+      }
       const { status, body } = this.submit(parsed.data.intentId, parsed.data.userId, parsed.data.action);
       return c.json(body, status);
     });
@@ -167,6 +176,7 @@ export class FakeRelay {
   }
 }
 
+const MONEY_MOVES = new Set<Action["type"]>(["open_account", "deposit", "withdraw"]);
 const error = (code: ErrorCode) => ({ error: { code, message: code.toLowerCase() } });
 const refuse = (code: ErrorCode, status: 409 | 422) => ({ status, body: error(code) });
 
