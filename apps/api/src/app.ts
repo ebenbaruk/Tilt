@@ -45,7 +45,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
   );
   app.use(
     "*",
-    rateLimit(deps.limiters.ip, (c) => clientIp(c, deps.config.TRUST_PROXY)),
+    rateLimit(deps.limiters.ip, (c) => clientIp(c, deps.config)),
   );
   app.use(
     "*",

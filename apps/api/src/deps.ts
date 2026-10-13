@@ -27,7 +27,10 @@ export interface AppDeps {
   intents: Intents;
   limiters: Limiters;
   geo: GeoPolicy;
-  config: Pick<Config, "WEB_ORIGIN" | "WEB_URL" | "TRUST_PROXY" | "PRIVY_KEY_QUORUM_ID" | "PRIVY_POLICY_ID">;
+  config: Pick<
+    Config,
+    "WEB_ORIGIN" | "WEB_URL" | "TRUST_PROXY" | "TRUSTED_PROXY_HOPS" | "PRIVY_KEY_QUORUM_ID" | "PRIVY_POLICY_ID"
+  >;
   /** Milliseconds since the epoch; injectable for token-age tests. */
   now: () => number;
 }

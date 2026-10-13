@@ -207,6 +207,7 @@ async function main() {
       WEB_ORIGIN: "https://tilt.test",
       WEB_URL: "https://tilt.test",
       TRUST_PROXY: false,
+      TRUSTED_PROXY_HOPS: 1,
       PRIVY_KEY_QUORUM_ID: "quorum-1",
       PRIVY_POLICY_ID: "policy-1",
     },

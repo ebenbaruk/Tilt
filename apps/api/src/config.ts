@@ -45,6 +45,9 @@ const Env = z.object({
   GEO_ALLOW_UNKNOWN: Bool.default("false"),
   /** Trust X-Forwarded-For for the client IP (only behind a proxy that overwrites it). */
   TRUST_PROXY: Bool.default("false"),
+  /** Proxies in front of the api that each append to X-Forwarded-For (the client is that many
+   *  entries from the right). */
+  TRUSTED_PROXY_HOPS: PositiveInt.default(1),
   /** Token buckets: requests per minute. */
   RATE_GLOBAL_PER_MIN: PositiveInt.default(6_000),
   RATE_IP_PER_MIN: PositiveInt.default(240),

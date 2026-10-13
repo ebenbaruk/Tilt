@@ -8,7 +8,7 @@ import type { DeviceApproveResponse } from "../public";
 import { DeviceApproveSchema, DeviceTokenSchema } from "../schemas";
 
 export function authRoutes(app: Hono<Env>, deps: AppDeps): void {
-  const ip = (c: Parameters<typeof clientIp>[0]) => clientIp(c, deps.config.TRUST_PROXY);
+  const ip = (c: Parameters<typeof clientIp>[0]) => clientIp(c, deps.config);
 
   app.post("/v1/auth/device", rateLimit(deps.limiters.auth, ip), async (c) =>
     c.json(await startDeviceLogin(deps.db, deps.config.WEB_URL)),

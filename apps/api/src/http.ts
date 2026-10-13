@@ -4,6 +4,7 @@ import type { Context, MiddlewareHandler } from "hono";
 import type { IncomingMessage } from "node:http";
 import type { z } from "zod";
 import { authenticate } from "./auth/sessions";
+import type { Config } from "./config";
 import type { Db } from "./db";
 import { ApiError } from "./errors";
 import type { PrivyVerifier } from "./privy";
@@ -28,10 +29,13 @@ export function parseParam<T>(value: string, schema: z.ZodType<T, z.ZodTypeDef, 
   return parsed.data;
 }
 
-/** Client IP: the proxy's X-Forwarded-For only when configured to trust it, else the socket. */
-export function clientIp(c: Context, trustProxy: boolean): string {
-  if (trustProxy) {
-    const forwarded = c.req.header("x-forwarded-for")?.split(",")[0]?.trim();
+/** Client IP: from X-Forwarded-For only when configured to trust it, else the socket. Each of our
+ *  proxies appends the address it saw, so the client is `TRUSTED_PROXY_HOPS` entries from the
+ *  right; anything further left was written by the client and is never used. */
+export function clientIp(c: Context, proxy: Pick<Config, "TRUST_PROXY" | "TRUSTED_PROXY_HOPS">): string {
+  if (proxy.TRUST_PROXY) {
+    const chain = c.req.header("x-forwarded-for")?.split(",") ?? [];
+    const forwarded = chain.at(-proxy.TRUSTED_PROXY_HOPS)?.trim();
     if (forwarded) return forwarded;
   }
   const incoming = (c.env as { incoming?: IncomingMessage } | undefined)?.incoming;
