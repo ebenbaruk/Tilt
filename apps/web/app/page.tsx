@@ -1,228 +1,343 @@
+import type { Viewport } from "next";
 import Link from "next/link";
-import { InstallSnippet } from "@/components/landing/InstallSnippet";
+import { Badge } from "@/components/landing/Badge";
+import { CopyPill } from "@/components/landing/CopyPill";
+import { Burst, CardBuddy, Chip, Die, Fan, Reels, Terminal, Wheel } from "@/components/landing/Illustrations";
+import { INSTALL_COMMANDS } from "@/components/landing/InstallSnippet";
 import { TerminalDemo } from "@/components/landing/TerminalDemo";
-import styles from "./page.module.css";
+import { WavyWordmark } from "@/components/landing/WavyWordmark";
+import styles from "./landing.module.css";
+
+export const viewport: Viewport = { themeColor: "#ffe26e", colorScheme: "light" };
+
+const NAV = [
+  { href: "#how", label: "How it works" },
+  { href: "#games", label: "Games" },
+  { href: "#fair", label: "Fair play" },
+  { href: "#faq", label: "FAQ" },
+];
 
 const STEPS = [
   {
-    n: "01",
     title: "Install the mod",
-    body: "Two commands in Claude Code. The mod only sees when a turn starts and ends: never your prompts, your code or your tool calls. Its source is public.",
+    body: "Two commands in Claude Code. The mod only sees when a turn starts and ends: never your prompts, your code or your tool calls.",
+    art: <Terminal />,
   },
   {
-    n: "02",
-    title: "Log in, deposit USDC",
-    body: "/tilt login opens the browser. Sign in with email, Google, X or Phantom; a Solana wallet is made for you. Fund it by card or transfer. No SOL needed: Tilt pays network fees.",
+    title: "Log in, add USDC",
+    body: "/tilt login opens your browser. Email, Google, X or Phantom; a Solana wallet is made for you. Fund it by card. No SOL needed.",
+    art: <Chip />,
   },
   {
-    n: "03",
     title: "Play while it works",
-    body: "Send a prompt and the panel opens. One key per move. When the agent finishes you get a green line and your hand waits for the next turn.",
+    body: "Send a prompt and the panel opens. One key per move. When the agent finishes, your hand waits for the next turn.",
+    art: <CardBuddy />,
   },
 ];
 
 const GAMES = [
   {
     name: "Blackjack",
-    rtp: "≈ 99.00%",
-    rules: "No hole card, infinite shoe, dealer stands on 17, blackjack pays 3:2, double on the first two cards.",
+    rtp: "99.00%",
+    rules: "No hole card, dealer stands on 17, blackjack pays 3:2, double on your first two cards.",
+    tone: styles.toneOrange,
+    art: <CardBuddy />,
   },
   {
     name: "Roulette",
     rtp: "97.30%",
-    rules: "European, single zero. One bet per spin: straight, red/black, odd/even, low/high, dozen, column.",
+    rules: "European, single zero. Straight up, red or black, odd or even, low or high, dozens, columns.",
+    tone: styles.toneSky,
+    art: <Wheel />,
   },
   {
     name: "Baccarat",
-    rtp: "98.76 / 98.94 / ≈ 85.9%",
-    rules: "Punto Banco, infinite shoe. Player 1:1, banker 1:1 minus 5% commission, tie 8:1.",
+    rtp: "98.94%",
+    rules: "Punto Banco. Player 1:1, banker 1:1 less 5%, tie 8:1. Banker shown; player 98.76%, tie 85.9%.",
+    tone: styles.tonePink,
+    art: <Fan />,
   },
-  { name: "Slots", rtp: "96.16%", rules: "Three weighted reels, public paytable, top win 250×." },
+  {
+    name: "Slots",
+    rtp: "96.16%",
+    rules: "Three weighted reels, a public paytable and a top win of 250× your stake.",
+    tone: styles.toneGreen,
+    art: <Reels />,
+  },
 ];
 
 const FAQ = [
   {
     q: "What do I play with?",
-    a: "USDC on Solana, a dollar stablecoin. Balances show in dollars with cents; amounts are whole base units on-chain, never rounded floats.",
+    a: "USDC on Solana, a dollar stablecoin. Your balance shows in dollars and cents.",
   },
   {
     q: "Do I need a crypto wallet?",
-    a: "No. Log in with email, Google or X and Privy creates a Solana wallet for you. Already on Phantom? Log in with it.",
+    a: "No. Log in with email, Google or X and a Solana wallet is created for you. Already on Phantom? Use it.",
   },
   {
     q: "Do I need SOL for fees?",
-    a: "No. Tilt pays the Solana network fees. The only fee is 1% of the gain on rounds you win.",
+    a: "No. Tilt pays the Solana network fees. The only fee is 1% of the gain on the rounds you win.",
   },
   {
     q: "Is there a minimum deposit?",
-    a: "Yes. The first deposit has a minimum, and a small one-time onboarding fee is taken from it to open your on-chain account. The account page shows both before you confirm.",
+    a: "Yes. The first deposit has a minimum, and a small one-time fee opens your on-chain account. Your account page shows both before you confirm.",
   },
   {
     q: "How do withdrawals work?",
-    a: "From this website only, never from the terminal. You confirm with a fresh login and the USDC goes to your own wallet. Per-withdrawal and daily caps apply; large withdrawals can be held for review.",
+    a: "From this website only, never from the terminal. You confirm with a fresh login and the USDC goes to your own wallet. Daily caps apply; large withdrawals can be held for review.",
   },
   {
     q: "Who can move my money?",
-    a: "Your balance lives in the Tilt program on Solana. Tilt's server key can sign only Tilt program instructions for your wallet, enforced by a signing policy it does not control.",
+    a: "Your balance lives in the Tilt program on Solana. Tilt's key can only sign Tilt program instructions for your wallet, and every deposit or withdrawal needs your fresh login.",
   },
   {
     q: "Can I set limits?",
-    a: "Yes: daily deposit and loss limits, and self-exclusion from 1 day to 10 years, on your account page. Lowering a limit is immediate; raising one takes 24 hours.",
+    a: "Yes: daily deposit and loss limits, and self-exclusion from a day to ten years, from your account page. Lowering a limit is immediate; raising one takes 24 hours.",
   },
   {
     q: "Where is Tilt available?",
-    a: "Not in the United States, the United Kingdom, France or other restricted jurisdictions. You must be 18 or older. Region and identity are checked.",
+    a: "Not in the United States, the United Kingdom, France or other restricted countries. You must be 18 or older.",
   },
 ];
 
-export default function Home() {
+export default function Landing() {
   return (
-    <div className={styles.page}>
-      <section className={styles.hero} aria-labelledby="hero-title">
-        <div className={styles.heroText}>
-          <p className={styles.eyebrow}>TILT · for claude code</p>
-          <h1 id="hero-title" className={styles.heroTitle}>
-            The casino you play while your agent codes.
-          </h1>
-          <p className={styles.lede}>
-            Blackjack, roulette, baccarat and slots in a panel next to your agent. USDC on Solana, every draw provably
-            fair, and your hand saved the moment the agent is done.
-          </p>
-          <InstallSnippet />
-          <p className={styles.small}>18+ · not available in the US, UK, France and other restricted countries</p>
-        </div>
-        <TerminalDemo />
-      </section>
+    <div className={styles.landing}>
+      <a href="#main" className="skip-link">
+        Skip to content
+      </a>
 
-      <section id="how" className={styles.section} aria-labelledby="how-title">
-        <h2 id="how-title" className={styles.sectionTitle}>
-          How it works
-        </h2>
-        <ol className={styles.steps}>
-          {STEPS.map((step) => (
-            <li key={step.n} className={styles.step}>
-              <span className={styles.stepNumber}>{step.n}</span>
-              <h3 className={styles.stepTitle}>{step.title}</h3>
-              <p>{step.body}</p>
-            </li>
+      <header className={styles.header}>
+        <Link href="/" className={styles.logo} aria-label="Tilt home">
+          TILT
+        </Link>
+        <nav aria-label="Main" className={styles.nav}>
+          {NAV.map((item) => (
+            <a key={item.href} href={item.href} className={styles.navLink}>
+              {item.label}
+            </a>
           ))}
-        </ol>
-      </section>
-
-      <section id="games" className={styles.section} aria-labelledby="games-title">
-        <h2 id="games-title" className={styles.sectionTitle}>
-          Games
-        </h2>
-        <p className={styles.sectionLede}>
-          Return to player (RTP) is shown before Tilt&apos;s fee: 1% of the gain, on winning rounds only. Losing rounds
-          pay no fee.
-        </p>
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th scope="col">game</th>
-                <th scope="col">rtp</th>
-                <th scope="col">rules</th>
-              </tr>
-            </thead>
-            <tbody>
-              {GAMES.map((game) => (
-                <tr key={game.name}>
-                  <th scope="row">{game.name}</th>
-                  <td className={styles.money}>{game.rtp}</td>
-                  <td>{game.rules}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        </nav>
+        <div className={styles.headerActions}>
+          <a href="#install" className={styles.pill}>
+            Get the mod
+          </a>
+          <Link href="/account" className={styles.circle}>
+            Log in
+          </Link>
         </div>
-        <p className={styles.small}>
-          Baccarat RTP by bet: player / banker / tie. Blackjack RTP assumes basic strategy.
-        </p>
-      </section>
+      </header>
 
-      <section id="fair" className={styles.split} aria-labelledby="fair-title">
-        <div className={styles.splitText}>
-          <h2 id="fair-title" className={styles.sectionTitle}>
-            Provably fair, on-chain
+      <main id="main">
+        <section className={styles.hero} aria-labelledby="hero-title">
+          <div className={styles.heroMain}>
+            <h1 id="hero-title" className={styles.kicker}>
+              The casino you play while your agent codes
+            </h1>
+            <WavyWordmark id="hero" className={styles.wordmark} />
+          </div>
+          <div className={styles.heroSide}>
+            <Badge className={styles.badge} />
+            <p className={styles.blob}>Your hand is saved the moment the agent is done.</p>
+          </div>
+        </section>
+
+        <section className={styles.intro} aria-labelledby="intro-title">
+          <div className={styles.introArt}>
+            <span className={`${styles.disc} ${styles.discPink}`} />
+            <span className={`${styles.disc} ${styles.discSky}`} />
+            <Die className={styles.introDie} />
+            <CardBuddy className={styles.introBuddy} />
+            <Chip className={styles.introChip} />
+          </div>
+          <div className={styles.introText}>
+            <h2 id="intro-title" className={styles.serifTitle}>
+              The most fun way to wait on your agent.
+            </h2>
+            <p className={styles.lede}>
+              Blackjack, roulette, baccarat and slots in a panel inside Claude Code. Real USDC on Solana, every draw
+              provably fair, and the panel steps aside the second your agent needs you.
+            </p>
+            <div className={styles.row}>
+              <a href="#install" className={styles.pill}>
+                Get the mod
+              </a>
+              <a href="#games" className={styles.pillGhost}>
+                See the games
+              </a>
+            </div>
+          </div>
+        </section>
+
+        <section id="install" className={styles.section} aria-labelledby="install-title">
+          <div className={styles.sectionHead}>
+            <h2 id="install-title" className={styles.displayTitle}>
+              Three lines to install
+            </h2>
+            <Burst className={styles.headBurst} />
+          </div>
+          <div className={styles.installGrid}>
+            <div className={styles.card}>
+              <div className={styles.cardHead}>
+                <span className={styles.cardLabel}>In Claude Code</span>
+                <CopyPill text={INSTALL_COMMANDS.join("\n")} className={styles.pillSmall} />
+              </div>
+              <pre className={styles.code} aria-label="Install commands">
+                {INSTALL_COMMANDS.map((line) => (
+                  <code key={line} className={styles.codeLine}>
+                    <span aria-hidden="true">› </span>
+                    {line}
+                    {"\n"}
+                  </code>
+                ))}
+              </pre>
+              <p className={styles.note}>Needs Claude Code 2.1.287 or later, in the terminal or the desktop app.</p>
+            </div>
+            <div className={styles.demo}>
+              <TerminalDemo />
+            </div>
+          </div>
+        </section>
+
+        <section id="how" className={styles.section} aria-labelledby="how-title">
+          <div className={styles.sectionHead}>
+            <h2 id="how-title" className={styles.displayTitle}>
+              How it works
+            </h2>
+          </div>
+          <ol className={styles.steps}>
+            {STEPS.map((step, i) => (
+              <li key={step.title} className={styles.step}>
+                <span className={styles.stepNumber} aria-hidden="true">
+                  {i + 1}
+                </span>
+                <div className={styles.stepArt}>{step.art}</div>
+                <h3 className={styles.stepTitle}>{step.title}</h3>
+                <p>{step.body}</p>
+              </li>
+            ))}
+          </ol>
+        </section>
+
+        <section id="games" className={styles.section} aria-labelledby="games-title">
+          <div className={styles.sectionHead}>
+            <h2 id="games-title" className={styles.displayTitle}>
+              The games
+            </h2>
+            <p className={styles.headNote}>
+              Return to player before Tilt&apos;s fee: 1% of the gain, on winning rounds only.
+            </p>
+          </div>
+          <ul className={styles.games}>
+            {GAMES.map((game) => (
+              <li key={game.name} className={`${styles.game} ${game.tone}`}>
+                <div className={styles.gameArt}>{game.art}</div>
+                <h3 className={styles.gameName}>{game.name}</h3>
+                <p className={styles.rtp}>
+                  <span className={styles.rtpValue}>{game.rtp}</span> RTP
+                </p>
+                <p>{game.rules}</p>
+              </li>
+            ))}
+          </ul>
+          <p className={styles.footnote}>Blackjack assumes basic strategy.</p>
+        </section>
+
+        <section id="fair" className={styles.fair} aria-labelledby="fair-title">
+          <div className={styles.fairText}>
+            <h2 id="fair-title" className={styles.displayTitle}>
+              Provably fair
+            </h2>
+            <p className={styles.manifesto}>
+              Every card, pocket and reel comes from a verifiable random draw on Solana. The game rules run in a public
+              program, not on our servers. Each round records its randomness: replay it and you get the same cards and
+              the same payout. You don&apos;t have to trust us. Check.
+            </p>
+            <Link href="/verify" className={styles.pillInk}>
+              Verify a round
+            </Link>
+          </div>
+          <div className={styles.fairArt}>
+            <Die className={styles.fairDie} fill="var(--pink)" />
+            <Wheel className={styles.fairWheel} />
+            <Chip className={styles.fairChip} fill="var(--green)" />
+          </div>
+        </section>
+
+        <section id="brands" className={styles.brands} aria-labelledby="brands-title">
+          <div className={styles.brandsText}>
+            <p className={styles.eyebrow}>For brands</p>
+            <h2 id="brands-title" className={styles.serifTitle}>
+              Be the name next to the prize pool.
+            </h2>
+            <p>
+              Sponsors hold the <strong>Presented by</strong> slot for a day, a week or a season: on every table, next
+              to the pool and on win cards, in front of developers watching their screen. Always labelled as sponsored.
+            </p>
+            <p>
+              Your budget funds the prize pool. Competitions rank net gain, not balance, and random drops give every
+              hand a ticket. You get a report: time on screen, players, hands and shares.
+            </p>
+          </div>
+          <div className={styles.sponsorCard} aria-label="Example sponsor block">
+            <span className={styles.cardLabel}>Presented by · sponsored</span>
+            <span className={styles.sponsorName}>Your Brand</span>
+            <span>
+              Daily pool <strong>$3,000</strong>
+            </span>
+            <span className={styles.muted}>Ends in 14h · top 50 paid · drops every hour</span>
+          </div>
+        </section>
+
+        <section id="faq" className={styles.section} aria-labelledby="faq-title">
+          <div className={styles.sectionHead}>
+            <h2 id="faq-title" className={styles.displayTitle}>
+              Questions
+            </h2>
+          </div>
+          <div className={styles.faq}>
+            {FAQ.map((item) => (
+              <details key={item.q} className={styles.faqItem}>
+                <summary className={styles.faqQ}>{item.q}</summary>
+                <p className={styles.faqA}>{item.a}</p>
+              </details>
+            ))}
+          </div>
+        </section>
+
+        <section id="responsible" className={styles.responsible} aria-labelledby="rg-title">
+          <h2 id="rg-title" className={styles.serifTitle}>
+            Play with what you can afford to lose.
           </h2>
           <p>
-            Games, odds and draws run in the Tilt program on Solana. Every card, pocket and reel comes from a VRF: the
-            program accepts randomness only from the oracle, and only for the draw it asked for.
+            Tilt is real-money gambling for adults 18 and over, and the house has an edge on every game. Set deposit and
+            loss limits or self-exclude from your account at any time. The agent doesn&apos;t need you watching.
           </p>
           <p>
-            Each settled round records its randomness. Replay it with the public rules and you get the same cards and
-            the same payout. Nothing depends on trusting a Tilt server.
+            Not available in the United States, the United Kingdom, France or other countries where online casino games
+            are restricted. Real-money play opens only where Tilt is licensed.
           </p>
-          <p>
-            <Link href="/verify">verify a round →</Link>
-          </p>
-        </div>
-        <pre className={styles.fairMock} aria-label="Example verification output">
-          {`round 1,204 · blackjack\nrandomness  9f3c…a71e\nreplay      you 20 · dealer 19\non-chain    stake 1.00 · payout 2.00 · fee 0.01\n`}
-          <span className={styles.ok}>✓ replay matches on-chain</span>
-        </pre>
-      </section>
+          <Link href="/legal/responsible-gaming" className={styles.linkLight}>
+            Responsible gaming and where to get help
+          </Link>
+        </section>
+      </main>
 
-      <section id="sponsors" className={styles.split} aria-labelledby="sponsors-title">
-        <div className={styles.splitText}>
-          <p className={styles.eyebrow}>for brands</p>
-          <h2 id="sponsors-title" className={styles.sectionTitle}>
-            Be the name next to the prize pool.
-          </h2>
-          <p>
-            Sponsors hold the <span className={styles.strong}>Presented by</span> slot for a day, a week or a season: on
-            every table, next to the pool and on win cards, in front of developers while they watch the screen. Always
-            labelled as sponsored.
-          </p>
-          <p>
-            Your budget funds a prize pool. Competitions rank net gain over the window, not balance; part of the pool
-            goes to random drops, one ticket per hand whatever the stake. You get a report: time on screen, unique
-            players, hands, shares.
-          </p>
+      <footer className={styles.footer}>
+        <WavyWordmark id="footer" className={styles.footerMark} />
+        <div className={styles.footerRow}>
+          <nav aria-label="Footer" className={styles.footerNav}>
+            <Link href="/leaderboard">Leaderboard</Link>
+            <Link href="/verify">Verify</Link>
+            <Link href="/account">Account</Link>
+            <Link href="/legal/terms">Terms</Link>
+            <Link href="/legal/privacy">Privacy</Link>
+            <Link href="/legal/responsible-gaming">Responsible gaming</Link>
+          </nav>
+          <p>© 2026 Tilt · 18+ · Play responsibly</p>
         </div>
-        <div className={styles.sponsorMock}>
-          <span className={styles.mockEyebrow}>PRESENTED BY · SPONSORED</span>
-          <span className={styles.sponsorName}>Your Brand</span>
-          <span>
-            daily pool <span className={styles.money}>$3,000</span>
-          </span>
-          <span className={styles.muted}>ends in 14h · top 50 paid · drops every hour</span>
-        </div>
-      </section>
-
-      <section id="faq" className={styles.section} aria-labelledby="faq-title">
-        <h2 id="faq-title" className={styles.sectionTitle}>
-          Fair questions
-        </h2>
-        <div className={styles.faq}>
-          {FAQ.map((item) => (
-            <details key={item.q} className={styles.faqItem}>
-              <summary className={styles.faqQ}>{item.q}</summary>
-              <p className={styles.faqA}>{item.a}</p>
-            </details>
-          ))}
-        </div>
-      </section>
-
-      <section id="responsible" className={styles.responsible} aria-labelledby="rg-title">
-        <h2 id="rg-title" className={styles.sectionTitle}>
-          Play with what you can afford to lose
-        </h2>
-        <p>
-          Tilt is real-money gambling for adults 18 and over. The house has an edge on every game. Set deposit and loss
-          limits or self-exclude from your account at any time, and take breaks: the agent doesn&apos;t need you
-          watching.
-        </p>
-        <p>
-          Not available in the United States, the United Kingdom, France or other jurisdictions where online casino
-          games are restricted. Licensing is in progress; real-money play opens only where it is licensed and permitted.
-        </p>
-        <p>
-          <Link href="/legal/responsible-gaming">responsible gaming and where to get help →</Link>
-        </p>
-      </section>
+      </footer>
     </div>
   );
 }

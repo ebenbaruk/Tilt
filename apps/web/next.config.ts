@@ -15,6 +15,8 @@ const securityHeaders = [
 
 const config: NextConfig = {
   poweredByHeader: false,
+  // Agent instructions live in the repo's CLAUDE.md; don't generate an AGENTS.md on every dev start.
+  agentRules: false,
   reactStrictMode: true,
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

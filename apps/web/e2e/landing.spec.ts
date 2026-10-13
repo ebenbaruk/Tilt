@@ -1,11 +1,11 @@
 import { expect, test } from "./fixtures";
 
-test("landing shows the pitch, install snippet and key sections", async ({ page }) => {
+test("landing shows the pitch, install commands and key sections", async ({ page }) => {
   const response = await page.goto("/");
   expect(response?.headers()["content-security-policy"]).toContain("frame-ancestors 'none'");
   expect(response?.headers()["x-content-type-options"]).toBe("nosniff");
 
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("The casino you play while your agent codes.");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("The casino you play while your agent codes");
 
   const install = page.getByLabel("Install commands");
   await expect(install).toContainText("/plugin marketplace add ebenbaruk/Tilt");
@@ -13,20 +13,47 @@ test("landing shows the pitch, install snippet and key sections", async ({ page 
   await expect(install).toContainText("/tilt login");
 
   for (const name of [
+    "The most fun way to wait on your agent.",
+    "Three lines to install",
     "How it works",
-    "Games",
-    "Provably fair, on-chain",
+    "The games",
+    "Provably fair",
     "Be the name next to the prize pool.",
-    "Fair questions",
+    "Questions",
+    "Play with what you can afford to lose.",
   ]) {
     await expect(page.getByRole("heading", { name, level: 2 })).toBeVisible();
   }
-  await expect(page.getByRole("cell", { name: "97.30%" })).toBeVisible();
-  await expect(page.getByRole("cell", { name: "96.16%" })).toBeVisible();
+  for (const rtp of ["99.00%", "97.30%", "98.94%", "96.16%"]) {
+    await expect(page.locator("#games").getByText(rtp)).toBeVisible();
+  }
   await expect(page.getByText("1% of the gain, on winning rounds only")).toBeVisible();
   await expect(page.getByRole("region", { name: "Tilt panel" })).toContainText("agent finished");
-  await expect(page.getByRole("link", { name: "verify a round →" })).toHaveAttribute("href", "/verify");
+  await expect(page.getByRole("link", { name: "Verify a round" })).toHaveAttribute("href", "/verify");
   await expect(page.locator("#responsible")).toContainText("United Kingdom, France");
+});
+
+test("header links reach their sections", async ({ page }) => {
+  await page.goto("/");
+  for (const [label, id] of [
+    ["How it works", "how"],
+    ["Games", "games"],
+    ["Fair play", "fair"],
+    ["FAQ", "faq"],
+  ]) {
+    await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: label }).click();
+    await expect(page.locator(`#${id}`)).toBeInViewport();
+  }
+});
+
+test("copies the install commands", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/");
+  await page.getByRole("button", { name: "copy" }).click();
+  await expect(page.getByRole("button", { name: "✓ copied" })).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    "/plugin marketplace add ebenbaruk/Tilt\n/plugin install tilt\n/tilt login",
+  );
 });
 
 test("faq answers open with the keyboard", async ({ page }) => {
@@ -35,6 +62,13 @@ test("faq answers open with the keyboard", async ({ page }) => {
   await question.focus();
   await page.keyboard.press("Enter");
   await expect(page.getByText("Tilt pays the Solana network fees.")).toBeVisible();
+});
+
+test("no horizontal scroll on a phone", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 800 });
+  await page.goto("/");
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBe(0);
 });
 
 test("legal pages are marked as drafts", async ({ page }) => {
