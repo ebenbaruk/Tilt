@@ -192,7 +192,7 @@ Sans rollup, les tirages coûtent 6 à 10× ce que rapportent les 1 % : le rollu
 - Une manche ne coûte **rien** à Tilt sur Solana : tirage VRF gratuit dans le rollup, ≈ 165 ms par tirage mesurés sur devnet.
 - Un retrait est demandé dans le rollup puis payé sur Solana par une Magic Action (≈ 1,2–1,4 s), sans faire sortir le compte. Sur devnet, MagicBlock a payé cette transaction (40 200 lamports) : à confirmer pour le mainnet.
 - **Le rollup n'est pas cru sur parole** : le paiement vérifie la demande contre le registre Solana (dépôts réels, plafond de gains du joueur). Plafond par retrait et par 24 h, mise en attente puis libération par Tilt, pause globale.
-- Une manche non terminée survit à une déconnexion, ne bloque pas les retraits et peut être clôturée par le relais après un délai (stand automatique).
+- Une manche non terminée survit à une déconnexion et ne bloque pas les retraits. Une main en attente du joueur n'est jamais jouée à sa place ; seul un tirage VRF jamais arrivé est relancé par le relais après un délai.
 - Restent à concevoir : sortie de secours si le rollup tombe, plafond de gains glissant (aujourd'hui à vie), multisig, audit (`chain/README.md`).
 
 **Conséquences sur le reste de la spec (D13) :** la logique des jeux et l'aléa passent dans `chain/` ; le ledger Postgres, l'ancien contrat `reserve/settle` et le provably fair serveur disparaissent. L'architecture (§5), le contrat (§7), la répartition (§8) et les jalons (§14) sont réécrits en conséquence.
@@ -348,7 +348,7 @@ Depuis D2, les règles, les tirages et les gains sont dans le programme (Armand)
 | Requêtes concurrentes | Une intention en vol par joueur (relais) ; `intentId` idempotent de bout en bout (mod → `api` → relais). | Armand + Eli |
 | Prédire ou choisir l'aléa | VRF MagicBlock, callback limité à l'oracle et à la requête en cours (§6.4) ; `expire_round` ne doit pas permettre de relancer un tirage favorable (point ouvert, audit). | Armand |
 | RTP réel ≠ annoncé | RTP exact testé dans le programme ; `api` rejoue chaque manche avec les règles portées en TS, vérifiées contre le code Rust (380 vecteurs). | Armand + Eli |
-| Option gratuite (main laissée ouverte) | `expire_round` : stand automatique après le délai. | Armand |
+| Option gratuite (main laissée ouverte) | Aucune valeur à attendre : la mise est déjà prélevée et les cartes ne sont tirées qu'à la demande (VRF), donc le temps n'apporte aucune information. La main reste ouverte jusqu'à ce que le joueur la joue. | Armand |
 | Abus des compétitions et des drops | Mise minimum pour qu'une manche compte, plafond de tickets par heure, un drop max par joueur, prix bloqués en revue avant paiement, `payoutId` déterministe (payé une fois). | Eli |
 
 ### 10.4 Anti-spam, anti-bots, anti-multicomptes

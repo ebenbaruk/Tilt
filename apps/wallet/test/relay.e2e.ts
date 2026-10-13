@@ -185,12 +185,15 @@ async function main() {
   check("main laissée ouverte", "playerTurn" in a.round.status);
   await sleep((timeoutSecs + 1) * 1_000);
   const sweepOptions = { checkpointMinLoss: 1n, checkpointIntervalMs: 0 };
-  const expired = await sweep(db, chain, intents, { ...sweepOptions, checkpointMinLoss: 1n << 62n });
-  const afterExpire = await until(async () => {
+  const swept = await sweep(db, chain, intents, { ...sweepOptions, checkpointMinLoss: 1n << 62n });
+  const stillOpen = await account();
+  check("le sweeper ne joue jamais à la place du joueur", swept.expired === 0 && "playerTurn" in stillOpen.round.status, JSON.stringify(swept));
+  await submit(user, { type: "blackjack_stand" });
+  const afterStand = await until(async () => {
     const x = await account();
     return "idle" in x.round.status ? x : undefined;
-  }, "expired round");
-  check("le sweeper clôt la main abandonnée", expired.expired === 1 && afterExpire.round.blackjack.nDealer >= 2, JSON.stringify(expired));
+  }, "stand after timeout");
+  check("le joueur reprend sa main après le délai", afterStand.round.blackjack.nDealer >= 2);
 
   const netWin = (x: PlayerAccount) => BigInt(x.balance.toString()) + BigInt(x.withdrawn.toString()) - BigInt(x.credited.toString()) + BigInt(x.forfeited.toString());
   for (let i = 0; i < 40 && netWin(await account()) >= 0n; i++) await playRound({ type: "baccarat_deal", amount: String(usdc(2)), bet: "tie" });

@@ -1,5 +1,6 @@
-// Relay cron: settles interrupted intents, closes rounds players abandoned (spec: a hand never
-// blocks an account) and releases settled losses from the vault reservation (`checkpoint`).
+// Relay cron: settles interrupted intents, requests again VRF draws that never arrived, and
+// releases settled losses from the vault reservation (`checkpoint`). A hand waiting for the
+// player is never closed: they can come back to it whenever they want.
 import { PublicKey } from "@solana/web3.js";
 import type { PlayerAccount, TiltChain } from "./chain";
 import type { Db } from "./db";
@@ -46,7 +47,8 @@ export async function sweep(db: Db, chain: TiltChain, intents: Intents, options:
       if (!account) continue;
       const idle = "idle" in account.round.status;
       const lastAction = Number(account.round.lastAction.toString());
-      if (!idle && nowMs / 1000 - lastAction >= timeoutSecs) {
+      // Only a draw stuck in AwaitingDraw is retried. In PlayerTurn, expire_round would stand for the player.
+      if ("awaitingDraw" in account.round.status && nowMs / 1000 - lastAction >= timeoutSecs) {
         await chain.expireRound(player);
         report.expired++;
         continue;
