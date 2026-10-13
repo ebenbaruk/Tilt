@@ -1,0 +1,108 @@
+name: chain
+
+on:
+  pull_request:
+    paths: ["chain/**", "packages/contract/**", "apps/wallet/**", ".github/workflows/chain.yml", "pnpm-lock.yaml"]
+  push:
+    branches: [main]
+    paths: ["chain/**", "packages/contract/**", "apps/wallet/**", ".github/workflows/chain.yml", "pnpm-lock.yaml"]
+
+permissions:
+  contents: read
+
+env:
+  # Pinned so new lints in a later stable release do not break unrelated PRs.
+  RUST_TOOLCHAIN: "1.89.0"
+  AGAVE_VERSION: v3.1.9
+  ANCHOR_VERSION: v1.0.2
+
+jobs:
+  rust:
+    name: fmt, clippy, tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: chain
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: chain
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets -- -D warnings
+      # Includes the exact RTP checks of every game.
+      - run: cargo test
+
+  typescript:
+    name: typecheck (contract, e2e script)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r typecheck
+      - run: pnpm --filter @tilt/contract test
+
+  build:
+    name: anchor build, IDL in sync, E2E (local Solana + rollup + VRF)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: tilt
+          POSTGRES_DB: tilt_test
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 2s --health-timeout 5s --health-retries 15
+    defaults:
+      run:
+        working-directory: chain
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: chain
+          cache-bin: true
+      - name: Install the Solana toolchain
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/${AGAVE_VERSION}/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+      - name: Install Anchor
+        run: command -v anchor || cargo install --git https://github.com/solana-foundation/anchor --tag "$ANCHOR_VERSION" anchor-cli --locked
+      - run: anchor build
+      - name: The IDL in packages/contract matches the program
+        run: |
+          ./scripts/sync-idl.sh
+          git diff --exit-code -- ../packages/contract/src/idl
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Start the local stack (throwaway admin key)
+        run: |
+          mkdir -p "$HOME/.config/solana"
+          solana-keygen new --no-bip39-passphrase --silent -o "$HOME/.config/solana/id.json"
+          ./scripts/local-stack.sh
+      - name: Program E2E
+        run: pnpm e2e
+      - name: Relay E2E
+        working-directory: apps/wallet
+        env:
+          TEST_DATABASE_URL: postgres://postgres:tilt@localhost:5432/tilt_test
+        run: pnpm e2e
+      - name: Stack logs on failure
+        if: failure()
+        run: docker logs --tail 200 tilt-mb-stack; docker logs --tail 100 tilt-vrf

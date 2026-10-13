@@ -1,0 +1,33 @@
+[package]
+name = "tilt"
+version = "0.1.0"
+description = "Tilt on-chain casino: games, VRF draws and USDC vault, played in a MagicBlock Ephemeral Rollup"
+edition = "2021"
+publish = false
+# The Solana platform tools compile programs with rustc 1.84; keeps clippy from suggesting newer APIs.
+rust-version = "1.84"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "tilt"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+anchor-debug = []
+custom-heap = []
+custom-panic = []
+
+[dependencies]
+# Pinned to the Anchor CLI version (Anchor.toml).
+anchor-lang = "=1.0.2"
+anchor-spl = { version = "=1.0.2", features = ["token"] }
+ephemeral-rollups-sdk = { version = "=0.16.2", features = ["anchor", "vrf"] }
+
+[lints.rust]
+# Anchor's macros check `target_os = "solana"`.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }

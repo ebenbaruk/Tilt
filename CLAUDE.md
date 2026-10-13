@@ -6,7 +6,7 @@ Act like a pragmatic senior engineer. Write code a strong teammate would approve
 
 - **Name:** Tilt
 - **What:** A crypto casino on Solana, played inside Claude Code (a Claude Code mod) while the agent works, with a sponsor always visible. Spec: `docs/spec.md` (source of truth). Background: `docs/idea.md`, `docs/integrations.md`.
-- **Status:** Spec draft v0.1, pending validation. No code yet. Open decisions are listed in the spec (§13); don't settle them in code. Ask instead.
+- **Status:** Spec draft v0.1, pending validation. Armand's zone is implemented and running on devnet: `chain/` (Anchor program + MagicBlock rollup, see `chain/README.md`), `apps/wallet` (relay), `packages/contract`; ops in `docs/runbook.md`. Eli's zone has no code yet. Open decisions are listed in the spec (§13); don't settle them in code. Ask instead.
 - **Team:** Eli and Armand, each working with their own AI.
 - **Ownership:** Stay inside the zone you're working for (spec §8). Never edit the other person's zone; open an issue or ask.
   - **Armand:** everything that touches money or game rules: `chain/` (Anchor program: games, VRF, bankroll) and `apps/wallet` (relay: Privy, signers, fee payer, transaction sending).

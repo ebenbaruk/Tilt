@@ -1,0 +1,31 @@
+{
+  "name": "@tilt/wallet",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "e2e": "tsx test/relay.e2e.ts",
+    "privy:live": "tsx test/privy.live.ts"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "0.32.1",
+    "@hono/node-server": "^2.1.4",
+    "@magicblock-labs/ephemeral-rollups-sdk": "0.14.3",
+    "@privy-io/node": "^0.35.0",
+    "@solana/spl-token": "0.4.13",
+    "@solana/web3.js": "1.98.2",
+    "@tilt/contract": "workspace:*",
+    "hono": "^4.13.13",
+    "pg": "^8.23.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}

@@ -1,0 +1,119 @@
+// API of the relay (`apps/wallet`), called only by `apps/api` over the private network.
+// Both sides validate with these schemas (spec §7). Amounts are integer USDC base units
+// (6 decimals) sent as decimal strings, never floats.
+import { z } from "zod";
+
+/** Integer USDC base units as a decimal string, e.g. "2500000" for 2.50 USDC. */
+export const Amount = z
+  .string()
+  .regex(/^[1-9]\d{0,19}$/, "positive integer in USDC base units")
+  // Zod still runs refinements after a failed regex: guard before BigInt, which throws on bad input.
+  .refine((s) => /^\d+$/.test(s) && BigInt(s) <= 0xffff_ffff_ffff_ffffn, "exceeds u64");
+
+export const RouletteBet = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("straight"), number: z.number().int().min(0).max(36) }),
+  z.object({ kind: z.literal("red") }),
+  z.object({ kind: z.literal("black") }),
+  z.object({ kind: z.literal("odd") }),
+  z.object({ kind: z.literal("even") }),
+  z.object({ kind: z.literal("low") }),
+  z.object({ kind: z.literal("high") }),
+  z.object({ kind: z.literal("dozen"), dozen: z.number().int().min(1).max(3) }),
+  z.object({ kind: z.literal("column"), column: z.number().int().min(1).max(3) }),
+]);
+export type RouletteBet = z.infer<typeof RouletteBet>;
+
+export const BaccaratBet = z.enum(["player", "banker", "tie"]);
+export type BaccaratBet = z.infer<typeof BaccaratBet>;
+
+/** What a player wants to do. The relay turns it into one Solana or rollup transaction. */
+export const Action = z.discriminatedUnion("type", [
+  /** First deposit: opens the account and moves it into the rollup (onboarding fee deducted). */
+  z.object({ type: z.literal("open_account"), amount: Amount }),
+  z.object({ type: z.literal("deposit"), amount: Amount }),
+  z.object({ type: z.literal("blackjack_bet"), amount: Amount }),
+  z.object({ type: z.literal("blackjack_hit") }),
+  z.object({ type: z.literal("blackjack_stand") }),
+  z.object({ type: z.literal("blackjack_double") }),
+  z.object({ type: z.literal("roulette_spin"), amount: Amount, bet: RouletteBet }),
+  z.object({ type: z.literal("baccarat_deal"), amount: Amount, bet: BaccaratBet }),
+  z.object({ type: z.literal("slots_spin"), amount: Amount }),
+  /** Pays to the player's own wallet; moving funds out of it is signed by the player on the web. */
+  z.object({ type: z.literal("withdraw"), amount: Amount }),
+]);
+export type Action = z.infer<typeof Action>;
+
+/** Lowercased, so the same UUID in another case is the same intent, not a conflict. */
+const Uuid = z.string().uuid().transform((s) => s.toLowerCase());
+
+export const IntentRequest = z.object({
+  /** Client-generated; replaying the same id never runs the action twice. */
+  intentId: Uuid,
+  /** Privy user id (`did:privy:…`). */
+  userId: z.string().min(1).max(200),
+  action: Action,
+});
+export type IntentRequest = z.infer<typeof IntentRequest>;
+
+export const ErrorCode = z.enum([
+  "UNAUTHORIZED",
+  "INVALID_REQUEST",
+  "UNKNOWN_USER",
+  "INTENT_CONFLICT",
+  /** Another intent of this player is still in flight; retry once it settles. */
+  "PLAYER_BUSY",
+  /** The relay's deposit caps (per deposit or per 24 h) would be exceeded. */
+  "LIMIT_EXCEEDED",
+  "ACCOUNT_NOT_OPEN",
+  "ACCOUNT_ALREADY_OPEN",
+  "PROGRAM_ERROR",
+  "NETWORK_ERROR",
+  "INTERNAL_ERROR",
+]);
+export type ErrorCode = z.infer<typeof ErrorCode>;
+
+/**
+ * pending: in flight or outcome not yet known (the relay settles it by itself, poll GET /intents/:id);
+ * submitted: the transaction landed successfully on-chain; failed: it did not and never will.
+ */
+export const IntentStatus = z.enum(["pending", "submitted", "failed"]);
+export type IntentStatus = z.infer<typeof IntentStatus>;
+
+export const IntentResponse = z.object({
+  intentId: z.string().uuid(),
+  status: IntentStatus,
+  /** Transaction signature once submitted (Solana or rollup, depending on the action). */
+  signature: z.string().optional(),
+  /** Anchor error name when the program refused the action, e.g. "InsufficientBalance". */
+  error: z.object({ code: ErrorCode, message: z.string() }).optional(),
+});
+export type IntentResponse = z.infer<typeof IntentResponse>;
+
+/** Sponsor prize (competition or drop) paid from the promo pool straight to the player's wallet. */
+export const PromoPayoutRequest = z.object({
+  /** Client-generated; replaying the same id never pays twice (also enforced on-chain). A 409
+   *  INTENT_CONFLICT means the id is already taken: read GET /payouts/promo/:id, never re-issue
+   *  the same prize under a new id. */
+  payoutId: Uuid,
+  userId: z.string().min(1).max(200),
+  amount: Amount,
+  /** Which competition or drop pool this comes from (bookkeeping, not on-chain). */
+  poolId: z.string().min(1).max(100),
+  reason: z.string().min(1).max(200),
+});
+export type PromoPayoutRequest = z.infer<typeof PromoPayoutRequest>;
+
+export const PromoPayoutResponse = IntentResponse.omit({ intentId: true }).extend({ payoutId: z.string().uuid() });
+export type PromoPayoutResponse = z.infer<typeof PromoPayoutResponse>;
+
+export const UserResponse = z.object({
+  userId: z.string(),
+  /** The player's Solana wallet (Privy embedded wallet). */
+  solanaAddress: z.string(),
+  /** Whether the player account exists (first deposit done). */
+  accountOpen: z.boolean(),
+});
+export type UserResponse = z.infer<typeof UserResponse>;
+
+export const ErrorResponse = z.object({ error: z.object({ code: ErrorCode, message: z.string() }) });
+export type ErrorResponse = z.infer<typeof ErrorResponse>;

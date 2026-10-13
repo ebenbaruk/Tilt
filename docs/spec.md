@@ -98,15 +98,15 @@ Référence visuelle : la maquette d'Eli (image partagée dans la conversation, 
 
 ### 4.3 Jeux
 
-| Jeu | Version | Notes |
+| Jeu | Version | Règles (implémentées dans `chain/`, détail dans `chain/README.md`) |
 | --- | --- | --- |
-| Blackjack | v1 | Règles standard, 6 decks, le croupier reste sur 17, blackjack payé 3:2. Pas de split en v1 (🟡). |
-| Roulette | v1.1 | Européenne (un seul zéro). |
-| Baccarat | v1.1 | Punto Banco : paris joueur (1:1), banque (1:1, commission 5 %) et égalité (8:1). Un tirage VRF par coup (§6.1). |
-| Slots | v1.1 | 3 rouleaux, table de gains publique, RTP affiché. |
+| Blackjack | v1 | Sans carte cachée (2e carte du croupier tirée après le joueur), sabot infini, croupier reste sur 17, blackjack payé 3:2, double sur les 2 premières cartes. Pas de split en v1 (🟡 D11). RTP ≈ 99 % en stratégie de base. |
+| Roulette | v1 | Européenne (un seul zéro), un pari par tour : plein, rouge/noir, pair/impair, manque/passe, douzaine, colonne. RTP 97,30 %. |
+| Baccarat | v1 | Punto Banco, sabot infini : joueur (1:1), banque (1:1, commission 5 %) et égalité (8:1). RTP 98,76 % / 98,94 % / ≈ 85,9 %. |
+| Slots | v1 | 3 rouleaux pondérés, table de gains publique, gain max 250×. RTP 96,16 %. |
 | Autres (crash, dice, mines…) | plus tard | Très adaptés au terminal et rapides à jouer. |
 
-Chaque jeu affiche son **RTP** (taux de retour au joueur) et est **provably fair** (§6.4).
+Les programmes de jeu existent pour les quatre jeux ; leur interface dans le mod reste à faire (Eli). Chaque jeu affiche son **RTP** (taux de retour au joueur, avant les 1 % Tilt) et est **provably fair** (§6.4).
 
 ### 4.4 Ton et confiance
 
@@ -157,7 +157,7 @@ Options écartées : hybride avec solde off-chain (custodial, confiance reposant
 - Connexion Privy (email, Google, X) ; un wallet Solana est créé sans qu'il voie d'adresse.
 - Dépôt par carte via l'onramp de Privy ; le solde s'affiche en « $ » (USDC, voir D3).
 - **Tilt paie les frais réseau** (Solana permet un *fee payer* distinct du joueur) : le joueur n'a jamais besoin de SOL.
-- Pas de signature à chaque main : signers Privy côté serveur, avec une policy limitée au programme Tilt et plafonnée par transaction. Les retraits restent signés par le joueur.
+- Pas de signature à chaque main : signers Privy côté serveur, avec une policy qui n'autorise que les instructions du programme Tilt (une policy Privy ne lit pas les montants d'un programme : ils sont plafonnés par le relais, `MAX_DEPOSIT` et `DAILY_DEPOSIT_LIMIT`, et par le programme). La policy appartient à une clé d'administration gardée hors ligne, pas au relais. Les retraits restent signés par le joueur.
 - Celui qui veut creuser vérifie le programme (build vérifiable) et les tirages sur la chaîne.
 
 **Aléa : VRF MagicBlock** (chiffres annoncés par les fournisseurs, non mesurés ; SOL à 200 $).
@@ -173,7 +173,7 @@ Options écartées : hybride avec solde off-chain (custodial, confiance reposant
 - Blackjack : environ 3 tirages par main (donne, chaque carte demandée, tirage du croupier après « stand »). La carte cachée du croupier n'existe pas on-chain avant d'être révélée ; on tire donc à la demande (équivalent d'un sabot quasi infini, RTP à recalculer et à afficher).
 - Roulette, baccarat, slots : un tirage par tour.
 
-**Frais : Tilt prend 1 % sur chaque gain**, ce qui finance les tirages VRF et les frais réseau. Les 1 % réduisent le RTP et sont inclus dans le RTP affiché.
+**Frais : Tilt prend 1 % sur le gain de chaque manche gagnante**, ce qui finance les tirages VRF et les frais réseau. Les RTP affichés par jeu (§4.3) sont **avant** ces 1 % ; le mod affiche aussi le taux effectif après les 1 %.
 
 | Par main de blackjack | Mise 10 $ | Mise 1 $ |
 | --- | --- | --- |
@@ -184,9 +184,16 @@ Options écartées : hybride avec solde off-chain (custodial, confiance reposant
 
 Sans rollup, les tirages coûtent 6 à 10× ce que rapportent les 1 % : le rollup est nécessaire. À petite mise, l'avantage de la maison complète.
 
-**Accès au programme :** pas de co-signature Tilt exigée sur les mises (décision Armand). À confirmer avec l'avocat : sans elle, un joueur qui exporte sa clé peut jouer sans passer par notre KYC ni notre blocage géographique.
+**Accès au programme :** dans le rollup, seules les transactions signées par le relais Tilt (autorité du compte) peuvent jouer ou retirer. Un joueur qui exporterait sa clé ne peut donc pas contourner le KYC ni le blocage géographique. Les dépôts sur Solana restent signés par le joueur.
 
-**À valider par un spike devnet avant d'écrire le programme :** une donne de blackjack en Ephemeral Rollup avec VRF MagicBlock ; mesurer latence et coût réels ; vérifier qu'on peut payer un gain depuis la bankroll pendant que les comptes de jeu sont délégués au rollup.
+**Résultats du spike (2026-10-12/13, devnet + rollup MagicBlock EU) et modèle retenu : le compte du joueur reste en permanence dans le rollup.**
+- Il entre dans le rollup à son **premier dépôt**, dans la même transaction (sans dépôt, refusé : pas de spam de comptes). Tilt avance les rents en SOL (≈ 6,4 M lamports) et se rembourse en USDC sur ce dépôt (`onboarding_fee`).
+- Les dépôts suivants se font sur Solana pendant que le compte est dans le rollup ; ils sont crédités à la manche suivante (visibles en ≈ 25 ms).
+- Une manche ne coûte **rien** à Tilt sur Solana : tirage VRF gratuit dans le rollup, ≈ 165 ms par tirage mesurés sur devnet.
+- Un retrait est demandé dans le rollup puis payé sur Solana par une Magic Action (≈ 1,2–1,4 s), sans faire sortir le compte. Sur devnet, MagicBlock a payé cette transaction (40 200 lamports) : à confirmer pour le mainnet.
+- **Le rollup n'est pas cru sur parole** : le paiement vérifie la demande contre le registre Solana (dépôts réels, plafond de gains du joueur). Plafond par retrait et par 24 h, mise en attente puis libération par Tilt, pause globale.
+- Une manche non terminée survit à une déconnexion, ne bloque pas les retraits et peut être clôturée par le relais après un délai (stand automatique).
+- Restent à concevoir : sortie de secours si le rollup tombe, plafond de gains glissant (aujourd'hui à vie), multisig, audit (`chain/README.md`).
 
 **Conséquences sur le reste de la spec (D13) :** la logique des jeux et l'aléa passent dans `chain/` ; le ledger Postgres, l'ancien contrat `reserve/settle` et le provably fair serveur disparaissent. L'architecture (§5), le contrat (§7), la répartition (§8) et les jalons (§14) sont réécrits en conséquence.
 
@@ -208,7 +215,7 @@ Tous les montants sont stockés en **unités entières** (base units : 6 décima
 
 ### 6.4 Équité (provably fair)
 
-Assurée on-chain par le VRF (§6.1) : chaque tirage est accompagné d'une preuve vérifiée par le programme. Une page web permet de retrouver et de vérifier les transactions d'une main. Le schéma `serverSeed` / `clientSeed` n'est plus nécessaire.
+Assurée on-chain par le VRF (§6.1) : le programme n'accepte un tirage que de l'oracle VRF MagicBlock (signature vérifiée) et seulement s'il répond à la requête en cours (identifiant de requête). Chaque fin de manche émet `RoundSettled` avec l'aléa reçu : en le rejouant dans les règles des jeux (code public), on retrouve le résultat. Une page web permet de retrouver et de vérifier les transactions d'une main. Le schéma `serverSeed` / `clientSeed` n'est plus nécessaire.
 
 **Propriétaire :** Armand (programme `chain/`) ; Eli pour la page de vérification dans `web`.
 
@@ -228,27 +235,35 @@ Assurée on-chain par le VRF (§6.1) : chaque tirage est accompagné d'une preuv
 **Seule frontière entre les deux.** Tout vit dans `packages/contract` ; aucune modification sans l'accord des deux. Il remplace l'ancien contrat `reserve/settle`, qui supposait un ledger off-chain.
 
 **1. L'IDL du programme (Armand la possède, Eli la consomme).** Générée par Anchor, elle donne les types TypeScript :
-- **Comptes :** état d'une main (jeu, mise, cartes ou résultat, **totaux déjà calculés par le programme**, statut), bankroll, config (plafonds, pause).
-- **Événements :** `BetPlaced`, `CardDrawn` / `OutcomeDrawn`, `HandSettled` (gain, frais de 1 %).
+- **Comptes :** `PlayerAccount` (solde, dépôts crédités, retraits, manche en cours ou dernière manche : jeu, mise, cartes ou résultat, statut, gain, frais), `Vault` (rôles, config, réserve), `Ledger` (dépôts et retraits côté Solana).
+- **Événements :** `RoundSettled` (fin de manche, dans le rollup), `WithdrawalPaid`, `WithdrawalHeld`, `LossReleased` (sur Solana). Le détail d'une manche en cours se lit dans `PlayerAccount.round`.
 
-**2. L'API du relais (`apps/wallet`), appelée uniquement par `api`**, sur réseau privé, authentifiée (secret partagé ou mTLS). Montants en strings d'entiers en base units.
+**2. L'API du relais (`apps/wallet`), appelée uniquement par `api`**, sur réseau privé, authentifiée par clé partagée (`Authorization: Bearer`, deux clés acceptées pendant une rotation). Montants en strings d'entiers en base units. Schémas zod : `packages/contract/src/relay.ts`.
 
 ```ts
-// packages/contract — esquisse, à affiner ensemble
-type Amount = string // entier, base units USDC
-type Game = 'blackjack' | 'roulette' | 'baccarat' | 'slots'
-
-GET  /users/:privyUserId  -> { userId, solanaAddress }
-POST /intents { intentId, userId, game, action, params } -> { txSig } | { error: 'INSUFFICIENT_FUNDS' | 'MAX_BET' | 'PAUSED' | 'INVALID_ACTION' }
-// action : 'bet' | 'hit' | 'stand' | 'double' | 'spin' …, params validés par schéma
-POST /payouts/promo { payoutId, userId, amount, poolId, reason } -> { txSig }
+GET  /users/:userId    -> { userId, solanaAddress, accountOpen }        // 404 UNKNOWN_USER
+POST /intents { intentId, userId, action } -> { intentId, status, signature?, error? }
+GET  /intents/:intentId -> même réponse
+// action : open_account | deposit {amount} · blackjack_bet {amount} | blackjack_hit | blackjack_stand | blackjack_double
+//          roulette_spin {amount, bet} · baccarat_deal {amount, bet} · slots_spin {amount} · withdraw {amount}
+// status : pending (en vol ou issue inconnue, le relais la tranche seul) | submitted (arrivée on-chain) | failed
+// error.code : PROGRAM_ERROR (message = nom de l'erreur Anchor, ex. InsufficientBalance), ACCOUNT_NOT_OPEN, …
+// 409 INTENT_CONFLICT (id réutilisé pour autre chose) ou PLAYER_BUSY (une intention du joueur est déjà en vol)
+// 422 LIMIT_EXCEEDED (plafonds de dépôt du relais) ; rien n'est enregistré, le même intentId peut être renvoyé.
+POST /payouts/promo { payoutId, userId, amount, poolId, reason } -> { payoutId, status, signature?, error? }
+GET  /payouts/promo/:payoutId -> même réponse
+// Verse un gain de compétition ou un drop depuis le pool promo (séparé de la bankroll) dans le wallet du joueur.
+// Plafonds par gain et par 24 h et pause dans le programme ; un payoutId ne paie qu'une fois, même on-chain.
 ```
 
 **Règles :**
-- Rejouer un appel avec le même `intentId` ou `payoutId` ne fait rien (idempotence).
+- Rejouer un appel avec le même `intentId` ou `payoutId` ne fait rien (idempotence), même après un crash du relais : l'intention est enregistrée avant la signature et la signature avant l'envoi ; le relais retrouve l'issue sur la chaîne.
+- Une seule intention en vol par joueur.
 - Le programme reste l'arbitre : une intention invalide est rejetée on-chain même si le relais l'a laissée passer.
 - `api` ne touche jamais aux clés. Le relais ne garde aucun état de jeu : il le lit sur la chaîne.
 - `api` lit l'état et les événements directement sur la chaîne (RPC / indexeur), pas via le relais.
+- La clé Privy du relais ne peut signer, pour le joueur, que des transactions du programme Tilt (policy Privy `PRIVY_POLICY_ID`, possédée par une clé d'administration hors ligne ; à attacher par le web quand le joueur ajoute le signer : `additional_signers: [{ signer_id: PRIVY_KEY_QUORUM_ID, override_policy_ids: [PRIVY_POLICY_ID] }]`). Vérifié en live : transfert USDC refusé, seul ou à côté d'une instruction Tilt ; la clé du relais ne peut pas modifier la policy.
+- Reste ouvert : preuve du consentement du joueur pour les dépôts (jeton d'identité Privy transmis par `api` et vérifié par le relais), à faire avec `api`.
 
 **Développement en parallèle :** Armand publie très tôt l'IDL v0 (forme des comptes et événements) et le contrat du relais. Eli code le mod et `api` contre un **faux relais** qui rejoue des événements enregistrés. On branche tout sur devnet en M3.
 
@@ -309,8 +324,8 @@ On gère l'argent des joueurs et une bankroll. **On part du principe que des att
 | Faux dépôt | Crédit uniquement après **finalisation** de la transaction. Vérifier le **mint exact** (vrai USDC, pas un faux token homonyme), le montant, l'adresse de destination. Idempotence par signature de transaction. |
 | Retraits frauduleux (compte volé, session volée) | Retrait **uniquement depuis le web**, jamais depuis le mod. Réauthentification fraîche + confirmation email ou 2FA. Délai et plafond réduit sur une nouvelle adresse et après tout changement de compte. Revue manuelle au-dessus d'un seuil. |
 | Vidage par volume | Plafonds de retrait par utilisateur, par jour et **global**. Disjoncteur automatique : si les retraits du jour dépassent X % de la bankroll, tout se met en pause et nous sommes alertés. |
-| Double dépense / solde négatif | Les soldes sont on-chain : le programme vérifie les fonds et l'état de la main à chaque instruction ; une main ne se solde qu'une fois (compte fermé au règlement). Invariant testé : la bankroll couvre toujours le gain max des mains ouvertes. |
-| Désynchronisation chaîne ↔ index | La chaîne fait foi. L'index d'`api` n'est qu'un cache d'affichage, reconstruisible depuis les événements ; aucun paiement ne se décide sur l'index. |
+| Double dépense / solde négatif | Les soldes sont on-chain : le programme vérifie le solde et l'état de la manche à chaque instruction ; une manche ne se règle qu'une fois (machine à états + identifiant de requête VRF). Sur Solana, chaque retrait est revérifié contre le registre (`checked_due`) et la réserve du coffre couvre toujours ce que chaque joueur peut encore retirer (tests unitaires et e2e). |
+| Désynchronisation chaîne ↔ index | La chaîne fait foi. L'index d'`api` n'est qu'un cache d'affichage, reconstruisible depuis l'état des comptes et les événements ; aucun paiement ne se décide sur l'index. |
 | Bug du programme on-chain | Audits externes avant le mainnet, fuzzing, autorité d'upgrade sur le multisig, build vérifiable, limites dans le programme lui-même. |
 | Arrêt d'urgence | **Kill switches** séparés : dépôts, paris, retraits, payouts promo. Activables en une commande par l'un ou l'autre. |
 
