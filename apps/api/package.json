@@ -1,0 +1,33 @@
+{
+  "name": "@tilt/api",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./public": "./src/public.ts"
+  },
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "admin": "tsx src/admin.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
+    "fast-check": "^4.10.2",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "0.32.1",
+    "@hono/node-server": "2.1.4",
+    "@privy-io/node": "^0.35.0",
+    "@solana/web3.js": "1.98.2",
+    "@tilt/contract": "workspace:*",
+    "@tilt/mod": "workspace:*",
+    "hono": "^4.13.13",
+    "pg": "^8.23.1",
+    "zod": "^3.25.76"
+  }
+}
