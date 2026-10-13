@@ -39,13 +39,15 @@ export function createApp(deps: AppDeps): Hono<Env> {
       maxAge: 600,
     }),
   );
-  app.use(
-    "*",
-    rateLimit(deps.limiters.global, () => "global"),
-  );
+  // Per IP first: a request refused there never spends a global token, so one flooding client
+  // cannot drain the global bucket and lock everyone else out.
   app.use(
     "*",
     rateLimit(deps.limiters.ip, (c) => clientIp(c, deps.config)),
+  );
+  app.use(
+    "*",
+    rateLimit(deps.limiters.global, () => "global"),
   );
   app.use(
     "*",

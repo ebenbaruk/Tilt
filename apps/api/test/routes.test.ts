@@ -643,6 +643,18 @@ describe.skipIf(!db)("api routes", () => {
       expect(big.status).toBe(413);
     });
 
+    it("never lets one flooding IP exhaust the global limit for others", async () => {
+      const { deps } = testApp(db, relay, chain);
+      const limited = testApp(db, relay, chain, {
+        limiters: { ...deps.limiters, global: RateLimiter.perMinute(5), ip: RateLimiter.perMinute(3) },
+        config: { ...deps.config, TRUST_PROXY: true },
+      }).app;
+      const from = (ip: string) => limited.request("/v1/geo", { headers: { "x-forwarded-for": ip } });
+      for (let i = 0; i < 10; i++) await from("6.6.6.6");
+      expect((await from("6.6.6.6")).status).toBe(429);
+      expect((await from("1.1.1.1")).status).toBe(200);
+    });
+
     it("sets secure headers and CORS for the web origin only", async () => {
       const res = await app.request("/v1/geo", { headers: { origin: "https://tilt.test" } });
       expect(res.headers.get("access-control-allow-origin")).toBe("https://tilt.test");
