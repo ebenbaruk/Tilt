@@ -1,0 +1,17 @@
+{
+  "name": "tilt",
+  "version": "0.1.0",
+  "description": "Tilt: play blackjack, roulette, baccarat and slots in a pane while your agent works. Reads only turn start/end events.",
+  "author": {
+    "name": "Tilt"
+  },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "apiUrl": {
+      "type": "string",
+      "title": "Tilt API URL",
+      "description": "Base URL of the Tilt API. Change it only for local development, e.g. http://127.0.0.1:8788.",
+      "default": "https://api.tilt.example"
+    }
+  }
+}
