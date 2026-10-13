@@ -12,7 +12,7 @@ const USAGE = `commands:
   competition:open    --campaign ID|SPONSOR --name NAME --hours H --pool UNITS [--starts ISO]
                       [--split 5000,2500,1000] [--shared-ranks 7] [--min-stake UNITS]
                       [--drop-pool UNITS] [--drop-count N] [--tickets-per-hour N]
-  competition:close   --id ID
+  competition:close   --id ID [--force]  (--force: close before the indexer caught up; audited)
   prize:list          [--status pending_review|approved|paid|failed]
   prize:approve       --id PRIZE_ID | --competition ID
   prize:pay           (needs RELAY_URL and RELAY_API_KEY)
@@ -39,11 +39,13 @@ const OPTIONS = {
   competition: { type: "string" },
   status: { type: "string" },
   user: { type: "string" },
+  force: { type: "boolean" },
 } as const;
 
-type Flags = Partial<Record<keyof typeof OPTIONS, string>>;
+type StringFlag = Exclude<keyof typeof OPTIONS, "force">;
+type Flags = Partial<Record<StringFlag, string>> & { force?: boolean };
 
-function required(flags: Flags, name: keyof Flags): string {
+function required(flags: Flags, name: StringFlag): string {
   const value = flags[name];
   if (!value) throw new Error(`--${name} is required`);
   return value;
@@ -105,7 +107,8 @@ async function run(db: Db, command: string, flags: Flags, actor: string): Promis
       );
     }
     case "competition:close":
-      return closeCompetition(db, required(flags, "id"), actor);
+      if (flags.force) console.warn("closing with --force: rounds not indexed yet will be left out");
+      return closeCompetition(db, required(flags, "id"), actor, { force: flags.force });
     case "prize:list": {
       const status = flags.status as PrizeStatus | undefined;
       if (status && !PRIZE_STATUSES.includes(status)) throw new Error(`--status must be one of ${PRIZE_STATUSES}`);

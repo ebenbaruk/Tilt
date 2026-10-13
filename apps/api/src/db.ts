@@ -115,11 +115,13 @@ CREATE TABLE IF NOT EXISTS draws (
   PRIMARY KEY (account, request_id)
 );
 
+-- indexed_through: every round settled before this time is indexed (competitions close on it).
 CREATE TABLE IF NOT EXISTS indexer_cursor (
   name       TEXT PRIMARY KEY,
   signature  TEXT NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE indexer_cursor ADD COLUMN IF NOT EXISTS indexed_through TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS campaigns (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),

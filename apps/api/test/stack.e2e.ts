@@ -42,7 +42,7 @@ import { associatedTokenAddress, RpcChainReader } from "../src/chain";
 import { approvePrizes, listPrizes, payPrizes } from "../src/competitions/payouts";
 import { closeCompetition, createCampaign, handle, openCompetition } from "../src/competitions/store";
 import { createDb, migrate } from "../src/db";
-import { ConnectionSource, Indexer } from "../src/indexer";
+import { ConnectionSource, indexedThrough, Indexer } from "../src/indexer";
 import { Intents } from "../src/intents";
 import type { LeaderboardResponse, MoneyIntentResponse, VerifyResponse } from "../src/public";
 import { HttpRelay } from "../src/relay";
@@ -537,7 +537,11 @@ async function main() {
     running.json.competition?.id === competitionId && running.json.entries.some((e) => e.handle === you),
     JSON.stringify(running.json.entries),
   );
-  await sleep(Math.max(0, endsAt.getTime() - Date.now()) + 500);
+  // Closing waits for the indexer to vouch for the whole window (one backfill after the end).
+  await until(
+    async () => ((await indexedThrough(db)) ?? new Date(0)) >= endsAt || undefined,
+    "indexer past the end of the competition",
+  );
   const closed = await closeCompetition(db, competitionId, actor);
   const prizes = (await listPrizes(db)).filter((p) => p.competitionId === competitionId);
   check(

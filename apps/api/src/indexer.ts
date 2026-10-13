@@ -7,7 +7,7 @@ import { Connection, PublicKey, type VersionedTransactionResponse } from "@solan
 import { idl, PROGRAM_ID, playerAccountAddress } from "@tilt/contract";
 import type { Game } from "@tilt/mod/protocol";
 import type { ChainReader } from "./chain";
-import type { Db } from "./db";
+import type { Db, Queryable } from "./db";
 import { VRF_BYTES } from "./games/rng";
 import { log } from "./log";
 import { saveDetail, saveDraw, saveRound, type DrawRecord, type SettledRound } from "./rounds";
@@ -23,6 +23,8 @@ const PAGE = 1_000;
 /** Pages per backfill run; beyond, the gap is logged (the live feed covers normal operation). */
 const MAX_PAGES = 50;
 const RESUBSCRIBE_MAX_MS = 60_000;
+/** How late a transaction may appear in the signature listing after its block time. */
+const LISTING_LAG_MS = 10_000;
 
 export interface SignatureInfo {
   signature: string;
@@ -271,12 +273,20 @@ export class Indexer {
     return rows[0]?.signature;
   }
 
-  private async advance(signature: string): Promise<void> {
+  private async advance(signature: string, blockTime: Date | null): Promise<void> {
     await this.db.query(
-      `INSERT INTO indexer_cursor (name, signature) VALUES ($1, $2)
-       ON CONFLICT (name) DO UPDATE SET signature = EXCLUDED.signature, updated_at = now()`,
-      [CURSOR, signature],
+      `INSERT INTO indexer_cursor (name, signature, indexed_through) VALUES ($1, $2, $3)
+       ON CONFLICT (name) DO UPDATE SET signature = EXCLUDED.signature, updated_at = now(),
+         indexed_through = GREATEST(indexer_cursor.indexed_through, EXCLUDED.indexed_through)`,
+      [CURSOR, signature, blockTime],
     );
+  }
+
+  private async indexedThrough(at: Date): Promise<void> {
+    await this.db.query("UPDATE indexer_cursor SET indexed_through = GREATEST(indexed_through, $2) WHERE name = $1", [
+      CURSOR,
+      at,
+    ]);
   }
 
   /** Every signature after the cursor, oldest first. */
@@ -293,15 +303,25 @@ export class Indexer {
     return found.reverse();
   }
 
-  /** Transient failures (RPC, database) stop the run at the last indexed signature. */
+  /** Transient failures (RPC, database) stop the run at the last indexed signature. A run that
+   *  completes has seen everything listed when it started (give or take the listing lag). */
   private async catchUp(): Promise<void> {
+    const startedAt = Date.now();
     for (const info of await this.newSignatures(await this.cursor())) {
       if (this.stopped) return;
-      if (!info.failed) {
-        const tx = await this.source.transaction(info.signature);
-        if (tx) await this.process(info.signature, tx.logs, tx.blockTime ?? new Date(), tx);
-      }
-      await this.advance(info.signature);
+      const tx = info.failed ? null : await this.source.transaction(info.signature);
+      if (tx) await this.process(info.signature, tx.logs, tx.blockTime ?? new Date(), tx);
+      await this.advance(info.signature, tx?.blockTime ?? null);
     }
+    await this.indexedThrough(new Date(startedAt - LISTING_LAG_MS));
   }
+}
+
+/** Every round settled before this time is indexed; null before the first backfill. */
+export async function indexedThrough(db: Queryable): Promise<Date | null> {
+  const { rows } = await db.query<{ indexed_through: Date | null }>(
+    "SELECT indexed_through FROM indexer_cursor WHERE name = $1",
+    [CURSOR],
+  );
+  return rows[0]?.indexed_through ?? null;
 }

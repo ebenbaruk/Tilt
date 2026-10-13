@@ -5,6 +5,7 @@
 // ticket. It never filters the net: a player cannot pick which hands count.
 import type { LeaderboardEntry, SponsorView } from "@tilt/mod/protocol";
 import { audit, transaction, type Db, type Queryable } from "../db";
+import { indexedThrough } from "../indexer";
 import { capTickets, drawWinners, newSeed, type Ticket } from "./drops";
 import { rankPrizes, splitPool, type Standing } from "./prizes";
 import { prizeId } from "./uuid";
@@ -236,14 +237,27 @@ export interface ClosedSummary {
 }
 
 /** Closes an ended competition: ranks and drops become prizes awaiting review, the seed is revealed.
- *  Run once the indexer has caught up with the end of the window. */
-export async function closeCompetition(db: Db, id: string, actor: string): Promise<ClosedSummary> {
+ *  Refused until the indexer has caught up with the end of the window (rounds would be missing),
+ *  unless `force` (recorded in the audit log). */
+export async function closeCompetition(
+  db: Db,
+  id: string,
+  actor: string,
+  { force = false }: { force?: boolean } = {},
+): Promise<ClosedSummary> {
   return transaction(db, async (client) => {
     const { rows } = await client.query<CompetitionRow>(`${SELECT_COMPETITION} WHERE c.id = $1 FOR UPDATE OF c`, [id]);
     const row = rows[0];
     if (!row) throw new Error(`unknown competition ${id}`);
     if (row.status !== "open") throw new Error("competition already closed");
     if (row.ends_at > new Date()) throw new Error("competition has not ended yet");
+    const indexed = await indexedThrough(client);
+    const caughtUp = indexed !== null && indexed >= row.ends_at;
+    if (!caughtUp && !force) {
+      throw new Error(
+        `indexer has not caught up with the end of the competition (indexed through ${indexed?.toISOString() ?? "nothing"}); retry later or force`,
+      );
+    }
     const c = toCompetition(row);
     const ranking = rankPrizes(await standings(client, c, null), splitPool(c.pool, c.splitBps, c.sharedRanks));
     const drops = c.dropCount > 0 ? drawWinners(row.drop_seed, await eligibleTickets(client, c), c.dropCount) : [];
@@ -266,7 +280,7 @@ export async function closeCompetition(db: Db, id: string, actor: string): Promi
       dropPrizes: prizes.length - ranking.length,
       seed: row.drop_seed.toString("hex"),
     };
-    await audit(client, actor, "competition:close", { id, ...summary });
+    await audit(client, actor, "competition:close", { id, ...summary, ...(caughtUp ? {} : { forced: true }) });
     return summary;
   });
 }

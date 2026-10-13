@@ -6,6 +6,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   decodeCallbacks,
   Indexer,
+  indexedThrough,
   parseSettled,
   type FetchedTransaction,
   type RollupSource,
@@ -211,6 +212,18 @@ describe.skipIf(!db)("indexer", () => {
     source.add("good", settledLogs(player, 1, 2, 2));
     await indexer.backfill();
     expect(await count("rounds")).toBe(1);
+  });
+
+  it("records how far it is complete only once a backfill run has seen everything", async () => {
+    source.add("s1", settledLogs(player, 1, 1, 1));
+    source.failNextSignatures = true;
+    await indexer.backfill();
+    expect(await indexedThrough(db)).toBeNull();
+    const before = Date.now();
+    await indexer.backfill();
+    const through = must((await indexedThrough(db)) ?? undefined, "indexed_through");
+    expect(through.getTime()).toBeLessThanOrEqual(before);
+    expect(through.getTime()).toBeGreaterThan(before - 60_000);
   });
 
   it("survives RPC failures: the next run picks up where it stopped", async () => {

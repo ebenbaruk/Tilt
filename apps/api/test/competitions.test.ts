@@ -50,7 +50,15 @@ describe.skipIf(!db)("competitions", () => {
     relay.payoutCalls = 0;
     relay.delayMs = 0;
     relay.outcome = () => ({ status: "submitted", signature: `sig-${relay.intents.size + 1}` });
+    await indexedUpTo(new Date());
   });
+
+  const indexedUpTo = (at: Date) =>
+    db.query(
+      `INSERT INTO indexer_cursor (name, signature, indexed_through) VALUES ('rollup', 'sig', $1)
+       ON CONFLICT (name) DO UPDATE SET indexed_through = EXCLUDED.indexed_through`,
+      [at],
+    );
 
   const campaign = (budget = 100_000_000n): Promise<string> =>
     createCampaign(db, { sponsor: "Northwind", tagline: null, budget, commissionBps: 4000 }, "test");
@@ -199,6 +207,18 @@ describe.skipIf(!db)("competitions", () => {
     await campaign();
     const id = await openCompetition(db, ended({ endsAt: new Date(Date.now() + HOUR) }), "test");
     await expect(closeCompetition(db, id, "test")).rejects.toThrow(/not ended/);
+  });
+
+  it("refuses to close before the indexer has caught up with the end, unless forced", async () => {
+    await campaign();
+    const id = await openCompetition(db, ended(), "test");
+    await db.query("TRUNCATE indexer_cursor");
+    await expect(closeCompetition(db, id, "test")).rejects.toThrow(/indexer has not caught up/);
+    await indexedUpTo(new Date(Date.now() - 2 * 60_000));
+    await expect(closeCompetition(db, id, "test")).rejects.toThrow(/indexer has not caught up/);
+    await closeCompetition(db, id, "test", { force: true });
+    const { rows } = await db.query("SELECT details FROM audit_log WHERE action = 'competition:close'");
+    expect(rows[0].details).toMatchObject({ id, forced: true });
   });
 
   const closedWithPrizes = async (): Promise<string> => {
