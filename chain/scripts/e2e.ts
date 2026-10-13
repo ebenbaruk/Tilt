@@ -7,6 +7,10 @@
 // Uses its own test USDC mint, so it never touches real funds. The admin is the wallet
 // (ANCHOR_WALLET, must be the program's upgrade authority); the relayer is a separate key
 // kept in .anchor/e2e-relayer.json.
+//
+// The scenario sets test limits (e.g. a 3 s round timeout) on the vault. On a vault others
+// use (any non-local RPC), it only runs with --shared-vault, and the config and roles it found
+// are put back at the end, on failure and on Ctrl-C.
 import anchor from "@coral-xyz/anchor";
 import type { IdlAccounts, IdlTypes, Program as ProgramT } from "@coral-xyz/anchor";
 import {
@@ -55,6 +59,8 @@ const POLL_MS = Number(env("POLL_MS", "25"));
 const WALLET = env("ANCHOR_WALLET", `${os.homedir()}/.config/solana/id.json`);
 const RELAYER_FILE = new URL("../.anchor/e2e-relayer.json", import.meta.url);
 const BPF_UPGRADEABLE_LOADER = new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");
+const SHARED_VAULT_FLAG = "--shared-vault";
+const LOCAL_RPC = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/;
 
 const usdc = (x: number) => Math.round(x * 1_000_000);
 const ROUND_TIMEOUT_SECS = 3;
@@ -274,8 +280,7 @@ async function release() {
 }
 
 /** Updates the config on Solana and waits until the rollup's copy of the vault shows it. */
-async function setConfig(overrides: Partial<Config> = {}) {
-  const config = { ...CONFIG, ...overrides };
+async function applyConfig(config: Config) {
   await program.methods.setConfig(config).accountsPartial({ admin: admin.publicKey, vault }).rpc();
   const expected = JSON.stringify((await program.account.vault.fetch(vault)).config);
   await until(async () => {
@@ -283,6 +288,23 @@ async function setConfig(overrides: Partial<Config> = {}) {
     const copy = await erProgram.account.vault.fetch(vault);
     return JSON.stringify(copy.config) === expected ? true : undefined;
   }, "config in rollup");
+}
+
+const setConfig = (overrides: Partial<Config> = {}) => applyConfig({ ...CONFIG, ...overrides });
+
+/** What the vault looked like before the scenario, to put back once it is over. */
+let original: { config: Config; relayer: PublicKey } | undefined;
+
+async function restoreVault() {
+  if (!original) return;
+  const { config, relayer: originalRelayer } = original;
+  original = undefined;
+  await applyConfig(config);
+  const current = await program.account.vault.fetch(vault);
+  if (!current.relayer.equals(originalRelayer)) {
+    await program.methods.setRoles(current.admin, originalRelayer).accountsPartial({ admin: admin.publicKey, vault }).rpc();
+  }
+  console.log(`Config et rôles d'origine du coffre restaurés (round_timeout_secs = ${config.roundTimeoutSecs}).`);
 }
 
 async function fundSol(to: PublicKey, sol: number) {
@@ -304,6 +326,7 @@ async function setUpHouse() {
   const existing = (await base.getAccountInfo(vault)) ? await program.account.vault.fetch(vault) : undefined;
   if (existing) {
     mint = existing.mint;
+    original = { config: existing.config, relayer: existing.relayer };
     await setConfig();
     if (!existing.relayer.equals(relayer.publicKey)) {
       await program.methods.setRoles(admin.publicKey, relayer.publicKey).accountsPartial({ admin: admin.publicKey, vault }).rpc();
@@ -328,7 +351,10 @@ async function setUpHouse() {
     createTopUpEscrowInstruction(escrowPdaFromEscrowAuthority(relayer.publicKey), relayer.publicKey, relayer.publicKey, 0.005 * LAMPORTS_PER_SOL)));
 }
 
-async function main() {
+async function run(): Promise<number> {
+  if (!LOCAL_RPC.test(BASE_RPC) && !process.argv.includes(SHARED_VAULT_FLAG)) {
+    throw new Error(`${BASE_RPC} is not a local stack: this scenario rewrites the vault's config for its duration. Pass ${SHARED_VAULT_FLAG} to run it anyway (the config is restored afterwards).`);
+  }
   console.log(`base=${BASE_RPC} rollup=${ER_RPC} programme=${program.programId.toBase58()}`);
   await setUpHouse();
   const treasury = (await program.account.vault.fetch(vault)).treasury;
@@ -578,10 +604,25 @@ async function main() {
   }
   const failed = results.filter((r) => !r.ok).length;
   console.log(`\n${results.length - failed}/${results.length} vérifications OK`);
-  process.exit(failed ? 1 : 0);
+  return failed ? 1 : 0;
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+async function main() {
+  process.once("SIGINT", () => {
+    void restoreVault().finally(() => process.exit(130));
+  });
+  let code = 1;
+  try {
+    code = await run();
+  } catch (e) {
+    console.error(e);
+  } finally {
+    await restoreVault().catch((e: unknown) => {
+      console.error("Could not restore the vault's original config:", e);
+      code = 1;
+    });
+  }
+  process.exit(code);
+}
+
+main();

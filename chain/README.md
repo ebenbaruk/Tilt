@@ -78,12 +78,12 @@ pnpm --filter @tilt/wallet e2e  # même stack, à travers le relais (Postgres : 
 docker rm -f tilt-mb-stack tilt-vrf
 ```
 
-Sur devnet (rollup MagicBlock EU) :
+Sur devnet (rollup MagicBlock EU). Le coffre devnet est partagé : le scénario y pose des limites de test pendant qu'il tourne, d'où le drapeau explicite ; il remet la config et les rôles trouvés au départ à la fin, en cas d'échec et sur Ctrl-C (pas sur un `kill -9`).
 
 ```bash
 BASE_RPC=https://api.devnet.solana.com ER_RPC=https://devnet-eu.magicblock.app ER_WS=wss://devnet-eu.magicblock.app \
 VALIDATOR=MEUGGrYPxKk17hCr7wpT6s8dtNokZj5U2L57vjYMS8e VRF_ER_QUEUE=5hBR571xnXppuCPveTrctfTU7tJLSN94nq7kv7FRK5Tc \
-POLL_MS=150 pnpm e2e
+POLL_MS=150 pnpm e2e --shared-vault
 ```
 
 La clé du programme (`target/deploy/tilt-keypair.json`) n'est pas versionnée : la garder hors du dépôt et la sauvegarder. Un changement de structure des comptes (comme celui de `Vault`) demande un nouveau déploiement ou une migration.
