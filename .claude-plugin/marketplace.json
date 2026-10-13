@@ -1,0 +1,11 @@
+{
+  "name": "tilt",
+  "owner": { "name": "Tilt" },
+  "plugins": [
+    {
+      "name": "tilt",
+      "source": "./apps/mod",
+      "description": "Play blackjack, roulette, baccarat and slots in a pane while your agent works."
+    }
+  ]
+}

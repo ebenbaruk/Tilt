@@ -1,0 +1,29 @@
+name: web
+
+on:
+  pull_request:
+    paths: ["apps/web/**", "apps/api/src/public.ts", ".github/workflows/web.yml", "pnpm-lock.yaml"]
+  push:
+    branches: [main]
+    paths: ["apps/web/**", "apps/api/src/public.ts", ".github/workflows/web.yml", "pnpm-lock.yaml"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: typecheck, tests, build, e2e
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @tilt/web typecheck
+      - run: pnpm --filter @tilt/web test
+      - run: pnpm --filter @tilt/web build
+      - run: pnpm --filter @tilt/web exec playwright install --with-deps chromium
+      - run: pnpm --filter @tilt/web e2e

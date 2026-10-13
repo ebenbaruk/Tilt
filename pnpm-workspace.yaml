@@ -5,7 +5,9 @@ packages:
 
 # Dependency install scripts stay disabled (spec §10.6); everything used here works without them.
 allowBuilds:
+  '@reown/appkit': false
   bigint-buffer: false
   bufferutil: false
   esbuild: false
+  keccak: false
   utf-8-validate: false

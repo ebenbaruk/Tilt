@@ -1,0 +1,27 @@
+name: mod
+
+on:
+  pull_request:
+    paths: ["apps/mod/**", ".claude-plugin/**", ".github/workflows/mod.yml"]
+  push:
+    branches: [main]
+    paths: ["apps/mod/**", ".claude-plugin/**", ".github/workflows/mod.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: validate, tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Pinned: the mod API is versioned with Claude Code.
+      - run: npm install -g @anthropic-ai/claude-code@2.1.296
+      - run: pnpm --filter @tilt/mod test

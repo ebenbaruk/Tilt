@@ -1,0 +1,8 @@
+chain/
+apps/wallet/
+packages/
+docs/
+.claude/
+pnpm-lock.yaml
+**/.next/
+apps/mod/.claude-plugin/types/
