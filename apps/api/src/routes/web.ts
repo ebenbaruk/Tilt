@@ -75,11 +75,11 @@ export function webRoutes(app: Hono<Env>, deps: AppDeps): void {
     "/v1/account/*",
     rateLimit(deps.limiters.token, (c) => c.get("userId")),
   );
-  const money = [rateLimit(deps.limiters.money, (c: Ctx) => c.get("userId")), geoBlock(deps.geo)] as const;
+  const moneyLimit = rateLimit(deps.limiters.money, (c: Ctx) => c.get("userId"));
 
   app.get("/v1/account", async (c) => c.json(await account(deps, c.get("userId"))));
 
-  app.post("/v1/account/deposit", ...money, async (c) => {
+  app.post("/v1/account/deposit", moneyLimit, geoBlock(deps.geo), async (c) => {
     const identityToken = await requireConsent(c, deps.privy, deps.now);
     const userId = c.get("userId");
     const { intentId, amount } = await parseBody(c, DepositSchema);
@@ -93,7 +93,8 @@ export function webRoutes(app: Hono<Env>, deps: AppDeps): void {
     return c.json(toMoneyResponse(await deps.intents.submit(userId, intentId, action, { identityToken })));
   });
 
-  app.post("/v1/account/withdraw", ...money, async (c) => {
+  // Not geo-blocked: withdrawing is always allowed, a player must be able to take their money out.
+  app.post("/v1/account/withdraw", moneyLimit, async (c) => {
     const identityToken = await requireConsent(c, deps.privy, deps.now);
     const userId = c.get("userId");
     const { intentId, amount } = await parseBody(c, WithdrawSchema);

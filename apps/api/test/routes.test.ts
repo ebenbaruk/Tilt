@@ -344,7 +344,14 @@ describe.skipIf(!db)("api routes", () => {
       expect(await res.json()).toMatchObject({ error: { code: "BLOCKED" } });
     });
 
-    it("are geo-blocked and rate limited", async () => {
+    it("withdrawals are never geo-blocked: players can always take their money out", async () => {
+      const withdraw = (headers: Record<string, string>) =>
+        app.request("/v1/account/withdraw", json({ intentId: randomUUID(), amount: "1000000" }, headers));
+      expect((await withdraw({ ...consent(), "x-country": "US" })).status).toBe(200);
+      expect((await withdraw({ ...consent(), "x-tilt-edge": "", "x-country": "" })).status).toBe(200);
+    });
+
+    it("deposits are geo-blocked, and money moves rate limited", async () => {
       expect((await deposit({ ...consent(), "x-country": "US" })).status).toBe(451);
       ({ app } = testApp(db, relay, chain, {
         limiters: { ...testApp(db, relay, chain).deps.limiters, money: RateLimiter.perMinute(1) },
