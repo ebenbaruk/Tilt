@@ -2,6 +2,7 @@
 import { serve } from "@hono/node-server";
 import { PrivyClient } from "@privy-io/node";
 import { createApp } from "./app";
+import { PrivyConsentVerifier } from "./consent";
 import { TiltChain } from "./chain";
 import { loadConfig } from "./config";
 import { createDb, migrate } from "./db";
@@ -37,11 +38,12 @@ const players = new PrivyPlayerWallets(privy, config.PRIVY_AUTHORIZATION_KEY, db
 const intents = new Intents(db, new ChainExecutor(chain, players, db), {
   maxDeposit: config.MAX_DEPOSIT,
   dailyDepositLimit: config.DAILY_DEPOSIT_LIMIT,
+  dailyDepositLimitGlobal: config.DAILY_DEPOSIT_LIMIT_GLOBAL,
   minPromoPayout: config.MIN_PROMO_PAYOUT,
   maxPromoPayout: config.MAX_PROMO_PAYOUT,
   dailyPromoLimit: config.DAILY_PROMO_LIMIT,
 });
-const app = createApp({ apiKeys: config.RELAY_API_KEYS, intents, players, chain, db });
+const app = createApp({ apiKeys: config.RELAY_API_KEYS, intents, players, chain, db, consent: new PrivyConsentVerifier(privy) });
 
 const server = serve({ fetch: app.fetch, hostname: config.HOST, port: config.PORT });
 const log = (msg: string, extra: Record<string, unknown> = {}) => console.log(JSON.stringify({ level: "info", msg, ...extra }));

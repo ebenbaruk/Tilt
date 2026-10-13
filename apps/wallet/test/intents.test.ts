@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
+import type { ConsentVerifier } from "../src/consent";
 import { IntentError, type RecordSend, type SentTransaction, type TiltChain, type TransactionStatus, UnconfirmedError } from "../src/chain";
 import { createDb, migrate, type Db } from "../src/db";
 import { Intents, type Executor, type RelayLimits } from "../src/intents";
@@ -21,6 +22,7 @@ const ADDRESS = new PublicKey("6aEPgBvxq7QBzC4VZ8vL6epiXn24eHbPyq2sVZY93t2N");
 const LIMITS: RelayLimits = {
   maxDeposit: 100_000_000n,
   dailyDepositLimit: 150_000_000n,
+  dailyDepositLimitGlobal: 200_000_000n,
   minPromoPayout: 1_000_000n,
   maxPromoPayout: 10_000_000n,
   dailyPromoLimit: 20_000_000n,
@@ -250,6 +252,15 @@ describe("intents", () => {
     expect(results.filter((r) => r === "LIMIT_EXCEEDED")).toHaveLength(6);
   });
 
+  it("caps deposits of all players together per 24 h, even when concurrent", async () => {
+    const intents = new Intents(db, new FakeExecutor(), { ...LIMITS, dailyDepositLimitGlobal: 120_000_000n });
+    const results = await Promise.all(
+      Array.from({ length: 5 }, (_, i) => intents.submit(intent(deposit(50_000_000), randomUUID(), `did:privy:player${i}`)).then((r) => r.status, (e: IntentError) => e.code)),
+    );
+    expect(results.filter((r) => r === "submitted")).toHaveLength(2);
+    expect(results.filter((r) => r === "LIMIT_EXCEEDED")).toHaveLength(3);
+  });
+
   it("pays a prize while the player is mid-round, and lets them play meanwhile", async () => {
     let release = () => {};
     const held = new Promise<void>((resolve) => (release = resolve));
@@ -278,10 +289,20 @@ describe("intents", () => {
   });
 });
 
+/** Stands in for Privy: "token|<user id>|<issued at, unix s>" is a valid identity token, anything else is not. */
+const consent: ConsentVerifier = {
+  async verify(identityToken) {
+    const [kind, userId, issuedAt] = identityToken.split("|");
+    if (kind !== "token") throw new Error("invalid signature");
+    return { userId, issuedAt: Number(issuedAt) };
+  },
+};
+const identityToken = (userId = USER, ageSecs = 0) => ({ identityToken: `token|${userId}|${Math.floor(Date.now() / 1000) - ageSecs}` });
+
 describe("HTTP API", () => {
   const NEXT_KEY = "n".repeat(40);
   const app = (executor: Executor = new FakeExecutor()) =>
-    createApp({ apiKeys: [API_KEY, NEXT_KEY], intents: new Intents(db, executor, LIMITS), players, chain: { isOpen: async () => true }, db });
+    createApp({ apiKeys: [API_KEY, NEXT_KEY], intents: new Intents(db, executor, LIMITS), players, chain: { isOpen: async () => true }, db, consent });
   const call = (path: string, init: RequestInit = {}, key = API_KEY, executor?: Executor) =>
     app(executor).request(path, { ...init, headers: { authorization: `Bearer ${key}`, "content-type": "application/json", ...init.headers } });
   const post = (body: unknown, executor?: Executor) => call("/intents", { method: "POST", body: JSON.stringify(body) }, API_KEY, executor);
@@ -317,11 +338,33 @@ describe("HTTP API", () => {
     expect((await call(`/intents/${randomUUID()}`)).status).toBe(404);
   });
 
+  it("moves a player's money only with their fresh identity token, and never stores it", async () => {
+    const refusal = async (action: Action, token?: { identityToken: string }) => {
+      const res = await post({ ...intent(action), consent: token });
+      return [res.status, ((await res.json()) as { error?: { code: string } }).error?.code];
+    };
+    for (const action of [deposit(1), { type: "open_account", amount: "1" } as const, { type: "withdraw", amount: "1" } as const]) {
+      expect(await refusal(action), action.type).toEqual([403, "CONSENT_REQUIRED"]);
+    }
+    expect(await refusal(deposit(1), { identityToken: "forged" })).toEqual([403, "CONSENT_REQUIRED"]);
+    expect(await refusal(deposit(1), identityToken(NOBODY))).toEqual([403, "CONSENT_REQUIRED"]);
+    expect(await refusal(deposit(1), identityToken(USER, 301))).toEqual([403, "CONSENT_REQUIRED"]);
+    expect((await db.query("SELECT 1 FROM intents")).rowCount).toBe(0);
+
+    const token = identityToken(USER, 240);
+    const accepted = { ...intent(deposit(1)), consent: token };
+    expect(await (await post(accepted)).json()).toMatchObject({ status: "submitted" });
+    expect((await post(intent(bet))).status).toBe(200);
+    const { rows } = await db.query<{ row: string }>("SELECT row_to_json(intents)::text AS row FROM intents");
+    expect(rows).toHaveLength(2);
+    for (const { row } of rows) expect(row).not.toContain(token.identityToken);
+  });
+
   it("maps request refusals to 409 and 422", async () => {
     const request = intent(bet);
     await post(request);
     expect((await post({ ...request, action: { type: "blackjack_hit" } })).status).toBe(409);
-    expect((await post(intent(deposit(100_000_001)))).status).toBe(422);
+    expect((await post({ ...intent(deposit(100_000_001)), consent: identityToken() })).status).toBe(422);
     const slow = new FakeExecutor(() => sleep(200).then(() => "sig"));
     const inFlight = post(intent(bet), slow);
     await sleep(50);

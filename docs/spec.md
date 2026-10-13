@@ -242,14 +242,15 @@ Assurée on-chain par le VRF (§6.1) : le programme n'accepte un tirage que de l
 
 ```ts
 GET  /users/:userId    -> { userId, solanaAddress, accountOpen }        // 404 UNKNOWN_USER
-POST /intents { intentId, userId, action } -> { intentId, status, signature?, error? }
+POST /intents { intentId, userId, action, consent? } -> { intentId, status, signature?, error? }
 GET  /intents/:intentId -> même réponse
 // action : open_account | deposit {amount} · blackjack_bet {amount} | blackjack_hit | blackjack_stand | blackjack_double
 //          roulette_spin {amount, bet} · baccarat_deal {amount, bet} · slots_spin {amount} · withdraw {amount}
 // status : pending (en vol ou issue inconnue, le relais la tranche seul) | submitted (arrivée on-chain) | failed
 // error.code : PROGRAM_ERROR (message = nom de l'erreur Anchor, ex. InsufficientBalance), ACCOUNT_NOT_OPEN, …
 // 409 INTENT_CONFLICT (id réutilisé pour autre chose) ou PLAYER_BUSY (une intention du joueur est déjà en vol)
-// 422 LIMIT_EXCEEDED (plafonds de dépôt du relais) ; rien n'est enregistré, le même intentId peut être renvoyé.
+// 403 CONSENT_REQUIRED : open_account, deposit et withdraw exigent consent.identityToken (jeton d'identité Privy du joueur, émis il y a moins de 5 min).
+// 422 LIMIT_EXCEEDED (plafonds du relais : dépôts par joueur et global, gains promo) ; rien n'est enregistré, le même intentId peut être renvoyé.
 POST /payouts/promo { payoutId, userId, amount, poolId, reason } -> { payoutId, status, signature?, error? }
 GET  /payouts/promo/:payoutId -> même réponse
 // Verse un gain de compétition ou un drop depuis le pool promo (séparé de la bankroll) dans le wallet du joueur.
@@ -263,7 +264,7 @@ GET  /payouts/promo/:payoutId -> même réponse
 - `api` ne touche jamais aux clés. Le relais ne garde aucun état de jeu : il le lit sur la chaîne.
 - `api` lit l'état et les événements directement sur la chaîne (RPC / indexeur), pas via le relais.
 - La clé Privy du relais ne peut signer, pour le joueur, que des transactions du programme Tilt (policy Privy `PRIVY_POLICY_ID`, possédée par une clé d'administration hors ligne ; à attacher par le web quand le joueur ajoute le signer : `additional_signers: [{ signer_id: PRIVY_KEY_QUORUM_ID, override_policy_ids: [PRIVY_POLICY_ID] }]`). Vérifié en live : transfert USDC refusé, seul ou à côté d'une instruction Tilt ; la clé du relais ne peut pas modifier la policy.
-- Reste ouvert : preuve du consentement du joueur pour les dépôts (jeton d'identité Privy transmis par `api` et vérifié par le relais), à faire avec `api`.
+- Consentement du joueur : pour `open_account`, `deposit` et `withdraw`, `api` transmet le jeton d'identité Privy du joueur ; le relais vérifie sa signature, qu'il appartient à `userId` et qu'il a moins de 5 minutes (sinon 403 `CONSENT_REQUIRED`), et ne le stocke pas. Une clé API volée ne suffit donc plus à déplacer l'argent d'un joueur.
 
 **Développement en parallèle :** Armand publie très tôt l'IDL v0 (forme des comptes et événements) et le contrat du relais. Eli code le mod et `api` contre un **faux relais** qui rejoue des événements enregistrés. On branche tout sur devnet en M3.
 

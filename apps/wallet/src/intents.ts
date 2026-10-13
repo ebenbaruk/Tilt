@@ -26,6 +26,8 @@ export interface Executor {
 export interface RelayLimits {
   maxDeposit: bigint;
   dailyDepositLimit: bigint;
+  /** All players together, per rolling 24 h. */
+  dailyDepositLimitGlobal: bigint;
   /** Each payout costs the relayer rent (payout record, maybe a token account): no dust prizes. */
   minPromoPayout: bigint;
   /** Bounds what a leaked API key can pay out, on top of the program's pool caps. */
@@ -88,6 +90,7 @@ const SAFE_MESSAGES: Record<ErrorCodeValue, string> = {
   INTENT_CONFLICT: "intent id already used for another action",
   PLAYER_BUSY: "another intent of this player is in flight",
   LIMIT_EXCEEDED: "relay limit exceeded",
+  CONSENT_REQUIRED: "the player's fresh identity token is required",
   ACCOUNT_NOT_OPEN: "account not open: the first deposit opens it",
   ACCOUNT_ALREADY_OPEN: "account already open",
   PROGRAM_ERROR: "refused by the program",
@@ -253,6 +256,15 @@ export class Intents {
     );
     if (BigInt(rows[0].total) + amount > this.limits.dailyDepositLimit) {
       throw new IntentError("LIMIT_EXCEEDED", `deposits are capped at ${this.limits.dailyDepositLimit} base units per 24 h`);
+    }
+    // Bounds what many players' wallets together can be made to sign, e.g. with a leaked key.
+    await client.query("SELECT pg_advisory_xact_lock(hashtextextended('deposits', 0))");
+    const all = await client.query<{ total: string }>(
+      `SELECT coalesce(sum((action->>'amount')::numeric), 0)::text AS total FROM intents
+       WHERE action->>'type' IN ('open_account', 'deposit') AND status <> 'failed' AND created_at > now() - interval '24 hours'`,
+    );
+    if (BigInt(all.rows[0].total) + amount > this.limits.dailyDepositLimitGlobal) {
+      throw new IntentError("LIMIT_EXCEEDED", `deposits of all players are capped at ${this.limits.dailyDepositLimitGlobal} base units per 24 h`);
     }
   }
 

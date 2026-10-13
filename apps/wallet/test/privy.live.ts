@@ -54,8 +54,10 @@ async function main() {
     relayer,
   });
   const players = new PrivyPlayerWallets(privy, required("PRIVY_AUTHORIZATION_KEY"), db);
-  const intents = new Intents(db, new ChainExecutor(chain, players, db), { maxDeposit: BigInt(usdc(50)), dailyDepositLimit: BigInt(usdc(100)), minPromoPayout: BigInt(usdc(1)), maxPromoPayout: BigInt(usdc(50)), dailyPromoLimit: BigInt(usdc(100)) });
-  const app = createApp({ apiKeys: [API_KEY], intents, players, chain, db });
+  const intents = new Intents(db, new ChainExecutor(chain, players, db), { maxDeposit: BigInt(usdc(50)), dailyDepositLimit: BigInt(usdc(100)), dailyDepositLimitGlobal: BigInt(usdc(1000)), minPromoPayout: BigInt(usdc(1)), maxPromoPayout: BigInt(usdc(50)), dailyPromoLimit: BigInt(usdc(100)) });
+  // Stands in for Privy's identity tokens (checked by the HTTP tests): the token is the user id.
+  const consent = { verify: async (identityToken: string) => ({ userId: identityToken, issuedAt: Date.now() / 1000 }) };
+  const app = createApp({ apiKeys: [API_KEY], intents, players, chain, db, consent });
   const api = async <T>(path: string, body?: unknown) => {
     const res = await app.request(path, {
       method: body ? "POST" : "GET",
@@ -64,7 +66,7 @@ async function main() {
     });
     return { status: res.status, json: (await res.json()) as T };
   };
-  const submit = (userId: string, action: Action) => api<IntentResponse>("/intents", { intentId: randomUUID(), userId, action }).then((r) => r.json);
+  const submit = (userId: string, action: Action) => api<IntentResponse>("/intents", { intentId: randomUUID(), userId, action, consent: { identityToken: userId } }).then((r) => r.json);
 
   // A Privy user like the web would create, with the relay's key quorum as wallet signer.
   const user = await privy.users().create({

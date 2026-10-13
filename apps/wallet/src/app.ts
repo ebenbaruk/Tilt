@@ -14,6 +14,7 @@ import {
 import { createHash, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { IntentError, type TiltChain } from "./chain";
+import { type ConsentVerifier, requireConsent } from "./consent";
 import type { Db } from "./db";
 import type { Intents } from "./intents";
 import type { PlayerWallets } from "./players";
@@ -25,6 +26,7 @@ export interface AppDeps {
   players: PlayerWallets;
   chain: Pick<TiltChain, "isOpen">;
   db: Db;
+  consent: ConsentVerifier;
 }
 
 const digest = (s: string) => createHash("sha256").update(s).digest();
@@ -38,9 +40,10 @@ function authorized(header: string | undefined, apiKeys: readonly string[]): boo
 const error = (code: ErrorCode, message: string): ErrorResponse => ({ error: { code, message } });
 const invalid = (issues: z.ZodIssue[]) => error("INVALID_REQUEST", issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
 
-/** Refusals of the request itself, not of the action. PLAYER_BUSY and LIMIT_EXCEEDED record
- *  nothing (the same id can be sent again); INTENT_CONFLICT means the id is already taken. */
-const REQUEST_REFUSALS: Partial<Record<ErrorCode, 409 | 422>> = { INTENT_CONFLICT: 409, PLAYER_BUSY: 409, LIMIT_EXCEEDED: 422 };
+/** Refusals of the request itself, not of the action. CONSENT_REQUIRED, PLAYER_BUSY and
+ *  LIMIT_EXCEEDED record nothing (the same id can be sent again); INTENT_CONFLICT means the id
+ *  is already taken. */
+const REQUEST_REFUSALS: Partial<Record<ErrorCode, 403 | 409 | 422>> = { CONSENT_REQUIRED: 403, INTENT_CONFLICT: 409, PLAYER_BUSY: 409, LIMIT_EXCEEDED: 422 };
 
 const Id = z.string().uuid().transform((s) => s.toLowerCase());
 
@@ -50,7 +53,7 @@ const MAX_BODY_BYTES = 8 * 1024;
 const asPayout = ({ intentId, ...rest }: IntentResponse): PromoPayoutResponse => ({ payoutId: intentId, ...rest });
 
 /** Runs an intent (or payout), turning request-level refusals into 409 / 422 responses. */
-async function run<T>(submit: () => Promise<IntentResponse>, shape: (r: IntentResponse) => T): Promise<{ body: T | ErrorResponse; status: 200 | 409 | 422 }> {
+async function run<T>(submit: () => Promise<IntentResponse>, shape: (r: IntentResponse) => T): Promise<{ body: T | ErrorResponse; status: 200 | 403 | 409 | 422 }> {
   try {
     return { body: shape(await submit()), status: 200 };
   } catch (e) {
@@ -88,7 +91,12 @@ export function createApp(deps: AppDeps): Hono {
   app.post("/intents", async (c) => {
     const parsed = IntentRequest.safeParse(await c.req.json().catch(() => undefined));
     if (!parsed.success) return c.json(invalid(parsed.error.issues), 400);
-    const { body, status } = await run(() => deps.intents.submit(parsed.data), (r) => r);
+    // The identity token is checked, then dropped: it is never stored with the intent.
+    const { consent: _, ...intent } = parsed.data;
+    const { body, status } = await run(async () => {
+      await requireConsent(deps.consent, parsed.data);
+      return deps.intents.submit(intent);
+    }, (r) => r);
     return c.json(body, status);
   });
 

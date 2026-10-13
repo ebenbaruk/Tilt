@@ -55,6 +55,10 @@ export const IntentRequest = z.object({
   intentId: Uuid,
   userId: PrivyUserId,
   action: Action,
+  /** Required for open_account, deposit and withdraw (403 CONSENT_REQUIRED otherwise): the
+   *  player's Privy identity token, issued less than 5 minutes ago. Never stored by the relay.
+   *  A replayed intent needs a fresh token too; to follow an intent, poll GET /intents/:id. */
+  consent: z.object({ identityToken: z.string().min(1).max(4096) }).optional(),
 });
 export type IntentRequest = z.infer<typeof IntentRequest>;
 
@@ -65,8 +69,10 @@ export const ErrorCode = z.enum([
   "INTENT_CONFLICT",
   /** Another intent of this player is still in flight; retry once it settles. */
   "PLAYER_BUSY",
-  /** The relay's deposit caps (per deposit or per 24 h) would be exceeded. */
+  /** The relay's caps (deposits, promo payouts) would be exceeded. */
   "LIMIT_EXCEEDED",
+  /** Missing, invalid, stale or someone else's identity token on an action that needs consent. */
+  "CONSENT_REQUIRED",
   "ACCOUNT_NOT_OPEN",
   "ACCOUNT_ALREADY_OPEN",
   "PROGRAM_ERROR",

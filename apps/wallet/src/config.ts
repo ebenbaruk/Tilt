@@ -56,6 +56,8 @@ const Env = z.object({
   MAX_DEPOSIT: UsdcAmount.default(1_000_000_000n),
   /** Largest total a player can deposit through the relay per rolling 24 h (USDC base units). */
   DAILY_DEPOSIT_LIMIT: UsdcAmount.default(5_000_000_000n),
+  /** Largest total all players together can deposit through the relay per rolling 24 h. */
+  DAILY_DEPOSIT_LIMIT_GLOBAL: UsdcAmount.default(100_000_000_000n),
   /** Smallest promo payout (USDC base units): each one costs the relayer rent. */
   MIN_PROMO_PAYOUT: UsdcAmount.default(1_000_000n),
   /** Largest single promo payout (USDC base units). */
