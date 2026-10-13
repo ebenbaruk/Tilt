@@ -64,6 +64,9 @@ mod tests {
         // A 199-unit gain pays a 1-unit fee; below 100 units the fee is 0, hence `min_bet`.
         assert_eq!(settle(1_000, 1_199).fee, 1);
         assert_eq!(settle(1_000, 1_099).fee, 0);
+        // A Banker win gains 95% of the stake: the smallest valid `min_bet` (106) still pays a fee.
+        assert_eq!(settle(106, 106 + mul_div(106, 95, 100)).fee, 1);
+        assert_eq!(settle(105, 105 + mul_div(105, 95, 100)).fee, 0);
     }
 
     #[test]

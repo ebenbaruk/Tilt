@@ -49,11 +49,15 @@ pub struct Config {
 impl Config {
     /// Refuses settings that would silently break play or payouts.
     pub fn validate(&self) -> Result<()> {
-        let fee_bps = crate::settlement::FEE_BPS;
+        use crate::settlement::{mul_div, BPS, FEE_BPS};
         require!(
-            // Below BPS / FEE_BPS units of gain the 1% fee rounds to zero.
-            self.min_bet >= crate::settlement::BPS / fee_bps
+            // Below BPS / FEE_BPS units of gain the 1% fee rounds to zero; the smallest gain
+            // of a winning bet is a Banker win at baccarat, 95% of the stake.
+            mul_div(self.min_bet, 95, 100) >= BPS / FEE_BPS
                 && self.min_bet <= self.max_bet
+                // Settlement multiplies stakes by up to the slots jackpot; a doubled blackjack
+                // stake only returns 2x, well within this.
+                && self.max_bet.checked_mul(crate::games::slots::MAX_MULTIPLE).is_some()
                 // Even-money bets gain their stake: below this no bet could ever start.
                 && self.max_round_gain >= self.min_bet
                 && self.max_player_win >= self.min_bet
@@ -320,7 +324,7 @@ mod tests {
 
     fn config() -> Config {
         Config {
-            min_bet: 100,
+            min_bet: 106,
             max_bet: 1_000,
             max_round_gain: 50_000,
             max_player_win: 10_000,
@@ -345,7 +349,14 @@ mod tests {
         assert!(config().validate().is_ok());
         for broken in [
             Config {
-                min_bet: 99,
+                // A Banker win would gain 99: no fee.
+                min_bet: 105,
+                ..config()
+            },
+            Config {
+                max_bet: u64::MAX / 200,
+                max_round_gain: u64::MAX,
+                max_player_win: u64::MAX,
                 ..config()
             },
             Config {
@@ -449,7 +460,7 @@ mod tests {
     fn limits_are_enforced_when_a_round_starts() {
         let mut a = account(1_000, 1_000);
         assert!(
-            a.start_round(Game::Slots, 99, 0, &config(), 0).is_err(),
+            a.start_round(Game::Slots, 105, 0, &config(), 0).is_err(),
             "below min bet"
         );
         assert!(
@@ -457,7 +468,7 @@ mod tests {
             "above max bet"
         );
         assert!(
-            a.start_round(Game::Slots, 100, 50_001, &config(), 0)
+            a.start_round(Game::Slots, 106, 50_001, &config(), 0)
                 .is_err(),
             "round gain too high"
         );
@@ -466,13 +477,13 @@ mod tests {
             ..config()
         };
         assert!(
-            a.start_round(Game::Slots, 100, 0, &paused, 0).is_err(),
+            a.start_round(Game::Slots, 106, 0, &paused, 0).is_err(),
             "bets paused"
         );
-        a.start_round(Game::Slots, 100, 0, &config(), 0).unwrap();
+        a.start_round(Game::Slots, 106, 0, &config(), 0).unwrap();
         a.round.status = RoundStatus::AwaitingDraw(Draw::Spin); // as request_draw does
         assert!(
-            a.start_round(Game::Slots, 100, 0, &config(), 0).is_err(),
+            a.start_round(Game::Slots, 106, 0, &config(), 0).is_err(),
             "round in progress"
         );
     }
