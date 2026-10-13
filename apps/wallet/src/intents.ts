@@ -79,6 +79,35 @@ interface Outcome {
   message: string | null;
 }
 
+/** What `apps/api` is told for each code. Raw causes (RPC, Privy, database errors) can carry
+ *  internal details: they go to the relay's logs only. */
+const SAFE_MESSAGES: Record<ErrorCodeValue, string> = {
+  UNAUTHORIZED: "unauthorized",
+  INVALID_REQUEST: "invalid request",
+  UNKNOWN_USER: "no Solana wallet for this user",
+  INTENT_CONFLICT: "intent id already used for another action",
+  PLAYER_BUSY: "another intent of this player is in flight",
+  LIMIT_EXCEEDED: "relay limit exceeded",
+  ACCOUNT_NOT_OPEN: "account not open: the first deposit opens it",
+  ACCOUNT_ALREADY_OPEN: "account already open",
+  PROGRAM_ERROR: "refused by the program",
+  NETWORK_ERROR: "the transaction could not be sent or confirmed",
+  INTERNAL_ERROR: "internal error",
+};
+/** The program's refusals are reported by their Anchor error name, e.g. "InsufficientBalance". */
+const ANCHOR_ERROR_NAME = /^[A-Z][A-Za-z0-9]{0,63}$/;
+
+/** The outcome as stored and returned: a fixed message per code, the raw one logged. */
+function safe(intentId: string, outcome: Outcome): Outcome {
+  if (!outcome.code || !outcome.message) return outcome;
+  if (outcome.code === "PROGRAM_ERROR" && ANCHOR_ERROR_NAME.test(outcome.message)) return outcome;
+  const message = SAFE_MESSAGES[outcome.code];
+  if (message !== outcome.message) {
+    console.error(JSON.stringify({ level: "error", msg: "intent error", intentId, code: outcome.code, error: outcome.message }));
+  }
+  return { ...outcome, message };
+}
+
 function outcomeOf(e: unknown, sent: boolean): Outcome {
   // Refused by the program or by the relay's checks; nothing landed.
   if (e instanceof IntentError) return { status: "failed", code: e.code, message: e.message };
@@ -140,7 +169,7 @@ export class Intents {
       (): Outcome => ({ status: "submitted", code: null, message: null }),
       (e: unknown) => outcomeOf(e, sent),
     );
-    return this.settle(request.intentId, outcome);
+    return this.settle(request.intentId, safe(request.intentId, outcome));
   }
 
   /** Settles pending intents whose execution was interrupted or whose confirmation was missed. */
@@ -158,11 +187,12 @@ export class Intents {
           ? settledOutcome(await chain.transactionStatus({ signature: row.signature, network: row.network, lastValidBlockHeight: Number(row.last_valid_block_height) }), row.network)
           : { status: "failed" as const, code: "NETWORK_ERROR" as const, message: "interrupted before sending" };
         if (!outcome) continue;
+        const { status, code, message } = safe(row.intent_id, outcome);
         // Guarded on the signature read above: an execution that resumed and recorded one since wins.
         const { rowCount } = await this.db.query(
           `UPDATE intents SET status = $2, error_code = $3, error_message = $4, updated_at = now()
            WHERE intent_id = $1 AND status = 'pending' AND signature IS NOT DISTINCT FROM $5`,
-          [row.intent_id, outcome.status, outcome.code, outcome.message, row.signature],
+          [row.intent_id, status, code, message, row.signature],
         );
         settled += rowCount ?? 0;
       } catch (e) {

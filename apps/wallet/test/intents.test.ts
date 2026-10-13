@@ -121,6 +121,19 @@ describe("intents", () => {
     expect(await settle({ type: "blackjack_stand" })).toMatchObject({ status: "pending", signature: "5ig" });
   });
 
+  it("never returns raw internal error text", async () => {
+    const intents = new Intents(db, new FakeExecutor(async (action) => {
+      if (action.type === "withdraw") throw new IntentError("PROGRAM_ERROR", '{"InstructionError":[0,{"Custom":1}]}');
+      throw new Error("connect ECONNREFUSED 10.0.3.7:8899 (postgres://relay:hunter2@db)");
+    }), LIMITS);
+    const network = await intents.submit(intent(bet));
+    expect(network).toMatchObject({ status: "failed", error: { code: "NETWORK_ERROR" } });
+    expect(network.error?.message).not.toMatch(/ECONNREFUSED|10\.0\.3\.7|hunter2/);
+    const refused = await intents.submit(intent({ type: "withdraw", amount: "1" }));
+    expect(refused.error).toEqual({ code: "PROGRAM_ERROR", message: "refused by the program" });
+    expect(await intents.get(refused.intentId)).toEqual(refused);
+  });
+
   it("never sends an intent that was settled while it executed", async () => {
     let refused: unknown;
     const intents = new Intents(db, new FakeExecutor(async (_action, record) => {
@@ -170,7 +183,7 @@ describe("intents", () => {
     expect(await intents.get(ids.flying)).toMatchObject({ status: "pending" });
     expect(await intents.get(ids.unseenInRollup)).toMatchObject({ status: "pending" });
     expect(await intents.get(ids.justSent)).toMatchObject({ status: "pending" });
-    expect(await intents.get(ids.crashedBeforeSend)).toMatchObject({ status: "failed", error: { message: "interrupted before sending" } });
+    expect(await intents.get(ids.crashedBeforeSend)).toMatchObject({ status: "failed", error: { code: "NETWORK_ERROR" } });
     expect(await intents.get(ids.justStarted)).toMatchObject({ status: "pending" });
     // A settled player can play again.
     expect((await intents.submit(intent(bet, randomUUID(), "u1"))).status).toBe("submitted");
