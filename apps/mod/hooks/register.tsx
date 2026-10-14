@@ -22,6 +22,7 @@ import {
   trustedVerifyUrl,
 } from "./api";
 import { cleanText, formatDuration, SEPARATOR } from "./format";
+import { isPlayAction } from "./guards";
 import {
   activeGame,
   type Command,
@@ -61,6 +62,8 @@ const prefs = atom({ plugin: "tilt", key: "prefs" } as const, {
   baccarat: "banker",
 });
 const intent = atom({ plugin: "tilt", key: "intent" } as const, null);
+const NO_ECHO = { keys: [], until: null };
+const echo = atom({ plugin: "tilt", key: "echo" } as const, NO_ECHO);
 const message = atom({ plugin: "tilt", key: "message" } as const, null);
 const agent = atom({ plugin: "tilt", key: "agent" } as const, { isWorking: false, frame: 0, notice: null });
 const layout = atom({ plugin: "tilt", key: "layout" } as const, { paneShown: false, paneDismissed: false });
@@ -78,12 +81,18 @@ const PANE_SYNC_MS = 2_000;
 const IMPRESSION_FLUSH_MS = 60_000;
 const RATE_LIMIT_BACKOFF_MS = 5_000;
 const OPEN_TIMEOUT_MS = 10_000;
+/** A submitted move whose state never shows frees the keys after this long rather than never. */
+const SETTLE_TIMEOUT_MS = 15_000;
+/** How long a settled move's keys stay inert: a mashed key's last presses land in it. */
+const ECHO_MS = 1_500;
 const MS_PER_MINUTE = 60_000;
 
 const UNTRUSTED_LOGIN_PAGE = "the login page the API sent is not on its own site.";
 const INVALID_API_URL = "The tilt apiUrl setting is not a valid https url (plain http only for localhost).";
 const LOGGED_OUT = "Session expired · run /tilt login again.";
 const PLAYER_BUSY = "Previous move still settling.";
+const UNPLAYABLE_BET = "This table's limits allow no bet · try again later.";
+const ALREADY_IN = "Already logged in to tilt · run /tilt logout first to switch accounts.";
 
 /** Background bookkeeping of one loaded copy of the module: a reload starts it afresh. */
 interface Runtime {
@@ -105,6 +114,10 @@ interface Runtime {
   token: string | null | undefined;
   /** The table's `Client` failed on this terminal: the pane draws the still table. */
   isTableBroken: boolean;
+  /** The move whose POST /v1/play has no answer yet: it is not sent again meanwhile. */
+  sendingId: string | null;
+  /** The api answered 429: no poll or resend before this time. */
+  rateLimitedUntil: number;
 }
 
 interface StoredSession {
@@ -144,8 +157,13 @@ export function finishNotice(reason: string, durationMs: number): AgentView["not
   return { text: `agent turn ended after ${formatDuration(durationMs)}${saved}`, tone: "neutral" };
 }
 
+// A 5xx message is the server's own (a stack, a query) and never one meant for the player.
 const failureText = (failure: ApiFailure): string =>
-  failure.kind === "network" ? "couldn't reach tilt · retrying" : cleanText(failure.message);
+  failure.kind === "network"
+    ? "couldn't reach tilt"
+    : failure.status !== null && failure.status >= 500
+      ? "tilt is having trouble"
+      : cleanText(failure.message);
 
 const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -218,6 +236,12 @@ async function openBrowser($: EngineInterface, url: string): Promise<boolean> {
 async function login($: EngineInterface, rt: Runtime): Promise<string> {
   if (rt.base === null) {
     return INVALID_API_URL;
+  }
+
+  // A second login would stop the polls and the resend of a move in flight until it is approved,
+  // and an abandoned one would read as logged out while the session still holds.
+  if ((await readToken($, rt)) !== null) {
+    return ALREADY_IN;
   }
 
   const started = await startDevice(httpOf($), rt.base);
@@ -315,6 +339,11 @@ async function loginStep($: EngineInterface, rt: Runtime, now: number): Promise<
 
 // ---- moves ----
 
+/** Drops the move `id` if it is still the one in flight. */
+async function dropIntent($: EngineInterface, id: string): Promise<void> {
+  await update($, intent, (held) => (intentView(held)?.id === id ? null : held));
+}
+
 async function settleAnswer($: EngineInterface, rt: Runtime, sent: IntentView, answer: IntentResponse): Promise<void> {
   if (answer.status === "pending") {
     await update($, intent, () => ({ ...sent, status: "pending" as const }));
@@ -322,13 +351,21 @@ async function settleAnswer($: EngineInterface, rt: Runtime, sent: IntentView, a
     return;
   }
 
-  await update($, intent, () => null);
   rt.lastPollAt = -Infinity;
   rt.wakeAt = 0;
 
-  if (answer.status === "failed") {
-    await update($, message, () => cleanText(answer.error?.message ?? "Move failed."));
+  if (answer.status === "submitted") {
+    // The state polled until now still shows the table before the move: the keys stay off until
+    // a state shows it, or a mashed key would play the old table a second time.
+    const submittedAt = await $.clock.now();
+
+    await update($, intent, () => ({ ...sent, status: "submitted" as const, submittedAt }));
+
+    return;
   }
+
+  await update($, intent, () => null);
+  await update($, message, () => cleanText(answer.error?.message ?? "Move failed."));
 }
 
 async function settleIntent(
@@ -348,7 +385,12 @@ async function settleIntent(
   }
 
   const { failure } = result;
-  const isTransient = failure.kind === "network" || (failure.status !== null && failure.status >= 500);
+  const isRateLimited = failure.status === 429;
+  const isTransient = failure.kind === "network" || isRateLimited || (failure.status !== null && failure.status >= 500);
+
+  if (isRateLimited) {
+    rt.rateLimitedUntil = (await $.clock.now()) + RATE_LIMIT_BACKOFF_MS;
+  }
 
   if (isTransient) {
     // Nothing is known about the move: it is resent later with the same id, never a new one.
@@ -368,37 +410,101 @@ async function settleIntent(
   await update($, message, () => (failure.code === "PLAYER_BUSY" ? PLAYER_BUSY : failureText(failure)));
 }
 
-/** Sends, or resends with the same id, the move in flight. */
+/** Sends, or resends with the same id, the move in flight; never while its last send has no answer. */
 async function submit($: EngineInterface, rt: Runtime, sent: IntentView): Promise<void> {
   const token = await readToken($, rt);
 
-  if (token === null || rt.base === null) {
+  if (token === null || rt.base === null || rt.sendingId === sent.id) {
     return;
   }
 
+  rt.sendingId = sent.id;
   rt.lastIntentAt = await $.clock.now();
-  const answer = await play(httpOf($), rt.base, token, { intentId: sent.id, action: sent.action });
 
-  await settleIntent($, rt, sent, answer);
+  try {
+    const answer = await play(httpOf($), rt.base, token, { intentId: sent.id, action: sent.action });
+
+    await settleIntent($, rt, sent, answer);
+  } finally {
+    rt.sendingId = null;
+  }
 }
 
 async function sendMove($: EngineInterface, rt: Runtime, action: PlayAction): Promise<void> {
-  if ((await readIntent($)) !== null) {
+  // A move the guards refuse (a zero stake from odd limits) would not read back as in flight, so
+  // nothing would hold the next key press: it is never sent.
+  if (!isPlayAction(action)) {
+    await update($, message, () => UNPLAYABLE_BET);
+
     return;
   }
 
-  const sent: IntentView = { id: crypto.randomUUID(), action, status: "sending" };
+  const state = (await readRemote($)).state;
+  const sent: IntentView = {
+    id: crypto.randomUUID(),
+    action,
+    status: "sending",
+    roundSeen: JSON.stringify(state?.round ?? null),
+    submittedAt: null,
+  };
+  // Two key presses can run side by side: only the one that finds no move in flight sends.
+  const held = await update($, intent, (value) => (intentView(value) === null ? sent : value));
 
-  await update($, intent, () => sent);
+  if (held?.id !== sent.id) {
+    return;
+  }
+
+  const live =
+    state === null
+      ? []
+      : planKeys({ state, prefs: await readPrefs($), isBusy: false })
+          .filter((key) => key.command.kind !== "switch")
+          .map(({ key, hotkey, label }) => ({ key, hotkey, label }));
+
+  await update($, echo, () => ({ keys: live, until: null }));
   await update($, message, () => null);
   rt.wakeAt = 0;
   await submit($, rt, sent);
+}
+
+/**
+ * Starts the echo's ECHO_MS once its move settled (the intent is gone), and clears it after. The
+ * deadline lives in the store, which every load of the mod shares. Returns the ms until it is due.
+ */
+async function fadeEcho($: EngineInterface, now: number): Promise<number> {
+  const held = await read($, echo);
+
+  if (held.keys.length === 0 || (await readIntent($)) !== null) {
+    return Infinity;
+  }
+
+  if (held.until === null) {
+    await update($, echo, (value) => (value.until === null ? { ...value, until: now + ECHO_MS } : value));
+
+    return ECHO_MS;
+  }
+
+  if (now < held.until) {
+    return held.until - now;
+  }
+
+  await update($, echo, (value) => (value.until !== null && now >= value.until ? NO_ECHO : value));
+
+  return Infinity;
 }
 
 async function intentStep($: EngineInterface, rt: Runtime, token: string, now: number): Promise<void> {
   const current = await readIntent($);
 
   if (current === null || rt.base === null) {
+    return;
+  }
+
+  if (current.status === "submitted") {
+    if (now - (current.submittedAt ?? now) >= SETTLE_TIMEOUT_MS) {
+      await dropIntent($, current.id);
+    }
+
     return;
   }
 
@@ -518,11 +624,21 @@ async function pollStep($: EngineInterface, rt: Runtime, token: string, now: num
   rt.lastPollAt = now;
   const fetched = await fetchState(httpOf($), rt.base, token);
 
+  // A logout, or a login as someone else, came while this was in flight: its answer is not theirs.
+  if (rt.token !== token) {
+    return 0;
+  }
+
   if (!fetched.ok) {
     if (fetched.failure.status === 401) {
       await logout($, rt, LOGGED_OUT);
     } else {
-      await update($, remote, (value) => ({ ...value, error: failureText(fetched.failure) }));
+      if (fetched.failure.status === 429) {
+        rt.rateLimitedUntil = now + RATE_LIMIT_BACKOFF_MS;
+      }
+
+      // The poll runs again on its own, whatever went wrong.
+      await update($, remote, (value) => ({ ...value, error: `${failureText(fetched.failure)} · retrying` }));
     }
 
     return interval;
@@ -537,6 +653,12 @@ async function pollStep($: EngineInterface, rt: Runtime, token: string, now: num
   // An unchanged state is not written, so the pane is not redrawn on every poll.
   if (!isSame) {
     await update($, remote, () => ({ state: fetched.value, error: null, fetchedAt: now }));
+  }
+
+  const current = await readIntent($);
+
+  if (current?.status === "submitted" && JSON.stringify(fetched.value.round) !== current.roundSeen) {
+    await dropIntent($, current.id);
   }
 
   // A new session opens on the game last played.
@@ -652,8 +774,13 @@ async function step($: EngineInterface, rt: Runtime, now: number): Promise<numbe
     return 0;
   }
 
-  await intentStep($, rt, token, now);
-  delays.push(await pollStep($, rt, token, now));
+  if (now < rt.rateLimitedUntil) {
+    delays.push(rt.rateLimitedUntil - now);
+  } else {
+    await intentStep($, rt, token, now);
+    delays.push(await pollStep($, rt, token, now));
+  }
+
   await impressionStep($, rt, token, elapsed);
 
   return Math.max(0, Math.min(...delays));
@@ -670,7 +797,9 @@ async function tick($: EngineInterface, rt: Runtime): Promise<void> {
     const now = await $.clock.now();
 
     if (now >= rt.wakeAt) {
-      rt.wakeAt = now + (await step($, rt, now));
+      const wait = await step($, rt, now);
+
+      rt.wakeAt = now + Math.min(wait, await fadeEcho($, now));
     }
   } catch (error) {
     logDebug($, `background step failed: ${errorText(error)}`);
@@ -692,6 +821,7 @@ async function snapshot($: EngineInterface): Promise<Snapshot> {
     remote: await readRemote($),
     prefs: await readPrefs($),
     intent: await readIntent($),
+    echo: (await read($, echo)).keys,
     message: await read($, message),
     agent: await read($, agent),
   };
@@ -775,6 +905,8 @@ export const register: Register = (on, options) => {
     sponsorName: null,
     token: undefined,
     isTableBroken: false,
+    sendingId: null,
+    rateLimitedUntil: 0,
   };
 
   on("session.start", async ($, e, next) => {

@@ -111,10 +111,12 @@ export function rouletteBetLabel(bet: RouletteBet): string {
   }
 }
 
-const CONTROL_CHARACTERS = /\p{Cc}/gu;
+/** Control characters (escape sequences) and format characters (bidi overrides, zero-width joiners). */
+const UNSHOWN_CHARACTERS = /[\p{Cc}\p{Cf}]/gu;
 const MAX_SHOWN_TEXT = 200;
 
-/** Server text is drawn in the person's terminal: control characters (escape sequences) never reach it. */
+/** Server text is drawn in the person's terminal: no escape sequence reaches it, no bidi override
+ * reorders what follows, and the cut never splits an emoji into a lone surrogate. */
 export function cleanText(text: string): string {
-  return text.replace(CONTROL_CHARACTERS, "").slice(0, MAX_SHOWN_TEXT);
+  return Array.from(text.replace(UNSHOWN_CHARACTERS, "")).slice(0, MAX_SHOWN_TEXT).join("");
 }

@@ -83,6 +83,15 @@ describe("boundaries", () => {
     expect(cleanText("\u001b[31mred\u0007 team")).toBe("[31mred team");
   });
 
+  test("server text cannot reorder or hide what follows, and long text is cut between characters", () => {
+    expect(cleanText("\u202Egnp.exe")).toBe("gnp.exe");
+    expect(cleanText("@k\u200Bi\u2066ra\u2069")).toBe("@kira");
+
+    const cut = cleanText("😀".repeat(300));
+
+    expect(Array.from(cut)).toEqual(Array.from("😀".repeat(200)));
+  });
+
   test("the api url must be https, or plain http on loopback only", () => {
     expect(apiBase("https://api.tilt.example/")).toBe("https://api.tilt.example");
     expect(apiBase("http://127.0.0.1:8788")).toBe("http://127.0.0.1:8788");

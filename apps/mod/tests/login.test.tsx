@@ -3,7 +3,7 @@ import type { On } from "claude-code";
 
 import type { DeviceStartResponse } from "../hooks/protocol";
 import { BASE } from "./fixtures";
-import { command, NOW, PANE, PLUGIN, SESSION, textOf, TOKEN, worldOf, type Answer } from "./world";
+import { command, later, NOW, PANE, PLUGIN, SESSION, textOf, TOKEN, worldOf, type Answer } from "./world";
 
 const DEVICE: DeviceStartResponse = {
   deviceCode: "device-secret",
@@ -89,6 +89,36 @@ describe("/tilt login", () => {
     expect(answer.text).not.toContain("evil");
   });
 
+  test("an api out of reach fails the login without promising a retry it does not make", async ($, on) => {
+    const world = worldOf(on, { "POST /v1/auth/device": () => "offline" });
+    const clock = mock.clock(on, { now: NOW });
+
+    mock.store(on);
+    await $.session.start(SESSION);
+    const answer = await $.command.run(command("login"));
+    await clock.advance(10_000);
+
+    expect(answer.text).toBe("Login failed: couldn't reach tilt");
+    expect(world.calls("POST /v1/auth/device")).toHaveLength(1);
+  });
+
+  test("while logged in it starts no second login, so the session keeps polling", async ($, on) => {
+    const world = worldOf(on, {
+      "POST /v1/auth/device": () => ({ status: 200, body: DEVICE }),
+      "GET /v1/state": () => ({ status: 200, body: BASE }),
+    });
+    const clock = mock.clock(on, { now: NOW });
+
+    mock.store(on, { session: { token: TOKEN, expiresAt: "2027-01-01T00:00:00Z" } });
+    await $.session.start(SESSION);
+    const answer = await $.command.run(command("login"));
+
+    expect(answer.text).toContain("Already logged in");
+    expect(world.calls("POST /v1/auth/device")).toEqual([]);
+    await clock.advance(200);
+    expect(world.calls("GET /v1/state")).toHaveLength(1);
+  });
+
   test("a denied code ends the login with a message", async ($, on) => {
     const { clock } = await loggedOut($, on, [{ status: 200, body: { status: "denied" } }]);
 
@@ -100,7 +130,7 @@ describe("/tilt login", () => {
   });
 
   // A simulated 11-minute wait: give slow CI runners room.
-  test("an expired code stops polling", { timeoutMs: 20_000 }, async ($, on) => {
+  test("an expired code stops polling", { timeoutMs: 60_000 }, async ($, on) => {
     const { world, clock } = await loggedOut($, on, []);
 
     await $.command.run(command("login"));
@@ -136,6 +166,29 @@ describe("/tilt logout", () => {
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
 
     expect(textOf(await ui.drawn())).toContain("Run /tilt login");
+  });
+
+  test("a slow state answer for the old session does not end the login that followed", async ($, on) => {
+    const slow = later();
+    worldOf(on, {
+      "GET /v1/state": slow.route,
+      "POST /v1/auth/device": () => ({ status: 200, body: DEVICE }),
+      "POST /v1/auth/device/token": () => PENDING,
+    });
+    const clock = mock.clock(on, { now: NOW });
+
+    mock.store(on, { session: { token: TOKEN, expiresAt: "2027-01-01T00:00:00Z" } });
+    await $.session.start(SESSION);
+    await clock.advance(200);
+    await $.command.run(command("logout"));
+    await $.command.run(command("login"));
+    // The old token's poll comes back refused only now.
+    slow.answer({ status: 401, body: { error: { code: "UNAUTHORIZED", message: "no" } } });
+    await clock.advance(200);
+
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
+
+    expect(textOf(await ui.drawn())).toContain("Confirm code WDJB-MJHT in your browser");
   });
 
   test("an expired stored token counts as logged out", async ($, on) => {

@@ -92,8 +92,9 @@ describe("the agent comes first", () => {
   });
 });
 
+// Minutes of simulated clock, one engine hop per tick: room for loaded CI runners.
 describe("sponsor impressions", () => {
-  test("the time the sponsor is on screen is reported at most every 60 s", async ($, on) => {
+  test("the time the sponsor is on screen is reported at most every 60 s", { timeoutMs: 30_000 }, async ($, on) => {
     const { world, clock } = await seat($, on, BASE, { "POST /v1/impressions": () => ({ status: 204 }) });
 
     for (let second = 0; second < 130; second += 5) {
@@ -110,7 +111,7 @@ describe("sponsor impressions", () => {
     }
   });
 
-  test("nothing is reported without a sponsor, or logged out", async ($, on) => {
+  test("nothing is reported without a sponsor, or logged out", { timeoutMs: 30_000 }, async ($, on) => {
     const { world, clock } = await seat($, on, { ...BASE, sponsor: null });
 
     await clock.advance(120_000);

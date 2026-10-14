@@ -239,7 +239,13 @@ function idleKeys(game: Game, state: StateResponse, prefs: Prefs): KeyAction[] {
     ...choiceKeys(game, prefs),
     { key: "bet-down", hotkey: "v", label: "bet −", isSelected: false, command: { kind: "bet", step: -1 } },
     { key: "bet-up", hotkey: "b", label: "bet +", isSelected: false, command: { kind: "bet", step: 1 } },
-    { key: "start", hotkey: "n", label: startLabel(game, amount, prefs), isSelected: false, command: { kind: "start" } },
+    {
+      key: "start",
+      hotkey: "n",
+      label: startLabel(game, amount, prefs),
+      isSelected: false,
+      command: { kind: "start" },
+    },
   ];
 }
 
@@ -260,4 +266,24 @@ export function planKeys({ state, prefs, isBusy }: PlanInput): KeyAction[] {
     case "idle":
       return [...switches, ...idleKeys(activeGame(state, prefs), state, prefs)];
   }
+}
+
+/**
+ * The play keys a move in flight or a draw holds back, drawn dim and inert in their place: a key
+ * no Button of the focused pane takes goes to the prompt, where a mashed Enter would then send
+ * "nnnn" to the agent. Empty while play is open, blocked, or the account is not open.
+ */
+export function heldKeys({ state, prefs, isBusy }: PlanInput): KeyAction[] {
+  const round = state.round;
+  const isHeld = isBusy || state.pendingIntentId !== null || round?.phase === "drawing";
+
+  if (!state.accountOpen || state.blocked !== null || !isHeld) {
+    return [];
+  }
+
+  const settled = round?.phase === "drawing" ? { ...state, round: { ...round, phase: "idle" as const } } : state;
+
+  return planKeys({ state: { ...settled, pendingIntentId: null }, prefs, isBusy: false }).filter(
+    (key) => key.command.kind !== "switch",
+  );
 }

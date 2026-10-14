@@ -113,6 +113,16 @@ describe("the pane draws each state the api sends", () => {
     expect(await ui.find({ key: "game-roulette" })).toBeDefined();
   });
 
+  test("a move the api still has in flight (sent before a restart) holds the keys and says why", async ($, on) => {
+    await seat($, on, { ...BASE, pendingIntentId: "sent-before-restart" });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
+    const text = await shownText(ui);
+
+    expect(await ui.find({ key: "start" })).toBeUndefined();
+    expect(text).toContain("previous move still settling");
+    expect(text).not.toContain("Space to play");
+  });
+
   test("a round in flight pins its game: no tab switches, no new round", async ($, on) => {
     await seat($, on, BLACKJACK_TURN);
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
@@ -167,6 +177,16 @@ describe("before there is a game", () => {
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
 
     expect(textOf(await ui.drawn())).toContain("couldn't reach tilt · retrying");
+  });
+
+  test("a server error shows a plain line, never the server's own message", async ($, on) => {
+    const internal = { error: { code: "INTERNAL_ERROR", message: 'relation "users" does not exist at db.ts:42' } };
+    await seat($, on, BASE, { "GET /v1/state": () => ({ status: 500, body: internal }) });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
+    const text = textOf(await ui.drawn());
+
+    expect(text).toContain("tilt is having trouble · retrying");
+    expect(text).not.toContain("relation");
   });
 
   test("a state of the wrong shape is not drawn", async ($, on) => {

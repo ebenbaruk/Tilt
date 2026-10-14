@@ -247,6 +247,11 @@ function prompt(ui: Ui, keys: readonly TableKey[], view: PromptView): RenderElem
   const start = keys.find((key) => key.key === "start");
   const again = start !== undefined && view.isSettled ? "play again (same bet)" : "play";
 
+  // Blocked, no account, a move settling: Space plays nothing, so the table does not invite it.
+  if (start === undefined && !hasKey(keys, "bj-stand")) {
+    return null;
+  }
+
   if (!view.isFocused) {
     return (
       <Text color={FG4}>

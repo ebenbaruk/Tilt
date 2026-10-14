@@ -29,12 +29,30 @@ export type TiltPrefs = {
   baccarat: "player" | "banker" | "tie";
 };
 
-/** A move sent to the api and not settled yet; resent with the same id until it is. */
+/** A move sent to the api and not drawn yet; resent with the same id until it settles. */
 export type TiltIntent = {
   id: string;
   /** A `PlayAction`. */
   action: unknown;
-  status: "sending" | "pending" | "retrying";
+  /** `submitted`: on-chain, held until the state shows it, so a stale table offers no second move. */
+  status: "sending" | "pending" | "retrying" | "submitted";
+  /** The round on screen when the move was sent, as JSON: any other round in the state shows the move. */
+  roundSeen: string;
+  /** `$.clock.now()` when the api answered `submitted`; null before. */
+  submittedAt: number | null;
+};
+
+/** A play key as drawn: its Button's address, hotkey and label. */
+export type TiltKey = { key: string; hotkey: string; label: string };
+
+/**
+ * The play keys live when the last move was sent: once it settles they stay drawn, dim and inert,
+ * for a moment, so the rest of a mashed key does not land in the prompt.
+ */
+export type TiltEcho = {
+  keys: TiltKey[];
+  /** `$.clock.now()` when they go; null while the move is in flight. */
+  until: number | null;
 };
 
 export type TiltAgent = {
@@ -57,6 +75,7 @@ declare module "claude-code" {
       remote: TiltRemote;
       prefs: TiltPrefs;
       intent: TiltIntent | null;
+      echo: TiltEcho;
       /** Last move's error, cleared by the next move. */
       message: string | null;
       agent: TiltAgent;
