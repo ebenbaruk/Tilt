@@ -14,6 +14,7 @@ import {
   type PromoPayoutResponse,
   promoAddress,
   promoTokenAddress,
+  tableAddress,
   type Tilt,
   type UserResponse,
   vaultAddress,
@@ -45,6 +46,7 @@ const chain = new TiltChain({
   vrfQueue: new PublicKey(env("VRF_ER_QUEUE", "Sc9MJUngNbQXSXGP3F67KvKwVnhaYn6kcioxXNVowYT")),
   relayer,
 });
+const rollupProgram = new anchor.Program<Tilt>(idl, new anchor.AnchorProvider(chain.rollup, new anchor.Wallet(relayer), { commitment: "confirmed" }));
 
 /** Test players: signs with local keys, as Privy does with the player's embedded wallet. */
 class LocalPlayerWallets implements PlayerWallets {
@@ -104,6 +106,7 @@ async function main() {
   await mintTo(chain.base, admin, vault.mint, playerToken, admin, usdc(100));
   const usdcBalance = async () => (await getAccount(chain.base, playerToken)).amount;
   const account = () => chain.fetchPlayerAccount(key.publicKey) as Promise<PlayerAccount>;
+  const table = () => rollupProgram.account.blackjackTable.fetch(tableAddress(key.publicKey));
 
   console.log("\n--- Utilisateur et ouverture ---");
   check("utilisateur inconnu → 404", (await api(`/users/did:privy:${"0".repeat(25)}`)).status === 404);
@@ -119,6 +122,7 @@ async function main() {
   check("compte ouvert", (await api<UserResponse>(`/users/${user}`)).json.accountOpen);
   check("deuxième ouverture refusée", (await submit(user, { type: "open_account", amount: String(usdc(5)) })).error?.code === "ACCOUNT_ALREADY_OPEN");
   await until(() => account(), "account in rollup");
+  await until(() => rollupProgram.account.blackjackTable.fetchNullable(tableAddress(key.publicKey)), "table in rollup");
   check("dépôt via le relais", (await submit(user, { type: "deposit", amount: String(usdc(10)) })).status === "submitted");
 
   console.log("\n--- Manches via le relais ---");
@@ -134,13 +138,14 @@ async function main() {
   await playRound({ type: "slots_spin", amount: String(usdc(1)) });
   await playRound({ type: "roulette_spin", amount: String(usdc(1)), bet: { kind: "red" } });
   await playRound({ type: "baccarat_deal", amount: String(usdc(1)), bet: "banker" });
-  let a = await playRound({ type: "blackjack_bet", amount: String(usdc(1)) });
+  // Two hands: standing on the first moves to the second without a draw, the last one calls the dealer.
+  let a = await playRound({ type: "blackjack_bet", amount: String(usdc(1)), hands: 2 });
   while ("playerTurn" in a.round.status) {
-    const n = a.round.blackjack.nPlayer;
+    const active = (await table()).active;
     await submit(user, { type: "blackjack_stand" });
     a = await until(async () => {
       const x = await account();
-      return "idle" in x.round.status || x.round.blackjack.nPlayer > n ? x : undefined;
+      return "idle" in x.round.status || ("playerTurn" in x.round.status && (await table()).active > active) ? x : undefined;
     }, "stand");
   }
   check("slots, roulette, baccarat et blackjack joués via le relais", a.rounds >= 4, `(${a.rounds} manches)`);
@@ -181,7 +186,7 @@ async function main() {
 
   console.log("\n--- Tâche planifiée (sweeper) ---");
   const timeoutSecs = Number(vault.config.roundTimeoutSecs.toString());
-  for (let i = 0; i < 10 && !("playerTurn" in a.round.status); i++) a = await playRound({ type: "blackjack_bet", amount: String(usdc(1)) });
+  for (let i = 0; i < 10 && !("playerTurn" in a.round.status); i++) a = await playRound({ type: "blackjack_bet", amount: String(usdc(1)), hands: 1 });
   check("main laissée ouverte", "playerTurn" in a.round.status);
   await sleep((timeoutSecs + 1) * 1_000);
   const sweepOptions = { checkpointMinLoss: 1n, checkpointIntervalMs: 0 };
@@ -189,11 +194,11 @@ async function main() {
   const stillOpen = await account();
   check("le sweeper ne joue jamais à la place du joueur", swept.expired === 0 && "playerTurn" in stillOpen.round.status, JSON.stringify(swept));
   await submit(user, { type: "blackjack_stand" });
-  const afterStand = await until(async () => {
+  await until(async () => {
     const x = await account();
     return "idle" in x.round.status ? x : undefined;
   }, "stand after timeout");
-  check("le joueur reprend sa main après le délai", afterStand.round.blackjack.nDealer >= 2);
+  check("le joueur reprend sa main après le délai", (await table()).nDealer >= 2);
 
   const netWin = (x: PlayerAccount) => BigInt(x.balance.toString()) + BigInt(x.withdrawn.toString()) - BigInt(x.credited.toString()) + BigInt(x.forfeited.toString());
   for (let i = 0; i < 40 && netWin(await account()) >= 0n; i++) await playRound({ type: "baccarat_deal", amount: String(usdc(2)), bet: "tie" });

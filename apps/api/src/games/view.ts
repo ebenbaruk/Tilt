@@ -31,17 +31,24 @@ function blackjackView(
   r: RoundViewInput,
   phase: RoundPhase,
 ): BlackjackView {
-  const playerTurn = phase === "player_turn";
+  const bet = BigInt(o.bet);
+  const settled = phase === "idle";
+  const active = phase === "player_turn" ? blackjack.activeHand(o) : undefined;
   return {
     game: "blackjack",
-    player: toCards(o.player, r.player, r.number, "player"),
+    hands: o.hands.map((h, i) => ({
+      cards: toCards(h.cards, r.player, r.number, `hand${i}`),
+      total: blackjack.total(h.cards),
+      soft: blackjack.isSoft(h.cards),
+      doubled: h.doubled,
+      stake: blackjack.handStake(h, bet).toString(),
+      result: settled ? blackjack.result(h, o.dealer, bet) : null,
+    })),
+    activeHand: active ? o.active : null,
     dealer: toCards(o.dealer, r.player, r.number, "dealer"),
-    playerTotal: blackjack.total(o.player),
     dealerTotal: blackjack.total(o.dealer),
-    playerSoft: blackjack.isSoft(o.player),
-    doubled: o.doubled,
-    canHit: playerTurn && blackjack.canHit(o),
-    canDouble: playerTurn && blackjack.canDouble(o),
+    canHit: active !== undefined && blackjack.canHit(active),
+    canDouble: active !== undefined && blackjack.canDouble(active),
   };
 }
 

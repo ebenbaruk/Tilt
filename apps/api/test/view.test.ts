@@ -21,35 +21,72 @@ const input = (outcome: Outcome, status: RoundStatus, overrides: Partial<RoundVi
 const idle: RoundStatus = { kind: "idle" };
 
 describe("buildRoundView", () => {
-  it("shows a blackjack hand waiting for the player, soft total and allowed moves", () => {
-    const view = buildRoundView(
-      input({ game: "blackjack", player: [1, 6], dealer: [9], doubled: false }, { kind: "player_turn" }),
-    );
-    expect(view).toMatchObject({ phase: "player_turn", stake: "1000000", payout: "0", fee: "0", net: "-1000000" });
-    expect(view.detail).toMatchObject({
-      game: "blackjack",
-      playerTotal: 17,
-      playerSoft: true,
-      dealerTotal: 9,
-      canHit: true,
-      canDouble: true,
-      doubled: false,
-    });
-    if (view.detail.game !== "blackjack") throw new Error("unexpected detail");
-    expect(view.detail.player.map((c) => c.rank)).toEqual([1, 6]);
+  /** One hand per card list, 1 USDC each, `active` the hand to play. */
+  const table = (hands: number[][], dealer: number[], active = hands.length, doubled: number[] = []): Outcome => ({
+    game: "blackjack",
+    bet: "1000000",
+    hands: hands.map((cards, i) => ({ cards, doubled: doubled.includes(i) })),
+    active,
+    dealer,
   });
 
-  it("allows no move once the round is drawing or settled", () => {
-    const hand: Outcome = { game: "blackjack", player: [5, 6], dealer: [9], doubled: false };
+  it("shows a three-hand turn: every hand, the active one, its soft total and allowed moves", () => {
+    const view = buildRoundView(
+      input(table([[10, 9], [1, 6], [5, 5]], [9], 1), { kind: "player_turn" }, { stake: 3_000_000n }),
+    );
+    expect(view).toMatchObject({ phase: "player_turn", stake: "3000000", payout: "0", fee: "0", net: "-3000000" });
+    if (view.detail.game !== "blackjack") throw new Error("unexpected detail");
+    expect(view.detail).toMatchObject({ activeHand: 1, dealerTotal: 9, canHit: true, canDouble: true });
+    expect(view.detail.hands.map(({ total, soft, doubled, stake, result }) => ({ total, soft, doubled, stake, result }))).toEqual([
+      { total: 19, soft: false, doubled: false, stake: "1000000", result: null },
+      { total: 17, soft: true, doubled: false, stake: "1000000", result: null },
+      { total: 10, soft: false, doubled: false, stake: "1000000", result: null },
+    ]);
+    expect(view.detail.hands[1].cards.map((c) => c.rank)).toEqual([1, 6]);
+    expect(view.detail.dealer.map((c) => c.rank)).toEqual([9]);
+  });
+
+  it("describes the active hand's moves, not the first hand's", () => {
+    const view = buildRoundView(input(table([[5, 6], [10, 6, 2]], [9], 1), { kind: "player_turn" }));
+    expect(view.detail).toMatchObject({ activeHand: 1, canHit: true, canDouble: false });
+  });
+
+  it("allows no move and shows no active hand once the round is drawing or settled", () => {
+    const hand = table([[5, 6]], [9], 0);
     for (const status of [idle, { kind: "awaiting", draw: "hit" } as const]) {
-      expect(buildRoundView(input(hand, status)).detail).toMatchObject({ canHit: false, canDouble: false });
+      expect(buildRoundView(input(hand, status)).detail).toMatchObject({ activeHand: null, canHit: false, canDouble: false });
     }
+  });
+
+  it("settles every hand against the dealer, a doubled one at twice the bet", () => {
+    const view = buildRoundView(
+      input(table([[1, 13], [5, 6, 10], [10, 6, 9], [10, 7]], [10, 7], 4, [1]), idle, { stake: 5_000_000n }),
+    );
+    if (view.detail.game !== "blackjack") throw new Error("unexpected detail");
+    expect(view.detail.hands.map(({ doubled, stake, result }) => ({ doubled, stake, result }))).toEqual([
+      { doubled: false, stake: "1000000", result: "blackjack" },
+      { doubled: true, stake: "2000000", result: "win" },
+      { doubled: false, stake: "1000000", result: "lose" },
+      { doubled: false, stake: "1000000", result: "push" },
+    ]);
+    expect(view.detail.dealerTotal).toBe(17);
+  });
+
+  it("deals cosmetic suits per hand: the same ranks look different in two hands, the same on every poll", () => {
+    const outcome = table([[2, 3, 4, 5, 6, 7, 8, 9], [2, 3, 4, 5, 6, 7, 8, 9]], [9], 0);
+    const suits = () => {
+      const view = buildRoundView(input(outcome, { kind: "player_turn" }));
+      if (view.detail.game !== "blackjack") throw new Error("unexpected detail");
+      return view.detail.hands.map((h) => h.cards.map((c) => c.suit).join(""));
+    };
+    expect(suits()[0]).not.toBe(suits()[1]);
+    expect(suits()).toEqual(suits());
   });
 
   it("reports a settled win gross of the fee, with the signed net", () => {
     // Program: stake 1.00, gross 2.00, fee 0.01 -> payout 1.99.
     const view = buildRoundView(
-      input({ game: "blackjack", player: [10, 9], dealer: [10, 8], doubled: false }, idle, {
+      input(table([[10, 9]], [10, 8]), idle, {
         payout: 1_990_000n,
         fee: 10_000n,
         settledSignature: "sig",
@@ -65,7 +102,7 @@ describe("buildRoundView", () => {
   });
 
   it("reports a loss with a negative net and a push with zero", () => {
-    const hand: Outcome = { game: "blackjack", player: [10, 6, 9], dealer: [10], doubled: false };
+    const hand = table([[10, 6, 9]], [10]);
     expect(buildRoundView(input(hand, idle)).net).toBe("-1000000");
     expect(buildRoundView(input(hand, idle, { payout: 1_000_000n })).net).toBe("0");
   });

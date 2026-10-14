@@ -221,7 +221,7 @@ export const idleAccount = (overrides: Partial<PlayerState> = {}): PlayerState =
     payout: 0n,
     fee: 0n,
     requestId: 0n,
-    outcome: { game: "blackjack", player: [], dealer: [], doubled: false },
+    outcome: { game: "blackjack", bet: "0", hands: [], active: 0, dealer: [] },
   },
   ...overrides,
 });

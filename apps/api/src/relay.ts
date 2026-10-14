@@ -31,6 +31,7 @@ const ANCHOR_ERROR_NAME = /^[A-Z][A-Za-z0-9]{0,63}$/;
 const SAFE_MESSAGES: Partial<Record<ErrorCode, string>> = {
   ACCOUNT_NOT_OPEN: "no account yet: deposit on the web first",
   ACCOUNT_ALREADY_OPEN: "account already open",
+  TABLE_NOT_READY: "the blackjack table is not ready yet, try again",
   NETWORK_ERROR: "network error, try again",
   LIMIT_EXCEEDED: "deposit cap reached",
   PLAYER_BUSY: "another move is still in flight",

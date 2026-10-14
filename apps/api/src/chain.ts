@@ -3,13 +3,14 @@
 import anchor from "@coral-xyz/anchor";
 import type { IdlAccounts, IdlTypes, Program as ProgramT } from "@coral-xyz/anchor";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
-import { idl, ledgerAddress, playerAccountAddress, type Tilt, vaultAddress } from "@tilt/contract";
+import { idl, ledgerAddress, playerAccountAddress, tableAddress, type Tilt, vaultAddress } from "@tilt/contract";
 import type { BaccaratBet, RouletteBet } from "@tilt/mod/protocol";
 import type { ChainRound, Draw, Outcome, RoundStatus } from "./games/round";
 import type { Reels } from "./games/slots";
 
 const { Program } = anchor;
 type PlayerAccountData = IdlAccounts<Tilt>["playerAccount"];
+type TableData = IdlAccounts<Tilt>["blackjackTable"];
 type RoundData = IdlTypes<Tilt>["round"];
 
 export interface PlayerState {
@@ -90,16 +91,21 @@ function baccaratBet(b: IdlTypes<Tilt>["baccaratBet"]): BaccaratBet {
 
 const dealt = (cards: number[]) => cards.filter((c) => c !== 0);
 
-function outcome(r: RoundData): Outcome {
-  if ("blackjack" in r.game) {
-    const h = r.blackjack;
-    return {
-      game: "blackjack",
-      player: h.player.slice(0, h.nPlayer),
-      dealer: h.dealer.slice(0, h.nDealer),
-      doubled: h.doubled,
-    };
-  }
+/** A blackjack round lives in the player's table. A player without one (joined before tables,
+ *  never bet since) shows no hands. */
+function blackjackOutcome(t: TableData | null): Outcome {
+  if (!t) return { game: "blackjack", bet: "0", hands: [], active: 0, dealer: [] };
+  return {
+    game: "blackjack",
+    bet: big(t.bet).toString(),
+    hands: t.hands.slice(0, t.nHands).map((h) => ({ cards: h.cards.slice(0, h.nCards), doubled: h.doubled })),
+    active: t.active,
+    dealer: t.dealer.slice(0, t.nDealer),
+  };
+}
+
+function outcome(r: RoundData, table: TableData | null): Outcome {
+  if ("blackjack" in r.game) return blackjackOutcome(table);
   if ("roulette" in r.game) {
     if (!r.roulette) throw new Error("roulette round without a spin");
     return { game: "roulette", bet: rouletteBet(r.roulette.bet), number: r.roulette.number };
@@ -112,25 +118,25 @@ function outcome(r: RoundData): Outcome {
   return { game: "slots", reels: r.slots.reels as Reels };
 }
 
-export function decodeRound(r: RoundData): ChainRound {
+export function decodeRound(r: RoundData, table: TableData | null): ChainRound {
   return {
     status: status(r.status),
     stake: big(r.stake),
     payout: big(r.payout),
     fee: big(r.fee),
     requestId: big(r.requestId),
-    outcome: outcome(r),
+    outcome: outcome(r, table),
   };
 }
 
-export function decodePlayer(a: PlayerAccountData): PlayerState {
+export function decodePlayer(a: PlayerAccountData, table: TableData | null): PlayerState {
   return {
     balance: big(a.balance),
     credited: big(a.credited),
     withdrawn: big(a.withdrawn),
     fees: big(a.fees),
     rounds: a.rounds,
-    round: decodeRound(a.round),
+    round: decodeRound(a.round, table),
   };
 }
 
@@ -162,9 +168,15 @@ export class RpcChainReader implements ChainReader {
     this.rollupProgram = new Program(idl, new anchor.AnchorProvider(this.rollup, wallet)) as ProgramT<Tilt>;
   }
 
+  /** The account and the blackjack table, read together so the round and its cards match. */
   async playerAccount(player: PublicKey): Promise<PlayerState | null> {
-    const account = await this.rollupProgram.account.playerAccount.fetchNullable(playerAccountAddress(player));
-    return account ? decodePlayer(account) : null;
+    const [account, table] = await this.rollup.getMultipleAccountsInfo([playerAccountAddress(player), tableAddress(player)]);
+    if (!account) return null;
+    const accounts = this.rollupProgram.coder.accounts;
+    return decodePlayer(
+      accounts.decode<PlayerAccountData>("playerAccount", account.data),
+      table ? accounts.decode<TableData>("blackjackTable", table.data) : null,
+    );
   }
 
   async deposited(player: PublicKey): Promise<bigint | null> {

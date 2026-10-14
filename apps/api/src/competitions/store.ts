@@ -107,11 +107,12 @@ export interface RankedStanding extends Standing {
   rank: number;
 }
 
-/** A round's initial bet. RoundSettled's stake includes a blackjack double, so a doubled hand bet
- *  half of it; without the snapshot that shows `doubled`, a blackjack round counts as doubled
- *  (a player could make the snapshot miss by starting the next round at once). */
-const INITIAL_BET = `CASE WHEN game = 'blackjack' AND coalesce((detail->>'doubled')::boolean, true)
-                          THEN stake / 2 ELSE stake END`;
+/** A round's initial bet. RoundSettled's stake includes blackjack doubles: the initial bet is the
+ *  base bet on every hand, as the snapshot shows. Without it, every hand counts as doubled, so
+ *  half the stake (a player could make the snapshot miss by starting the next round at once). */
+const INITIAL_BET = `CASE WHEN game <> 'blackjack' THEN stake
+                          WHEN detail ? 'bet' THEN (detail->>'bet')::numeric * jsonb_array_length(detail->'hands')
+                          ELSE stake / 2 END`;
 
 /** Ranking by net gain over all the window's rounds, among players with at least one round bet
  *  at `minStake`; ties broken by wallet so the order is stable. `limit` null = everyone. */

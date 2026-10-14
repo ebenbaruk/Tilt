@@ -1,7 +1,8 @@
 // Generator of rust-vectors.json: draws computed by the program's own Rust code.
 // Regenerate: copy chain/programs/tilt/src/{rng,settlement}.rs and games/{blackjack,baccarat,roulette,slots}.rs
-// next to this file (src/ and src/games/), strip the anchor derives and `use anchor_lang`, then
-// `rustc --edition 2021 -O main.rs && ./main > rust-vectors.json`.
+// next to this file (src/ and src/games/), strip the anchor derives, `#[account]` and the test
+// modules, replace `use anchor_lang::prelude::*;` with `type Pubkey = [u8; 32];`, then
+// `rustc --edition 2021 -O main.rs && ./main > rust-vectors.json` (and prettier the JSON).
 mod rng;
 mod settlement;
 mod games { pub mod baccarat; pub mod blackjack; pub mod roulette; pub mod slots; }
@@ -24,30 +25,37 @@ fn main() {
         rngs.push(format!("{{\"seed\":\"{}\",\"below37\":[{}],\"cards\":[{}],\"below41\":[{}]}}", hex(&s), below37.join(","), cards.join(","), below41.join(",")));
     }
     out.push(format!("\"rng\":[{}]", rngs.join(",")));
-    // blackjack: draws are seeds; actions after the deal
+    // blackjack: 1 to 6 hands; draws are seeds, in the order the program requests them. A stand
+    // that leaves a hand to play takes no draw; the last stand is followed by the dealer's draw.
     let mut bj = Vec::new();
-    for i in 0..60u64 {
-        let base = 1_000_000u64;
-        let mut h = BlackjackHand::default();
+    for i in 0..120u64 {
+        let n_hands = (1 + i % MAX_HANDS as u64) as u8;
+        let mut t = BlackjackTable::default();
+        t.start(1_000_000, n_hands);
         let mut draws = vec![hex(&seed(i))];
         let mut actions: Vec<&str> = vec!["deal"];
-        let mut stake = base;
-        let mut done = h.deal(&mut Rng::from_vrf(seed(i)));
+        let mut done = t.deal(&mut Rng::from_vrf(seed(i)));
         let mut k = 1u64;
         while !done {
-            let s = seed(i * 1000 + k); k += 1;
-            draws.push(hex(&s));
-            let choice = (i + k) % 4;
-            if choice == 0 && h.can_double() { actions.push("double"); stake *= 2; h.double(&mut Rng::from_vrf(s)); done = true; }
-            else if choice == 1 && h.can_hit() { actions.push("hit"); done = h.hit(&mut Rng::from_vrf(s)); }
-            else if choice == 2 && h.can_hit() && h.player_total() < 15 { actions.push("hit"); done = h.hit(&mut Rng::from_vrf(s)); }
-            else { actions.push("stand"); h.stand(&mut Rng::from_vrf(s)); done = true; }
+            let s = seed(i * 1000 + k);
+            let choice = (i + k) % 5;
+            k += 1;
+            let hand = *t.active_hand().unwrap();
+            if choice == 0 && hand.can_double() { draws.push(hex(&s)); actions.push("double"); done = t.double(&mut Rng::from_vrf(s)); }
+            else if choice == 1 && hand.can_hit() { draws.push(hex(&s)); actions.push("hit"); done = t.hit(&mut Rng::from_vrf(s)); }
+            else if choice == 2 && hand.can_hit() && hand.total() < 15 { draws.push(hex(&s)); actions.push("hit"); done = t.hit(&mut Rng::from_vrf(s)); }
+            else {
+                actions.push("stand");
+                if t.stand() { draws.push(hex(&s)); actions.push("dealer"); t.play_dealer(&mut Rng::from_vrf(s)); done = true; }
+            }
         }
-        let st = settlement::settle(stake, h.gross(stake));
-        bj.push(format!("{{\"draws\":[{}],\"actions\":[{}],\"stake\":\"{}\",\"player\":{},\"dealer\":{},\"doubled\":{},\"gross\":\"{}\",\"payout\":\"{}\",\"fee\":\"{}\"}}",
+        let stake = t.stake();
+        let st = settlement::settle(stake, t.gross());
+        let hands: Vec<String> = t.hands().iter().map(|h| format!("{{\"cards\":{},\"doubled\":{}}}", list(h.cards()), h.doubled)).collect();
+        bj.push(format!("{{\"draws\":[{}],\"actions\":[{}],\"bet\":\"{}\",\"stake\":\"{}\",\"hands\":[{}],\"active\":{},\"dealer\":{},\"gross\":\"{}\",\"payout\":\"{}\",\"fee\":\"{}\"}}",
             draws.iter().map(|d| format!("\"{}\"", d)).collect::<Vec<_>>().join(","),
             actions.iter().map(|a| format!("\"{}\"", a)).collect::<Vec<_>>().join(","),
-            stake, list(h.player_cards()), list(h.dealer_cards()), h.doubled, h.gross(stake), st.payout, st.fee));
+            t.bet, stake, hands.join(","), t.active, list(t.dealer_cards()), t.gross(), st.payout, st.fee));
     }
     out.push(format!("\"blackjack\":[{}]", bj.join(",")));
     let mut bac = Vec::new();

@@ -3,8 +3,10 @@
 // What the indexer can see: every `consume_randomness` callback (randomness per request) and
 // the RoundSettled event, plus, when caught in time, the account's round right after it
 // settled (the "snapshot": bet, cards, reels). The player's moves are not in the callbacks, so:
-// - blackjack: the first draw is the deal and every middle draw a hit (only a hit hands the
-//   turn back); the last one may be a hit, a stand or a double, and each is tried;
+// - blackjack: the first draw is the deal; then each draw is a hit or a double on the active
+//   hand, or the dealer's turn after the last stand. A stand that leaves a hand to play takes
+//   no draw, so every sequence of moves the draws allow is tried, for every number of hands
+//   (the snapshot, when there is one, fixes the hands and prunes everything else);
 // - roulette / baccarat: the bet comes from the snapshot; without one, every bet is tried.
 // A round "matches" when a replay reproduces the program's payout and fee (and the snapshot,
 // when there is one).
@@ -20,7 +22,7 @@ import * as slots from "./slots";
 
 export interface ReplayInput {
   game: Game;
-  /** Total stake from RoundSettled (doubled blackjack included). */
+  /** Total stake from RoundSettled (every blackjack hand and double included). */
   stake: bigint;
   onChain: { payout: bigint; fee: bigint };
   /** VRF outputs of the round in request order; the last one settled it. */
@@ -58,36 +60,71 @@ function choose(candidates: Candidate[], input: ReplayInput): ReplayResult {
   return { ...results[0], matches: false };
 }
 
-function blackjackCandidates(draws: Uint8Array[], stake: bigint): Candidate[] {
-  const hand: blackjack.Hand = { player: [], dealer: [], doubled: false };
-  const toCandidate = (h: blackjack.Hand, possible = true): Candidate => ({
-    outcome: { game: "blackjack", player: h.player, dealer: h.dealer, doubled: h.doubled },
-    gross: blackjack.gross(h, stake),
-    possible,
-  });
-  const natural = blackjack.deal(hand, Rng.fromVrf(draws[0]));
-  if (draws.length === 1) return [toCandidate(hand)];
-  // A natural ends the round at once; later draws mean the sequence is not this round's.
-  if (natural) return [toCandidate(hand, false)];
-  for (const draw of draws.slice(1, -1)) {
-    if (!blackjack.canHit(hand) || blackjack.hit(hand, Rng.fromVrf(draw))) return [toCandidate(hand, false)];
-  }
-  const last = draws[draws.length - 1];
-  const clone = (): blackjack.Hand => ({ player: [...hand.player], dealer: [...hand.dealer], doubled: hand.doubled });
+/** Bounds the search of a round without snapshot (a few hundred states for real rounds). */
+const MAX_BLACKJACK_STATES = 100_000;
+
+type BlackjackOutcome = Extract<Outcome, { game: "blackjack" }>;
+
+const isPrefix = (cards: readonly number[], of: readonly number[]) => cards.every((c, i) => of[i] === c);
+
+/** Whether `t` can still become the snapshot's table (always, without one). */
+function fitsSnapshot(t: blackjack.Table, snapshot: BlackjackOutcome | null): boolean {
+  if (!snapshot) return true;
+  return isPrefix(t.dealer, snapshot.dealer) && t.hands.every((h, i) => isPrefix(h.cards, snapshot.hands[i].cards));
+}
+
+/** A finished table as a candidate: its base bet is the stake over the bets placed (one per
+ *  hand, one per double), which must divide it exactly. */
+function finishedCandidate(t: blackjack.Table, stake: bigint): Candidate | undefined {
+  const bets = BigInt(t.hands.length + t.hands.filter((h) => h.doubled).length);
+  if (stake % bets !== 0n) return undefined;
+  const bet = stake / bets;
+  return { outcome: { game: "blackjack", bet: bet.toString(), ...t }, gross: blackjack.gross(t, bet), possible: true };
+}
+
+function blackjackCandidates(draws: Uint8Array[], stake: bigint, snapshot: Outcome | null): Candidate[] {
+  const snap = snapshot?.game === "blackjack" && snapshot.hands.length > 0 ? snapshot : null;
+  const handCounts = snap ? [snap.hands.length] : Array.from({ length: blackjack.MAX_HANDS }, (_, i) => i + 1);
   const candidates: Candidate[] = [];
-  const stood = clone();
-  blackjack.stand(stood, Rng.fromVrf(last));
-  candidates.push(toCandidate(stood));
-  if (blackjack.canHit(hand)) {
-    const hit = clone();
-    if (blackjack.hit(hit, Rng.fromVrf(last))) candidates.push(toCandidate(hit));
+  let states = 0;
+
+  /** Plays on from `t` with draws[next..]; `over` once the dealer has played. */
+  const explore = (t: blackjack.Table, over: boolean, next: number): void => {
+    if (++states > MAX_BLACKJACK_STATES || !fitsSnapshot(t, snap)) return;
+    if (over) {
+      // Every draw must be used: leftovers mean the sequence is not this one.
+      const candidate = next === draws.length ? finishedCandidate(t, stake) : undefined;
+      if (candidate) candidates.push(candidate);
+      return;
+    }
+    const stood = blackjack.cloneTable(t);
+    if (!blackjack.stand(stood)) explore(stood, false, next);
+    else if (next === draws.length - 1) {
+      blackjack.playDealer(stood, Rng.fromVrf(draws[next]));
+      explore(stood, true, next + 1);
+    }
+    const hand = blackjack.activeHand(t);
+    if (next >= draws.length || !hand) return;
+    if (blackjack.canHit(hand)) {
+      const hit = blackjack.cloneTable(t);
+      explore(hit, blackjack.hit(hit, Rng.fromVrf(draws[next])), next + 1);
+    }
+    if (blackjack.canDouble(hand)) {
+      const doubled = blackjack.cloneTable(t);
+      explore(doubled, blackjack.double(doubled, Rng.fromVrf(draws[next])), next + 1);
+    }
+  };
+
+  for (const hands of handCounts) {
+    const t = blackjack.newTable(hands);
+    explore(t, blackjack.deal(t, Rng.fromVrf(draws[0])), 1);
   }
-  if (blackjack.canDouble(hand) && stake % 2n === 0n) {
-    const doubled = clone();
-    blackjack.double(doubled, Rng.fromVrf(last));
-    candidates.push(toCandidate(doubled));
-  }
-  return candidates;
+  if (candidates.length > 0) return candidates;
+  // No sequence of moves fits the draws: show the deal, never a match.
+  const t = blackjack.newTable(handCounts[0]);
+  blackjack.deal(t, Rng.fromVrf(draws[0]));
+  const bet = stake / BigInt(t.hands.length);
+  return [{ outcome: { game: "blackjack", bet: bet.toString(), ...t }, gross: blackjack.gross(t, bet), possible: false }];
 }
 
 function rouletteCandidates(randomness: Uint8Array, stake: bigint, snapshot: Outcome | null): Candidate[] {
@@ -120,7 +157,7 @@ export function replay(input: ReplayInput): ReplayResult {
   if (!last) throw new Error("a settled round has at least one draw");
   switch (input.game) {
     case "blackjack":
-      return choose(blackjackCandidates(input.draws, input.stake), input);
+      return choose(blackjackCandidates(input.draws, input.stake, input.snapshot), input);
     case "roulette":
       return choose(rouletteCandidates(last, input.stake, input.snapshot), input);
     case "baccarat":

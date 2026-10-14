@@ -9,31 +9,50 @@ const RESULT: VerifyResponse = {
   randomness: "9f3c0b5e7d1a2c4e6f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4a71e",
   replayed: {
     phase: "idle",
-    stake: "1000000",
-    payout: "2000000",
-    fee: "10000",
-    net: "990000",
+    stake: "3000000",
+    payout: "6000000",
+    fee: "30000",
+    net: "2970000",
     number: 1204,
     settledSignature: SIGNATURE,
     detail: {
       game: "blackjack",
-      player: [
-        { rank: 13, suit: "♠" },
-        { rank: 10, suit: "♥" },
+      hands: [
+        {
+          cards: [
+            { rank: 13, suit: "♠" },
+            { rank: 10, suit: "♥" },
+          ],
+          total: 20,
+          soft: false,
+          doubled: false,
+          stake: "1000000",
+          result: "win",
+        },
+        {
+          cards: [
+            { rank: 5, suit: "♣" },
+            { rank: 6, suit: "♠" },
+            { rank: 10, suit: "♥" },
+          ],
+          total: 21,
+          soft: false,
+          doubled: true,
+          stake: "2000000",
+          result: "win",
+        },
       ],
+      activeHand: null,
       dealer: [
         { rank: 9, suit: "♦" },
         { rank: 10, suit: "♣" },
       ],
-      playerTotal: 20,
       dealerTotal: 19,
-      playerSoft: false,
-      doubled: false,
       canHit: false,
       canDouble: false,
     },
   },
-  onChain: { stake: "1000000", payout: "2000000", fee: "10000" },
+  onChain: { stake: "3000000", payout: "6000000", fee: "30000" },
   matches: true,
 };
 
@@ -57,8 +76,10 @@ test("shows the replay, the VRF randomness and the on-chain comparison", async (
   await expect(page.getByTestId("randomness")).toHaveText(RESULT.randomness);
   await expect(page.getByRole("img", { name: "K of spades" })).toBeVisible();
   await expect(page.getByRole("img", { name: "9 of diamonds" })).toBeVisible();
-  await expect(page.getByRole("row", { name: /payout 2\.00 2\.00/ })).toBeVisible();
-  await expect(page.getByText("+0.99")).toBeVisible();
+  await expect(page.getByText("HAND 2")).toBeVisible();
+  await expect(page.getByText("doubled · win")).toBeVisible();
+  await expect(page.getByRole("row", { name: /payout 6\.00 6\.00/ })).toBeVisible();
+  await expect(page.getByText("+2.97")).toBeVisible();
   await expect(page.getByRole("link", { name: RESULT.player })).toHaveAttribute(
     "href",
     /explorer\.solana\.com\/address\/.*cluster=devnet/,
@@ -66,7 +87,7 @@ test("shows the replay, the VRF randomness and the on-chain comparison", async (
 });
 
 test("flags a mismatch", async ({ page }) => {
-  const mismatch: VerifyResponse = { ...RESULT, onChain: { ...RESULT.onChain, payout: "2500000" }, matches: false };
+  const mismatch: VerifyResponse = { ...RESULT, onChain: { ...RESULT.onChain, payout: "6500000" }, matches: false };
   await page.route(`**/v1/rounds/${SIGNATURE}/verify`, (route) => json(route, 200, mismatch));
   await page.goto(`/verify/${SIGNATURE}`);
   await expect(page.getByText("Replay does not match on-chain.")).toBeVisible();

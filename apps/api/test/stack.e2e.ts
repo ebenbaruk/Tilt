@@ -357,23 +357,26 @@ async function main() {
 
   // Competition window starts here: earlier runs' rounds (other players) stay out of it.
   const playStart = Date.now() - 2_000;
-  // Blackjack: bet, then hit / double / stand from what the panel allows, until settled.
+  // Blackjack, two hands: bet, then hit / double / stand on the active hand from what the panel
+  // allows, until settled. A move shows as a card on the active hand or the next hand's turn.
   let s = await state();
   let balance = BigInt(s.balance);
   const bjRound = (s.round?.number ?? 0) + 1;
-  s = await move({ type: "blackjack_bet", amount: usdc(1).toString() }, (x) => x.round?.number === bjRound);
+  s = await move({ type: "blackjack_bet", amount: usdc(1).toString(), hands: 2 }, (x) => x.round?.number === bjRound);
   const moves: string[] = [];
+  const progress = (bj: BlackjackView) => `${bj.activeHand}:${bj.hands.map((h) => h.cards.length).join(",")}`;
   while (s.round?.phase === "player_turn") {
     const bj = s.round.detail as BlackjackView;
-    const cards = bj.player.length;
+    const before = progress(bj);
+    const total = bj.hands[bj.activeHand ?? 0].total;
     let action: PlayAction;
-    if (bj.canDouble && bj.playerTotal >= 9 && bj.playerTotal <= 11) action = { type: "blackjack_double" };
-    else if (bj.canHit && bj.playerTotal < 17) action = { type: "blackjack_hit" };
+    if (bj.canDouble && total >= 9 && total <= 11) action = { type: "blackjack_double" };
+    else if (bj.canHit && total < 17) action = { type: "blackjack_hit" };
     else action = { type: "blackjack_stand" };
-    moves.push(action.type.replace("blackjack_", ""));
+    moves.push(`${action.type.replace("blackjack_", "")}#${bj.activeHand}`);
     s = await move(
       action,
-      (x) => x.round?.phase === "idle" || (x.round?.detail as BlackjackView).player.length > cards,
+      (x) => x.round?.phase === "idle" || progress(x.round?.detail as BlackjackView) !== before,
     );
   }
   check(

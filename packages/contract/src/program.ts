@@ -16,6 +16,10 @@ export const vaultTokenAddress = () => pda(Buffer.from("vault_token"));
 /** Player balance and current round; lives in the rollup after the first deposit. */
 export const playerAccountAddress = (player: PublicKey) => pda(Buffer.from("account"), player.toBuffer());
 
+/** A player's blackjack table (hands and dealer of the current or last round); lives in the
+ *  rollup next to the player account. */
+export const tableAddress = (player: PublicKey) => pda(Buffer.from("table"), player.toBuffer());
+
 /** Solana's record of a player's deposits and paid withdrawals. */
 export const ledgerAddress = (player: PublicKey) => pda(Buffer.from("ledger"), player.toBuffer());
 

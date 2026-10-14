@@ -93,6 +93,7 @@ const SAFE_MESSAGES: Record<ErrorCodeValue, string> = {
   CONSENT_REQUIRED: "the player's fresh identity token is required",
   ACCOUNT_NOT_OPEN: "account not open: the first deposit opens it",
   ACCOUNT_ALREADY_OPEN: "account already open",
+  TABLE_NOT_READY: "the blackjack table is not ready yet, try again",
   PROGRAM_ERROR: "refused by the program",
   NETWORK_ERROR: "the transaction could not be sent or confirmed",
   INTERNAL_ERROR: "internal error",

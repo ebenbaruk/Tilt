@@ -105,6 +105,15 @@ CREATE TABLE IF NOT EXISTS rounds (
 );
 CREATE INDEX IF NOT EXISTS rounds_settled_at ON rounds (settled_at);
 CREATE INDEX IF NOT EXISTS rounds_player_settled_at ON rounds (player, settled_at);
+-- Blackjack details from before multi-hand tables (one hand: player, dealer, doubled) in
+-- today's shape: one hand of the whole stake, or of half of it when doubled.
+UPDATE rounds SET detail = jsonb_build_object(
+  'game', 'blackjack',
+  'bet', (CASE WHEN (detail->>'doubled')::boolean THEN div(stake, 2) ELSE stake END)::text,
+  'hands', jsonb_build_array(jsonb_build_object('cards', detail->'player', 'doubled', detail->'doubled')),
+  'active', 1,
+  'dealer', detail->'dealer')
+WHERE game = 'blackjack' AND detail ? 'player';
 
 -- Every VRF callback (one per draw), keyed by player account: blackjack rounds take several.
 CREATE TABLE IF NOT EXISTS draws (

@@ -26,12 +26,16 @@ export type RouletteBet = z.infer<typeof RouletteBet>;
 export const BaccaratBet = z.enum(["player", "banker", "tie"]);
 export type BaccaratBet = z.infer<typeof BaccaratBet>;
 
+/** Hands one blackjack round can play against a single dealer (`MAX_HANDS` on-chain). */
+export const MAX_BLACKJACK_HANDS = 6;
+
 /** What a player wants to do. The relay turns it into one Solana or rollup transaction. */
 export const Action = z.discriminatedUnion("type", [
   /** First deposit: opens the account and moves it into the rollup (onboarding fee deducted). */
   z.object({ type: z.literal("open_account"), amount: Amount }),
   z.object({ type: z.literal("deposit"), amount: Amount }),
-  z.object({ type: z.literal("blackjack_bet"), amount: Amount }),
+  /** `amount` is the bet on EACH hand; `hands` (1 to 6) are all played against one dealer. */
+  z.object({ type: z.literal("blackjack_bet"), amount: Amount, hands: z.number().int().min(1).max(MAX_BLACKJACK_HANDS) }),
   z.object({ type: z.literal("blackjack_hit") }),
   z.object({ type: z.literal("blackjack_stand") }),
   z.object({ type: z.literal("blackjack_double") }),
@@ -75,6 +79,9 @@ export const ErrorCode = z.enum([
   "CONSENT_REQUIRED",
   "ACCOUNT_NOT_OPEN",
   "ACCOUNT_ALREADY_OPEN",
+  /** The player's blackjack table could not be opened in the rollup in time; nothing was
+   *  played, the same action can be sent again. */
+  "TABLE_NOT_READY",
   "PROGRAM_ERROR",
   "NETWORK_ERROR",
   "INTERNAL_ERROR",

@@ -5,10 +5,11 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createSession } from "../src/auth/sessions";
 import { createCampaign, openCompetition } from "../src/competitions/store";
+import { migrate } from "../src/db";
 import { settle } from "../src/games/settlement";
 import type { AccountResponse, MoneyIntentResponse, ResponsibleLimits, VerifyResponse } from "../src/public";
 import { RateLimiter } from "../src/ratelimit";
-import { saveRound } from "../src/rounds";
+import { saveDetail, saveRound } from "../src/rounds";
 import { ensureUser } from "../src/users";
 import vectors from "./fixtures/rust-vectors.json";
 import {
@@ -85,6 +86,10 @@ describe.skipIf(!db)("api routes", () => {
         { type: "roulette_spin", amount: "1000000", bet: { kind: "straight", number: 37 } },
         { type: "roulette_spin", amount: "1000000", bet: { kind: "dozen", dozen: 4 } },
         { type: "blackjack_hit", extra: true },
+        { type: "blackjack_bet", amount: "1000000" },
+        { type: "blackjack_bet", amount: "1000000", hands: 0 },
+        { type: "blackjack_bet", amount: "1000000", hands: 7 },
+        { type: "blackjack_bet", amount: "1000000", hands: 1.5 },
       ]) {
         const res = await play(action);
         expect(res.status, JSON.stringify(action)).toBe(400);
@@ -427,7 +432,7 @@ describe.skipIf(!db)("api routes", () => {
             payout: 0n,
             fee: 0n,
             requestId: 9n,
-            outcome: { game: "blackjack", player: [1, 6], dealer: [9], doubled: false },
+            outcome: { game: "blackjack", bet: "1000000", hands: [{ cards: [1, 6], doubled: false }], active: 0, dealer: [9] },
           },
         }),
       );
@@ -481,7 +486,7 @@ describe.skipIf(!db)("api routes", () => {
           phase: "player_turn",
           number: 4,
           stake: "1000000",
-          detail: { playerTotal: 17, playerSoft: true, canHit: true },
+          detail: { activeHand: 0, hands: [{ total: 17, soft: true, result: null }], canHit: true },
         },
       });
     });
@@ -601,8 +606,8 @@ describe.skipIf(!db)("api routes", () => {
 
     it("verifies a multi-draw blackjack round from every indexed draw", async () => {
       const v = must(
-        vectors.blackjack.find((h) => h.draws.length > 2),
-        "hand with a hit",
+        vectors.blackjack.find((h) => h.draws.length > 2 && h.hands.length > 1),
+        "multi-hand round with a hit",
       );
       const { playerAccountAddress } = await import("@tilt/contract");
       const { PublicKey } = await import("@solana/web3.js");
@@ -636,9 +641,48 @@ describe.skipIf(!db)("api routes", () => {
         requestId: BigInt(10 + v.draws.length),
         randomness: Buffer.from(v.draws[v.draws.length - 1], "hex"),
       });
+      // The indexer's snapshot pins the exact hands (several move sequences can pay the same).
+      const { bet, hands, active, dealer } = v;
+      await saveDetail(db, wallet, 2, BigInt(10 + v.draws.length), { game: "blackjack", bet, hands, active, dealer });
       const body = (await (await app.request(`/v1/rounds/${SIGNATURE}/verify`)).json()) as VerifyResponse;
       expect(body.matches).toBe(true);
-      expect(body.replayed.detail).toMatchObject({ game: "blackjack", playerTotal: expect.any(Number) });
+      if (body.replayed.detail.game !== "blackjack") throw new Error("unexpected detail");
+      expect(body.replayed.detail.hands.map((h) => ({ ranks: h.cards.map((c) => c.rank), doubled: h.doubled }))).toEqual(
+        v.hands.map((h) => ({ ranks: h.cards, doubled: h.doubled })),
+      );
+    });
+
+    it("still verifies a single-hand round indexed before tables, its detail migrated", async () => {
+      const v = must(
+        vectors.blackjack.find((h) => h.hands.length === 1 && h.hands[0].doubled),
+        "doubled single hand",
+      );
+      const [hand] = v.hands;
+      await saveRound(db, {
+        player: wallet,
+        game: "blackjack",
+        settledAt: new Date(),
+        signature: SIGNATURE,
+        round: 1,
+        stake: BigInt(v.stake),
+        payout: BigInt(v.payout),
+        fee: BigInt(v.fee),
+        requestId: BigInt(v.draws.length),
+        randomness: Buffer.from(v.draws[v.draws.length - 1], "hex"),
+      });
+      const legacy = { game: "blackjack", player: hand.cards, dealer: v.dealer, doubled: hand.doubled };
+      await db.query("UPDATE rounds SET detail = $1 WHERE signature = $2", [legacy, SIGNATURE]);
+      await migrate(db);
+      const { rows } = await db.query("SELECT detail FROM rounds WHERE signature = $1", [SIGNATURE]);
+      expect(rows[0].detail).toEqual({ game: "blackjack", bet: v.bet, hands: v.hands, active: 1, dealer: v.dealer });
+      const { playerAccountAddress } = await import("@tilt/contract");
+      const { PublicKey } = await import("@solana/web3.js");
+      const account = playerAccountAddress(new PublicKey(wallet)).toBase58();
+      for (const [i, draw] of v.draws.entries()) {
+        await db.query("INSERT INTO draws (account, request_id, randomness, signature) VALUES ($1, $2, $3, $4)", [account, 1 + i, draw, `d${i}`]);
+      }
+      const body = (await (await app.request(`/v1/rounds/${SIGNATURE}/verify`)).json()) as VerifyResponse;
+      expect(body.matches).toBe(true);
     });
 
     it("tells the web whether the caller's country may play", async () => {

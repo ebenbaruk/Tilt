@@ -59,7 +59,8 @@ export async function saveDraw(db: Queryable, d: DrawRecord): Promise<void> {
   );
 }
 
-/** Records the round's detail as read from the account right after it settled. */
+/** Records the round's detail as read from the account right after it settled. A blackjack
+ *  round without hands was played before tables: its cards are no longer on-chain. */
 export async function saveDetail(
   db: Queryable,
   player: string,
@@ -67,6 +68,7 @@ export async function saveDetail(
   requestId: bigint,
   detail: Outcome,
 ): Promise<void> {
+  if (detail.game === "blackjack" && detail.hands.length === 0) return;
   await db.query(
     `UPDATE rounds SET detail = $4 WHERE player = $1 AND round = $2 AND request_id = $3 AND detail IS NULL`,
     [player, round, requestId.toString(), detail],

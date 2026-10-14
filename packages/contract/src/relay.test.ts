@@ -21,7 +21,8 @@ describe("IntentRequest", () => {
     const actions = [
       { type: "open_account", amount: "10000000" },
       { type: "deposit", amount: "1" },
-      { type: "blackjack_bet", amount: "1000000" },
+      { type: "blackjack_bet", amount: "1000000", hands: 1 },
+      { type: "blackjack_bet", amount: "1000000", hands: 6 },
       { type: "blackjack_hit" },
       { type: "blackjack_stand" },
       { type: "blackjack_double" },
@@ -41,6 +42,11 @@ describe("IntentRequest", () => {
       { type: "roulette_spin", amount: "1", bet: { kind: "straight", number: 37 } },
       { type: "roulette_spin", amount: "1", bet: { kind: "dozen", dozen: 0 } },
       { type: "baccarat_deal", amount: "1", bet: "dragon" },
+      { type: "blackjack_bet", amount: "1" },
+      { type: "blackjack_bet", amount: "1", hands: 0 },
+      { type: "blackjack_bet", amount: "1", hands: 7 },
+      { type: "blackjack_bet", amount: "1", hands: 2.5 },
+      { type: "blackjack_bet", amount: "1", hands: "2" },
       { type: "slots_spin" },
       { type: "transfer", amount: "1" },
     ];
