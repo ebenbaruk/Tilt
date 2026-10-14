@@ -57,14 +57,14 @@ describe("the key plan", () => {
     for (const state of [fixtures.BLACKJACK_TURN, fixtures.BLACKJACK_SIX_TURN, fixtures.BLACKJACK_TEN_TURN]) {
       const keys = planKeys({ state, prefs: { ...PREFS, hands: 6 }, isBusy: false });
 
-      expect(keys.map((key) => key.hotkey)).toEqual(["h", "s", "d"]);
+      expect(keys.map((key) => key.hotkey)).toEqual(["1", "2", "3", "4", "h", "s", "d"]);
     }
   });
 
   test("blackjack in turn: p splits a pair, offered only when the active hand can split", () => {
     const keys = planKeys({ state: fixtures.BLACKJACK_PAIR, prefs: PREFS, isBusy: false });
 
-    expect(keys.map((key) => key.hotkey)).toEqual(["h", "s", "d", "p"]);
+    expect(keys.map((key) => key.hotkey)).toEqual(["1", "2", "3", "4", "h", "s", "d", "p"]);
     expect(keys.find((key) => key.hotkey === "p")?.command).toEqual({
       kind: "play",
       action: { type: "blackjack_split" },

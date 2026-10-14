@@ -156,13 +156,17 @@ describe("the pane draws each state the api sends", () => {
     expect(text).not.toContain("Space to play");
   });
 
-  test("a round in flight pins its game: no tab switches, no new round", async ($, on) => {
+  // Pressing 2 for roulette mid-hand used to do nothing at all (the tabs were drawn, not pressable).
+  test("a round in flight pins its game: a tab press says to finish the round, no new round", async ($, on) => {
     await seat($, on, BLACKJACK_TURN);
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
 
-    expect(await ui.find({ key: "game-roulette" })).toBeUndefined();
     expect(await ui.find({ key: "start" })).toBeUndefined();
-    expect(textOf(await ui.drawn())).toContain("[2] Roulette");
+    await ui.press({ key: "game-roulette" });
+    const text = textOf(await ui.drawn());
+
+    expect(text).toContain("Finish this Blackjack round before switching game");
+    expect(text).not.toContain("spin");
   });
 
   test("a narrow pane drops the sidebar but keeps the sponsor, labelled", async ($, on) => {

@@ -14,16 +14,7 @@ import {
   rouletteBetLabel,
   SEPARATOR,
 } from "./format";
-import {
-  activeGame,
-  type Command,
-  GAME_LABELS,
-  GAMES,
-  heldKeys,
-  type KeyAction,
-  planKeys,
-  type PlanInput,
-} from "./keys";
+import { activeGame, type Command, GAME_LABELS, heldKeys, type KeyAction, planKeys, type PlanInput } from "./keys";
 import type { TiltKey } from "../types";
 import type { AgentView, AuthView, IntentView, Prefs, RemoteView } from "./model";
 import type { Game, RoundView, SponsorView, StateResponse } from "./protocol";
@@ -98,33 +89,24 @@ function playButtons(
   return [...drawn, ...inertButtons(ui, faded, "echo")];
 }
 
-function tabs(ui: Ui, keys: readonly KeyAction[], game: Game, onCommand: OnCommand): RenderElement[] {
-  const { Text } = ui;
-  const switches = keys.filter((action) => action.command.kind === "switch");
-
-  if (switches.length > 0) {
-    return keyButtons(ui, switches, onCommand);
-  }
-
-  // A round in flight pins its game: the tabs are drawn, not pressable.
-  return GAMES.map((each, index) => (
-    <Text color={each === game ? PINK : FG6}>
-      [{String(index + 1)}] {GAME_LABELS[each]}
-    </Text>
-  ));
+function tabs(ui: Ui, keys: readonly KeyAction[], onCommand: OnCommand): RenderElement[] {
+  return keyButtons(
+    ui,
+    keys.filter((action) => action.command.kind === "switch"),
+    onCommand,
+  );
 }
 
 function header(ui: Ui, snap: Snapshot, keys: readonly KeyAction[], onCommand: OnCommand): RenderElement {
   const { Box, Text } = ui;
   const state = snap.remote.state;
-  const game = activeGame(state, snap.prefs);
 
   return (
     <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
       <Text color={PINK} bold>
         TILT
       </Text>
-      {state !== null && tabs(ui, keys, game, onCommand)}
+      {state !== null && tabs(ui, keys, onCommand)}
       <Box flexGrow={1} />
       {state !== null && (
         <Text color={FG4}>

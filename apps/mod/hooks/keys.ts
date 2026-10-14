@@ -118,16 +118,15 @@ export interface PlanInput {
   isBusy: boolean;
 }
 
+/** Always drawn: mid-round a press explains why it does not switch (see runCommand). */
 function switchKeys(state: StateResponse, prefs: Prefs): KeyAction[] {
-  if (isRoundOpen(state)) {
-    return [];
-  }
+  const shown = activeGame(state, prefs);
 
   return GAMES.map((game, index) => ({
     key: `game-${game}`,
     hotkey: String(index + 1),
     label: GAME_LABELS[game],
-    isSelected: game === prefs.game,
+    isSelected: game === shown,
     command: { kind: "switch", game },
   }));
 }

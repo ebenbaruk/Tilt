@@ -27,6 +27,8 @@ import {
   activeGame,
   type Command,
   currentBet,
+  GAME_LABELS,
+  isRoundOpen,
   nextRouletteBet,
   planKeys,
   startAction,
@@ -541,10 +543,23 @@ async function startRound($: EngineInterface, rt: Runtime): Promise<void> {
 
 async function runCommand($: EngineInterface, rt: Runtime, command: Command): Promise<void> {
   switch (command.kind) {
-    case "switch":
+    case "switch": {
+      const state = (await readRemote($)).state;
+
+      // A round in play pins its game: the press says so rather than doing nothing.
+      if (isRoundOpen(state) && state?.round) {
+        const game = GAME_LABELS[state.round.detail.game];
+
+        await update($, message, () => `Finish this ${game} round before switching game.`);
+
+        return;
+      }
+
+      await update($, message, () => null);
       await setPrefs($, (value) => ({ ...value, game: command.game }));
 
       return;
+    }
     case "bet": {
       const state = (await readRemote($)).state;
 

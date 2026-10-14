@@ -38,7 +38,7 @@ Then `/tilt login`, confirm the code in your browser, and play.
 Letter keys work everywhere (the pane and the band, inline or fullscreen):
 
 - `ctrl+x tab` gives the pane (or the band) the keyboard; `Esc` hands it back.
-- `1`–`4` switch game, `v` / `b` lower / raise the bet per hand (held at the table's limits), `n` deals or spins.
+- `1`–`4` switch game (not mid-round: a blackjack hand still to play, `▶`, or a draw in progress keeps its game, and the key says so), `v` / `b` lower / raise the bet per hand (held at the table's limits), `n` deals or spins.
 - Blackjack: `j` / `k` one hand fewer / more (1 to 6), `h` hit, `s` stand, `d` double, `p` split (first two cards of the same value), all on the hand marked `▶`.
 - Roulette: `r` red, `k` black, `o` odd, `e` even, `l` low, `g` high, `z` dozen, `c` column.
 - Baccarat: `p` player, `y` banker, `t` tie.
