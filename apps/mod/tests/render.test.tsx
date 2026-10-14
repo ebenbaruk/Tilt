@@ -28,15 +28,15 @@ const cases: [string, StateResponse, string[]][] = [
   [
     "blackjack, the player to act",
     BLACKJACK_TURN,
-    ["DEALER 9 + ?", " 9♥ ", " ? ", "▶ YOU 11", "bet 1.00", " 3♣ ", " 8♦ ", "hit", "stand", "double", "rtp 99.00%"],
+    ["DEALER 9 + ?", "9♥", "░░░░░", "▶ YOU 11", "bet 1.00", "3♣", "8♦", "hit", "stand", "double", "rtp 99.00%"],
   ],
   [
     "blackjack, six hands, the third to act",
     BLACKJACK_SIX_TURN,
-    ["DEALER 9 + ?", "#1 20", "#2 21 BLACKJACK", "▶ #3 11", "#4 soft 17", "#5 16", "#6 5", " 5♣ ", "hit", "double"],
+    ["DEALER 9 + ?", "#1 20", "#2 21 BLACKJACK", "▶ #3 11", "#4 soft 17", "#5 16", "#6 5", "5♣", "hit", "double"],
   ],
-  ["blackjack, a settled win", BLACKJACK_WIN, ["YOU 19", "WIN 1.00", "19 beats 17.", "+0.99", "fee 0.01", " 10♠ "]],
-  ["blackjack, a settled loss", BLACKJACK_LOSS, ["YOU 24 BUST", "LOSE 1.00", "Bust at 24.", "−1.00", " K♣ "]],
+  ["blackjack, a settled win", BLACKJACK_WIN, ["YOU 19", "WIN 1.00", "19 beats 17.", "+0.99", "fee 0.01", "10♠"]],
+  ["blackjack, a settled loss", BLACKJACK_LOSS, ["YOU 24 BUST", "LOSE 1.00", "Bust at 24.", "−1.00", "K♣"]],
   [
     "blackjack, four hands settled",
     BLACKJACK_MIXED,
@@ -55,14 +55,14 @@ const cases: [string, StateResponse, string[]][] = [
       "deal · 0.50",
     ],
   ],
-  ["blackjack, a pair to split", BLACKJACK_PAIR, ["▶ YOU 16", " 8♠ ", " 8♥ ", "hit", "double", "split"]],
+  ["blackjack, a pair to split", BLACKJACK_PAIR, ["▶ YOU 16", "8♠", "8♥", "hit", "double", "split"]],
   [
     "blackjack, ten hands after four splits, a split hand to act",
     BLACKJACK_TEN_TURN,
     [
       "#1 20 10♠ ",
       "#2 soft 20 split",
-      " A♠ ",
+      "A♠",
       "#3 21 split",
       "#7 22 BUST split",
       "▶ #8 11 split",

@@ -10,7 +10,7 @@ import { formatUsdc, SEPARATOR } from "./format";
 import { activeGame } from "./keys";
 import type { RoundView } from "./protocol";
 import { pressFor, type TableKey, type TableProps } from "./table-input";
-import { FG4, FG6, GOLD, PINK, type Ui } from "./theme";
+import { applyTheme, FG4, FG6, GOLD, PINK, type Ui } from "./theme";
 import { gameTable, outcomeLine, roundOf } from "./view";
 
 const FRAME_MS = 33;
@@ -305,6 +305,7 @@ function prompt(ui: Ui, keys: readonly TableKey[], view: PromptView): RenderElem
 }
 
 export default function Table(props: TableProps, surface: ClientSurface<TableState>): RenderElement {
+  applyTheme(props.isLight);
   const ui: Ui = surface.elements;
   const { Box, Text } = ui;
   let rt = runtimes.get(surface);
@@ -339,7 +340,7 @@ export default function Table(props: TableProps, surface: ClientSurface<TableSta
 
   return (
     <Box flexDirection="column" paddingLeft={shake}>
-      {gameTable(ui, props.state, props.prefs, props.isWide, fx)}
+      {gameTable(ui, props.state, props.prefs, props.isWide, fx, props.cards)}
       <Box flexDirection="column" marginTop={1}>
         {summary(ui, state, round)}
         <Box flexDirection="row" flexWrap="wrap" columnGap={2}>

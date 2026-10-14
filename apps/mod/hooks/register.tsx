@@ -21,7 +21,8 @@ import {
   startDevice,
   trustedVerifyUrl,
 } from "./api";
-import { cleanText, formatDuration, SEPARATOR } from "./format";
+import type { CardSize } from "./cards";
+import { cleanText, formatDuration, formatUsdc, SEPARATOR } from "./format";
 import { isPlayAction } from "./guards";
 import {
   activeGame,
@@ -47,12 +48,17 @@ import {
   type RemoteView,
 } from "./model";
 import type { IntentResponse, PlayAction, StateResponse } from "./protocol";
+import { type Settings, SETTING_FIELDS, settingsOf } from "./settings";
+import { renderSetup, SETUP_ROWS } from "./setup";
 import { isTablePost, TABLE_KEY, type TableProps } from "./table-input";
-import type { Ui } from "./theme";
-import { renderBand, renderPane, type Snapshot, WIDE_MIN_COLUMNS } from "./view";
+import { applyTheme, isLightTheme, type Ui } from "./theme";
+import { bigWinOf, PANE_ROWS, type PaneLayout, renderBand, renderPane, type Snapshot, WIDE_MIN_COLUMNS } from "./view";
 
 const PANE = "tilt";
 const PANE_TITLE = "tilt";
+const SETUP_PANE = "tilt-setup";
+const SETUP_TITLE = "tilt setup";
+const PLUGIN = "tilt";
 
 const auth = atom({ plugin: "tilt", key: "auth" } as const, { status: "out", message: null });
 const remote = atom({ plugin: "tilt", key: "remote" } as const, { state: null, error: null, fetchedAt: 0 });
@@ -68,11 +74,29 @@ const NO_ECHO = { keys: [], until: null };
 const echo = atom({ plugin: "tilt", key: "echo" } as const, NO_ECHO);
 const message = atom({ plugin: "tilt", key: "message" } as const, null);
 const agent = atom({ plugin: "tilt", key: "agent" } as const, { isWorking: false, frame: 0, notice: null });
-const layout = atom({ plugin: "tilt", key: "layout" } as const, { paneShown: false, paneDismissed: false });
+const layout = atom({ plugin: "tilt", key: "layout" } as const, {
+  paneShown: false,
+  paneDismissed: false,
+  isCollapsed: false,
+  isLight: false,
+  isOnboarded: false,
+});
+const session = atom({ plugin: "tilt", key: "session" } as const, {
+  net: "0",
+  rounds: 0,
+  startedAt: null,
+  lastRound: null,
+});
 
-/** `$.store` keys: the mod token, and the device code of a login in progress. */
+/** `$.store` keys: the mod token, the device code of a login in progress, and whether the
+ * person has made a first move (the first-hand guide then stays hidden in later sessions). */
 const STORE_SESSION = "session";
 const STORE_DEVICE = "device";
+const STORE_ONBOARDED = "onboarded";
+
+/** The mod's own sound files, played only with the `sound` setting on. */
+const SOUND_DEAL = "sounds/deal.wav";
+const SOUND_WIN = "sounds/win.wav";
 
 const TICK_MS = 100;
 const SPINNER_FRAME_MS = 200;
@@ -99,6 +123,7 @@ const ALREADY_IN = "Already logged in to tilt · run /tilt logout first to switc
 /** Background bookkeeping of one loaded copy of the module: a reload starts it afresh. */
 interface Runtime {
   base: string | null;
+  settings: Settings;
   ticker: Timer | null;
   isTicking: boolean;
   /** The ticker does nothing before this time; anything that needs work sooner sets it to 0. */
@@ -114,6 +139,10 @@ interface Runtime {
   sponsorName: string | null;
   /** undefined until read from `$.store`; null when logged out. */
   token: string | null | undefined;
+  /** The mod closed its pane to fold it: the next sync that finds it gone must not take that for the person's close. */
+  isFoldingPane: boolean;
+  /** Where the surface last seated the pane: inline, its height hides the agent's answer. */
+  panePlacement: "dock" | "inline" | null;
   /** The table's `Client` failed on this terminal: the pane draws the still table. */
   isTableBroken: boolean;
   /** The move whose POST /v1/play has no answer yet: it is not sent again meanwhile. */
@@ -218,6 +247,8 @@ async function logout($: EngineInterface, rt: Runtime, reason: string | null): P
   await setAuth($, { status: "out", message: reason });
   await update($, remote, () => ({ state: null, error: null, fetchedAt: 0 }));
   await update($, intent, () => null);
+  // The next account's session starts from its own table.
+  await update($, session, () => ({ net: "0", rounds: 0, startedAt: null, lastRound: null }));
 }
 
 // ---- login ----
@@ -456,6 +487,8 @@ async function sendMove($: EngineInterface, rt: Runtime, action: PlayAction): Pr
     return;
   }
 
+  await markOnboarded($);
+
   const live =
     state === null
       ? []
@@ -596,6 +629,10 @@ async function runCommand($: EngineInterface, rt: Runtime, command: Command): Pr
       return;
     case "play":
       await sendMove($, rt, command.action);
+
+      return;
+    case "share":
+      await shareWin($);
   }
 }
 
@@ -614,7 +651,7 @@ async function onTablePost($: EngineInterface, rt: Runtime, data: unknown): Prom
     return;
   }
 
-  const snap = await snapshot($);
+  const snap = await snapshot($, rt);
   const state = snap.remote.state;
   const action =
     state === null
@@ -669,6 +706,8 @@ async function pollStep($: EngineInterface, rt: Runtime, token: string, now: num
   if (!isSame) {
     await update($, remote, () => ({ state: fetched.value, error: null, fetchedAt: now }));
   }
+
+  await countRound($, rt, held.state, fetched.value, now);
 
   const current = await readIntent($);
 
@@ -731,14 +770,20 @@ async function paneSyncStep($: EngineInterface, rt: Runtime, now: number): Promi
   rt.lastPaneSyncAt = now;
   const pane = (await $.ui.panes()).find((each) => each.id === PANE);
   const isShown = pane !== undefined && pane.isPlaced && pane.isShown;
-  // The mod never closes its pane: one that was open and is gone, the person closed.
-  const isClosedByPerson = rt.isPaneOpen && pane === undefined;
+  // One that was open and is gone, the person closed, unless the mod folded it. A sync that read the
+  // panes before the fold may still mark it open: the flag stays until a sync sees it gone.
+  const isClosedByPerson = rt.isPaneOpen && pane === undefined && !rt.isFoldingPane;
   const held = await read($, layout);
 
   rt.isPaneOpen = pane !== undefined;
 
+  if (pane === undefined) {
+    rt.isFoldingPane = false;
+  }
+
   if (held.paneShown !== isShown || isClosedByPerson) {
     await update($, layout, (value: LayoutView) => ({
+      ...value,
       paneShown: isShown,
       paneDismissed: value.paneDismissed || isClosedByPerson,
     }));
@@ -830,7 +875,148 @@ function ensureTicker($: EngineInterface, rt: Runtime): void {
   }
 }
 
-async function snapshot($: EngineInterface): Promise<Snapshot> {
+/** Plays one of the mod's sounds when the person turned them on; a terminal without a player plays nothing. */
+function playSound($: EngineInterface, rt: Runtime, asset: string): void {
+  if (rt.settings.sound) {
+    $.audio.play({ asset }).catch((error: unknown) => logDebug($, `sound failed: ${errorText(error)}`));
+  }
+}
+
+/** Counts a round once it settles, for the session line, and sounds a new round or a win. */
+async function countRound(
+  $: EngineInterface,
+  rt: Runtime,
+  before: StateResponse | null,
+  after: StateResponse,
+  now: number,
+): Promise<void> {
+  const round = after.round;
+  const seen = await read($, session);
+
+  if (round !== null && round.number !== before?.round?.number && before !== null) {
+    playSound($, rt, SOUND_DEAL);
+  }
+
+  // The first look at the table: what is on it was played before this session.
+  if (before === null && seen.lastRound === null) {
+    if (round !== null) {
+      await update($, session, (value) => ({ ...value, lastRound: round.number }));
+    }
+
+    return;
+  }
+
+  if (round === null || round.phase !== "idle" || round.number === seen.lastRound) {
+    return;
+  }
+
+  await update($, session, (value) => ({
+    net: (BigInt(value.net) + BigInt(round.net)).toString(),
+    rounds: value.rounds + 1,
+    startedAt: value.startedAt ?? now,
+    lastRound: round.number,
+  }));
+
+  if (BigInt(round.net) > 0n) {
+    playSound($, rt, SOUND_WIN);
+  }
+}
+
+/** Copies a line about the last big win for the person to paste; nothing about their work is in it. */
+async function shareWin($: EngineInterface): Promise<void> {
+  const state = (await readRemote($)).state;
+  const win = state === null ? null : bigWinOf(state);
+
+  if (state === null || win === null) {
+    return;
+  }
+
+  const sponsor = state.sponsor === null ? "" : `${SEPARATOR}presented by ${cleanText(state.sponsor.name)}`;
+  const text = `Won ${formatUsdc(win.net)} USDC on ${GAME_LABELS[win.game].toLowerCase()} with Tilt while my agent worked${sponsor}`;
+  const copied = await $.ui.copy({ text });
+
+  await $.ui.toast(copied.isCopied ? "Copied · paste it anywhere." : `Could not copy: ${copied.reason}`);
+}
+
+/** The agent finished: an inline pane folds to the band so the answer can be read, unless the person is playing. */
+async function collapse($: EngineInterface, rt: Runtime): Promise<void> {
+  const pane = (await $.ui.panes()).find((each) => each.id === PANE);
+
+  if (pane?.isFocused === true) {
+    return;
+  }
+
+  // Folded only where the next turn opens it again; otherwise the pane the person opened stays.
+  if (pane !== undefined && rt.panePlacement === "inline" && opensOnTurn(rt)) {
+    rt.isFoldingPane = true;
+    rt.isPaneOpen = false;
+    await $.ui.close({ id: PANE });
+    await update($, layout, (value) => ({ ...value, paneShown: false, isCollapsed: true }));
+
+    return;
+  }
+
+  if (rt.settings.layout === "bottom") {
+    await update($, layout, (value) => ({ ...value, isCollapsed: true }));
+  }
+}
+
+/** A turn start opens the pane: the person wants it, placed at the side. */
+const opensOnTurn = (rt: Runtime): boolean => rt.settings.autoOpen && rt.settings.layout === "side";
+
+/** The first move made: the first-hand guide is done, in this session and the next ones. */
+async function markOnboarded($: EngineInterface): Promise<void> {
+  if (!(await read($, layout)).isOnboarded) {
+    await update($, layout, (value) => ({ ...value, isOnboarded: true }));
+    await $.store.set(STORE_ONBOARDED, true);
+  }
+}
+
+/** Follows Claude Code's theme: the accents switch for a light terminal. */
+async function readTheme($: EngineInterface): Promise<void> {
+  const row = (await $.config.list()).find((each) => each.key === "theme");
+  const isLight = isLightTheme(row?.value);
+
+  if ((await read($, layout)).isLight !== isLight) {
+    await update($, layout, (value) => ({ ...value, isLight }));
+  }
+}
+
+/** Opens the game pane at the height its cards want. */
+async function openPane($: EngineInterface, rt: Runtime, focus: boolean): Promise<boolean> {
+  const rows = PANE_ROWS[rt.settings.cards];
+
+  rt.isFoldingPane = false;
+  const opened = await $.ui.open(
+    focus ? { id: PANE, title: PANE_TITLE, focus, rows } : { id: PANE, title: PANE_TITLE, rows },
+  );
+
+  return opened.isPlaced;
+}
+
+/** The `/config` row of one of the mod's own fields: `tilt.<field>`, or `tilt@<source>.<field>`. */
+function isOwnRow(key: string, field: string): boolean {
+  const dot = key.lastIndexOf(".");
+  const plugin = key.slice(0, dot);
+
+  return key.slice(dot + 1) === field && (plugin === PLUGIN || plugin.startsWith(`${PLUGIN}@`));
+}
+
+/** Saves the choices made in `/tilt setup` to the mod's own `/config` rows; the engine then reloads the mod with them. */
+async function saveSettings($: EngineInterface, change: Partial<Settings>): Promise<void> {
+  const rows = await $.config.list();
+
+  for (const [name, value] of Object.entries(change) as [keyof Settings, Settings[keyof Settings]][]) {
+    const row = rows.find((each) => isOwnRow(each.key, SETTING_FIELDS[name]));
+    const deny = row === undefined ? "no such setting" : (await $.config.set({ key: row.key, value })).deny;
+
+    if (deny !== undefined) {
+      await $.ui.toast(`Tilt could not save ${name}: ${cleanText(deny)}`);
+    }
+  }
+}
+
+async function snapshot($: EngineInterface, rt: Runtime): Promise<Snapshot> {
   return {
     auth: await read($, auth),
     remote: await readRemote($),
@@ -839,7 +1025,15 @@ async function snapshot($: EngineInterface): Promise<Snapshot> {
     echo: (await read($, echo)).keys,
     message: await read($, message),
     agent: await read($, agent),
+    session: await read($, session),
+    isOnboarded: (await read($, layout)).isOnboarded,
+    depositUrl: depositUrlOf(rt, (await readRemote($)).state),
   };
+}
+
+/** The web page to deposit on, when the api named one on its own site. */
+function depositUrlOf(rt: Runtime, state: StateResponse | null): string | null {
+  return state?.webUrl === undefined || rt.base === null ? null : trustedVerifyUrl(state.webUrl, rt.base);
 }
 
 // ---- hooks ----
@@ -847,12 +1041,19 @@ async function snapshot($: EngineInterface): Promise<Snapshot> {
 async function onSessionStart($: EngineInterface, rt: Runtime, isInteractive: boolean): Promise<void> {
   await $.command.register({
     name: "tilt",
-    description: "Tilt: open the game pane, or `login` / `logout`",
-    argumentHint: "[login|logout]",
+    description: "Tilt: open the game pane, or `login` / `logout` / `setup`",
+    argumentHint: "[login|logout|setup]",
   });
 
   if ((await readToken($, rt)) !== null && (await read($, auth)).status === "out") {
     await setAuth($, { status: "in" });
+  }
+
+  // The colors are cosmetic: a theme that cannot be read leaves the dark set, never a dead session.
+  await readTheme($).catch((error: unknown) => logDebug($, `theme not read: ${errorText(error)}`));
+
+  if ((await $.store.get(STORE_ONBOARDED)) === true) {
+    await update($, layout, (value) => ({ ...value, isOnboarded: true }));
   }
 
   if (isInteractive) {
@@ -870,43 +1071,61 @@ async function onTiltCommand($: EngineInterface, rt: Runtime, args: string): Pro
     return { text: "Logged out of tilt." };
   }
 
+  if (verb === "setup") {
+    await $.ui.open({ id: SETUP_PANE, title: SETUP_TITLE, focus: true, rows: SETUP_ROWS });
+
+    return { text: "Tilt setup opened: pick where the table sits and how big the cards are." };
+  }
+
   if (verb === "login") {
     const text = await login($, rt);
-    const opened = await $.ui.open({ id: PANE, title: PANE_TITLE });
+    const isPlaced = rt.settings.layout === "bottom" ? false : await openPane($, rt, false);
 
-    await update($, layout, () => ({ paneShown: opened.isPlaced, paneDismissed: false }));
+    await update($, layout, (value) => ({ ...value, paneShown: isPlaced, paneDismissed: false }));
 
     return { text };
   }
 
   if (verb !== "") {
-    return { text: "Usage: /tilt [login|logout]" };
+    return { text: "Usage: /tilt [login|logout|setup]" };
   }
 
-  const opened = await $.ui.open({ id: PANE, title: PANE_TITLE, focus: true });
-
-  await update($, layout, () => ({ paneShown: opened.isPlaced, paneDismissed: false }));
   rt.wakeAt = 0;
+  await update($, layout, (value) => ({ ...value, isCollapsed: false }));
 
-  return { text: opened.isPlaced ? "Tilt pane opened." : "Tilt is in the band above the prompt." };
+  // Placed at the bottom, the band is the table: there is no pane to open.
+  if (rt.settings.layout === "bottom") {
+    await update($, layout, (value) => ({ ...value, paneDismissed: false }));
+
+    return { text: "Tilt is above the prompt · ctrl+x tab for the keys · /tilt setup to move it." };
+  }
+
+  const isPlaced = await openPane($, rt, true);
+
+  await update($, layout, (value) => ({ ...value, paneShown: isPlaced, paneDismissed: false }));
+
+  return { text: isPlaced ? "Tilt pane opened." : "Tilt is in the band above the prompt." };
 }
 
 async function onTurnStart($: EngineInterface, rt: Runtime): Promise<void> {
   ensureTicker($, rt);
   await update($, agent, (value) => ({ ...value, isWorking: true, notice: null }));
+  await update($, layout, (value) => ({ ...value, isCollapsed: false }));
   rt.wakeAt = 0;
 
-  // The agent comes first: the pane opens without the keyboard, and never again once the person closed it.
-  if (!(await read($, layout)).paneDismissed) {
-    const opened = await $.ui.open({ id: PANE, title: PANE_TITLE });
+  // The agent comes first: the pane opens without the keyboard, and never again once the person
+  // closed it. Placed at the bottom or compact, the band above the prompt is Tilt's place instead.
+  if (opensOnTurn(rt) && !(await read($, layout)).paneDismissed) {
+    const isPlaced = await openPane($, rt, false);
 
-    await update($, layout, (value) => ({ ...value, paneShown: opened.isPlaced }));
+    await update($, layout, (value) => ({ ...value, paneShown: isPlaced }));
   }
 }
 
 export const register: Register = (on, options) => {
   const rt: Runtime = {
     base: apiBase(options.apiUrl),
+    settings: settingsOf(options),
     ticker: null,
     isTicking: false,
     wakeAt: 0,
@@ -919,6 +1138,8 @@ export const register: Register = (on, options) => {
     sponsorMs: 0,
     sponsorName: null,
     token: undefined,
+    isFoldingPane: false,
+    panePlacement: null,
     isTableBroken: false,
     sendingId: null,
     rateLimitedUntil: 0,
@@ -932,6 +1153,16 @@ export const register: Register = (on, options) => {
 
   on("command.run", { command: "tilt" }, ($, e) => onTiltCommand($, rt, e.args));
 
+  on("config.set", { key: "theme" }, async ($, e, next) => {
+    const result = await next(e);
+
+    if (result.value !== undefined) {
+      await update($, layout, (value) => ({ ...value, isLight: isLightTheme(result.value) }));
+    }
+
+    return result;
+  });
+
   on("turn.start", async ($, e, next) => {
     await onTurnStart($, rt);
 
@@ -944,6 +1175,7 @@ export const register: Register = (on, options) => {
       const notice = finishNotice(e.reason, e.durationMs);
 
       await update($, agent, (value) => ({ ...value, isWorking: false, notice }));
+      await collapse($, rt);
     }
 
     return next(e);
@@ -951,25 +1183,36 @@ export const register: Register = (on, options) => {
 
   on("ui.render", { component: "Pane", requestId: PANE }, async ($, e) => {
     const ui: Ui = $.ui.resolve(e);
-    const pane = { bodyColumns: e.props.bodyColumns, isFocused: e.props.isFocused };
-    const snap = await snapshot($);
+    const look = await read($, layout);
+
+    applyTheme(look.isLight);
+    rt.panePlacement = e.props.placement;
+    const pane: PaneLayout = {
+      bodyColumns: e.props.bodyColumns,
+      bodyRows: e.props.scroll.bodyRows,
+      isFocused: e.props.isFocused,
+      cards: rt.settings.cards,
+    };
+    const snap = await snapshot($, rt);
     const state = snap.remote.state;
-    let table: RenderElement | null = null;
+    let table: ((cards: CardSize) => RenderElement) | null = null;
 
     // The fullscreen terminal hands raw keys (Space, Enter, arrows) to a clicked `Client`; the
     // main screen never does, so there the table is drawn still and played with the letters.
     if (e.surface === "terminal" && e.viewport?.isFullscreen === true && state !== null && !rt.isTableBroken) {
       const { Client } = $.ui.resolve(e);
       const keys = planKeys({ state, prefs: snap.prefs, isBusy: snap.intent !== null });
-      const props: TableProps = {
+      const props = (cards: CardSize): TableProps => ({
         state,
         prefs: snap.prefs,
         keys: keys.map(({ key, hotkey, label }) => ({ key, hotkey, label })),
         isWide: e.props.bodyColumns >= WIDE_MIN_COLUMNS,
+        cards,
+        isLight: look.isLight,
         isPaneFocused: e.props.isFocused,
-      };
+      });
 
-      table = <Client key={TABLE_KEY} module="./table.tsx" props={props} />;
+      table = (cards) => <Client key={TABLE_KEY} module="./table.tsx" props={props(cards)} />;
     }
 
     return renderPane(ui, snap, pane, commandRunner($, rt), table);
@@ -990,12 +1233,39 @@ export const register: Register = (on, options) => {
   });
 
   on("ui.render", { component: "AbovePrompt" }, async ($, e, next) => {
-    if (e.props.hasSurvey || (await read($, layout)).paneShown) {
+    const look = await read($, layout);
+
+    if (e.props.hasSurvey || look.paneShown) {
       return next(e);
     }
 
+    applyTheme(look.isLight);
     const ui: Ui = $.ui.resolve(e);
+    const snap = await snapshot($, rt);
 
-    return renderBand(ui, await snapshot($), { bodyColumns: e.props.bodyColumns }, commandRunner($, rt));
+    if (rt.settings.layout === "bottom" && !look.isCollapsed) {
+      const band: PaneLayout = {
+        bodyColumns: e.props.bodyColumns,
+        bodyRows: e.props.scroll.bodyRows,
+        isFocused: false,
+        cards: rt.settings.cards,
+      };
+
+      return renderPane(ui, snap, band, commandRunner($, rt), null);
+    }
+
+    return renderBand(ui, snap, { bodyColumns: e.props.bodyColumns }, commandRunner($, rt));
+  });
+
+  on("ui.render", { component: "Pane", requestId: SETUP_PANE }, async ($, e) => {
+    applyTheme((await read($, layout)).isLight);
+
+    return renderSetup(
+      $.ui.resolve(e),
+      rt.settings,
+      e.props.bodyColumns,
+      (change) =>
+        void saveSettings($, change).catch((error: unknown) => logDebug($, `setting not saved: ${errorText(error)}`)),
+    );
   });
 };

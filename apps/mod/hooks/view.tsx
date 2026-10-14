@@ -2,23 +2,36 @@
 // hands in the surface's elements and one callback for every key.
 import type { RenderElement } from "claude-code";
 
-import { blackjackOutcome, blackjackSummary, blackjackTable, STILL, type TableFx } from "./blackjack";
-import { cardRow, handRow } from "./cards";
+import { blackjackOutcome, blackjackSummary, blackjackTable, handColumns, STILL, type TableFx } from "./blackjack";
+import { type Card } from "./protocol";
+import { type CardSize, handCards, handRow, LARGE_CARD_ROWS } from "./cards";
 import {
   cardsInline,
   cleanText,
   formatCountdown,
+  formatDuration,
   formatSigned,
   formatUsdc,
   pocketColor,
   rouletteBetLabel,
   SEPARATOR,
 } from "./format";
-import { activeGame, type Command, GAME_LABELS, heldKeys, type KeyAction, planKeys, type PlanInput } from "./keys";
-import type { TiltKey } from "../types";
+import { baccaratTable, rouletteTable, slotsTable } from "./games";
+import {
+  activeGame,
+  clampHands,
+  type Command,
+  currentBet,
+  GAME_LABELS,
+  heldKeys,
+  type KeyAction,
+  planKeys,
+  type PlanInput,
+} from "./keys";
+import type { TiltKey, TiltSession } from "../types";
 import type { AgentView, AuthView, IntentView, Prefs, RemoteView } from "./model";
 import type { Game, RoundView, SponsorView, StateResponse } from "./protocol";
-import { FELT, FG1, FG4, FG6, GOLD, GREEN, LINE3, LINE4, PINK, RED, toneOf, type Ui } from "./theme";
+import { FG1, FG4, FG6, GOLD, GREEN, INK, LINE3, LINE4, PINK, PINK_RULE, RED, toneOf, type Ui } from "./theme";
 
 export interface Snapshot {
   auth: AuthView;
@@ -28,6 +41,11 @@ export interface Snapshot {
   echo: readonly TiltKey[];
   message: string | null;
   agent: AgentView;
+  session: TiltSession;
+  /** The person has made a first move: the first-hand guide stays hidden. */
+  isOnboarded: boolean;
+  /** Where to deposit, when the api named a page on its own site. */
+  depositUrl: string | null;
 }
 
 export type OnCommand = (command: Command) => void;
@@ -35,9 +53,15 @@ export type OnCommand = (command: Command) => void;
 const SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
 /** Under this many body columns the sidebar (design: 260px, dropped under ~720px) goes below the game. */
 export const WIDE_MIN_COLUMNS = 90;
-const SIDEBAR_COLUMNS = 30;
+const SIDEBAR_COLUMNS = 32;
+/** The sponsor and leaderboard column with its frame, under the header and over the footer. */
+const SIDEBAR_MIN_ROWS = 22;
 const LEADERBOARD_TOP = 3;
-const SLOT_COLORS: Record<string, string> = { "7": PINK, "★": GOLD };
+/** A win paying at least this many times the stake gets the banner and the share key. */
+const BIG_WIN_MULTIPLE = 2n;
+const HANDS_MAX = 6;
+/** The steppers' keys: drawn as `◂ value ▸` rather than as two words on the key line. */
+const STEP_KEYS = new Set(["bet-down", "bet-up", "hands-down", "hands-up"]);
 
 export const spinnerGlyph = (frame: number): string => SPINNER[frame % SPINNER.length] ?? "⠋";
 
@@ -69,6 +93,16 @@ function inertButtons(ui: Ui, keys: readonly TiltKey[], scope: "held" | "echo"):
   ));
 }
 
+/** A play key drawn, live or inert, and whether it is a move (dealing, hitting), drawn as a keycap. */
+interface PlayButton {
+  key: string;
+  element: RenderElement;
+  isMove: boolean;
+}
+
+/** Moves: the round's own keys (deal or spin, hit, stand, double, split); the rest set up the next one. */
+const isMoveKey = (key: string): boolean => key === "start" || key.startsWith("bj-");
+
 /**
  * The play keys (no game switches) to draw: the live ones, or else the ones a move in flight
  * holds; then the settled move's echo, on every letter nothing else takes.
@@ -79,41 +113,100 @@ function playButtons(
   keys: readonly KeyAction[],
   echo: readonly TiltKey[],
   onCommand: OnCommand,
-): RenderElement[] {
+): PlayButton[] {
   const live = keys.filter((action) => action.command.kind !== "switch");
   const held = live.length > 0 ? [] : heldKeys(input);
   const taken = new Set([...keys, ...held].map((action) => action.hotkey));
   const faded = echo.filter((action) => !taken.has(action.hotkey));
   const drawn = live.length > 0 ? keyButtons(ui, live, onCommand) : inertButtons(ui, held, "held");
+  const drawnKeys = live.length > 0 ? live : held;
 
-  return [...drawn, ...inertButtons(ui, faded, "echo")];
+  return [
+    ...drawn.map((element, index) => {
+      const key = drawnKeys[index]?.key ?? "";
+
+      return { key, element, isMove: isMoveKey(key) };
+    }),
+    ...inertButtons(ui, faded, "echo").map((element, index) => {
+      const key = faded[index]?.key ?? "";
+
+      return { key: `echo-${key}`, element, isMove: isMoveKey(key) };
+    }),
+  ];
 }
 
-function tabs(ui: Ui, keys: readonly KeyAction[], onCommand: OnCommand): RenderElement[] {
-  return keyButtons(
-    ui,
-    keys.filter((action) => action.command.kind === "switch"),
-    onCommand,
+/** A move's key in a frame, as the design system's KeyButton. */
+function keycap(ui: Ui, button: RenderElement): RenderElement {
+  const { Box } = ui;
+
+  return (
+    <Box borderStyle="round" borderColor={LINE4} paddingX={1}>
+      {button}
+    </Box>
   );
 }
 
-function header(ui: Ui, snap: Snapshot, keys: readonly KeyAction[], onCommand: OnCommand): RenderElement {
+/** The game tabs: the shown game on a pink chip, as the design system's GameTabs. */
+function tabs(ui: Ui, keys: readonly KeyAction[], onCommand: OnCommand): RenderElement[] {
+  const { Button, Text } = ui;
+
+  return keys
+    .filter((action) => action.command.kind === "switch")
+    .map((action) => (
+      <Button key={action.key} plain hotkey={action.hotkey} onPress={() => onCommand(action.command)}>
+        {action.isSelected ? (
+          <Text backgroundColor={PINK} color={INK} bold>
+            {` ${action.label} `}
+          </Text>
+        ) : (
+          <Text color={FG4}>{action.label}</Text>
+        )}
+      </Button>
+    ));
+}
+
+/** A pink rule across the pane: where Tilt's header ends. */
+export function pinkRule(ui: Ui, columns: number): RenderElement {
+  const { Text } = ui;
+
+  return <Text color={PINK_RULE}>{"─".repeat(Math.max(0, columns))}</Text>;
+}
+
+/** The header: the wordmark, the tabs, then the money, over a pink rule. */
+function header(
+  ui: Ui,
+  snap: Snapshot,
+  keys: readonly KeyAction[],
+  onCommand: OnCommand,
+  columns: number,
+): RenderElement {
   const { Box, Text } = ui;
   const state = snap.remote.state;
 
   return (
-    <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-      <Text color={PINK} bold>
-        TILT
-      </Text>
-      {state !== null && tabs(ui, keys, onCommand)}
-      <Box flexGrow={1} />
-      {state !== null && (
-        <Text color={FG4}>
-          balance <Text color={GOLD}>{formatUsdc(state.balance)} USDC</Text>
-          {state.rank !== null && `  rank #${state.rank}`}
+    <Box flexDirection="column">
+      <Box flexDirection="row" flexWrap="wrap" columnGap={2} paddingX={1}>
+        <Text color={PINK} bold>
+          TILT
         </Text>
-      )}
+        {state !== null && tabs(ui, keys, onCommand)}
+        <Box flexGrow={1} />
+        {state !== null && (
+          <Text color={FG4}>
+            balance{" "}
+            <Text color={GOLD} bold>
+              {formatUsdc(state.balance)} USDC
+            </Text>
+            {state.rank !== null && (
+              <Text>
+                {"  rank "}
+                <Text color={FG1} bold>{`#${state.rank}`}</Text>
+              </Text>
+            )}
+          </Text>
+        )}
+      </Box>
+      {pinkRule(ui, columns)}
     </Box>
   );
 }
@@ -171,103 +264,176 @@ export function outcomeLine(ui: Ui, round: RoundView | null, shownNet?: string):
   );
 }
 
-function rouletteStrip(ui: Ui, pocket: number, reach: number): RenderElement {
-  const { Box, Text } = ui;
-  const cells: RenderElement[] = [];
-
-  for (let offset = -reach; offset <= reach; offset++) {
-    const number = (((pocket + offset) % 37) + 37) % 37;
-    const isBall = offset === 0;
-
-    cells.push(
-      <Text backgroundColor={FELT[pocketColor(number)]} color={isBall ? GOLD : FG4} bold={isBall}>
-        {` ${String(number).padStart(2)} `}
-      </Text>,
-    );
-  }
-
-  return (
-    <Box flexDirection="row" columnGap={1}>
-      {cells}
-    </Box>
-  );
-}
-
-function rouletteTable(ui: Ui, round: RoundView | null, prefs: Prefs, isWide: boolean): RenderElement {
-  const { Box, Text } = ui;
-  const detail = round?.detail.game === "roulette" ? round.detail : null;
-  const isOpen = round !== null && round.phase !== "idle";
-  const bet = isOpen && detail !== null ? detail.bet : prefs.roulette;
-
-  return (
-    <Box flexDirection="column" gap={1}>
-      <Text color={FG4}>
-        bet <Text color={FG1}>{rouletteBetLabel(bet)}</Text>
-      </Text>
-      {detail?.number != null ? (
-        rouletteStrip(ui, detail.number, isWide ? 4 : 2)
-      ) : (
-        <Text color={FG6}>Pick a bet, then spin with n.</Text>
-      )}
-    </Box>
-  );
-}
-
-function baccaratTable(ui: Ui, round: RoundView | null, prefs: Prefs): RenderElement {
-  const { Box, Text } = ui;
-  const detail = round?.detail.game === "baccarat" ? round.detail : null;
-  const bet = round !== null && round.phase !== "idle" && detail !== null ? detail.bet : prefs.baccarat;
-
-  return (
-    <Box flexDirection="column">
-      <Text color={FG4}>
-        bet <Text color={FG1}>{bet}</Text>
-      </Text>
-      {detail === null ? (
-        <Text color={FG6}>Pick player, banker or tie, then deal with n.</Text>
-      ) : (
-        <Box flexDirection="column">
-          {handRow(ui, { label: "PLAYER", total: String(detail.playerPoints), tag: null }, cardRow(ui, detail.player))}
-          {handRow(ui, { label: "BANKER", total: String(detail.bankerPoints), tag: null }, cardRow(ui, detail.banker))}
-        </Box>
-      )}
-    </Box>
-  );
-}
-
-function slotsTable(ui: Ui, round: RoundView | null): RenderElement {
-  const { Box, Text } = ui;
-  const reels = round?.detail.game === "slots" ? round.detail.reels : null;
-  const symbols = reels ?? ["░", "░", "░"];
-
-  return (
-    <Box flexDirection="row" columnGap={1}>
-      {symbols.map((symbol) => (
-        <Box borderStyle="round" borderColor={LINE3} paddingX={1}>
-          <Text bold color={SLOT_COLORS[symbol] ?? (reels === null ? LINE4 : FG1)}>
-            {cleanText(symbol)}
-          </Text>
-        </Box>
-      ))}
-    </Box>
-  );
-}
-
 /** The active game's table; `fx` moves the blackjack cards and hands, `STILL` draws them at rest. */
-export function gameTable(ui: Ui, state: StateResponse, prefs: Prefs, isWide: boolean, fx: TableFx): RenderElement {
+export function gameTable(
+  ui: Ui,
+  state: StateResponse,
+  prefs: Prefs,
+  isWide: boolean,
+  fx: TableFx,
+  size: CardSize,
+): RenderElement {
   const game = activeGame(state, prefs);
   const round = roundOf(state, game);
 
   switch (game) {
     case "blackjack":
-      return blackjackTable(ui, round, fx);
+      return blackjackTable(ui, round, fx, size);
     case "roulette":
       return rouletteTable(ui, round, prefs, isWide);
     case "baccarat":
-      return baccaratTable(ui, round, prefs);
+      return baccaratTable(ui, round, prefs, size);
     case "slots":
-      return slotsTable(ui, round);
+      return slotsTable(ui, round, size);
   }
+}
+
+/** Placeholder cards: what a deal in flight draws face down until the chain's cards come in. */
+const FACE_DOWN: readonly Card[] = [
+  { rank: 1, suit: "♠" },
+  { rank: 1, suit: "♠" },
+];
+
+/**
+ * A blackjack deal sent and not on the table yet: the dealer and each hand get their two cards
+ * face down. Nothing about them is known; the cards turn over as the chain's state shows them.
+ */
+function dealingTable(ui: Ui, hands: number, size: CardSize): RenderElement {
+  const { Box, Text } = ui;
+  const faceDown = { faceDown: FACE_DOWN.length };
+
+  return (
+    <Box flexDirection="column" gap={1}>
+      {handRow(ui, { label: "DEALER", total: "", tag: null }, handCards(ui, FACE_DOWN, size, faceDown), size)}
+      <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+        {Array.from({ length: hands }, (_, index) => (
+          <Box flexDirection="column" minWidth={20}>
+            <Text color={FG4}>{hands === 1 ? "YOU" : `#${index + 1}`}</Text>
+            {handCards(ui, FACE_DOWN, size, faceDown)}
+          </Box>
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
+/** The hands a blackjack deal in flight asked for; null when no deal is in flight. */
+function dealingHands(snap: Snapshot): number | null {
+  const action = snap.intent?.action;
+
+  return action?.type === "blackjack_bet" ? clampHands(action.hands) : null;
+}
+
+/** The last round, when it was a win of at least twice the stake. */
+export function bigWinOf(state: StateResponse): { net: string; game: Game } | null {
+  const round = state.round;
+
+  if (round === null || round.phase !== "idle") {
+    return null;
+  }
+
+  const net = BigInt(round.net);
+
+  return net > 0n && net >= BigInt(round.stake) * BIG_WIN_MULTIPLE ? { net: round.net, game: round.detail.game } : null;
+}
+
+/** The big-win banner, as the design system's WinCard: the win, its sponsor, and a key to share it. */
+function winBanner(ui: Ui, state: StateResponse, onCommand: OnCommand): RenderElement | null {
+  const { Box, Button, Text } = ui;
+  const win = bigWinOf(state);
+
+  if (win === null) {
+    return null;
+  }
+
+  return (
+    <Box flexDirection="row" flexWrap="wrap" columnGap={2} borderStyle="round" borderColor={GOLD} paddingX={1}>
+      <Text color={GOLD} bold>
+        {`★ BIG WIN +${formatUsdc(win.net)} USDC`}
+      </Text>
+      <Text color={FG4}>
+        {`on ${GAME_LABELS[win.game].toLowerCase()}`}
+        {state.sponsor !== null && (
+          <Text>
+            {`${SEPARATOR}presented by `}
+            <Text color={FG1} bold>
+              {cleanText(state.sponsor.name)}
+            </Text>
+          </Text>
+        )}
+      </Text>
+      <Box flexGrow={1} />
+      <Button key="share" plain hotkey="w" onPress={() => onCommand({ kind: "share" })}>
+        <Text color={FG1}>copy to share</Text>
+      </Button>
+    </Box>
+  );
+}
+
+/** The first-hand guide: how to give Tilt the keys and deal, until the person makes a first move. */
+function firstHandGuide(ui: Ui, isFocused: boolean): RenderElement {
+  const { Box, Text } = ui;
+
+  return (
+    <Box borderStyle="round" borderColor={GOLD} paddingX={1} marginBottom={1}>
+      <Text color={FG4}>
+        <Text color={GOLD} bold>
+          First hand?{" "}
+        </Text>
+        {isFocused ? (
+          <Text>
+            Tilt has the keys: press{" "}
+            <Text color={GOLD} bold>
+              n
+            </Text>{" "}
+            to deal,{" "}
+            <Text color={GOLD} bold>
+              esc
+            </Text>{" "}
+            to hand them back.
+          </Text>
+        ) : (
+          <Text>
+            Press{" "}
+            <Text color={GOLD} bold>
+              ctrl+x tab
+            </Text>{" "}
+            to give Tilt the keys, then{" "}
+            <Text color={GOLD} bold>
+              n
+            </Text>{" "}
+            to deal.
+          </Text>
+        )}{" "}
+        Your agent keeps working meanwhile.
+      </Text>
+    </Box>
+  );
+}
+
+/** The bet a press of n stakes in all: the bet per hand, times the hands at blackjack. */
+function totalStake(state: StateResponse, prefs: Prefs): bigint {
+  const bet = BigInt(currentBet(state.limits, prefs.betIndex));
+
+  return activeGame(state, prefs) === "blackjack" ? bet * BigInt(clampHands(prefs.hands)) : bet;
+}
+
+/** Said before n is pressed: the balance does not cover the bet. Points to a lower bet or a deposit. */
+function lowBalanceLine(ui: Ui, snap: Snapshot, state: StateResponse): RenderElement | null {
+  const { Box, Link, Text } = ui;
+  const isIdle = state.round === null || state.round.phase === "idle";
+
+  if (!state.accountOpen || !isIdle || BigInt(state.balance) >= totalStake(state, snap.prefs)) {
+    return null;
+  }
+
+  return (
+    <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
+      <Text color={RED}>Balance too low for this bet · lower it with v</Text>
+      {snap.depositUrl !== null && <Text color={FG6}>or</Text>}
+      {snap.depositUrl !== null && <Link href={snap.depositUrl} label="deposit on the web" />}
+    </Box>
+  );
 }
 
 /** One line on what is in flight or went wrong; null when there is nothing to say. */
@@ -316,7 +482,10 @@ function sponsorBlock(ui: Ui, sponsor: SponsorView, now: number): RenderElement 
       </Text>
       {sponsor.tagline !== null && <Text color={FG4}>{cleanText(sponsor.tagline)}</Text>}
       <Text color={FG4}>
-        pool <Text color={GOLD}>{formatUsdc(sponsor.pool)} USDC</Text>
+        pool{" "}
+        <Text color={GOLD} bold>
+          {formatUsdc(sponsor.pool)} USDC
+        </Text>
       </Text>
       <Text color={FG6}>ends in {formatCountdown(Date.parse(sponsor.endsAt) - now)}</Text>
     </Box>
@@ -365,31 +534,168 @@ function leaderboard(ui: Ui, state: StateResponse): RenderElement {
       {top.map((entry) => row(entry, cleanText(entry.handle)))}
       {you !== undefined && <Text color={LINE4}> ⋮</Text>}
       {you !== undefined && row(you, "you")}
+      {aheadLine(ui, state)}
     </Box>
   );
 }
 
-function footer(ui: Ui, state: StateResponse, game: Game): RenderElement {
-  const { Text } = ui;
+const BASE_UNITS_PER_CENT = 10_000n;
 
-  return <Text color={FG6}>{`rtp ${cleanText(state.rtp[game])}% · 1% fee on wins`}</Text>;
+const roundUpToCent = (units: bigint): bigint =>
+  ((units + BASE_UNITS_PER_CENT - 1n) / BASE_UNITS_PER_CENT) * BASE_UNITS_PER_CENT;
+
+/** How far the player is from the next rank up: a reason to play one more hand, no countdown pressure. */
+function aheadLine(ui: Ui, state: StateResponse): RenderElement | null {
+  const { Text } = ui;
+  const you = state.leaderboard.find((entry) => entry.isYou);
+  const ahead = state.ahead;
+
+  if (you === undefined || ahead === undefined || ahead === null) {
+    return null;
+  }
+
+  // One base unit more than the gap passes them; shown in cents, rounded up so the amount shown does.
+  const gap = roundUpToCent(BigInt(ahead.net) - BigInt(you.net) + 1n);
+
+  return (
+    <Text color={FG6} wrap="truncate-end">
+      <Text color={GOLD}>{`+${formatUsdc(gap.toString())}`}</Text>
+      {` to pass ${cleanText(ahead.handle)} (#${ahead.rank})`}
+    </Text>
+  );
 }
 
-/** The play keys on one row, led by how to arm them while the pane does not hold the keyboard. */
-function keyBar(ui: Ui, buttons: readonly RenderElement[], isFocused: boolean): RenderElement {
+/** This session's play as the mod saw it settle: "session +2.30 · 14 rounds · 22m". */
+function sessionText(ui: Ui, session: TiltSession, now: number): RenderElement | null {
+  const { Text } = ui;
+
+  if (session.rounds === 0 || session.startedAt === null) {
+    return null;
+  }
+
+  const rounds = `${session.rounds} ${session.rounds === 1 ? "round" : "rounds"}`;
+
+  return (
+    <Text color={FG6}>
+      {"session "}
+      <Text color={toneOf(session.net)} bold>
+        {formatSigned(session.net)}
+      </Text>
+      {`${SEPARATOR}${rounds}${SEPARATOR}${formatDuration(Math.max(0, now - session.startedAt))}`}
+    </Text>
+  );
+}
+
+/** The session and the odds on the left; on the right, how to give the pane the keys while it does not hold them. */
+function footer(ui: Ui, snap: Snapshot, state: StateResponse, game: Game, isFocused: boolean): RenderElement {
   const { Box, Text } = ui;
 
   return (
-    <Box flexDirection="row" flexWrap="wrap" columnGap={2} marginTop={1}>
-      {!isFocused && (
-        <Text color={FG4}>
+    <Box flexDirection="row" flexWrap="wrap" columnGap={2} paddingX={1}>
+      {sessionText(ui, snap.session, snap.remote.fetchedAt)}
+      <Text color={FG6}>{`rtp ${cleanText(state.rtp[game])}% · 1% fee on wins`}</Text>
+      <Box flexGrow={1} />
+      {isFocused ? (
+        <Text color={FG6}>esc hands the keys back</Text>
+      ) : (
+        <Text color={FG6}>
           <Text color={GOLD} bold>
             ctrl+x tab
           </Text>{" "}
-          to use keys:
+          to use keys
         </Text>
       )}
-      {buttons}
+    </Box>
+  );
+}
+
+/** One stepper: `v ◂ bet 0.50 ▸ b`, its two keys from the plan around the value. */
+function stepper(ui: Ui, down: KeyAction, up: KeyAction, value: RenderElement, onCommand: OnCommand): RenderElement {
+  const { Box, Button, Text } = ui;
+  const arrow = (action: KeyAction, glyph: string) => (
+    <Button key={action.key} plain hotkey={action.hotkey} onPress={() => onCommand(action.command)}>
+      <Text color={FG1}>{glyph}</Text>
+    </Button>
+  );
+
+  return (
+    <Box flexDirection="row" columnGap={1}>
+      {arrow(down, "◂")}
+      {value}
+      {arrow(up, "▸")}
+    </Box>
+  );
+}
+
+/** The bet and, at blackjack, the hands, as steppers; null when their keys are not live. */
+function steppers(ui: Ui, state: StateResponse, prefs: Prefs, keys: readonly KeyAction[], onCommand: OnCommand) {
+  const { Text } = ui;
+  const find = (key: string) => keys.find((action) => action.key === key);
+  const [betDown, betUp, handsDown, handsUp] = ["bet-down", "bet-up", "hands-down", "hands-up"].map(find);
+  const hands = clampHands(prefs.hands);
+  const drawn: RenderElement[] = [];
+
+  if (betDown !== undefined && betUp !== undefined) {
+    const bet = (
+      <Text color={FG4}>
+        bet{" "}
+        <Text color={GOLD} bold>
+          {formatUsdc(currentBet(state.limits, prefs.betIndex))}
+        </Text>
+      </Text>
+    );
+
+    drawn.push(stepper(ui, betDown, betUp, bet, onCommand));
+  }
+
+  if (handsDown !== undefined && handsUp !== undefined) {
+    const pips = (
+      <Text color={FG4}>
+        <Text color={PINK}>{"●".repeat(hands)}</Text>
+        <Text color={LINE4}>{"○".repeat(HANDS_MAX - hands)}</Text>
+        {` ${hands} ${hands === 1 ? "hand" : "hands"}`}
+      </Text>
+    );
+
+    drawn.push(stepper(ui, handsDown, handsUp, pips, onCommand));
+  }
+
+  return drawn;
+}
+
+/** The play keys: the moves as keycaps, the steppers, then the rest (roulette and baccarat picks) on a line. */
+function keyArea(
+  ui: Ui,
+  buttons: readonly PlayButton[],
+  hasCaps: boolean,
+  steps: readonly RenderElement[],
+): RenderElement {
+  const { Box } = ui;
+  const isStepDrawn = steps.length > 0;
+  const shown = buttons.filter((button) => !(isStepDrawn && STEP_KEYS.has(button.key)));
+  const moves = shown.filter((button) => button.isMove).map((button) => button.element);
+  const setup = [...steps, ...shown.filter((button) => !button.isMove).map((button) => button.element)];
+
+  if (!hasCaps) {
+    return (
+      <Box flexDirection="row" flexWrap="wrap" columnGap={3} marginTop={1}>
+        {[...moves, ...setup]}
+      </Box>
+    );
+  }
+
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      {setup.length > 0 && (
+        <Box flexDirection="row" flexWrap="wrap" columnGap={3}>
+          {setup}
+        </Box>
+      )}
+      {moves.length > 0 && (
+        <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
+          {moves.map((move) => keycap(ui, move))}
+        </Box>
+      )}
     </Box>
   );
 }
@@ -426,7 +732,12 @@ function preamble(ui: Ui, snap: Snapshot): RenderElement | null {
   }
 
   if (!remote.state.accountOpen) {
-    return <Text color={FG4}>No Tilt account yet · make a first deposit on the web to open one.</Text>;
+    return (
+      <Box flexDirection="column">
+        <Text color={FG4}>No Tilt account yet · make a first deposit on the web to open one.</Text>
+        {snap.depositUrl !== null && <Link href={snap.depositUrl} label="deposit on the web" />}
+      </Box>
+    );
   }
 
   return null;
@@ -434,8 +745,100 @@ function preamble(ui: Ui, snap: Snapshot): RenderElement | null {
 
 export interface PaneLayout {
   bodyColumns: number;
+  /** The rows the pane (or the band, drawing the table) has: past them, the table scrolls. */
+  bodyRows: number;
   isFocused: boolean;
+  /** The cards the person asked for: large ones give way to small ones where they would not fit. */
+  cards: CardSize;
 }
+
+/** Everything around the table: header, agent line, outcome, status, keys and footer. */
+const CHROME_ROWS = 16;
+/** The first-hand guide in its frame, and its margin. */
+const GUIDE_ROWS = 4;
+/** The big-win banner in its frame. */
+const BANNER_ROWS = 3;
+const NARROW_EXTRA_ROWS = 2;
+
+/** The rows a blackjack table takes: the dealer over hands of these card counts, wrapped to `columns`. */
+function blackjackRows(handCards: readonly number[], size: CardSize, columns: number): number {
+  const cardRows = size === "large" ? LARGE_CARD_ROWS : 1;
+  const widest = Math.max(...handCards.map((count) => handColumns(count, size)));
+  const perRow = Math.max(1, Math.floor((columns + 2) / (widest + 2)));
+  const handRows = Math.ceil(handCards.length / perRow);
+  const dealerRows = size === "large" ? 1 + cardRows : 1;
+
+  return dealerRows + 1 + handRows * (cardRows + 2) + (handRows - 1);
+}
+
+/** The rows the active game's table takes with cards at `size`, in `columns`; a deal in flight is its face-down hands. */
+function tableRows(
+  state: StateResponse,
+  prefs: Prefs,
+  dealing: number | null,
+  size: CardSize,
+  columns: number,
+): number {
+  const round = roundOf(state, activeGame(state, prefs));
+  const cardRows = size === "large" ? LARGE_CARD_ROWS : 1;
+
+  if (dealing !== null) {
+    return blackjackRows(
+      Array.from({ length: dealing }, () => FACE_DOWN.length),
+      size,
+      columns,
+    );
+  }
+
+  switch (round?.detail.game) {
+    case "blackjack":
+      return blackjackRows(
+        round.detail.hands.map((hand) => hand.cards.length),
+        size,
+        columns,
+      );
+    case "baccarat":
+      return 2 + (size === "large" ? 1 + cardRows : 2);
+    case "roulette":
+      return 5;
+    case "slots":
+      return size === "large" ? 5 : 3;
+    default:
+      return 0;
+  }
+}
+
+/** The sponsor and leaderboard get their own column where the pane is wide and tall enough; else a line. */
+const sidebarFits = (layout: PaneLayout): boolean =>
+  layout.bodyColumns >= WIDE_MIN_COLUMNS && layout.bodyRows >= SIDEBAR_MIN_ROWS;
+
+/** The rows the whole pane takes with cards at `size`: chrome, what shows only now (guide, banner, warnings), the table. */
+function paneRows(snap: Snapshot, state: StateResponse, layout: PaneLayout, size: CardSize): number {
+  const hasSidebar = sidebarFits(layout);
+  const columns = hasSidebar ? layout.bodyColumns - SIDEBAR_COLUMNS - 3 : layout.bodyColumns - 2;
+  const isIdle = state.round === null || state.round.phase === "idle";
+  const isLow = state.accountOpen && isIdle && BigInt(state.balance) < totalStake(state, snap.prefs);
+  const now =
+    (snap.isOnboarded ? 0 : GUIDE_ROWS) +
+    (bigWinOf(state) === null ? 0 : BANNER_ROWS) +
+    (isLow ? 1 : 0) +
+    (state.blocked === null ? 0 : 1);
+
+  return (
+    CHROME_ROWS +
+    (hasSidebar ? 0 : NARROW_EXTRA_ROWS) +
+    now +
+    tableRows(state, snap.prefs, dealingHands(snap), size, columns)
+  );
+}
+
+/** The card size the pane draws: the one asked for, or small where large ones would not fit. */
+function cardSizeFor(snap: Snapshot, state: StateResponse, layout: PaneLayout): CardSize {
+  return layout.cards === "large" && paneRows(snap, state, layout, "large") <= layout.bodyRows ? "large" : "small";
+}
+
+/** The rows a pane asks for when it opens, at the card size the person chose. */
+export const PANE_ROWS: Record<CardSize, number> = { large: 30, small: 20 };
 
 /** `table` is the table surface module's region (fullscreen terminal), drawn in place of the still table. */
 export function renderPane(
@@ -443,18 +846,22 @@ export function renderPane(
   snap: Snapshot,
   layout: PaneLayout,
   onCommand: OnCommand,
-  table: RenderElement | null,
+  table: ((size: CardSize) => RenderElement) | null,
 ): RenderElement {
   const { Box, Text } = ui;
   const state = snap.remote.state;
   const keys = state === null ? [] : planKeys({ state, prefs: snap.prefs, isBusy: snap.intent !== null });
   const intro = preamble(ui, snap);
   const isWide = layout.bodyColumns >= WIDE_MIN_COLUMNS;
-  const frame = (body: RenderElement | null) => (
-    <Box flexDirection="column" borderStyle="round" borderColor={PINK} paddingX={1} gap={1}>
-      {header(ui, snap, keys, onCommand)}
-      {agentLine(ui, snap.agent)}
-      {body}
+  // The engine frames the pane: the brand sits on the header bar, not on a second border.
+  const frame = (body: RenderElement | null, foot: RenderElement | null = null) => (
+    <Box flexDirection="column">
+      {header(ui, snap, keys, onCommand, layout.bodyColumns)}
+      <Box flexDirection="column" paddingX={1} marginTop={1}>
+        {agentLine(ui, snap.agent)}
+        {body}
+      </Box>
+      {foot}
     </Box>
   );
 
@@ -463,28 +870,59 @@ export function renderPane(
   }
 
   const game = activeGame(state, snap.prefs);
+  const size = cardSizeFor(snap, state, layout);
+  // Where even small cards overflow (the band at the bottom of a short terminal), the keys come
+  // first, so the ones to press are always in view and the table scrolls instead.
+  const isKeysFirst = paneRows(snap, state, layout, size) > layout.bodyRows;
   const plays = playButtons(ui, { state, prefs: snap.prefs, isBusy: snap.intent !== null }, keys, snap.echo, onCommand);
+  const steps = steppers(ui, state, snap.prefs, keys, onCommand);
   const side = state.sponsor !== null || state.leaderboard.length > 0;
+  const dealing = dealingHands(snap);
+  const canPlay = state.accountOpen && state.blocked === null;
+  const shownTable =
+    dealing !== null
+      ? dealingTable(ui, dealing, size)
+      : table === null
+        ? gameTable(ui, state, snap.prefs, isWide, STILL, size)
+        : table(size);
   const gameColumn = (
-    <Box flexDirection="column" flexGrow={1}>
+    <Box flexDirection="column" flexGrow={1} marginTop={snap.agent.notice !== null || snap.agent.isWorking ? 1 : 0}>
+      {!snap.isOnboarded && canPlay && firstHandGuide(ui, layout.isFocused)}
       {state.blocked !== null && <Text color={RED}>{`Play paused · ${cleanText(state.blocked)}`}</Text>}
-      {table ?? gameTable(ui, state, snap.prefs, isWide, STILL)}
-      {table === null && outcomeLine(ui, roundOf(state, game))}
+      {isKeysFirst && plays.length > 0 && <Box marginBottom={1}>{keyArea(ui, plays, false, steps)}</Box>}
+      {shownTable}
+      {dealing === null && table === null && outcomeLine(ui, roundOf(state, game))}
+      {dealing === null && winBanner(ui, state, onCommand)}
       {statusLine(ui, snap, state)}
-      {plays.length > 0 && keyBar(ui, plays, layout.isFocused)}
-      {footer(ui, state, game)}
+      {lowBalanceLine(ui, snap, state)}
+      {!isKeysFirst && plays.length > 0 && keyArea(ui, plays, size === "large", steps)}
+    </Box>
+  );
+  const foot = (
+    <Box flexDirection="column" marginTop={1}>
+      <Text color={LINE3}>{"─".repeat(Math.max(0, layout.bodyColumns))}</Text>
+      {footer(ui, snap, state, game, layout.isFocused)}
     </Box>
   );
 
-  if (isWide && side) {
+  if (side && sidebarFits(layout)) {
     return frame(
       <Box flexDirection="row" columnGap={2}>
         {gameColumn}
-        <Box flexDirection="column" width={SIDEBAR_COLUMNS} gap={1}>
+        <Box
+          flexDirection="column"
+          width={SIDEBAR_COLUMNS}
+          flexShrink={0}
+          gap={1}
+          borderStyle="round"
+          borderColor={LINE3}
+          paddingX={1}
+        >
           {state.sponsor !== null && sponsorBlock(ui, state.sponsor, snap.remote.fetchedAt)}
           {leaderboard(ui, state)}
         </Box>
       </Box>,
+      foot,
     );
   }
 
@@ -493,6 +931,7 @@ export function renderPane(
       {gameColumn}
       {state.sponsor !== null && sponsorLine(ui, state.sponsor, snap.remote.fetchedAt)}
     </Box>,
+    foot,
   );
 }
 
@@ -564,7 +1003,7 @@ export function renderBand(ui: Ui, snap: Snapshot, layout: BandLayout, onCommand
           keys.filter((action) => action.command.kind === "switch"),
           onCommand,
         )}
-        {playButtons(ui, input, keys, snap.echo, onCommand)}
+        {playButtons(ui, input, keys, snap.echo, onCommand).map((button) => button.element)}
         {status}
       </Box>
       {state.sponsor !== null && sponsorLine(ui, state.sponsor, snap.remote.fetchedAt)}

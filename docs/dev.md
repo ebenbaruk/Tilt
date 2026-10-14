@@ -85,6 +85,14 @@ pnpm --filter @tilt/web dev        # web, http://localhost:3000
 claude --plugin-dir apps/mod
 ```
 
+Pour essayer une disposition sans toucher à `~/.claude/settings.json`, passe les réglages pour la session seulement :
+
+```sh
+claude --plugin-dir apps/mod --settings '{"tui":"default","pluginConfigs":{"tilt":{"options":{"apiUrl":"http://127.0.0.1:8080","layout":"bottom","cards":"large"}}}}'
+```
+
+`tui` : `default` (panneau sous le transcript) ou `fullscreen` (panneau à droite). `layout` : `side`, `bottom` ou `compact`. Attention : `/tilt setup` enregistre ses choix dans les réglages utilisateur, comme `/config`.
+
 Dans la session :
 1. Règle `apiUrl` sur `http://127.0.0.1:8080` (`/config`, ou `pluginConfigs.tilt.options.apiUrl` dans `~/.claude/settings.json`).
 2. `/tilt login`, puis approuve le code dans le navigateur.

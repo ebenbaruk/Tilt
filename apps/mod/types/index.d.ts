@@ -66,6 +66,23 @@ export type TiltLayout = {
   paneShown: boolean;
   /** The person closed the pane: turn starts no longer reopen it until `/tilt`. */
   paneDismissed: boolean;
+  /** The agent finished and Tilt folded to two lines so its answer can be read; the next turn unfolds it. */
+  isCollapsed: boolean;
+  /** Claude Code's theme is a light one: the accents switch to their light set. */
+  isLight: boolean;
+  /** The person has made a first move: the first-hand guide is not shown again. */
+  isOnboarded: boolean;
+};
+
+/** What this Claude Code session played, as the mod saw it settle. Shown only, never trusted. */
+export type TiltSession = {
+  /** Signed decimal string of base units. */
+  net: string;
+  rounds: number;
+  /** `$.clock.now()` of the first round counted; null before one. */
+  startedAt: number | null;
+  /** The last round counted, by number, so a redraw or a poll never counts it twice. */
+  lastRound: number | null;
 };
 
 declare module "claude-code" {
@@ -80,6 +97,7 @@ declare module "claude-code" {
       message: string | null;
       agent: TiltAgent;
       layout: TiltLayout;
+      session: TiltSession;
     };
   }
 }
