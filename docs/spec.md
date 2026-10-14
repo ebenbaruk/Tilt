@@ -82,17 +82,19 @@ Référence visuelle : la maquette d'Eli (image partagée dans la conversation, 
 └──────────────────────────────────────────────────┴───────────────────────────────────┘
 ```
 
-**Touches :**
-- `1`/`2`/`3` : changer de jeu.
-- `h`/`s`/`d` : actions du blackjack.
-- `v` / `b` : baisser / monter la mise (bloquée au minimum et au maximum de la table).
-- `Ctrl+X Tab` : donner ou rendre le focus au panneau.
-- Tab et les flèches sont réservés par Claude Code.
-- Un raccourci ne peut être qu'un chiffre ou une lettre minuscule : Espace, Entrée, `+` et `-` sont refusés par Claude Code.
+**Touches :** deux modes, toujours disponibles tous les deux.
+- Lettres (partout : panneau et bande, écran principal ou plein écran ; `Ctrl+X Tab` donne ou rend le focus) :
+  - `1`–`4` : changer de jeu ; `n` : donner ou lancer.
+  - `v` / `b` : baisser / monter la mise par main (bloquée au minimum et au maximum de la table).
+  - Blackjack : `j` / `k` une main de moins / de plus (1 à 6), `h`/`s`/`d` sur la main active.
+  - Un raccourci ne peut être qu'un chiffre ou une lettre minuscule : Espace, Entrée, `+` et `-` sont refusés pour un bouton.
+- Plein écran + clic : la table est une surface (`Client`) qui reçoit les touches brutes après un clic sur elle (`Esc` rend le focus). `Espace` ou `Entrée` rejoue avec la même mise et les mêmes mains ; en cours de main `Espace` tire, `Entrée` reste, `d` double ; `←`/`→` la mise, `↑`/`↓` les mains, `1`–`4` le jeu. Sur l'écran principal, la surface ne reçoit jamais de touches : la table y est dessinée fixe et se joue aux lettres.
+
+**Blackjack multi-mains :** 1 à 6 mains contre un seul croupier, même mise sur chaque main, jouées de gauche à droite (main active marquée `▶`). Chaque main affiche son total, BUST/BLACKJACK, le double, sa mise et, une fois soldée, son résultat (BJ/WIN/PUSH/LOSE) ; une ligne résume le net de la manche.
 
 **Contraintes techniques (mods Claude Code) :**
 - Claude Code ≥ v2.1.287.
-- Le panneau doit avoir le focus pour recevoir les touches.
+- Le panneau (ou la table, en plein écran) doit avoir le focus pour recevoir les touches. Tab ne donne pas les touches à la table.
 - Sous 110–144 colonnes de terminal, le panneau ne s'ouvre pas tout seul : il faut une version compacte (bande au-dessus du prompt).
 
 **Le sponsor est toujours visible.** Le bloc « Presented by » ne peut pas être masqué, et il est clairement marqué comme sponsorisé (l'Usage Policy d'Anthropic interdit le contenu sponsorisé non signalé).
@@ -245,10 +247,11 @@ Assurée on-chain par le VRF (§6.1) : le programme n'accepte un tirage que de l
 GET  /users/:userId    -> { userId, solanaAddress, accountOpen }        // 404 UNKNOWN_USER
 POST /intents { intentId, userId, action, consent? } -> { intentId, status, signature?, error? }
 GET  /intents/:intentId -> même réponse
-// action : open_account | deposit {amount} · blackjack_bet {amount} | blackjack_hit | blackjack_stand | blackjack_double
+// action : open_account | deposit {amount} · blackjack_bet {amount (par main), hands 1..6} | blackjack_hit | blackjack_stand | blackjack_double
 //          roulette_spin {amount, bet} · baccarat_deal {amount, bet} · slots_spin {amount} · withdraw {amount}
 // status : pending (en vol ou issue inconnue, le relais la tranche seul) | submitted (arrivée on-chain) | failed
-// error.code : PROGRAM_ERROR (message = nom de l'erreur Anchor, ex. InsufficientBalance), ACCOUNT_NOT_OPEN, …
+// error.code : PROGRAM_ERROR (message = nom de l'erreur Anchor, ex. InsufficientBalance), ACCOUNT_NOT_OPEN,
+//              TABLE_NOT_READY (table de blackjack pas encore ouverte dans le rollup ; rien n'est joué, renvoyer l'action), …
 // 409 INTENT_CONFLICT (id réutilisé pour autre chose) ou PLAYER_BUSY (une intention du joueur est déjà en vol)
 // 403 CONSENT_REQUIRED : open_account, deposit et withdraw exigent consent.identityToken (jeton d'identité Privy du joueur, émis il y a moins de 5 min).
 // 422 LIMIT_EXCEEDED (plafonds du relais : dépôts par joueur et global, gains promo) ; rien n'est enregistré, le même intentId peut être renvoyé.
