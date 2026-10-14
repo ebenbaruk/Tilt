@@ -24,8 +24,10 @@ trap 'kill 0' EXIT
 rpc() { curl -s -X POST -H 'content-type: application/json' -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$2\",\"params\":${3:-[]}}" "http://127.0.0.1:$1"; }
 
 # mAGic…: MagicBlock's local rollup validator identity (public account fixture).
+# Sc9MJ…: the local VRF queue, emptied (see chain/scripts/local-stack.sh).
 node "$MB/mbTestValidator.js" --rpc-port 8899 --reset \
   --account mAGicPQYBMvcYveUZA5F5UNNwyHvfYh5xkLS2Fr1mev "$CHAIN_DIR/scripts/validator-identity.json" \
+  --account Sc9MJUngNbQXSXGP3F67KvKwVnhaYn6kcioxXNVowYT "$CHAIN_DIR/scripts/vrf-queue.json" \
   --upgradeable-program "$PROGRAM_ID" "$CHAIN_DIR/target/deploy/tilt.so" "$(solana-keygen pubkey "$WALLET")" > base.log 2>&1 &
 until rpc 8899 getHealth | grep -q ok; do sleep 1; done
 # Programs loaded at genesis are only callable a few slots in; the rollup's setup fails before.

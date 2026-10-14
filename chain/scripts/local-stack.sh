@@ -26,11 +26,16 @@ common=(--network host --user "$(id -u):$(id -g)" -e HOME="$HOME" -e RUST_LOG=in
   -v "$HOME:$HOME" -w "$RUN_DIR")
 
 # mAGic…: MagicBlock's local rollup validator identity (public account fixture), so delegations can target it.
+# Sc9MJ…: the local VRF queue. The stack's own fixture ships it with 53 requests that can never
+# be fulfilled (custom error 13) nor purged, leaving ~150 bytes free: a request with two
+# callback accounts (blackjack + table) no longer fits (AccountDataTooSmall). This copy is the
+# same account with an empty queue (count 0, cursor 16, as on devnet).
 # seccomp=unconfined: Docker's default profile blocks io_uring, which the Agave validator
 # asserts at startup ("assertion failed: io_uring_supported()", exit code 101).
 docker run -d --name tilt-mb-stack --ulimit nofile=1048576:1048576 --security-opt seccomp=unconfined "${common[@]}" "$IMAGE" \
   mb-stack --reset --gossip-port 18000 --dynamic-port-range 18001-18040 \
   --account mAGicPQYBMvcYveUZA5F5UNNwyHvfYh5xkLS2Fr1mev "$CHAIN_DIR/scripts/validator-identity.json" \
+  --account Sc9MJUngNbQXSXGP3F67KvKwVnhaYn6kcioxXNVowYT "$CHAIN_DIR/scripts/vrf-queue.json" \
   --upgradeable-program "$PROGRAM_ID" "$CHAIN_DIR/target/deploy/tilt.so" "$WALLET_PUBKEY" >/dev/null
 
 echo "Waiting for the MagicBlock stack..."
