@@ -4,6 +4,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 const isDev = process.env.NODE_ENV === "development";
+// Waitlist deployment: only the landing, the legal pages and the signup route exist; the app pages
+// need the api, which isn't public yet.
+const landingOnly = process.env.LANDING_ONLY === "true";
+const LANDING_PATHS = /^\/(legal\/[a-z-]+|api\/waitlist)?$/;
 
 /** Origin only: CSP sources must not carry a path. */
 function origin(url: string | undefined): string {
@@ -44,6 +48,9 @@ function contentSecurityPolicy(nonce: string): string {
 }
 
 export function proxy(request: NextRequest) {
+  if (landingOnly && !LANDING_PATHS.test(request.nextUrl.pathname)) {
+    return NextResponse.redirect(new URL("/", request.url));
+  }
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const csp = contentSecurityPolicy(nonce);
   // Next reads the nonce from the request's CSP header while rendering.

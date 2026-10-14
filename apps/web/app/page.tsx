@@ -2,9 +2,8 @@ import type { Viewport } from "next";
 import Link from "next/link";
 import { AgentCliPreview } from "@/components/landing/AgentCliPreview";
 import { Badge } from "@/components/landing/Badge";
-import { CopyPill } from "@/components/landing/CopyPill";
 import { Burst, CardBuddy, Chip, Die, Fan, Reels, Terminal, Wheel } from "@/components/landing/Illustrations";
-import { INSTALL_COMMANDS } from "@/components/landing/InstallSnippet";
+import { WaitlistForm } from "@/components/landing/WaitlistForm";
 import { WavyWordmark } from "@/components/landing/WavyWordmark";
 import styles from "./landing.module.css";
 
@@ -120,12 +119,9 @@ export default function Landing() {
           ))}
         </nav>
         <div className={styles.headerActions}>
-          <a href="#install" className={styles.pill}>
-            Get the mod
+          <a href="#waitlist" className={styles.pill}>
+            Join the waitlist
           </a>
-          <Link href="/account" className={styles.circle}>
-            Log in
-          </Link>
         </div>
       </header>
 
@@ -160,8 +156,8 @@ export default function Landing() {
               provably fair, and the panel steps aside the second your agent needs you.
             </p>
             <div className={styles.row}>
-              <a href="#install" className={styles.pill}>
-                Get the mod
+              <a href="#waitlist" className={styles.pill}>
+                Join the waitlist
               </a>
               <a href="#games" className={styles.pillGhost}>
                 See the games
@@ -170,29 +166,21 @@ export default function Landing() {
           </div>
         </section>
 
-        <section id="install" className={styles.section} aria-labelledby="install-title">
+        <section id="waitlist" className={styles.section} aria-labelledby="waitlist-title">
           <div className={styles.sectionHead}>
-            <h2 id="install-title" className={styles.displayTitle}>
-              Three lines to install
+            <h2 id="waitlist-title" className={styles.displayTitle}>
+              Get in early
             </h2>
             <Burst className={styles.headBurst} />
           </div>
           <div className={styles.installGrid}>
             <div className={styles.card}>
-              <div className={styles.cardHead}>
-                <span className={styles.cardLabel}>In Claude Code</span>
-                <CopyPill text={INSTALL_COMMANDS.join("\n")} className={styles.pillSmall} />
-              </div>
-              <pre className={styles.code} aria-label="Install commands">
-                {INSTALL_COMMANDS.map((line) => (
-                  <code key={line} className={styles.codeLine}>
-                    <span aria-hidden="true">› </span>
-                    {line}
-                    {"\n"}
-                  </code>
-                ))}
-              </pre>
-              <p className={styles.note}>Needs Claude Code 2.1.287 or later, in the terminal or the desktop app.</p>
+              <span className={styles.cardLabel}>Waitlist</span>
+              <p className={styles.note}>
+                Tilt isn&apos;t open yet. Leave your email and we&apos;ll tell you when the tables open. One email, no
+                spam.
+              </p>
+              <WaitlistForm />
             </div>
             <div className={styles.demo}>
               <AgentCliPreview />
@@ -254,9 +242,6 @@ export default function Landing() {
               program, not on our servers. Each round records its randomness: replay it and you get the same cards and
               the same payout. You don&apos;t have to trust us. Check.
             </p>
-            <Link href="/verify" className={styles.pillInk}>
-              Verify a round
-            </Link>
           </div>
           <div className={styles.fairArt}>
             <Die className={styles.fairDie} fill="var(--pink)" />
@@ -328,9 +313,6 @@ export default function Landing() {
         <WavyWordmark id="footer" className={styles.footerMark} />
         <div className={styles.footerRow}>
           <nav aria-label="Footer" className={styles.footerNav}>
-            <Link href="/leaderboard">Leaderboard</Link>
-            <Link href="/verify">Verify</Link>
-            <Link href="/account">Account</Link>
             <Link href="/legal/terms">Terms</Link>
             <Link href="/legal/privacy">Privacy</Link>
             <Link href="/legal/responsible-gaming">Responsible gaming</Link>

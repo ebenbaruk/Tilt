@@ -1,20 +1,17 @@
-import { expect, test } from "./fixtures";
+import { expect, json, test } from "./fixtures";
 
-test("landing shows the pitch, install commands and key sections", async ({ page }) => {
+test("landing shows the pitch, the waitlist and key sections", async ({ page }) => {
   const response = await page.goto("/");
   expect(response?.headers()["content-security-policy"]).toContain("frame-ancestors 'none'");
   expect(response?.headers()["x-content-type-options"]).toBe("nosniff");
 
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("The casino you play while your agent codes");
 
-  const install = page.getByLabel("Install commands");
-  await expect(install).toContainText("/plugin marketplace add ebenbaruk/Tilt");
-  await expect(install).toContainText("/plugin install tilt");
-  await expect(install).toContainText("/tilt login");
+  await expect(page.getByLabel("Email")).toBeVisible();
 
   for (const name of [
     "The most fun way to wait on your agent.",
-    "Three lines to install",
+    "Get in early",
     "How it works",
     "The games",
     "Provably fair",
@@ -33,7 +30,10 @@ test("landing shows the pitch, install commands and key sections", async ({ page
   await expect(panel).toContainText("Hit, stand or double.");
   // The mock must stay monospace whatever font the landing uses.
   expect(await panel.evaluate((el) => getComputedStyle(el).fontFamily)).toMatch(/JetBrains|mono/i);
-  await expect(page.getByRole("link", { name: "Verify a round" })).toHaveAttribute("href", "/verify");
+  // Waitlist mode: no way into the app pages from the landing.
+  for (const path of ["/account", "/verify", "/leaderboard"]) {
+    await expect(page.locator(`a[href="${path}"]`)).toHaveCount(0);
+  }
   await expect(page.locator("#responsible")).toContainText("United Kingdom, France");
 });
 
@@ -50,14 +50,25 @@ test("header links reach their sections", async ({ page }) => {
   }
 });
 
-test("copies the install commands", async ({ page, context }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+test("joins the waitlist", async ({ page }) => {
+  let sent: unknown;
+  await page.route("**/api/waitlist", (route) => {
+    sent = route.request().postDataJSON();
+    return json(route, 200, {});
+  });
   await page.goto("/");
-  await page.getByRole("button", { name: "copy" }).click();
-  await expect(page.getByRole("button", { name: "✓ copied" })).toBeVisible();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
-    "/plugin marketplace add ebenbaruk/Tilt\n/plugin install tilt\n/tilt login",
-  );
+  await page.getByLabel("Email").fill("ada@example.com");
+  await page.getByRole("button", { name: "Join the waitlist" }).click();
+  await expect(page.getByRole("status")).toContainText("You're on the list.");
+  expect(sent).toEqual({ email: "ada@example.com", website: "" });
+});
+
+test("shows the waitlist error", async ({ page }) => {
+  await page.route("**/api/waitlist", (route) => json(route, 400, { error: "Enter a valid email." }));
+  await page.goto("/");
+  await page.getByLabel("Email").fill("nope");
+  await page.getByRole("button", { name: "Join the waitlist" }).click();
+  await expect(page.getByText("Enter a valid email.")).toHaveAttribute("role", "alert");
 });
 
 test("faq answers open with the keyboard", async ({ page }) => {

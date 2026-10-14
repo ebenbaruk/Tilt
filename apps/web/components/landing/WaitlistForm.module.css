@@ -1,0 +1,78 @@
+/* Waitlist form, brand v2: sits on the landing's paper card. */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.label {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.input {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 14px 20px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink-deep);
+  font: inherit;
+}
+
+.input[aria-invalid="true"] {
+  border-color: var(--orange);
+}
+
+.button {
+  flex: 0 0 auto;
+  padding: 14px 28px;
+  border: 2px solid var(--orange);
+  border-radius: 999px;
+  background: var(--orange);
+  color: var(--ink-deep);
+  font-family: var(--font-archivo);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.honeypot {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.error {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink-deep);
+}
+
+.done {
+  margin: 0;
+  padding: 18px 22px;
+  border-radius: 16px;
+  background: var(--mint);
+  color: var(--ink-deep);
+  font-weight: 700;
+}

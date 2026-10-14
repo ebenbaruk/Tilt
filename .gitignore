@@ -22,3 +22,6 @@ venv/
 
 # Local Claude settings
 .claude/settings.local.json
+
+# Vercel CLI link
+.vercel
