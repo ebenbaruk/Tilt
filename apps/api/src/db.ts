@@ -114,6 +114,11 @@ UPDATE rounds SET detail = jsonb_build_object(
   'active', 1,
   'dealer', detail->'dealer')
 WHERE game = 'blackjack' AND detail ? 'player';
+-- Blackjack details from before splits, in today's shape: no hand born from a split.
+UPDATE rounds SET detail = jsonb_set(detail, '{hands}', (
+    SELECT jsonb_agg(hand || '{"split": false}' ORDER BY i) FROM jsonb_array_elements(detail->'hands') WITH ORDINALITY AS h(hand, i)
+  )) || '{"splits": 0}'
+WHERE game = 'blackjack' AND detail ? 'bet' AND NOT detail ? 'splits';
 
 -- Every VRF callback (one per draw), keyed by player account: blackjack rounds take several.
 CREATE TABLE IF NOT EXISTS draws (

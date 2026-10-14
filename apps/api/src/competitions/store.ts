@@ -5,6 +5,7 @@
 // ticket. It never filters the net: a player cannot pick which hands count.
 import type { LeaderboardEntry, SponsorView } from "@tilt/mod/protocol";
 import { audit, transaction, type Db, type Queryable } from "../db";
+import * as blackjack from "../games/blackjack";
 import { indexedThrough } from "../indexer";
 import { MAX_SPONSOR_LENGTH } from "../schemas";
 import { capTickets, drawWinners, newSeed, type Ticket } from "./drops";
@@ -108,12 +109,18 @@ export interface RankedStanding extends Standing {
   rank: number;
 }
 
-/** A round's initial bet. RoundSettled's stake includes blackjack doubles: the initial bet is the
- *  base bet on every hand, as the snapshot shows. Without it, every hand counts as doubled, so
- *  half the stake (a player could make the snapshot miss by starting the next round at once). */
+/** Most base bets one dealt blackjack hand can grow to: every split taken on it, every hand
+ *  doubled. */
+const MOST_BETS_PER_DEALT_HAND = 2 * (1 + blackjack.MAX_SPLITS);
+
+/** A round's initial bet. RoundSettled's stake includes blackjack doubles and splits: the
+ *  initial bet is the base bet on every dealt hand (hands minus splits), as the snapshot shows.
+ *  Without it, the stake is taken as one hand grown to the most bets (a player could make the
+ *  snapshot miss by starting the next round at once). */
 const INITIAL_BET = `CASE WHEN game <> 'blackjack' THEN stake
-                          WHEN detail ? 'bet' THEN (detail->>'bet')::numeric * jsonb_array_length(detail->'hands')
-                          ELSE stake / 2 END`;
+                          WHEN detail ? 'bet' THEN (detail->>'bet')::numeric
+                            * (jsonb_array_length(detail->'hands') - (detail->>'splits')::int)
+                          ELSE stake / ${MOST_BETS_PER_DEALT_HAND} END`;
 
 /** Ranking by net gain over all the window's rounds, among players with at least one round bet
  *  at `minStake`; ties broken by wallet so the order is stable. `limit` null = everyone. */

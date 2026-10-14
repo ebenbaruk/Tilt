@@ -3,10 +3,10 @@
 // What the indexer can see: every `consume_randomness` callback (randomness per request) and
 // the RoundSettled event, plus, when caught in time, the account's round right after it
 // settled (the "snapshot": bet, cards, reels). The player's moves are not in the callbacks, so:
-// - blackjack: the first draw is the deal; then each draw is a hit or a double on the active
-//   hand, or the dealer's turn after the last stand. A stand that leaves a hand to play takes
-//   no draw, so every sequence of moves the draws allow is tried, for every number of hands
-//   (the snapshot, when there is one, fixes the hands and prunes everything else);
+// - blackjack: the first draw is the deal; then each draw is a hit, a double or a split of the
+//   active hand, or the dealer's turn after the last stand. A stand that leaves a hand to play
+//   takes no draw, so every sequence of moves the draws allow is tried, for every number of
+//   dealt hands (the snapshot, when there is one, fixes them and prunes everything else);
 // - roulette / baccarat: the bet comes from the snapshot; without one, every bet is tried.
 // A round "matches" when a replay reproduces the program's payout and fee (and the snapshot,
 // when there is one).
@@ -67,14 +67,22 @@ type BlackjackOutcome = Extract<Outcome, { game: "blackjack" }>;
 
 const isPrefix = (cards: readonly number[], of: readonly number[]) => cards.every((c, i) => of[i] === c);
 
-/** Whether `t` can still become the snapshot's table (always, without one). */
+/** Whether `t` can still become the snapshot's table (always, without one). A split inserts a
+ *  hand right after the active one and moves the active hand's second card: until every split
+ *  is played, only the hands before the active one and its first card are where they end up. */
 function fitsSnapshot(t: blackjack.Table, snapshot: BlackjackOutcome | null): boolean {
   if (!snapshot) return true;
-  return isPrefix(t.dealer, snapshot.dealer) && t.hands.every((h, i) => isPrefix(h.cards, snapshot.hands[i].cards));
+  if (t.splits > snapshot.splits || !isPrefix(t.dealer, snapshot.dealer)) return false;
+  if (t.splits === snapshot.splits) return t.hands.every((h, i) => isPrefix(h.cards, snapshot.hands[i].cards));
+  return t.hands.every((h, i) => {
+    if (i > t.active) return true;
+    const final = snapshot.hands[i].cards;
+    return i < t.active ? isPrefix(h.cards, final) : h.cards[0] === final[0];
+  });
 }
 
 /** A finished table as a candidate: its base bet is the stake over the bets placed (one per
- *  hand, one per double), which must divide it exactly. */
+ *  hand, split ones included, one per double), which must divide it exactly. */
 function finishedCandidate(t: blackjack.Table, stake: bigint): Candidate | undefined {
   const bets = BigInt(t.hands.length + t.hands.filter((h) => h.doubled).length);
   if (stake % bets !== 0n) return undefined;
@@ -84,7 +92,9 @@ function finishedCandidate(t: blackjack.Table, stake: bigint): Candidate | undef
 
 function blackjackCandidates(draws: Uint8Array[], stake: bigint, snapshot: Outcome | null): Candidate[] {
   const snap = snapshot?.game === "blackjack" && snapshot.hands.length > 0 ? snapshot : null;
-  const handCounts = snap ? [snap.hands.length] : Array.from({ length: blackjack.MAX_HANDS }, (_, i) => i + 1);
+  const handCounts = snap
+    ? [snap.hands.length - snap.splits]
+    : Array.from({ length: blackjack.MAX_HANDS }, (_, i) => i + 1);
   const candidates: Candidate[] = [];
   let states = 0;
 
@@ -112,6 +122,10 @@ function blackjackCandidates(draws: Uint8Array[], stake: bigint, snapshot: Outco
     if (blackjack.canDouble(hand)) {
       const doubled = blackjack.cloneTable(t);
       explore(doubled, blackjack.double(doubled, Rng.fromVrf(draws[next])), next + 1);
+    }
+    if (blackjack.canSplit(t)) {
+      const split = blackjack.cloneTable(t);
+      explore(split, blackjack.split(split, Rng.fromVrf(draws[next])), next + 1);
     }
   };
 

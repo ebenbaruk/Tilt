@@ -10,25 +10,15 @@ const RESULT: VerifyResponse = {
   replayed: {
     phase: "idle",
     stake: "3000000",
-    payout: "6000000",
-    fee: "30000",
-    net: "2970000",
+    payout: "4000000",
+    fee: "10000",
+    net: "990000",
     number: 1204,
     settledSignature: SIGNATURE,
     detail: {
       game: "blackjack",
+      // A pair of fives split: the first hand doubled after the split.
       hands: [
-        {
-          cards: [
-            { rank: 13, suit: "♠" },
-            { rank: 10, suit: "♥" },
-          ],
-          total: 20,
-          soft: false,
-          doubled: false,
-          stake: "1000000",
-          result: "win",
-        },
         {
           cards: [
             { rank: 5, suit: "♣" },
@@ -38,8 +28,21 @@ const RESULT: VerifyResponse = {
           total: 21,
           soft: false,
           doubled: true,
+          split: true,
           stake: "2000000",
           result: "win",
+        },
+        {
+          cards: [
+            { rank: 5, suit: "♦" },
+            { rank: 13, suit: "♠" },
+          ],
+          total: 15,
+          soft: false,
+          doubled: false,
+          split: true,
+          stake: "1000000",
+          result: "lose",
         },
       ],
       activeHand: null,
@@ -50,9 +53,10 @@ const RESULT: VerifyResponse = {
       dealerTotal: 19,
       canHit: false,
       canDouble: false,
+      canSplit: false,
     },
   },
-  onChain: { stake: "3000000", payout: "6000000", fee: "30000" },
+  onChain: { stake: "3000000", payout: "4000000", fee: "10000" },
   matches: true,
 };
 
@@ -77,9 +81,10 @@ test("shows the replay, the VRF randomness and the on-chain comparison", async (
   await expect(page.getByRole("img", { name: "K of spades" })).toBeVisible();
   await expect(page.getByRole("img", { name: "9 of diamonds" })).toBeVisible();
   await expect(page.getByText("HAND 2")).toBeVisible();
-  await expect(page.getByText("doubled · win")).toBeVisible();
-  await expect(page.getByRole("row", { name: /payout 6\.00 6\.00/ })).toBeVisible();
-  await expect(page.getByText("+2.97")).toBeVisible();
+  await expect(page.getByText("split · doubled · win")).toBeVisible();
+  await expect(page.getByText("split · lose")).toBeVisible();
+  await expect(page.getByRole("row", { name: /payout 4\.00 4\.00/ })).toBeVisible();
+  await expect(page.getByText("+0.99")).toBeVisible();
   await expect(page.getByRole("link", { name: RESULT.player })).toHaveAttribute(
     "href",
     /explorer\.solana\.com\/address\/.*cluster=devnet/,

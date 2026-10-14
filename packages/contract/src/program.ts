@@ -17,8 +17,9 @@ export const vaultTokenAddress = () => pda(Buffer.from("vault_token"));
 export const playerAccountAddress = (player: PublicKey) => pda(Buffer.from("account"), player.toBuffer());
 
 /** A player's blackjack table (hands and dealer of the current or last round); lives in the
- *  rollup next to the player account. */
-export const tableAddress = (player: PublicKey) => pda(Buffer.from("table"), player.toBuffer());
+ *  rollup next to the player account. Seed `bjtable`: the split-sized table replaced the old
+ *  `table` accounts, which delegated accounts could not grow into. */
+export const tableAddress = (player: PublicKey) => pda(Buffer.from("bjtable"), player.toBuffer());
 
 /** Solana's record of a player's deposits and paid withdrawals. */
 export const ledgerAddress = (player: PublicKey) => pda(Buffer.from("ledger"), player.toBuffer());

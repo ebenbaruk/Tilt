@@ -25,10 +25,11 @@ fn main() {
         rngs.push(format!("{{\"seed\":\"{}\",\"below37\":[{}],\"cards\":[{}],\"below41\":[{}]}}", hex(&s), below37.join(","), cards.join(","), below41.join(",")));
     }
     out.push(format!("\"rng\":[{}]", rngs.join(",")));
-    // blackjack: 1 to 6 hands; draws are seeds, in the order the program requests them. A stand
-    // that leaves a hand to play takes no draw; the last stand is followed by the dealer's draw.
+    // blackjack: 1 to 6 dealt hands; draws are seeds, in the order the program requests them. A
+    // stand that leaves a hand to play takes no draw; the last stand is followed by the dealer's
+    // draw. Pairs are mostly split (re-splits included) so the split rules get covered.
     let mut bj = Vec::new();
-    for i in 0..120u64 {
+    for i in 0..240u64 {
         let n_hands = (1 + i % MAX_HANDS as u64) as u8;
         let mut t = BlackjackTable::default();
         t.start(1_000_000, n_hands);
@@ -41,7 +42,8 @@ fn main() {
             let choice = (i + k) % 5;
             k += 1;
             let hand = *t.active_hand().unwrap();
-            if choice == 0 && hand.can_double() { draws.push(hex(&s)); actions.push("double"); done = t.double(&mut Rng::from_vrf(s)); }
+            if choice != 4 && t.can_split() { draws.push(hex(&s)); actions.push("split"); done = t.split(&mut Rng::from_vrf(s)); }
+            else if choice == 0 && hand.can_double() { draws.push(hex(&s)); actions.push("double"); done = t.double(&mut Rng::from_vrf(s)); }
             else if choice == 1 && hand.can_hit() { draws.push(hex(&s)); actions.push("hit"); done = t.hit(&mut Rng::from_vrf(s)); }
             else if choice == 2 && hand.can_hit() && hand.total() < 15 { draws.push(hex(&s)); actions.push("hit"); done = t.hit(&mut Rng::from_vrf(s)); }
             else {
@@ -51,11 +53,11 @@ fn main() {
         }
         let stake = t.stake();
         let st = settlement::settle(stake, t.gross());
-        let hands: Vec<String> = t.hands().iter().map(|h| format!("{{\"cards\":{},\"doubled\":{}}}", list(h.cards()), h.doubled)).collect();
-        bj.push(format!("{{\"draws\":[{}],\"actions\":[{}],\"bet\":\"{}\",\"stake\":\"{}\",\"hands\":[{}],\"active\":{},\"dealer\":{},\"gross\":\"{}\",\"payout\":\"{}\",\"fee\":\"{}\"}}",
+        let hands: Vec<String> = t.hands().iter().map(|h| format!("{{\"cards\":{},\"doubled\":{},\"split\":{}}}", list(h.cards()), h.doubled, h.split)).collect();
+        bj.push(format!("{{\"draws\":[{}],\"actions\":[{}],\"bet\":\"{}\",\"stake\":\"{}\",\"hands\":[{}],\"active\":{},\"dealer\":{},\"splits\":{},\"gross\":\"{}\",\"payout\":\"{}\",\"fee\":\"{}\"}}",
             draws.iter().map(|d| format!("\"{}\"", d)).collect::<Vec<_>>().join(","),
             actions.iter().map(|a| format!("\"{}\"", a)).collect::<Vec<_>>().join(","),
-            t.bet, stake, hands.join(","), t.active, list(t.dealer_cards()), t.gross(), st.payout, st.fee));
+            t.bet, stake, hands.join(","), t.active, list(t.dealer_cards()), t.splits, t.gross(), st.payout, st.fee));
     }
     out.push(format!("\"blackjack\":[{}]", bj.join(",")));
     let mut bac = Vec::new();

@@ -345,6 +345,8 @@ export class TiltChain {
         return m.blackjackStand(seed()).accountsPartial(accounts).transaction();
       case "blackjack_double":
         return m.blackjackDouble(seed()).accountsPartial(accounts).transaction();
+      case "blackjack_split":
+        return m.blackjackSplit(seed()).accountsPartial(accounts).transaction();
       case "roulette_spin":
         return m.rouletteSpin(new BN(action.amount), rouletteBet(action.bet), seed()).accountsPartial(accounts).transaction();
       case "baccarat_deal":

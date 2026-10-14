@@ -7,9 +7,11 @@ function faces(cards: Card[]): CardFace[] {
   return cards.map((card) => ({ rank: rankLabel(card.rank), suit: card.suit }));
 }
 
-/** "doubled · win": what happened to a blackjack hand, once known. */
+/** "split · doubled · win": what happened to a blackjack hand, once known. */
 function handMeta(hand: BlackjackHand): string | undefined {
-  const parts = [hand.doubled ? "doubled" : null, hand.result].filter((part) => part !== null);
+  const parts = [hand.split ? "split" : null, hand.doubled ? "doubled" : null, hand.result].filter(
+    (part) => part !== null,
+  );
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 

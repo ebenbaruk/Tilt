@@ -10,9 +10,9 @@ type RoundData = Parameters<typeof decodeRound>[0];
 type TableData = NonNullable<Parameters<typeof decodeRound>[1]>;
 
 const MAX_CARDS = 21;
-const MAX_HANDS = 6;
+const MAX_TABLE_HANDS = 10;
 const cards = (ranks: number[]) => [...ranks, ...Array<number>(MAX_CARDS - ranks.length).fill(0)];
-const emptyHand = { cards: cards([]), nCards: 0, doubled: false };
+const emptyHand = { cards: cards([]), nCards: 0, doubled: false, split: false };
 
 const base: RoundData = {
   game: { blackjack: {} },
@@ -31,20 +31,22 @@ const base: RoundData = {
 
 const player = new PublicKey("7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU");
 
-/** Three hands of 1 USDC, the second doubled, every hand finished. */
+/** Three hands of 1 USDC: an 8-8 split into the first two (the second doubled), every hand
+ *  finished. */
 const table: TableData = {
   player,
   bet: new BN(1_000_000),
   hands: [
-    { cards: cards([10, 8]), nCards: 2, doubled: false },
-    { cards: cards([5, 6, 10]), nCards: 3, doubled: true },
-    { cards: cards([1, 13]), nCards: 2, doubled: false },
-    ...Array.from({ length: MAX_HANDS - 3 }, () => emptyHand),
+    { cards: cards([8, 10]), nCards: 2, doubled: false, split: true },
+    { cards: cards([8, 3, 10]), nCards: 3, doubled: true, split: true },
+    { cards: cards([1, 13]), nCards: 2, doubled: false, split: false },
+    ...Array.from({ length: MAX_TABLE_HANDS - 3 }, () => emptyHand),
   ],
   nHands: 3,
   active: 3,
   dealer: cards([9, 8]),
   nDealer: 2,
+  splits: 1,
 };
 
 afterEach(() => vi.restoreAllMocks());
@@ -56,7 +58,7 @@ describe("chain decoding", () => {
     expect(associatedTokenAddress(owner, mint).toBase58()).toBe("C4PRXFV6Gf5mytVZb6RoeLsG8CjcFWzR2EJ3dvwPTUJH");
   });
 
-  it("decodes a settled blackjack round from the table, trimming empty hands and card slots", () => {
+  it("decodes a settled blackjack round from the table, trimming empty hands and card slots, splits kept", () => {
     expect(decodeRound(base, table)).toEqual({
       status: { kind: "idle" },
       stake: 4_000_000n,
@@ -67,18 +69,26 @@ describe("chain decoding", () => {
         game: "blackjack",
         bet: "1000000",
         hands: [
-          { cards: [10, 8], doubled: false },
-          { cards: [5, 6, 10], doubled: true },
-          { cards: [1, 13], doubled: false },
+          { cards: [8, 10], doubled: false, split: true },
+          { cards: [8, 3, 10], doubled: true, split: true },
+          { cards: [1, 13], doubled: false, split: false },
         ],
         active: 3,
         dealer: [9, 8],
+        splits: 1,
       },
     });
   });
 
   it("shows no hands for a blackjack round without a table (played before tables)", () => {
-    expect(decodeRound(base, null).outcome).toEqual({ game: "blackjack", bet: "0", hands: [], active: 0, dealer: [] });
+    expect(decodeRound(base, null).outcome).toEqual({
+      game: "blackjack",
+      bet: "0",
+      hands: [],
+      active: 0,
+      dealer: [],
+      splits: 0,
+    });
   });
 
   it("decodes statuses and the other games, whatever the table holds", () => {
@@ -86,6 +96,10 @@ describe("chain decoding", () => {
     expect(decodeRound({ ...base, status: { awaitingDraw: { 0: { double: {} } } } }, table).status).toEqual({
       kind: "awaiting",
       draw: "double",
+    });
+    expect(decodeRound({ ...base, status: { awaitingDraw: { 0: { split: {} } } } }, table).status).toEqual({
+      kind: "awaiting",
+      draw: "split",
     });
     const roulette = { ...base, game: { roulette: {} }, roulette: { bet: { dozen: { 0: 2 } }, number: 14 } };
     expect(decodeRound(roulette, table).outcome).toEqual({

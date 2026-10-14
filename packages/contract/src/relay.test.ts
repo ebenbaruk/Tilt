@@ -26,6 +26,7 @@ describe("IntentRequest", () => {
       { type: "blackjack_hit" },
       { type: "blackjack_stand" },
       { type: "blackjack_double" },
+      { type: "blackjack_split" },
       { type: "roulette_spin", amount: "1000000", bet: { kind: "straight", number: 0 } },
       { type: "roulette_spin", amount: "1000000", bet: { kind: "column", column: 3 } },
       { type: "baccarat_deal", amount: "1000000", bet: "tie" },

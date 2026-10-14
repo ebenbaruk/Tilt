@@ -67,8 +67,16 @@ describe("blackjack", () => {
     expect(blackjack.total([])).toBe(0);
   });
 
+  const hand = (cards: number[], doubled = false, split = false): blackjack.TableHand => ({ cards, doubled, split });
+  /** A table waiting on its first hand, `splits` already played. */
+  const playing = (hands: blackjack.TableHand[], splits = 0): blackjack.Table => ({
+    hands,
+    active: 0,
+    dealer: [7],
+    splits,
+  });
+
   it("allows hit below 21 on an undoubled hand, and double only on the first two cards", () => {
-    const hand = (cards: number[], doubled = false): blackjack.TableHand => ({ cards, doubled });
     expect(blackjack.canHit(hand([10, 6]))).toBe(true);
     expect(blackjack.canHit(hand([10, 1]))).toBe(false);
     expect(blackjack.canHit(hand([5, 6, 2], true))).toBe(false);
@@ -78,9 +86,59 @@ describe("blackjack", () => {
     expect(blackjack.canDouble(hand([1, 10]))).toBe(false);
   });
 
+  it("splits two first cards of the same value, never split aces, within the round's cap", () => {
+    const can = (h: blackjack.TableHand, splits = 0) => blackjack.canSplit(playing([h], splits));
+    expect(can(hand([13, 12]))).toBe(true);
+    expect(can(hand([10, 11]))).toBe(true);
+    expect(can(hand([8, 8]))).toBe(true);
+    expect(can(hand([1, 1]))).toBe(true);
+    expect(can(hand([8, 8], false, true))).toBe(true);
+    expect(can(hand([13, 9]))).toBe(false);
+    expect(can(hand([1, 13]))).toBe(false);
+    expect(can(hand([4, 4, 2]))).toBe(false);
+    expect(can(hand([4, 4], true))).toBe(false);
+    expect(can(hand([1, 1], false, true))).toBe(false);
+    expect(can(hand([8, 8]), blackjack.MAX_SPLITS - 1)).toBe(true);
+    expect(can(hand([8, 8]), blackjack.MAX_SPLITS)).toBe(false);
+    expect(blackjack.canSplit({ ...playing([hand([8, 8])]), active: 1 })).toBe(false);
+  });
+
+  it("finishes split aces at one card each, but lets other split hands hit and double", () => {
+    expect(blackjack.canHit(hand([1, 5], false, true))).toBe(false);
+    expect(blackjack.canDouble(hand([1, 5], false, true))).toBe(false);
+    expect(blackjack.canHit(hand([8, 3], false, true))).toBe(true);
+    expect(blackjack.canDouble(hand([8, 3], false, true))).toBe(true);
+  });
+
+  it("puts the new hand right after the split one, one card each in order", () => {
+    const seed = new Uint8Array(32);
+    const expected = Rng.fromVrf(seed);
+    const [toSplit, toNew] = [expected.card(), expected.card()];
+    const t = playing([hand([8, 8]), hand([10, 9])]);
+    blackjack.split(t, Rng.fromVrf(seed));
+    expect(t.hands).toEqual([hand([8, toSplit], false, true), hand([8, toNew], false, true), hand([10, 9])]);
+    expect(t.splits).toBe(1);
+  });
+
+  it("ends a lone split-aces round at once: one card each, then the dealer to 17", () => {
+    const t = playing([hand([1, 1])]);
+    expect(blackjack.split(t, Rng.fromVrf(new Uint8Array(32)))).toBe(true);
+    expect(t.hands.map((h) => h.cards.length)).toEqual([2, 2]);
+    expect(t.active).toBe(2);
+    expect(blackjack.total(t.dealer)).toBeGreaterThanOrEqual(17);
+  });
+
+  it("does not split the hands past the table's ten slots", () => {
+    const full = playing(
+      [hand([8, 8]), ...Array.from({ length: blackjack.MAX_TABLE_HANDS - 1 }, () => hand([10, 9]))],
+      0,
+    );
+    expect(blackjack.canSplit(full)).toBe(false);
+  });
+
   it("pays each hand like the program", () => {
-    const g = (cards: number[], dealer: number[], doubled = false, bet = 1_000n) =>
-      blackjack.handGross({ cards, doubled }, dealer, bet);
+    const g = (cards: number[], dealer: number[], doubled = false, split = false) =>
+      blackjack.handGross({ cards, doubled, split }, dealer, 1_000n);
     expect(g([1, 13], [9, 8])).toBe(2_500n);
     expect(g([1, 13], [1, 10])).toBe(1_000n);
     expect(g([10, 9], [1, 10])).toBe(0n);
@@ -90,13 +148,18 @@ describe("blackjack", () => {
     expect(g([10, 6], [10, 6, 9])).toBe(2_000n);
     expect(g([5, 6, 10], [9, 8], true)).toBe(4_000n);
     expect(g([5, 6, 10], [1, 13], true)).toBe(0n);
+    // A split 21 is no blackjack: even money, loses to a dealer blackjack, pushes a 21.
+    expect(g([1, 13], [9, 8], false, true)).toBe(2_000n);
+    expect(g([1, 13], [1, 10], false, true)).toBe(0n);
+    expect(g([1, 13], [10, 5, 6], false, true)).toBe(1_000n);
   });
 
   it("names each settled hand's result", () => {
-    const r = (cards: number[], dealer: number[], doubled = false) =>
-      blackjack.result({ cards, doubled }, dealer, 1_000n);
+    const r = (cards: number[], dealer: number[], doubled = false, split = false) =>
+      blackjack.result({ cards, doubled, split }, dealer, 1_000n);
     expect(r([1, 13], [9, 8])).toBe("blackjack");
     expect(r([1, 13], [1, 10])).toBe("push");
+    expect(r([1, 13], [9, 8], false, true)).toBe("win");
     expect(r([5, 6, 10], [9, 8], true)).toBe("win");
     expect(r([10, 8], [10, 8])).toBe("push");
     expect(r([10, 6, 9], [2])).toBe("lose");
@@ -105,9 +168,10 @@ describe("blackjack", () => {
   it("dealer stands on soft 17, plays nothing against busts and one card against naturals only", () => {
     const rng = () => Rng.fromVrf(new Uint8Array(32));
     const table = (hands: number[][], dealer: number[]): blackjack.Table => ({
-      hands: hands.map((cards) => ({ cards, doubled: false })),
+      hands: hands.map((cards) => hand(cards)),
       active: hands.length,
       dealer,
+      splits: 0,
     });
     const soft17 = table([[10, 8]], [1, 6]);
     blackjack.playDealer(soft17, rng());
@@ -132,15 +196,18 @@ describe("blackjack", () => {
     expect(naturals.dealer).toHaveLength(2);
   });
 
+  it("has the dealer draw to 17 against a split 21, as against any standing hand", () => {
+    const t: blackjack.Table = { hands: [hand([1, 13], false, true)], active: 1, dealer: [4], splits: 1 };
+    blackjack.playDealer(t, Rng.fromVrf(new Uint8Array(32)));
+    expect(blackjack.total(t.dealer)).toBeGreaterThanOrEqual(17);
+  });
+
   it("moves to the next hand on a stand, skipping finished hands, without a card", () => {
     const t: blackjack.Table = {
-      hands: [
-        { cards: [10, 6], doubled: false },
-        { cards: [1, 13], doubled: false },
-        { cards: [9, 2], doubled: false },
-      ],
+      hands: [hand([10, 6]), hand([1, 13]), hand([9, 2])],
       active: 0,
       dealer: [7],
+      splits: 0,
     };
     expect(blackjack.stand(t)).toBe(false);
     expect(t.active).toBe(2);
@@ -152,18 +219,19 @@ describe("blackjack", () => {
   it.each(vectors.blackjack.map((v, i) => ({ ...v, i })))(
     "plays round $i ($hands.length hands) like the program",
     (v) => {
-      const t = blackjack.newTable(v.hands.length);
+      const t = blackjack.newTable(v.hands.length - v.splits);
       let next = 0;
       const rng = () => Rng.fromVrf(bytes(v.draws[next++]));
       for (const action of v.actions) {
         if (action === "deal") blackjack.deal(t, rng());
         else if (action === "hit") blackjack.hit(t, rng());
         else if (action === "double") blackjack.double(t, rng());
+        else if (action === "split") blackjack.split(t, rng());
         else if (action === "stand") blackjack.stand(t);
         else blackjack.playDealer(t, rng());
       }
       expect(next).toBe(v.draws.length);
-      expect(t).toEqual({ hands: v.hands, active: v.active, dealer: v.dealer });
+      expect(t).toEqual({ hands: v.hands, active: v.active, dealer: v.dealer, splits: v.splits });
       expect(blackjack.tableStake(t, BigInt(v.bet)).toString()).toBe(v.stake);
       expect(blackjack.gross(t, BigInt(v.bet)).toString()).toBe(v.gross);
     },
@@ -261,6 +329,7 @@ describe("replay (GET /verify)", () => {
     hands: v.hands,
     active: v.active,
     dealer: v.dealer,
+    splits: v.splits,
   });
   const blackjackInput = (v: (typeof vectors.blackjack)[number]) => ({
     game: "blackjack" as const,
@@ -286,6 +355,16 @@ describe("replay (GET /verify)", () => {
     );
     if (!v) throw new Error("fixture needs a stand without draw before another move");
     // Compared with the snapshot: the exact hands, not just a sequence that pays the same.
+    expect(replay({ ...blackjackInput(v), snapshot: snapshotOf(v) })).toMatchObject({
+      matches: true,
+      outcome: snapshotOf(v),
+    });
+    expect(replay({ ...blackjackInput(v), snapshot: null }).matches).toBe(true);
+  });
+
+  it("replays a round with a split and a re-split, with and without its snapshot", () => {
+    const v = vectors.blackjack.find((h) => h.splits >= 2 && h.hands.some((x) => x.split && x.cards.length > 2));
+    if (!v) throw new Error("fixture needs a re-split round whose split hands played on");
     expect(replay({ ...blackjackInput(v), snapshot: snapshotOf(v) })).toMatchObject({
       matches: true,
       outcome: snapshotOf(v),

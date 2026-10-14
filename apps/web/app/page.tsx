@@ -39,7 +39,7 @@ const GAMES = [
   {
     name: "Blackjack",
     rtp: "99.00%",
-    rules: "No hole card, dealer stands on 17, blackjack pays 3:2, double on your first two cards.",
+    rules: "No hole card, dealer stands on 17, blackjack pays 3:2, double on your first two cards, split pairs.",
     tone: styles.toneOrange,
     art: <CardBuddy />,
   },

@@ -64,6 +64,7 @@ function draw(d: IdlTypes<Tilt>["draw"]): Draw {
   if ("deal" in d) return "deal";
   if ("hit" in d) return "hit";
   if ("double" in d) return "double";
+  if ("split" in d) return "split";
   if ("dealer" in d) return "dealer";
   return "spin";
 }
@@ -94,13 +95,16 @@ const dealt = (cards: number[]) => cards.filter((c) => c !== 0);
 /** A blackjack round lives in the player's table. A player without one (joined before tables,
  *  never bet since) shows no hands. */
 function blackjackOutcome(t: TableData | null): Outcome {
-  if (!t) return { game: "blackjack", bet: "0", hands: [], active: 0, dealer: [] };
+  if (!t) return { game: "blackjack", bet: "0", hands: [], active: 0, dealer: [], splits: 0 };
   return {
     game: "blackjack",
     bet: big(t.bet).toString(),
-    hands: t.hands.slice(0, t.nHands).map((h) => ({ cards: h.cards.slice(0, h.nCards), doubled: h.doubled })),
+    hands: t.hands
+      .slice(0, t.nHands)
+      .map((h) => ({ cards: h.cards.slice(0, h.nCards), doubled: h.doubled, split: h.split })),
     active: t.active,
     dealer: t.dealer.slice(0, t.nDealer),
+    splits: t.splits,
   };
 }
 

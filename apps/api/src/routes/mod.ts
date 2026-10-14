@@ -16,6 +16,7 @@ import { walletOf } from "../wallets";
 const WAGERS = new Set<PlayAction["type"]>([
   "blackjack_bet",
   "blackjack_double",
+  "blackjack_split",
   "roulette_spin",
   "baccarat_deal",
   "slots_spin",

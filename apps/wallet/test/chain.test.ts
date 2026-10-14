@@ -97,9 +97,17 @@ describe("play transactions", () => {
     expect(ix.keys[TABLE_INDEX]).toMatchObject({ pubkey: tableAddress(player), isWritable: true });
   });
 
+  it("splits at the player's bjtable table", async () => {
+    const { chain, player } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
+    const [ix] = (await chain.playTransaction(player, { type: "blackjack_split" })).instructions;
+    expect(coder.decode(ix.data)?.name).toBe("blackjack_split");
+    const [bjtable] = PublicKey.findProgramAddressSync([Buffer.from("bjtable"), player.toBuffer()], PROGRAM_ID);
+    expect(ix.keys[TABLE_INDEX]).toMatchObject({ pubkey: bjtable, isWritable: true });
+  });
+
   it("passes the table to every blackjack move and to no other game", async () => {
     const { chain, player } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
-    const moves = [{ type: "blackjack_hit" }, { type: "blackjack_stand" }, { type: "blackjack_double" }] as const;
+    const moves = [{ type: "blackjack_hit" }, { type: "blackjack_stand" }, { type: "blackjack_double" }, { type: "blackjack_split" }] as const;
     for (const move of moves) {
       const [ix] = (await chain.playTransaction(player, move)).instructions;
       expect(ix.keys[TABLE_INDEX].pubkey.equals(tableAddress(player)), move.type).toBe(true);

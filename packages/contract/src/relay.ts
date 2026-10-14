@@ -39,6 +39,8 @@ export const Action = z.discriminatedUnion("type", [
   z.object({ type: z.literal("blackjack_hit") }),
   z.object({ type: z.literal("blackjack_stand") }),
   z.object({ type: z.literal("blackjack_double") }),
+  /** Splits the active hand's pair into two hands (one more base bet), at most 4 per round. */
+  z.object({ type: z.literal("blackjack_split") }),
   z.object({ type: z.literal("roulette_spin"), amount: Amount, bet: RouletteBet }),
   z.object({ type: z.literal("baccarat_deal"), amount: Amount, bet: BaccaratBet }),
   z.object({ type: z.literal("slots_spin"), amount: Amount }),

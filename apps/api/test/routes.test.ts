@@ -514,9 +514,10 @@ describe.skipIf(!db)("api routes", () => {
             outcome: {
               game: "blackjack",
               bet: "1000000",
-              hands: [{ cards: [1, 6], doubled: false }],
+              hands: [{ cards: [1, 6], doubled: false, split: false }],
               active: 0,
               dealer: [9],
+              splits: 0,
             },
           },
         }),
@@ -695,10 +696,10 @@ describe.skipIf(!db)("api routes", () => {
       expect((await app.request(`/v1/rounds/0OIl/verify`)).status).toBe(400);
     });
 
-    it("verifies a multi-draw blackjack round from every indexed draw", async () => {
+    it("verifies a multi-draw blackjack round with splits from every indexed draw", async () => {
       const v = must(
-        vectors.blackjack.find((h) => h.draws.length > 2 && h.hands.length > 1),
-        "multi-hand round with a hit",
+        vectors.blackjack.find((h) => h.draws.length > 2 && h.splits > 0 && h.hands.length > 2),
+        "multi-hand round with a split",
       );
       const { playerAccountAddress } = await import("@tilt/contract");
       const { PublicKey } = await import("@solana/web3.js");
@@ -733,17 +734,28 @@ describe.skipIf(!db)("api routes", () => {
         randomness: Buffer.from(v.draws[v.draws.length - 1], "hex"),
       });
       // The indexer's snapshot pins the exact hands (several move sequences can pay the same).
-      const { bet, hands, active, dealer } = v;
-      await saveDetail(db, wallet, 2, BigInt(10 + v.draws.length), { game: "blackjack", bet, hands, active, dealer });
+      const { bet, hands, active, dealer, splits } = v;
+      await saveDetail(db, wallet, 2, BigInt(10 + v.draws.length), {
+        game: "blackjack",
+        bet,
+        hands,
+        active,
+        dealer,
+        splits,
+      });
       const body = (await (await app.request(`/v1/rounds/${SIGNATURE}/verify`)).json()) as VerifyResponse;
       expect(body.matches).toBe(true);
       if (body.replayed.detail.game !== "blackjack") throw new Error("unexpected detail");
       expect(
-        body.replayed.detail.hands.map((h) => ({ ranks: h.cards.map((c) => c.rank), doubled: h.doubled })),
-      ).toEqual(v.hands.map((h) => ({ ranks: h.cards, doubled: h.doubled })));
+        body.replayed.detail.hands.map((h) => ({
+          ranks: h.cards.map((c) => c.rank),
+          doubled: h.doubled,
+          split: h.split,
+        })),
+      ).toEqual(v.hands.map((h) => ({ ranks: h.cards, doubled: h.doubled, split: h.split })));
     });
 
-    it("still verifies a single-hand round indexed before tables, its detail migrated", async () => {
+    it("still verifies a single-hand round indexed before tables and splits, its detail migrated", async () => {
       const v = must(
         vectors.blackjack.find((h) => h.hands.length === 1 && h.hands[0].doubled),
         "doubled single hand",
@@ -765,7 +777,14 @@ describe.skipIf(!db)("api routes", () => {
       await db.query("UPDATE rounds SET detail = $1 WHERE signature = $2", [legacy, SIGNATURE]);
       await migrate(db);
       const { rows } = await db.query("SELECT detail FROM rounds WHERE signature = $1", [SIGNATURE]);
-      expect(rows[0].detail).toEqual({ game: "blackjack", bet: v.bet, hands: v.hands, active: 1, dealer: v.dealer });
+      expect(rows[0].detail).toEqual({
+        game: "blackjack",
+        bet: v.bet,
+        hands: v.hands,
+        active: 1,
+        dealer: v.dealer,
+        splits: 0,
+      });
       const { playerAccountAddress } = await import("@tilt/contract");
       const { PublicKey } = await import("@solana/web3.js");
       const account = playerAccountAddress(new PublicKey(wallet)).toBase58();

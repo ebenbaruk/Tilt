@@ -14,13 +14,14 @@ import {
   type CompetitionInput,
 } from "../src/competitions/store";
 import { prizeId } from "../src/competitions/uuid";
+import * as blackjack from "../src/games/blackjack";
 import { saveDetail, saveRound } from "../src/rounds";
 import { ensureUser, recordWallet } from "../src/users";
 import { FakeRelay, resetDb, testDb } from "./helpers";
 
 const db = await testDb();
 const HOUR = 3_600_000;
-const players = Array.from({ length: 5 }, () => Keypair.generate().publicKey);
+const players = Array.from({ length: 6 }, () => Keypair.generate().publicKey);
 
 let sigCounter = 0;
 const round = (player: string, at: Date, stake: bigint, payout: bigint, game: "slots" | "blackjack" = "slots") => ({
@@ -78,17 +79,27 @@ describe.skipIf(!db)("competitions", () => {
     ...overrides,
   });
 
-  /** Saves a round; a blackjack one gets its snapshot of `hands` hands, `doubles` of them
-   *  doubled, unless `table` is null (snapshot missed). */
-  const saveWithDetail = async (r: ReturnType<typeof round>, table: { hands: number; doubles: number } | null) => {
+  /** Saves a round; a blackjack one gets its snapshot of `hands` dealt hands plus `splits`
+   *  split ones, `doubles` of them doubled, unless `table` is null (snapshot missed). */
+  const saveWithDetail = async (
+    r: ReturnType<typeof round>,
+    table: { hands: number; doubles: number; splits?: number } | null,
+  ) => {
     await saveRound(db, r);
     if (r.game !== "blackjack" || table === null) return;
+    const splits = table.splits ?? 0;
+    const hands = table.hands + splits;
     await saveDetail(db, r.player, r.round, r.requestId, {
       game: "blackjack",
-      bet: (r.stake / BigInt(table.hands + table.doubles)).toString(),
-      hands: Array.from({ length: table.hands }, (_, i) => ({ cards: [10, 9], doubled: i < table.doubles })),
-      active: table.hands,
+      bet: (r.stake / BigInt(hands + table.doubles)).toString(),
+      hands: Array.from({ length: hands }, (_, i) => ({
+        cards: [10, 9],
+        doubled: i < table.doubles,
+        split: i < 2 * splits,
+      })),
+      active: hands,
       dealer: [10, 7],
+      splits,
     });
   };
 
@@ -103,7 +114,11 @@ describe.skipIf(!db)("competitions", () => {
             minute: fc.integer({ min: -60, max: 6 * 60 }),
             game: fc.constantFrom("slots" as const, "blackjack" as const),
             table: fc.option(
-              fc.record({ hands: fc.integer({ min: 1, max: 3 }), doubles: fc.integer({ min: 0, max: 3 }) }),
+              fc.record({
+                hands: fc.integer({ min: 1, max: 3 }),
+                doubles: fc.integer({ min: 0, max: 5 }),
+                splits: fc.integer({ min: 0, max: 2 }),
+              }),
             ),
             bet: fc.integer({ min: 1, max: 10 }),
             payout: fc.integer({ min: 0, max: 30 }),
@@ -117,15 +132,20 @@ describe.skipIf(!db)("competitions", () => {
           for (const r of rows) {
             const at = new Date(start.getTime() + r.minute * 60_000);
             const player = players[r.player].toBase58();
-            const table = r.table && { hands: r.table.hands, doubles: Math.min(r.table.doubles, r.table.hands) };
-            // Blackjack: the bet on every hand, plus one per double; without a snapshot, any split.
-            const bets = r.game === "blackjack" && table ? table.hands + table.doubles : 1;
+            const table = r.table && {
+              hands: r.table.hands,
+              splits: r.table.splits,
+              doubles: Math.min(r.table.doubles, r.table.hands + r.table.splits),
+            };
+            // Blackjack: the bet on every hand, split ones included, plus one per double.
+            const bets = r.game === "blackjack" && table ? table.hands + table.splits + table.doubles : 1;
             const stake = r.bet * bets;
             await saveWithDetail(round(player, at, BigInt(stake), BigInt(r.payout), r.game), table);
             if (at < window.startsAt || at >= window.endsAt) continue;
             net.set(player, (net.get(player) ?? 0n) + BigInt(r.payout - stake));
-            // Initial bet: the bet on every hand; half the stake when the snapshot was missed.
-            const initial = r.game !== "blackjack" ? stake : table ? r.bet * table.hands : stake / 2;
+            // Initial bet: the bet on every hand; without the snapshot, one hand grown to the most bets.
+            const initial =
+              r.game !== "blackjack" ? stake : table ? r.bet * table.hands : stake / (2 * (1 + blackjack.MAX_SPLITS));
             if (initial >= 5) eligible.add(player);
           }
           const expected = new Map([...net].filter(([player]) => eligible.has(player)));
@@ -139,21 +159,23 @@ describe.skipIf(!db)("competitions", () => {
     );
   });
 
-  it("judges the minimum stake on the initial bet: every hand's bet counts, a double never does", async () => {
+  it("judges the minimum stake on the initial bet: every dealt hand's bet counts, a double or a split never does", async () => {
     const t = new Date(Date.now() - HOUR);
     const window = { startsAt: new Date(t.getTime() - HOUR), endsAt: new Date(), minStake: 10n };
-    const [a, b, c, d, e] = players.map((p) => p.toBase58());
+    const [a, b, c, d, e, f] = players.map((p) => p.toBase58());
     await saveWithDetail(round(a, t, 10n, 40n, "blackjack"), { hands: 1, doubles: 1 }); // bet 5, doubled to 10
     await saveWithDetail(round(b, t, 10n, 20n, "blackjack"), { hands: 1, doubles: 0 }); // bet 10
-    await saveWithDetail(round(c, t, 10n, 20n, "blackjack"), null); // snapshot missed
+    // Snapshot missed: taken as one hand split 4 times and every hand doubled (stake / 10).
+    await saveWithDetail(round(c, t, 10n, 20n, "blackjack"), null);
     await saveWithDetail(round(c, t, 3n, 0n), null); // below the minimum, still in c's net
-    await saveWithDetail(round(c, t, 20n, 0n, "blackjack"), null);
+    await saveWithDetail(round(c, t, 100n, 0n, "blackjack"), null);
     await saveWithDetail(round(d, t, 15n, 30n, "blackjack"), { hands: 2, doubles: 1 }); // 2 hands of 5, one doubled
     await saveWithDetail(round(e, t, 16n, 40n, "blackjack"), { hands: 2, doubles: 2 }); // 2 hands of 4, both doubled
+    await saveWithDetail(round(f, t, 15n, 40n, "blackjack"), { hands: 1, doubles: 1, splits: 1 }); // 1 hand of 5, split, one doubled
     expect((await standings(db, window, null)).map((s) => [s.player, s.net])).toEqual([
       [d, 15n],
       [b, 10n],
-      [c, -13n],
+      [c, -93n],
     ]);
   });
 

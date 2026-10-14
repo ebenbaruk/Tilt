@@ -4,7 +4,7 @@ import type { BaccaratBet, RouletteBet } from "@tilt/mod/protocol";
 import type { Table } from "./blackjack";
 import type { Reels } from "./slots";
 
-export type Draw = "deal" | "hit" | "double" | "dealer" | "spin";
+export type Draw = "deal" | "hit" | "double" | "split" | "dealer" | "spin";
 
 export type RoundStatus = { kind: "idle" } | { kind: "awaiting"; draw: Draw } | { kind: "player_turn" };
 

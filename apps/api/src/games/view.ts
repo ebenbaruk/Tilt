@@ -41,6 +41,7 @@ function blackjackView(
       total: blackjack.total(h.cards),
       soft: blackjack.isSoft(h.cards),
       doubled: h.doubled,
+      split: h.split,
       stake: blackjack.handStake(h, bet).toString(),
       result: settled ? blackjack.result(h, o.dealer, bet) : null,
     })),
@@ -49,6 +50,7 @@ function blackjackView(
     dealerTotal: blackjack.total(o.dealer),
     canHit: active !== undefined && blackjack.canHit(active),
     canDouble: active !== undefined && blackjack.canDouble(active),
+    canSplit: active !== undefined && blackjack.canSplit(o),
   };
 }
 

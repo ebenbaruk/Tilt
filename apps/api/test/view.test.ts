@@ -21,13 +21,22 @@ const input = (outcome: Outcome, status: RoundStatus, overrides: Partial<RoundVi
 const idle: RoundStatus = { kind: "idle" };
 
 describe("buildRoundView", () => {
-  /** One hand per card list, 1 USDC each, `active` the hand to play. */
-  const table = (hands: number[][], dealer: number[], active = hands.length, doubled: number[] = []): Outcome => ({
+  /** One hand per card list, 1 USDC each, `active` the hand to play; `split` the hands born from
+   *  a split, `splits` the splits played this round. */
+  const table = (
+    hands: number[][],
+    dealer: number[],
+    active = hands.length,
+    doubled: number[] = [],
+    split: number[] = [],
+    splits = 0,
+  ): Outcome => ({
     game: "blackjack",
     bet: "1000000",
-    hands: hands.map((cards, i) => ({ cards, doubled: doubled.includes(i) })),
+    hands: hands.map((cards, i) => ({ cards, doubled: doubled.includes(i), split: split.includes(i) })),
     active,
     dealer,
+    splits,
   });
 
   it("shows a three-hand turn: every hand, the active one, its soft total and allowed moves", () => {
@@ -48,7 +57,13 @@ describe("buildRoundView", () => {
     );
     expect(view).toMatchObject({ phase: "player_turn", stake: "3000000", payout: "0", fee: "0", net: "-3000000" });
     if (view.detail.game !== "blackjack") throw new Error("unexpected detail");
-    expect(view.detail).toMatchObject({ activeHand: 1, dealerTotal: 9, canHit: true, canDouble: true });
+    expect(view.detail).toMatchObject({
+      activeHand: 1,
+      dealerTotal: 9,
+      canHit: true,
+      canDouble: true,
+      canSplit: false,
+    });
     expect(
       view.detail.hands.map(({ total, soft, doubled, stake, result }) => ({ total, soft, doubled, stake, result })),
     ).toEqual([
@@ -77,18 +92,88 @@ describe("buildRoundView", () => {
     expect(view.detail).toMatchObject({ activeHand: 1, canHit: true, canDouble: false });
   });
 
+  it("offers a split on the active pair until the round's fourth split, never on split aces", () => {
+    const turn = { kind: "player_turn" } as const;
+    const detail = (outcome: Outcome) => buildRoundView(input(outcome, turn)).detail;
+    expect(
+      detail(
+        table(
+          [
+            [10, 9],
+            [13, 12],
+          ],
+          [9],
+          1,
+        ),
+      ),
+    ).toMatchObject({ activeHand: 1, canSplit: true });
+    expect(
+      detail(
+        table(
+          [
+            [8, 8],
+            [8, 3],
+          ],
+          [9],
+          0,
+          [],
+          [0, 1],
+          3,
+        ),
+      ),
+    ).toMatchObject({ canSplit: true, canDouble: true });
+    expect(
+      detail(
+        table(
+          [
+            [8, 8],
+            [8, 3],
+          ],
+          [9],
+          0,
+          [],
+          [0, 1],
+          4,
+        ),
+      ),
+    ).toMatchObject({ canSplit: false, canHit: true });
+    expect(detail(table([[1, 1]], [9], 0))).toMatchObject({ canSplit: true });
+    // Split aces never play on, even when the ace's card is another ace.
+    expect(
+      detail(
+        table(
+          [
+            [1, 1],
+            [1, 5],
+          ],
+          [9],
+          0,
+          [],
+          [0, 1],
+          1,
+        ),
+      ),
+    ).toMatchObject({
+      canHit: false,
+      canDouble: false,
+      canSplit: false,
+    });
+    expect(detail(table([[10, 9]], [9], 0))).toMatchObject({ canSplit: false });
+  });
+
   it("allows no move and shows no active hand once the round is drawing or settled", () => {
-    const hand = table([[5, 6]], [9], 0);
-    for (const status of [idle, { kind: "awaiting", draw: "hit" } as const]) {
+    const hand = table([[8, 8]], [9], 0);
+    for (const status of [idle, { kind: "awaiting", draw: "split" } as const]) {
       expect(buildRoundView(input(hand, status)).detail).toMatchObject({
         activeHand: null,
         canHit: false,
         canDouble: false,
+        canSplit: false,
       });
     }
   });
 
-  it("settles every hand against the dealer, a doubled one at twice the bet", () => {
+  it("settles every hand against the dealer, a doubled one at twice the bet, a split 21 at even money", () => {
     const view = buildRoundView(
       input(
         table(
@@ -97,21 +182,27 @@ describe("buildRoundView", () => {
             [5, 6, 10],
             [10, 6, 9],
             [10, 7],
+            [1, 10],
+            [1, 7],
           ],
           [10, 7],
-          4,
+          6,
           [1],
+          [4, 5],
+          1,
         ),
         idle,
-        { stake: 5_000_000n },
+        { stake: 7_000_000n },
       ),
     );
     if (view.detail.game !== "blackjack") throw new Error("unexpected detail");
-    expect(view.detail.hands.map(({ doubled, stake, result }) => ({ doubled, stake, result }))).toEqual([
-      { doubled: false, stake: "1000000", result: "blackjack" },
-      { doubled: true, stake: "2000000", result: "win" },
-      { doubled: false, stake: "1000000", result: "lose" },
-      { doubled: false, stake: "1000000", result: "push" },
+    expect(view.detail.hands.map(({ doubled, split, stake, result }) => ({ doubled, split, stake, result }))).toEqual([
+      { doubled: false, split: false, stake: "1000000", result: "blackjack" },
+      { doubled: true, split: false, stake: "2000000", result: "win" },
+      { doubled: false, split: false, stake: "1000000", result: "lose" },
+      { doubled: false, split: false, stake: "1000000", result: "push" },
+      { doubled: false, split: true, stake: "1000000", result: "win" },
+      { doubled: false, split: true, stake: "1000000", result: "win" },
     ]);
     expect(view.detail.dealerTotal).toBe(17);
   });

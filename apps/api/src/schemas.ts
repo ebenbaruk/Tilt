@@ -37,6 +37,7 @@ export const PlayActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("blackjack_hit") }).strict(),
   z.object({ type: z.literal("blackjack_stand") }).strict(),
   z.object({ type: z.literal("blackjack_double") }).strict(),
+  z.object({ type: z.literal("blackjack_split") }).strict(),
   z.object({ type: z.literal("roulette_spin"), amount: Amount, bet: RouletteBet }).strict(),
   z.object({ type: z.literal("baccarat_deal"), amount: Amount, bet: z.enum(["player", "banker", "tie"]) }).strict(),
   z.object({ type: z.literal("slots_spin"), amount: Amount }).strict(),
