@@ -42,4 +42,6 @@ pub enum TiltError {
     InvalidConfig,
     #[msg("Promo payout above the pool's limits")]
     PromoCapReached,
+    #[msg("Blackjack needs the player's table account")]
+    MissingTable,
 }

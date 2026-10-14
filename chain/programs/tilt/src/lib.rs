@@ -68,10 +68,23 @@ pub mod tilt {
         instructions::account::deposit(ctx, amount)
     }
 
+    pub fn open_table(ctx: Context<OpenTable>) -> Result<()> {
+        instructions::table::open_table(ctx)
+    }
+
+    pub fn delegate_table(ctx: Context<DelegateTable>) -> Result<()> {
+        instructions::table::delegate_table(ctx)
+    }
+
     // Rounds, in the rollup.
 
-    pub fn blackjack_bet(ctx: Context<Play>, amount: u64, client_seed: [u8; 32]) -> Result<()> {
-        instructions::play::blackjack_bet(ctx, amount, client_seed)
+    pub fn blackjack_bet(
+        ctx: Context<Play>,
+        amount: u64,
+        hands: u8,
+        client_seed: [u8; 32],
+    ) -> Result<()> {
+        instructions::play::blackjack_bet(ctx, amount, hands, client_seed)
     }
 
     pub fn blackjack_hit(ctx: Context<Play>, client_seed: [u8; 32]) -> Result<()> {

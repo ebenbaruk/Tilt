@@ -1,5 +1,5 @@
 // End-to-end check of the Tilt program against a real Solana + MagicBlock rollup:
-// USDC vault, first deposit, the four games (outcomes recomputed here from the drawn
+// USDC vault, first deposit, the four games (multi-hand blackjack included; outcomes recomputed here from the drawn
 // cards / numbers), deposits, withdrawals, loss checkpoints and the attack / recovery
 // scenarios. Runs against the local MagicBlock stack by default (README), or devnet with
 // BASE_RPC / ER_RPC / ER_WS / VALIDATOR / VRF_ER_QUEUE.
@@ -44,7 +44,8 @@ const { BN, Program } = anchor;
 type BN = InstanceType<typeof BN>;
 type PlayerAccount = IdlAccounts<Tilt>["playerAccount"];
 type Round = PlayerAccount["round"];
-type Hand = Round["blackjack"];
+type BlackjackTable = IdlAccounts<Tilt>["blackjackTable"];
+type TableHand = BlackjackTable["hands"][number];
 type Config = IdlTypes<Tilt>["config"];
 type RouletteBet = IdlTypes<Tilt>["rouletteBet"];
 type BaccaratBet = IdlTypes<Tilt>["baccaratBet"];
@@ -101,6 +102,8 @@ const programData = PublicKey.findProgramAddressSync([program.programId.toBuffer
 const player = Keypair.generate();
 const account = pda(Buffer.from("account"), player.publicKey.toBuffer());
 const ledger = pda(Buffer.from("ledger"), player.publicKey.toBuffer());
+const table = pda(Buffer.from("table"), player.publicKey.toBuffer());
+const MAX_HANDS = 6;
 
 let relayer: Keypair;
 let relayerProvider: anchor.AnchorProvider;
@@ -147,6 +150,7 @@ async function until<T>(f: () => Promise<T | undefined>, what: string, timeoutMs
 // ---------- rollup helpers ----------
 
 const fetchAccount = () => erProgram.account.playerAccount.fetch(account);
+const fetchTable = () => erProgram.account.blackjackTable.fetch(table);
 const fetchLedger = () => program.account.ledger.fetch(ledger);
 const seed = () => Array.from(randomBytes(32));
 const isIdle = (round: Round) => "idle" in round.status;
@@ -165,15 +169,17 @@ async function erSend(tx: Transaction, signer = relayer, simulateFirst = false, 
   return er.sendRawTransaction(tx.serialize(), { skipPreflight: true });
 }
 
-const playAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, oracleQueue: VRF_ER_QUEUE });
+// Blackjack needs the player's table; the other games pass none (Anchor sends the program id).
+const playAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, table: null, oracleQueue: VRF_ER_QUEUE });
+const blackjackAccounts = () => ({ ...playAccounts(), table });
 
-async function act(label: string, tx: Promise<Transaction>, accept: (a: PlayerAccount) => boolean) {
+async function act(label: string, tx: Promise<Transaction>, accept: (a: PlayerAccount) => boolean | Promise<boolean>) {
   const transaction = await tx;
   return time(`${label} (rollup, tx → résultat)`, async () => {
     await erSend(transaction);
     return until(async () => {
       const a = await fetchAccount();
-      return accept(a) ? a : undefined;
+      return (await accept(a)) ? a : undefined;
     }, label);
   });
 }
@@ -185,14 +191,15 @@ async function round(
   label: string,
   start: () => Promise<Transaction>,
   play: (a: PlayerAccount) => Promise<PlayerAccount>,
-  expectedGross: (r: Round) => number,
+  expectedGross: (r: Round) => number | Promise<number>,
 ) {
   const before = await fetchAccount();
   const credited = (await fetchLedger()).deposited.sub(before.credited);
   let a = await act(label, start(), (x) => x.rounds > before.rounds || isPlayerTurn(x.round));
   a = await play(a);
   const stake = a.round.stake.toNumber();
-  const expectedPayout = expectedGross(a.round) - feeOn(stake, expectedGross(a.round));
+  const gross = await expectedGross(a.round);
+  const expectedPayout = gross - feeOn(stake, gross);
   const balanceOk = a.balance.eq(before.balance.add(credited).sub(a.round.stake).add(a.round.payout));
   if (!balanceOk || !a.round.payout.eq(new BN(expectedPayout))) {
     throw new Error(`${label}: payout ${a.round.payout} (attendu ${expectedPayout}), solde ${a.balance}`);
@@ -205,12 +212,14 @@ const total = (cards: number[]) => {
   const hard = cards.reduce((s, c) => s + Math.min(c, 10), 0);
   return cards.includes(1) && hard + 10 <= 21 ? hard + 10 : hard;
 };
-function blackjackGross(hand: Hand, stake: number) {
-  const p = hand.player.slice(0, hand.nPlayer);
-  const d = hand.dealer.slice(0, hand.nDealer);
-  const [pt, dt] = [total(p), total(d)];
+
+/** One hand against the dealer, for its base bet (twice the bet once doubled). */
+function handGross(hand: TableHand, dealer: number[], bet: number) {
+  const p = hand.cards.slice(0, hand.nCards);
+  const stake = hand.doubled ? bet * 2 : bet;
+  const [pt, dt] = [total(p), total(dealer)];
   const pbj = p.length === 2 && pt === 21 && !hand.doubled;
-  const dbj = d.length === 2 && dt === 21;
+  const dbj = dealer.length === 2 && dt === 21;
   if (pt > 21) return 0;
   if (pbj && dbj) return stake;
   if (pbj) return Math.floor((stake * 5) / 2);
@@ -219,27 +228,48 @@ function blackjackGross(hand: Hand, stake: number) {
   return pt === dt ? stake : 0;
 }
 
-async function playBlackjack(stake: number, allowDouble: boolean) {
-  return round(
+/** Every hand settled against the same dealer; also checks the round staked each hand's bet. */
+function blackjackGross(t: BlackjackTable, roundStake: number) {
+  const bet = t.bet.toNumber();
+  const hands = t.hands.slice(0, t.nHands);
+  const dealer = t.dealer.slice(0, t.nDealer);
+  const stake = hands.reduce((s, h) => s + (h.doubled ? bet * 2 : bet), 0);
+  if (stake !== roundStake) throw new Error(`blackjack: mise de la manche ${roundStake}, mains ${stake}`);
+  return hands.reduce((s, h) => s + handGross(h, dealer, bet), 0);
+}
+
+let standsWithoutDraw = 0;
+
+/** Plays `hands` hands of `bet` left to right: double on 10/11 if allowed, hit below 17, else stand. */
+async function playBlackjack(bet: number, hands: number, allowDouble: boolean) {
+  const a = await round(
     "blackjack",
-    () => erProgram.methods.blackjackBet(new BN(stake), seed()).accountsPartial(playAccounts()).transaction(),
+    () => erProgram.methods.blackjackBet(new BN(bet), hands, seed()).accountsPartial(blackjackAccounts()).transaction(),
     async (a) => {
       while (isPlayerTurn(a.round)) {
-        const hand = a.round.blackjack;
-        const t = total(hand.player.slice(0, hand.nPlayer));
-        const n = hand.nPlayer;
-        if (allowDouble && n === 2 && (t === 10 || t === 11)) {
-          a = await act("double", erProgram.methods.blackjackDouble(seed()).accountsPartial(playAccounts()).transaction(), (x) => isIdle(x.round));
-        } else if (t < 17) {
-          a = await act("carte", erProgram.methods.blackjackHit(seed()).accountsPartial(playAccounts()).transaction(), (x) => x.round.blackjack.nPlayer > n && !isAwaiting(x.round));
+        const t = await fetchTable();
+        const hand = t.hands[t.active];
+        const cards = hand.cards.slice(0, hand.nCards);
+        const value = total(cards);
+        // Done once the draw (if any) is played: a new request id, a settled round, or the next hand.
+        const prev = a;
+        const moved = async (x: PlayerAccount) =>
+          !isAwaiting(x.round) &&
+          (x.round.requestId.gt(prev.round.requestId) || x.rounds > prev.rounds || (await fetchTable()).active !== t.active);
+        if (allowDouble && cards.length === 2 && (value === 10 || value === 11)) {
+          a = await act("double", erProgram.methods.blackjackDouble(seed()).accountsPartial(blackjackAccounts()).transaction(), moved);
+        } else if (value < 17) {
+          a = await act("carte", erProgram.methods.blackjackHit(seed()).accountsPartial(blackjackAccounts()).transaction(), moved);
         } else {
-          a = await act("stand", erProgram.methods.blackjackStand(seed()).accountsPartial(playAccounts()).transaction(), (x) => isIdle(x.round));
+          a = await act("stand", erProgram.methods.blackjackStand(seed()).accountsPartial(blackjackAccounts()).transaction(), moved);
+          if (a.round.requestId.eq(prev.round.requestId)) standsWithoutDraw++;
         }
       }
       return a;
     },
-    (r) => blackjackGross(r.blackjack, r.stake.toNumber()),
+    async (r) => blackjackGross(await fetchTable(), r.stake.toNumber()),
   );
+  return { account: a, table: await fetchTable() };
 }
 
 const withdrawTx = (amount: number, signer = relayer) =>
@@ -376,20 +406,42 @@ async function run(): Promise<number> {
   const treasuryBefore = (await getAccount(base, treasury)).amount;
   // The vault may already hold other players (earlier runs): compare this player's share only.
   const reservedBefore = (await program.account.vault.fetch(vault)).reserved;
-  await time("premier dépôt + entrée dans le rollup (Solana)", async () =>
-    relayerProvider.sendAndConfirm(new Transaction().add(await open(usdc(300)).instruction(), await delegate().instruction()), [player]));
+  const tableAccounts = { vault, payer: relayer.publicKey, player: player.publicKey, ledger, table };
+  await time("premier dépôt + entrée dans le rollup, compte et table (Solana)", async () =>
+    relayerProvider.sendAndConfirm(new Transaction().add(
+      await open(usdc(300)).instruction(),
+      await delegate().instruction(),
+      await program.methods.openTable().accountsPartial(tableAccounts).instruction(),
+      await program.methods.delegateTable().accountsPartial(tableAccounts).instruction(),
+    ), [player]));
   check("frais d'ouverture (1,30 USDC) versés à la trésorerie Tilt", (await getAccount(base, treasury)).amount - treasuryBefore === BigInt(usdc(1.3)));
   check("298,70 USDC crédités au joueur", (await fetchLedger()).deposited.eq(new BN(usdc(298.7))));
   check("le joueur n'a besoin d'aucun SOL", (await base.getBalance(player.publicKey)) === 0);
   await time("compte visible dans le rollup", () => until(() => fetchAccount(), "account in rollup"));
+  await time("table visible dans le rollup", () => until(() => fetchTable(), "table in rollup"));
 
-  console.log("\n--- 2. Blackjack (gains recalculés depuis les cartes) ---");
+  const rejectsInRollup = (name: string, tx: () => Promise<Transaction>, expected: RegExp, signer?: Keypair) =>
+    rejects(name, async () => erSend(await tx(), signer ?? relayer, true), expected);
+
+  console.log("\n--- 2. Blackjack multi-mains (gains recalculés depuis les cartes) ---");
+  await rejectsInRollup("blackjack sans table refusé", () =>
+    erProgram.methods.blackjackBet(new BN(usdc(1)), 1, seed()).accountsPartial(playAccounts()).transaction(), /MissingTable|6020/);
+  await rejectsInRollup("plus de 6 mains refusé", () =>
+    erProgram.methods.blackjackBet(new BN(usdc(1)), MAX_HANDS + 1, seed()).accountsPartial(blackjackAccounts()).transaction(), /InvalidBet|6010/);
+  await rejectsInRollup("mise par main au-dessus du maximum refusée", () =>
+    erProgram.methods.blackjackBet(new BN(usdc(11)), 2, seed()).accountsPartial(blackjackAccounts()).transaction(), /AmountOutOfRange|6000/);
   let doubles = 0;
-  for (let i = 0; i < 40 && (i < 8 || doubles === 0); i++) {
-    if ((await playBlackjack(usdc(5), true)).round.blackjack.doubled) doubles++;
+  let multiHand = 0;
+  for (let i = 0; i < 40 && (i < 12 || doubles === 0 || standsWithoutDraw === 0); i++) {
+    const hands = 1 + (i % MAX_HANDS);
+    const { table: t } = await playBlackjack(usdc(2), hands, true);
+    if (t.nHands !== hands) throw new Error(`blackjack: ${t.nHands} mains jouées, ${hands} demandées`);
+    if (hands > 1) multiHand++;
+    if (t.hands.slice(0, t.nHands).some((h) => h.doubled)) doubles++;
   }
-  check("mains de blackjack payées selon les cartes (3:2, push, double, croupier)", true, "(chaque main vérifiée)");
-  check("au moins un double joué et réglé sur la mise doublée", doubles > 0, `(${doubles} doubles)`);
+  check("mains de blackjack payées selon les cartes (3:2, push, double, croupier), une à six mains", multiHand > 0, "(chaque main vérifiée)");
+  check("au moins un double joué et réglé sur une mise de main en plus", doubles > 0, `(${doubles} manches avec double)`);
+  check("stand avec une main suivante : sans tirage", standsWithoutDraw > 0, `(${standsWithoutDraw})`);
 
   console.log("\n--- 3. Roulette ---");
   const roulette = (bet: RouletteBet, wins: (n: number) => boolean, multiple: number) =>
@@ -401,8 +453,6 @@ async function run(): Promise<number> {
     await roulette({ dozen: { 0: 2 } }, (n) => n >= 13 && n <= 24, 3);
   }
   check("12 tours de roulette payés selon le numéro tiré", true, "(chaque tour vérifié)");
-  const rejectsInRollup = (name: string, tx: () => Promise<Transaction>, expected: RegExp, signer?: Keypair) =>
-    rejects(name, async () => erSend(await tx(), signer ?? relayer, true), expected);
   await rejectsInRollup("pari invalide refusé (numéro 37)", () =>
     erProgram.methods.rouletteSpin(new BN(usdc(1)), { straight: { 0: 37 } }, seed()).accountsPartial(playAccounts()).transaction(), /InvalidBet|6010/);
   await rejectsInRollup("plein à 10 USDC refusé (gain possible > plafond par manche)", async () => {
@@ -461,26 +511,26 @@ async function run(): Promise<number> {
   await program.methods.deposit(new BN(usdc(50)))
     .accountsPartial({ player: player.publicKey, vault, vaultToken, playerToken, mint, ledger }).signers([player]).rpc();
   await time("dépôt visible depuis le rollup", () => until(async () => ((await erProgram.account.ledger.fetch(ledger)).deposited.eq(new BN(usdc(348.7))) ? true : undefined), "deposit in rollup"));
-  await playBlackjack(usdc(1), false);
+  await playBlackjack(usdc(1), 1, false);
   check("dépôt crédité à la manche suivante", (await fetchAccount()).credited.eq(new BN(usdc(348.7))));
 
   console.log("\n--- 7. Manche abandonnée ---");
   let a = await fetchAccount();
   for (let i = 0; i < 10 && !isPlayerTurn(a.round); i++) {
-    a = await act("mise blackjack", erProgram.methods.blackjackBet(new BN(usdc(1)), seed()).accountsPartial(playAccounts()).transaction(), (x) => !isAwaiting(x.round));
+    a = await act("mise blackjack", erProgram.methods.blackjackBet(new BN(usdc(1)), 1, seed()).accountsPartial(blackjackAccounts()).transaction(), (x) => !isAwaiting(x.round));
   }
   check("main ouverte obtenue", isPlayerTurn(a.round));
   check("retrait pendant une main ouverte payé", await withdraw(usdc(20), true));
   await rejectsInRollup("nouvelle manche refusée tant que la main est ouverte", () =>
     erProgram.methods.slotsSpin(new BN(usdc(1)), seed()).accountsPartial(playAccounts()).transaction(), /RoundInProgress|6004/);
   await rejectsInRollup("expiration refusée avant le délai", () =>
-    erProgram.methods.expireRound(seed()).accountsPartial(playAccounts()).transaction(), /RoundNotExpired|6011/);
+    erProgram.methods.expireRound(seed()).accountsPartial(blackjackAccounts()).transaction(), /RoundNotExpired|6011/);
   await sleep((ROUND_TIMEOUT_SECS + 1) * 1_000);
   await rejectsInRollup("main en attente du joueur jamais clôturée à sa place, même après le délai", () =>
-    erProgram.methods.expireRound(seed()).accountsPartial(playAccounts()).transaction(), /WrongState|6005/);
+    erProgram.methods.expireRound(seed()).accountsPartial(blackjackAccounts()).transaction(), /WrongState|6005/);
   const roundsBefore = a.rounds;
-  a = await act("stand du joueur après le délai", erProgram.methods.blackjackStand(seed()).accountsPartial(playAccounts()).transaction(), (x) => x.rounds === roundsBefore + 1);
-  check("le joueur reprend sa main quand il veut", isIdle(a.round) && a.round.blackjack.nDealer >= 2);
+  a = await act("stand du joueur après le délai", erProgram.methods.blackjackStand(seed()).accountsPartial(blackjackAccounts()).transaction(), (x) => x.rounds === roundsBefore + 1);
+  check("le joueur reprend sa main quand il veut", isIdle(a.round) && (await fetchTable()).nDealer >= 2);
   check("chaque tirage porte un identifiant de requête qui ne fait que croître", a.round.requestId.gtn(0));
 
   console.log("\n--- 8. Retraits vérifiés, plafonnés, mis en attente ---");

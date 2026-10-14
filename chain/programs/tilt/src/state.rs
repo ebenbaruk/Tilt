@@ -2,7 +2,10 @@ use anchor_lang::prelude::*;
 
 use crate::errors::TiltError;
 use crate::games::{
-    baccarat::BaccaratCoup, blackjack::BlackjackHand, roulette::RouletteSpin, slots::SlotsSpin,
+    baccarat::BaccaratCoup,
+    blackjack::{BlackjackTable, MAX_CARDS},
+    roulette::RouletteSpin,
+    slots::SlotsSpin,
 };
 use crate::rng::Rng;
 use crate::settlement::Settlement;
@@ -141,19 +144,32 @@ pub enum RoundStatus {
     PlayerTurn,
 }
 
+/// Legacy single-hand blackjack state, never written since blackjack moved to
+/// `BlackjackTable`. Kept only so `PlayerAccount` keeps its byte layout (accounts already
+/// delegated, withdrawals deserialize it).
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Default, InitSpace, PartialEq, Eq, Debug)]
+pub struct BlackjackHand {
+    pub player: [u8; MAX_CARDS],
+    pub n_player: u8,
+    pub dealer: [u8; MAX_CARDS],
+    pub n_dealer: u8,
+    pub doubled: bool,
+}
+
 /// The current or last round. Lives in the player account, so an unfinished round
 /// survives disconnections and can be resumed.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, InitSpace, PartialEq, Eq, Debug)]
 pub struct Round {
     pub game: Game,
     pub status: RoundStatus,
-    /// Total stake, doubled blackjack included.
+    /// Total stake, every blackjack hand and double included.
     pub stake: u64,
     pub last_action: i64,
     /// Id of the VRF request the round is waiting for; any other callback is refused.
     pub request_id: u64,
     pub payout: u64,
     pub fee: u64,
+    /// Legacy, always default: blackjack rounds live in `BlackjackTable`.
     pub blackjack: BlackjackHand,
     pub roulette: Option<RouletteSpin>,
     pub baccarat: Option<BaccaratCoup>,
@@ -179,31 +195,32 @@ impl Default for Round {
 }
 
 impl Round {
-    /// Plays a VRF draw. Returns the gross return once the round is over, or `None` when a
-    /// blackjack hand goes back to the player.
-    pub fn apply_draw(&mut self, draw: Draw, rng: &mut Rng) -> Result<Option<u64>> {
+    /// Plays a VRF draw. Returns the gross return once the round is over, or `None` when
+    /// a blackjack hand goes back to the player. Blackjack draws play on `table`.
+    pub fn apply_draw(
+        &mut self,
+        draw: Draw,
+        rng: &mut Rng,
+        table: Option<&mut BlackjackTable>,
+    ) -> Result<Option<u64>> {
         let stake = self.stake;
         let gross = match (self.game, draw) {
-            (Game::Blackjack, Draw::Deal | Draw::Hit) => {
-                let hand = &mut self.blackjack;
-                let finished = if draw == Draw::Deal {
-                    hand.deal(rng)
-                } else {
-                    hand.hit(rng)
+            (Game::Blackjack, Draw::Deal | Draw::Hit | Draw::Double | Draw::Dealer) => {
+                let table = table.ok_or(TiltError::MissingTable)?;
+                let over = match draw {
+                    Draw::Deal => table.deal(rng),
+                    Draw::Hit => table.hit(rng),
+                    Draw::Double => table.double(rng),
+                    _ => {
+                        table.play_dealer(rng);
+                        true
+                    }
                 };
-                if !finished {
+                if !over {
                     self.status = RoundStatus::PlayerTurn;
                     return Ok(None);
                 }
-                hand.gross(stake)
-            }
-            (Game::Blackjack, Draw::Double) => {
-                self.blackjack.double(rng);
-                self.blackjack.gross(stake)
-            }
-            (Game::Blackjack, Draw::Dealer) => {
-                self.blackjack.stand(rng);
-                self.blackjack.gross(stake)
+                table.gross()
             }
             (Game::Roulette, Draw::Spin) => {
                 let spin = self.roulette.as_mut().ok_or(TiltError::WrongState)?;
@@ -259,11 +276,14 @@ impl PlayerAccount {
         balance as i128 + self.withdrawn as i128 - (self.credited as i128 - self.forfeited as i128)
     }
 
-    /// Takes a new round's stake after checking limits. `max_gain` is the most this round can win.
+    /// Takes a new round's stake, `bets` equal bets of `bet` (blackjack hands; 1 for other
+    /// games), after checking limits: bet limits apply to each bet. `max_gain` is the most
+    /// this round can win.
     pub fn start_round(
         &mut self,
         game: Game,
-        stake: u64,
+        bet: u64,
+        bets: u8,
         max_gain: u64,
         config: &Config,
         now: i64,
@@ -274,9 +294,12 @@ impl PlayerAccount {
             TiltError::RoundInProgress
         );
         require!(
-            stake >= config.min_bet && stake <= config.max_bet,
+            bet >= config.min_bet && bet <= config.max_bet && bets > 0,
             TiltError::AmountOutOfRange
         );
+        let stake = bet
+            .checked_mul(bets.into())
+            .ok_or(TiltError::AmountOutOfRange)?;
         require!(
             max_gain <= config.max_round_gain,
             TiltError::RoundGainTooHigh
@@ -449,7 +472,8 @@ mod tests {
     #[test]
     fn a_round_takes_the_stake_and_settlement_returns_the_payout() {
         let mut a = account(1_000, 1_000);
-        a.start_round(Game::Slots, 200, 200, &config(), 0).unwrap();
+        a.start_round(Game::Slots, 200, 1, 200, &config(), 0)
+            .unwrap();
         assert_eq!(a.balance, 800);
         a.finish_round(settle(200, 400));
         assert_eq!((a.balance, a.fees, a.rounds), (1_198, 2, 1));
@@ -460,15 +484,16 @@ mod tests {
     fn limits_are_enforced_when_a_round_starts() {
         let mut a = account(1_000, 1_000);
         assert!(
-            a.start_round(Game::Slots, 105, 0, &config(), 0).is_err(),
+            a.start_round(Game::Slots, 105, 1, 0, &config(), 0).is_err(),
             "below min bet"
         );
         assert!(
-            a.start_round(Game::Slots, 1_001, 0, &config(), 0).is_err(),
+            a.start_round(Game::Slots, 1_001, 1, 0, &config(), 0)
+                .is_err(),
             "above max bet"
         );
         assert!(
-            a.start_round(Game::Slots, 106, 50_001, &config(), 0)
+            a.start_round(Game::Slots, 106, 1, 50_001, &config(), 0)
                 .is_err(),
             "round gain too high"
         );
@@ -477,15 +502,57 @@ mod tests {
             ..config()
         };
         assert!(
-            a.start_round(Game::Slots, 106, 0, &paused, 0).is_err(),
+            a.start_round(Game::Slots, 106, 1, 0, &paused, 0).is_err(),
             "bets paused"
         );
-        a.start_round(Game::Slots, 106, 0, &config(), 0).unwrap();
+        a.start_round(Game::Slots, 106, 1, 0, &config(), 0).unwrap();
         a.round.status = RoundStatus::AwaitingDraw(Draw::Spin); // as request_draw does
         assert!(
-            a.start_round(Game::Slots, 106, 0, &config(), 0).is_err(),
+            a.start_round(Game::Slots, 106, 1, 0, &config(), 0).is_err(),
             "round in progress"
         );
+    }
+
+    #[test]
+    fn bet_limits_apply_per_hand_and_the_round_gain_to_the_total() {
+        use crate::games::blackjack::{max_gain, MAX_HANDS};
+        let hands = MAX_HANDS as u8;
+        let mut a = account(10_000, 12_000);
+        // 6 hands of 1 000 stake 6 000, above max_bet: each hand is within it.
+        a.start_round(Game::Blackjack, 1_000, hands, max_gain(6_000), &config(), 0)
+            .unwrap();
+        assert_eq!((a.balance, a.round.stake), (4_000, 6_000));
+        let mut a = account(10_000, 11_999);
+        assert_eq!(
+            a.start_round(Game::Blackjack, 105, hands, max_gain(630), &config(), 0),
+            Err(TiltError::AmountOutOfRange.into()),
+            "each hand must reach min bet"
+        );
+        assert_eq!(
+            a.start_round(Game::Blackjack, 1_000, 0, 0, &config(), 0),
+            Err(TiltError::AmountOutOfRange.into()),
+            "no hand"
+        );
+        let low_gain = Config {
+            max_round_gain: 11_999,
+            ..config()
+        };
+        assert_eq!(
+            a.start_round(Game::Blackjack, 1_000, hands, max_gain(6_000), &low_gain, 0),
+            Err(TiltError::RoundGainTooHigh.into()),
+            "every hand doubled and won is reserved"
+        );
+        assert_eq!(
+            a.start_round(Game::Blackjack, 1_000, hands, max_gain(6_000), &config(), 0),
+            Err(TiltError::WinCapReached.into()),
+            "the 12 000 worst case exceeds the 11 999 lifetime cap"
+        );
+    }
+
+    #[test]
+    fn player_account_layout_is_unchanged() {
+        // Delegated accounts and withdrawals deserialize this layout: never change it.
+        assert_eq!(PlayerAccount::INIT_SPACE, 187);
     }
 
     #[test]
@@ -499,7 +566,7 @@ mod tests {
             slots::max_gain(u64::MAX),
         ] {
             assert_eq!(
-                a.start_round(Game::Slots, u64::MAX, max_gain, &config(), 0),
+                a.start_round(Game::Slots, u64::MAX, 1, max_gain, &config(), 0),
                 Err(TiltError::AmountOutOfRange.into())
             );
         }
@@ -512,6 +579,7 @@ mod tests {
         a.start_round(
             Game::Blackjack,
             500,
+            1,
             crate::games::blackjack::max_gain(500),
             &config(),
             0,
@@ -522,6 +590,7 @@ mod tests {
             .start_round(
                 Game::Blackjack,
                 500,
+                1,
                 crate::games::blackjack::max_gain(500),
                 &config(),
                 0
@@ -556,11 +625,50 @@ mod tests {
                 stake: 100,
                 ..Round::default()
             };
+            let mut table = BlackjackTable::default();
             assert!(
-                round.apply_draw(draw, &mut rng).is_err(),
+                round.apply_draw(draw, &mut rng, Some(&mut table)).is_err(),
                 "{game:?} {draw:?}"
             );
         }
+    }
+
+    #[test]
+    fn blackjack_draws_play_on_the_table() {
+        let mut rng = Rng::from_vrf([3; 32]);
+        let mut round = Round {
+            game: Game::Blackjack,
+            stake: 200,
+            status: RoundStatus::AwaitingDraw(Draw::Deal),
+            ..Round::default()
+        };
+        assert_eq!(
+            round.apply_draw(Draw::Deal, &mut rng, None),
+            Err(TiltError::MissingTable.into())
+        );
+        let mut table = BlackjackTable::default();
+        // Two hands until one deal leaves a hand to play.
+        loop {
+            table.start(100, 2);
+            if round
+                .apply_draw(Draw::Deal, &mut rng, Some(&mut table))
+                .unwrap()
+                .is_none()
+            {
+                break;
+            }
+        }
+        assert_eq!(round.status, RoundStatus::PlayerTurn);
+        while !table.stand() {}
+        let gross = round
+            .apply_draw(Draw::Dealer, &mut rng, Some(&mut table))
+            .unwrap();
+        assert_eq!(gross, Some(table.gross()));
+        assert_eq!(
+            round.blackjack,
+            BlackjackHand::default(),
+            "legacy field untouched"
+        );
     }
 
     #[test]
@@ -571,7 +679,10 @@ mod tests {
             stake: 100,
             ..Round::default()
         };
-        assert!(slots.apply_draw(Draw::Spin, &mut rng).unwrap().is_some());
+        assert!(slots
+            .apply_draw(Draw::Spin, &mut rng, None)
+            .unwrap()
+            .is_some());
         let mut roulette = Round {
             game: Game::Roulette,
             stake: 100,
@@ -581,7 +692,10 @@ mod tests {
             }),
             ..Round::default()
         };
-        assert!(roulette.apply_draw(Draw::Spin, &mut rng).unwrap().is_some());
+        assert!(roulette
+            .apply_draw(Draw::Spin, &mut rng, None)
+            .unwrap()
+            .is_some());
         let mut baccarat = Round {
             game: Game::Baccarat,
             stake: 100,
@@ -590,6 +704,9 @@ mod tests {
             )),
             ..Round::default()
         };
-        assert!(baccarat.apply_draw(Draw::Spin, &mut rng).unwrap().is_some());
+        assert!(baccarat
+            .apply_draw(Draw::Spin, &mut rng, None)
+            .unwrap()
+            .is_some());
     }
 }

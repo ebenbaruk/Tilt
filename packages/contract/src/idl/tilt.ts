@@ -199,6 +199,34 @@ export type Tilt = {
           }
         },
         {
+          "name": "table",
+          "docs": [
+            "The player's blackjack table: required by blackjack rounds, omitted (program id)",
+            "by the other games."
+          ],
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -352,6 +380,34 @@ export type Tilt = {
           }
         },
         {
+          "name": "table",
+          "docs": [
+            "The player's blackjack table: required by blackjack rounds, omitted (program id)",
+            "by the other games."
+          ],
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -392,6 +448,10 @@ export type Tilt = {
         {
           "name": "amount",
           "type": "u64"
+        },
+        {
+          "name": "hands",
+          "type": "u8"
         },
         {
           "name": "clientSeed",
@@ -486,6 +546,34 @@ export type Tilt = {
                   103,
                   101,
                   114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "table",
+          "docs": [
+            "The player's blackjack table: required by blackjack rounds, omitted (program id)",
+            "by the other games."
+          ],
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
                 ]
               },
               {
@@ -638,6 +726,34 @@ export type Tilt = {
           }
         },
         {
+          "name": "table",
+          "docs": [
+            "The player's blackjack table: required by blackjack rounds, omitted (program id)",
+            "by the other games."
+          ],
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -768,6 +884,34 @@ export type Tilt = {
                   103,
                   101,
                   114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "table",
+          "docs": [
+            "The player's blackjack table: required by blackjack rounds, omitted (program id)",
+            "by the other games."
+          ],
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
                 ]
               },
               {
@@ -962,6 +1106,33 @@ export type Tilt = {
                   117,
                   110,
                   116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "table",
+          "docs": [
+            "The player's table, for blackjack draws; the program id otherwise."
+          ],
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
                 ]
               },
               {
@@ -1220,6 +1391,212 @@ export type Tilt = {
       "args": []
     },
     {
+      "name": "delegateTable",
+      "discriminator": [
+        161,
+        66,
+        67,
+        113,
+        58,
+        219,
+        238,
+        170
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "player"
+        },
+        {
+          "name": "bufferTable",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  102,
+                  102,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                24,
+                12,
+                135,
+                51,
+                234,
+                253,
+                132,
+                42,
+                23,
+                91,
+                143,
+                100,
+                117,
+                247,
+                92,
+                216,
+                69,
+                90,
+                227,
+                83,
+                114,
+                248,
+                108,
+                194,
+                137,
+                171,
+                145,
+                243,
+                105,
+                204,
+                132,
+                234
+              ]
+            }
+          }
+        },
+        {
+          "name": "delegationRecordTable",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegationProgram"
+            }
+          }
+        },
+        {
+          "name": "delegationMetadataTable",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  109,
+                  101,
+                  116,
+                  97,
+                  100,
+                  97,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "table"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegationProgram"
+            }
+          }
+        },
+        {
+          "name": "table",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ownerProgram",
+          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+        },
+        {
+          "name": "delegationProgram",
+          "address": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "deposit",
       "discriminator": [
         242,
@@ -1405,6 +1782,34 @@ export type Tilt = {
                   103,
                   101,
                   114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "table",
+          "docs": [
+            "The player's blackjack table: required by blackjack rounds, omitted (program id)",
+            "by the other games."
+          ],
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
                 ]
               },
               {
@@ -2000,6 +2405,101 @@ export type Tilt = {
           "type": "u64"
         }
       ]
+    },
+    {
+      "name": "openTable",
+      "discriminator": [
+        251,
+        98,
+        127,
+        54,
+        103,
+        12,
+        106,
+        246
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The relay: pays the rent."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "player"
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Only players with an account get a table."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "table",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
     },
     {
       "name": "payPromo",
@@ -2604,6 +3104,34 @@ export type Tilt = {
           }
         },
         {
+          "name": "table",
+          "docs": [
+            "The player's blackjack table: required by blackjack rounds, omitted (program id)",
+            "by the other games."
+          ],
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -2913,6 +3441,34 @@ export type Tilt = {
                   103,
                   101,
                   114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "table",
+          "docs": [
+            "The player's blackjack table: required by blackjack rounds, omitted (program id)",
+            "by the other games."
+          ],
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
                 ]
               },
               {
@@ -3283,6 +3839,19 @@ export type Tilt = {
   ],
   "accounts": [
     {
+      "name": "blackjackTable",
+      "discriminator": [
+        72,
+        205,
+        97,
+        32,
+        22,
+        36,
+        255,
+        74
+      ]
+    },
+    {
       "name": "ledger",
       "discriminator": [
         43,
@@ -3515,6 +4084,11 @@ export type Tilt = {
       "code": 6019,
       "name": "promoCapReached",
       "msg": "Promo payout above the pool's limits"
+    },
+    {
+      "code": 6020,
+      "name": "missingTable",
+      "msg": "Blackjack needs the player's table account"
     }
   ],
   "types": [
@@ -3574,6 +4148,11 @@ export type Tilt = {
     },
     {
       "name": "blackjackHand",
+      "docs": [
+        "Legacy single-hand blackjack state, never written since blackjack moved to",
+        "`BlackjackTable`. Kept only so `PlayerAccount` keeps its byte layout (accounts already",
+        "delegated, withdrawals deserialize it)."
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -3606,6 +4185,67 @@ export type Tilt = {
           {
             "name": "doubled",
             "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "blackjackTable",
+      "docs": [
+        "The player's blackjack round: hands and dealer. Lives in the rollup next to the player",
+        "account; between rounds it keeps the last round for display."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "player",
+            "type": "pubkey"
+          },
+          {
+            "name": "bet",
+            "docs": [
+              "Base bet of every hand (a doubled hand stakes twice this)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "hands",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "tableHand"
+                  }
+                },
+                6
+              ]
+            }
+          },
+          {
+            "name": "nHands",
+            "type": "u8"
+          },
+          {
+            "name": "active",
+            "docs": [
+              "Index of the hand to play while the round waits for the player; `n_hands` once",
+              "every hand is finished."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "dealer",
+            "type": {
+              "array": [
+                "u8",
+                21
+              ]
+            }
+          },
+          {
+            "name": "nDealer",
+            "type": "u8"
           }
         ]
       }
@@ -4114,7 +4754,7 @@ export type Tilt = {
           {
             "name": "stake",
             "docs": [
-              "Total stake, doubled blackjack included."
+              "Total stake, every blackjack hand and double included."
             ],
             "type": "u64"
           },
@@ -4139,6 +4779,9 @@ export type Tilt = {
           },
           {
             "name": "blackjack",
+            "docs": [
+              "Legacy, always default: blackjack rounds live in `BlackjackTable`."
+            ],
             "type": {
               "defined": {
                 "name": "blackjackHand"
@@ -4266,6 +4909,31 @@ export type Tilt = {
                 3
               ]
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "tableHand",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "cards",
+            "type": {
+              "array": [
+                "u8",
+                21
+              ]
+            }
+          },
+          {
+            "name": "nCards",
+            "type": "u8"
+          },
+          {
+            "name": "doubled",
+            "type": "bool"
           }
         ]
       }
