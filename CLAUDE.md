@@ -71,6 +71,7 @@ Act like a pragmatic senior engineer. Write code a strong teammate would approve
 
 ## Git
 
+- **Read `docs/git-workflow.md` before any git or GitHub action**, and follow it: one branch per task, delete branches once merged, close abandoned PRs, keep the repo clean.
 - Commit only when asked.
 - Commit messages: imperative mood and a concise subject line (`Add user login`, not `added stuff`). Explain the *why* in the body if it isn't obvious.
 - Never commit secrets, build artifacts, or `node_modules`.
