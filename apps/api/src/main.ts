@@ -12,9 +12,9 @@ import { PrivyTokenVerifier } from "./privy";
 import { RateLimiter } from "./ratelimit";
 import { HttpRelay } from "./relay";
 
-/** Wrong user codes a player may type per 10 minutes before approvals are refused. */
-const APPROVE_FAILURES = 5;
-const APPROVE_FAILURE_WINDOW_S = 600;
+/** Device approvals (right or wrong codes) a player may send per 10 minutes. */
+const APPROVE_ATTEMPTS = 5;
+const APPROVE_ATTEMPT_WINDOW_S = 600;
 const SHUTDOWN_GRACE_MS = 10_000;
 
 const config = loadConfig();
@@ -38,9 +38,9 @@ const app = createApp({
     ip: RateLimiter.perMinute(config.RATE_IP_PER_MIN),
     token: RateLimiter.perMinute(config.RATE_TOKEN_PER_MIN),
     auth: RateLimiter.perMinute(config.RATE_AUTH_PER_MIN),
-    approveFailures: new RateLimiter({
-      capacity: APPROVE_FAILURES,
-      refillPerSecond: APPROVE_FAILURES / APPROVE_FAILURE_WINDOW_S,
+    approveAttempts: new RateLimiter({
+      capacity: APPROVE_ATTEMPTS,
+      refillPerSecond: APPROVE_ATTEMPTS / APPROVE_ATTEMPT_WINDOW_S,
     }),
     play: RateLimiter.perMinute(config.RATE_PLAY_PER_MIN),
     money: RateLimiter.perMinute(config.RATE_MONEY_PER_MIN),

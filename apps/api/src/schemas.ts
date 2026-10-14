@@ -6,7 +6,11 @@ import { z } from "zod";
 import type { DepositRequest, DeviceApproveRequest, ExcludeRequest, LimitsRequest, WithdrawRequest } from "./public";
 import { MAX_EXCLUSION_DAYS } from "./limits";
 
-const Uuid = z.string().uuid();
+// Lowercase: intents are stored lowercased, and limit checks compare ids in SQL.
+const Uuid = z
+  .string()
+  .uuid()
+  .transform((s) => s.toLowerCase());
 const OneToThree = z.union([z.literal(1), z.literal(2), z.literal(3)]);
 
 const RouletteBet = z.discriminatedUnion("kind", [
@@ -36,8 +40,11 @@ export const PlayRequestSchema = z
   .object({ intentId: Uuid, action: PlayActionSchema })
   .strict() satisfies z.ZodType<PlayRequest>;
 
+/** Longest sponsor name; campaigns are refused above it, or the mod could not report them. */
+export const MAX_SPONSOR_LENGTH = 100;
+
 export const ImpressionSchema = z
-  .object({ sponsor: z.string().min(1).max(100), seconds: z.number().int().min(1).max(60) })
+  .object({ sponsor: z.string().min(1).max(MAX_SPONSOR_LENGTH), seconds: z.number().int().min(1).max(60) })
   .strict() satisfies z.ZodType<ImpressionRequest>;
 
 export const DeviceTokenSchema = z.object({ deviceCode: z.string().min(1).max(100) }).strict();

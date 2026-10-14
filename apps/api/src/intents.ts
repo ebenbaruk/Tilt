@@ -32,9 +32,10 @@ const GUARD_LOCK = 7_349_202;
 export interface SubmitOptions {
   /** The player's identity token, forwarded to the relay for money moves, never stored. */
   consent?: IntentRequest["consent"];
-  /** Runs under a per-player lock with the intent's insert, so what it checks (e.g. the daily
+  /** Runs under a per-player lock, after the intent's insert, so what it checks (e.g. the daily
    *  deposit limit, which counts recorded intents) cannot change before the intent is recorded.
-   *  Throws to refuse the intent. */
+   *  Throws to refuse the intent (the insert is rolled back). Only new intents are checked: a
+   *  replay must report what the relay did, even if a limit was reached since. */
   guard?: (db: Queryable) => Promise<void>;
 }
 
@@ -122,8 +123,9 @@ export class Intents {
     const inserted = guard
       ? await transaction(this.db, async (tx) => {
           await tx.query("SELECT pg_advisory_xact_lock($1, hashtext($2))", [GUARD_LOCK, userId]);
-          await guard(tx);
-          return insert(tx);
+          const result = await insert(tx);
+          if (result.rowCount === 1) await guard(tx);
+          return result;
         })
       : await insert(this.db);
     if (inserted.rowCount === 1) return null;

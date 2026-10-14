@@ -19,3 +19,15 @@ export function approveFailure(error: unknown): ApproveFailure {
   if (error.code === "UNAUTHORIZED") return "login";
   return "error";
 }
+
+export type ApproveStep =
+  | { kind: "idle" }
+  | { kind: "approving" }
+  | { kind: "approved" }
+  | { kind: "failed"; reason: ApproveFailure; message: string; userCode: string };
+
+/** The step to show for the code typed now: a failure belongs to the code it was sent with, so fixing a typo
+ *  brings the approve button back instead of leaving the player on "code expired". */
+export function stepFor(step: ApproveStep, userCode: string | null): ApproveStep {
+  return step.kind === "failed" && step.userCode !== userCode ? { kind: "idle" } : step;
+}

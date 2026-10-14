@@ -14,7 +14,17 @@ import {
   rouletteBetLabel,
   SEPARATOR,
 } from "./format";
-import { activeGame, type Command, GAME_LABELS, GAMES, type KeyAction, planKeys } from "./keys";
+import {
+  activeGame,
+  type Command,
+  GAME_LABELS,
+  GAMES,
+  heldKeys,
+  type KeyAction,
+  planKeys,
+  type PlanInput,
+} from "./keys";
+import type { TiltKey } from "../types";
 import type { AgentView, AuthView, IntentView, Prefs, RemoteView } from "./model";
 import type { Game, RoundView, SponsorView, StateResponse } from "./protocol";
 import { FELT, FG1, FG4, FG6, GOLD, GREEN, LINE3, LINE4, PINK, RED, toneOf, type Ui } from "./theme";
@@ -24,6 +34,7 @@ export interface Snapshot {
   remote: RemoteView;
   prefs: Prefs;
   intent: IntentView | null;
+  echo: readonly TiltKey[];
   message: string | null;
   agent: AgentView;
 }
@@ -54,6 +65,37 @@ function keyButtons(ui: Ui, keys: readonly KeyAction[], onCommand: OnCommand): R
       </Text>
     </Button>
   ));
+}
+
+/** Keys a press must not reach the prompt through: dim, at their own addresses, and inert. */
+function inertButtons(ui: Ui, keys: readonly TiltKey[], scope: "held" | "echo"): RenderElement[] {
+  const { Button, Text } = ui;
+
+  return keys.map((action) => (
+    <Button key={`${scope}-${action.key}`} plain dimColor hotkey={action.hotkey} onPress={() => undefined}>
+      <Text dimColor>{action.label}</Text>
+    </Button>
+  ));
+}
+
+/**
+ * The play keys (no game switches) to draw: the live ones, or else the ones a move in flight
+ * holds; then the settled move's echo, on every letter nothing else takes.
+ */
+function playButtons(
+  ui: Ui,
+  input: PlanInput,
+  keys: readonly KeyAction[],
+  echo: readonly TiltKey[],
+  onCommand: OnCommand,
+): RenderElement[] {
+  const live = keys.filter((action) => action.command.kind !== "switch");
+  const held = live.length > 0 ? [] : heldKeys(input);
+  const taken = new Set([...keys, ...held].map((action) => action.hotkey));
+  const faded = echo.filter((action) => !taken.has(action.hotkey));
+  const drawn = live.length > 0 ? keyButtons(ui, live, onCommand) : inertButtons(ui, held, "held");
+
+  return [...drawn, ...inertButtons(ui, faded, "echo")];
 }
 
 function tabs(ui: Ui, keys: readonly KeyAction[], game: Game, onCommand: OnCommand): RenderElement[] {
@@ -203,16 +245,8 @@ function baccaratTable(ui: Ui, round: RoundView | null, prefs: Prefs): RenderEle
         <Text color={FG6}>Pick player, banker or tie, then deal with n.</Text>
       ) : (
         <Box flexDirection="column">
-          {handRow(
-            ui,
-            { label: "PLAYER", total: String(detail.playerPoints), tag: null },
-            cardRow(ui, detail.player),
-          )}
-          {handRow(
-            ui,
-            { label: "BANKER", total: String(detail.bankerPoints), tag: null },
-            cardRow(ui, detail.banker),
-          )}
+          {handRow(ui, { label: "PLAYER", total: String(detail.playerPoints), tag: null }, cardRow(ui, detail.player))}
+          {handRow(ui, { label: "BANKER", total: String(detail.bankerPoints), tag: null }, cardRow(ui, detail.banker))}
         </Box>
       )}
     </Box>
@@ -269,6 +303,11 @@ function statusLine(ui: Ui, snap: Snapshot, state: StateResponse): RenderElement
 
   if (state.round?.phase === "drawing") {
     return <Text color={FG4}>{`${spinner} drawing`}</Text>;
+  }
+
+  // A move sent before a restart, or from another session: the keys stay off until it settles.
+  if (state.pendingIntentId !== null) {
+    return <Text color={FG4}>{`${spinner} previous move still settling`}</Text>;
   }
 
   if (snap.message !== null) {
@@ -355,7 +394,7 @@ function footer(ui: Ui, state: StateResponse, game: Game): RenderElement {
 }
 
 /** The play keys on one row, led by how to arm them while the pane does not hold the keyboard. */
-function keyBar(ui: Ui, keys: readonly KeyAction[], isFocused: boolean, onCommand: OnCommand): RenderElement {
+function keyBar(ui: Ui, buttons: readonly RenderElement[], isFocused: boolean): RenderElement {
   const { Box, Text } = ui;
 
   return (
@@ -368,7 +407,7 @@ function keyBar(ui: Ui, keys: readonly KeyAction[], isFocused: boolean, onComman
           to use keys:
         </Text>
       )}
-      {keyButtons(ui, keys, onCommand)}
+      {buttons}
     </Box>
   );
 }
@@ -442,7 +481,7 @@ export function renderPane(
   }
 
   const game = activeGame(state, snap.prefs);
-  const playKeys = keys.filter((action) => action.command.kind !== "switch");
+  const plays = playButtons(ui, { state, prefs: snap.prefs, isBusy: snap.intent !== null }, keys, snap.echo, onCommand);
   const side = state.sponsor !== null || state.leaderboard.length > 0;
   const gameColumn = (
     <Box flexDirection="column" flexGrow={1}>
@@ -450,7 +489,7 @@ export function renderPane(
       {table ?? gameTable(ui, state, snap.prefs, isWide, STILL)}
       {table === null && outcomeLine(ui, roundOf(state, game))}
       {statusLine(ui, snap, state)}
-      {playKeys.length > 0 && keyBar(ui, playKeys, layout.isFocused, onCommand)}
+      {plays.length > 0 && keyBar(ui, plays, layout.isFocused)}
       {footer(ui, state, game)}
     </Box>
   );
@@ -521,7 +560,8 @@ export function renderBand(ui: Ui, snap: Snapshot, layout: BandLayout, onCommand
     );
   }
 
-  const keys = planKeys({ state, prefs: snap.prefs, isBusy: snap.intent !== null });
+  const input = { state, prefs: snap.prefs, isBusy: snap.intent !== null };
+  const keys = planKeys(input);
   const status = statusLine(ui, snap, state);
 
   return (
@@ -537,7 +577,12 @@ export function renderBand(ui: Ui, snap: Snapshot, layout: BandLayout, onCommand
         {agent}
       </Box>
       <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-        {keyButtons(ui, keys, onCommand)}
+        {keyButtons(
+          ui,
+          keys.filter((action) => action.command.kind === "switch"),
+          onCommand,
+        )}
+        {playButtons(ui, input, keys, snap.echo, onCommand)}
         {status}
       </Box>
       {state.sponsor !== null && sponsorLine(ui, state.sponsor, snap.remote.fetchedAt)}

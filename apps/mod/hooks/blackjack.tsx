@@ -61,7 +61,13 @@ interface HandPlace {
   faceDown: number;
 }
 
-function handColumn(ui: Ui, detail: BlackjackView, hand: BlackjackHandView, place: HandPlace, fx: TableFx): RenderElement {
+function handColumn(
+  ui: Ui,
+  detail: BlackjackView,
+  hand: BlackjackHandView,
+  place: HandPlace,
+  fx: TableFx,
+): RenderElement {
   const { Box, Text } = ui;
   const { index, faceDown } = place;
   const isActive = detail.activeHand === index;

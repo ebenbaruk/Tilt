@@ -4,7 +4,7 @@ import { describe, expect, test } from "claude-code/testing";
 import type { PlayRequest, StateResponse } from "../hooks/protocol";
 import { TABLE_KEY } from "../hooks/table-input";
 import { BASE, BLACKJACK_LOSS, BLACKJACK_MIXED, BLACKJACK_SIX_TURN, BLACKJACK_TURN, BLACKJACK_WIN } from "./fixtures";
-import { PANE, PANE_INLINE, PLUGIN, seat, textOf, type Answer } from "./world";
+import { FIRST_TICK_MS, movingTable, PANE, PANE_INLINE, PLUGIN, seat, textOf, type Answer } from "./world";
 
 const SUBMITTED: Answer = { status: 200, body: { intentId: "sent", status: "submitted", error: null } };
 /** The Client acts (key, pointer, post, advance) are typed on the terminal's drawing. */
@@ -55,9 +55,7 @@ describe("the table in the fullscreen pane", () => {
     expect(await table()).toContain("deal · 2 × 1.00");
     await ui.key({ key: "space" });
 
-    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([
-      { type: "blackjack_bet", amount: "1000000", hands: 2 },
-    ]);
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([{ type: "blackjack_bet", amount: "1000000", hands: 2 }]);
   });
 
   test("once the keyboard leaves the pane, the table asks for a click again before Space", async ($, on) => {
@@ -80,13 +78,16 @@ describe("the table in the fullscreen pane", () => {
   });
 
   test("in a blackjack turn Space hits, Enter stands and d doubles", async ($, on) => {
-    const { world } = await seat($, on, BLACKJACK_TURN, { "POST /v1/play": () => SUBMITTED });
+    const { world, clock } = await seat($, on, BLACKJACK_TURN, movingTable(BLACKJACK_TURN, BLACKJACK_TURN));
     const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
 
     await ui.pointer(CLICK);
     expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("Space hit · Enter stand · d double");
+    // Each key waits for the state to show the move before it: a stale table offers none.
     await ui.key({ key: "space" });
+    await clock.advance(FIRST_TICK_MS);
     await ui.key({ key: "return" });
+    await clock.advance(FIRST_TICK_MS);
     await ui.key({ key: "d" });
 
     expect(actionsOf(world.calls("POST /v1/play"))).toEqual([

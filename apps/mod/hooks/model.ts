@@ -24,10 +24,8 @@ export interface Prefs {
   baccarat: BaccaratBet;
 }
 
-export interface IntentView {
-  id: string;
+export interface IntentView extends Omit<TiltIntent, "action"> {
   action: PlayAction;
-  status: TiltIntent["status"];
 }
 
 export const DEFAULT_ROULETTE_BET: RouletteBet = { kind: "red" };

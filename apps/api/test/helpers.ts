@@ -251,7 +251,7 @@ export const generousLimits = () => ({
   ip: RateLimiter.perMinute(100_000),
   token: RateLimiter.perMinute(100_000),
   auth: RateLimiter.perMinute(100_000),
-  approveFailures: new RateLimiter({ capacity: 5, refillPerSecond: 5 / 600 }),
+  approveAttempts: new RateLimiter({ capacity: 5, refillPerSecond: 5 / 600 }),
   play: RateLimiter.perMinute(100_000),
   money: RateLimiter.perMinute(100_000),
 });

@@ -11,7 +11,11 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
 export function Button({ variant = "default", keyLabel, children, type = "button", className, ...rest }: Props) {
   return (
     <button type={type} className={`${styles[variant]} ${className ?? ""}`} {...rest}>
-      {keyLabel && <span className={styles.key}>{keyLabel}</span>}
+      {keyLabel && (
+        <span className={styles.key} aria-hidden="true">
+          {keyLabel}
+        </span>
+      )}
       {children}
     </button>
   );

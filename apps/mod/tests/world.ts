@@ -3,7 +3,7 @@
 import type { HttpResponse, On, RenderInput, SessionStartInput, UiPane } from "claude-code";
 import { type Engine, mock, type MockClock, type Mounted } from "claude-code/testing";
 
-import type { StateResponse } from "../hooks/protocol";
+import type { PlayRequest, StateResponse } from "../hooks/protocol";
 import { TABLE_KEY } from "../hooks/table-input";
 
 export const PLUGIN = "tilt";
@@ -63,7 +63,19 @@ export const command = (args = "") => ({
 
 /** What a route answers: a status and a JSON body, or no answer at all. */
 export type Answer = { status: number; body?: unknown } | "offline";
-export type Route = (body: unknown) => Answer;
+/** A route answers at once, or later (a slow api) through a promise the test resolves. */
+export type Route = (body: unknown) => Answer | Promise<Answer>;
+
+/** A route that answers only once the test calls `answer`: an api slow to reply. */
+export function later(): { route: Route; answer: (value: Answer) => void } {
+  let answer: (value: Answer) => void = () => undefined;
+  // The mod's tsconfig lib predates Promise.withResolvers.
+  const promise = new Promise<Answer>((resolve) => {
+    answer = resolve;
+  });
+
+  return { route: () => promise, answer: (value) => answer(value) };
+}
 
 export interface Request {
   method: string;
@@ -107,7 +119,7 @@ export function worldOf(on: On, routes: Record<string, Route> = {}): World {
     calls: (route) => world.requests.filter((request) => `${request.method} ${request.path}` === route),
   };
 
-  on("http.fetch", ($, e) => {
+  on("http.fetch", async ($, e) => {
     const url = new URL(e.url);
     const method = e.init?.method ?? "GET";
     const body = e.init?.body === undefined ? undefined : (JSON.parse(e.init.body) as unknown);
@@ -116,7 +128,9 @@ export function worldOf(on: On, routes: Record<string, Route> = {}): World {
 
     const route = world.routes[`${method} ${url.pathname}`];
     const answer: Answer =
-      route === undefined ? { status: 404, body: { error: { code: "NOT_FOUND", message: "no route" } } } : route(body);
+      route === undefined
+        ? { status: 404, body: { error: { code: "NOT_FOUND", message: "no route" } } }
+        : await route(body);
 
     return answer === "offline" ? { deny: "connect ECONNREFUSED" } : { value: respond(answer.status, answer.body) };
   });
@@ -211,4 +225,22 @@ export async function seat(
   await clock.advance(FIRST_TICK_MS);
 
   return { world, clock };
+}
+
+/** The api's state and play routes for a table that shows each move: a submitted play makes the
+ * next state `after`, its round renumbered per move, as a new card or round changes it on-chain. */
+export function movingTable(start: StateResponse, after: StateResponse): Record<string, Route> {
+  let current = start;
+  let moves = 0;
+
+  return {
+    "GET /v1/state": () => ({ status: 200, body: current }),
+    "POST /v1/play": (body) => {
+      moves += 1;
+      current =
+        after.round === null ? after : { ...after, round: { ...after.round, number: after.round.number + moves } };
+
+      return { status: 200, body: { intentId: (body as PlayRequest).intentId, status: "submitted", error: null } };
+    },
+  };
 }

@@ -34,3 +34,31 @@ test("reports an API failure", async ({ page }) => {
   await page.goto("/leaderboard");
   await expect(page.getByText(/slow to answer/)).toBeVisible();
 });
+
+test("hostile handles stay plain text and wrap on a phone", async ({ page }) => {
+  let dialogs = 0;
+  page.on("dialog", (dialog) => {
+    dialogs += 1;
+    void dialog.dismiss();
+  });
+  await page.setViewportSize({ width: 360, height: 640 });
+  const board: LeaderboardResponse = {
+    ...BOARD,
+    sponsor: { name: "S".repeat(300), tagline: null, pool: "1000000", endsAt: inHours(-1) },
+    entries: [
+      { rank: 1, handle: "<img src=x onerror=alert(1)>", net: "999999999999999999999999", isYou: false },
+      { rank: 2, handle: "\u202Eexe.txt", net: "-1", isYou: true },
+      { rank: 3, handle: "W".repeat(500), net: "0", isYou: false },
+    ],
+  };
+  await page.route("**/v1/leaderboard", (route) => json(route, 200, board));
+  await page.goto("/leaderboard");
+  await expect(page.getByRole("cell", { name: "<img src=x onerror=alert(1)>" })).toBeVisible();
+  await expect(page.getByText("+999,999,999,999,999,999.999999")).toBeVisible();
+  // The right-to-left mark is isolated: "(you)" stays outside the handle.
+  await expect(page.locator("tr", { hasText: "(you)" }).locator("bdi")).toHaveText("\u202Eexe.txt");
+  // An ended campaign shows no countdown instead of "ends in ended".
+  await expect(page.getByText("ends in ended")).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBe(0);
+  expect(dialogs).toBe(0);
+});

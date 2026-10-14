@@ -7,10 +7,11 @@ import { Box } from "@/components/ui/Box";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Status } from "@/components/ui/Status";
-import { formatAmount, parseAmount } from "@/lib/amount";
+import { parseAmount } from "@/lib/amount";
 import { getApi } from "@/lib/api";
 import { describeError } from "@/lib/errors";
 import styles from "./account.module.css";
+import { limitField } from "./limitField";
 
 type Optional = { ok: true; value: string | null } | { ok: false; error: string };
 
@@ -20,14 +21,12 @@ function parseOptional(input: string): Optional {
   return parseAmount(input);
 }
 
-function initial(value: string | null): string {
-  return value === null ? "" : formatAmount(value).replaceAll(",", "");
-}
-
 export function LimitsPanel({ limits, onSaved }: { limits: ResponsibleLimits; onSaved: () => void }) {
   const { auth } = useTiltAuth();
-  const [deposit, setDeposit] = useState(initial(limits.dailyDeposit));
-  const [loss, setLoss] = useState(initial(limits.dailyLoss));
+  const depositField = limitField(limits.dailyDeposit, limits.dailyDepositNext);
+  const lossField = limitField(limits.dailyLoss, limits.dailyLossNext);
+  const [deposit, setDeposit] = useState(depositField.initial);
+  const [loss, setLoss] = useState(lossField.initial);
   const [errors, setErrors] = useState<{ deposit?: string; loss?: string }>({});
   const [status, setStatus] = useState<{ tone: "pending" | "success" | "loss"; text: string } | null>(null);
 
@@ -66,6 +65,7 @@ export function LimitsPanel({ limits, onSaved }: { limits: ResponsibleLimits; on
             value={deposit}
             onChange={(e) => setDeposit(e.target.value)}
             error={errors.deposit}
+            hint={depositField.hint}
           />
           <Field
             label="daily loss limit"
@@ -76,6 +76,7 @@ export function LimitsPanel({ limits, onSaved }: { limits: ResponsibleLimits; on
             value={loss}
             onChange={(e) => setLoss(e.target.value)}
             error={errors.loss}
+            hint={lossField.hint}
           />
         </div>
         <div className={styles.row}>

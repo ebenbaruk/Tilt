@@ -163,6 +163,19 @@ describe.skipIf(!db)("competitions", () => {
     await expect(openCompetition(db, ended({ splitBps: [9000, 2000] }), "test")).rejects.toThrow();
   });
 
+  // Shown as is in every player's terminal and on the web; the mod reports impressions by name.
+  it("refuses sponsor texts the mod could not show or report back", async () => {
+    const create = (sponsor: string, tagline: string | null = null) =>
+      createCampaign(db, { sponsor, tagline, budget: 1_000_000n, commissionBps: 0 }, "test");
+    for (const sponsor of ["", "  ", "\u001b[2JNorthwind", "North\nwind", "\u202eNorthwind", "N".repeat(101)]) {
+      await expect(create(sponsor), JSON.stringify(sponsor)).rejects.toThrow(/printable/);
+    }
+    await expect(create("Northwind", "\u001b]8;;https://evil.test\u0007click")).rejects.toThrow(/printable/);
+    await campaign();
+    await expect(openCompetition(db, ended({ name: "Week\r1" }), "test")).rejects.toThrow(/printable/);
+    expect((await db.query("SELECT 1 FROM campaigns")).rowCount).toBe(1);
+  });
+
   it("closes once: ranks and drops become prizes under review, and the seed is revealed", async () => {
     await campaign();
     const id = await openCompetition(db, ended(), "test");

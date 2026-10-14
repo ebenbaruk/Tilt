@@ -4,7 +4,9 @@ const MESSAGES: Partial<Record<ApiError["code"], string>> = {
   NETWORK_ERROR: "Could not reach Tilt. Check your connection and retry.",
   BAD_RESPONSE: "Tilt sent an unexpected response. Retry in a moment.",
   UNAUTHORIZED: "Your session expired. Log in again.",
-  FORBIDDEN: "This account can't do that.",
+  // The API only refuses with FORBIDDEN when the identity check behind a money move expired or mismatched.
+  FORBIDDEN: "Tilt couldn't confirm it's you. Log out, log in again and retry.",
+  INTENT_CONFLICT: "This request clashed with an earlier one. Reload the page and retry.",
   RATE_LIMITED: "Too many requests. Wait a few seconds and retry.",
   PLAYER_BUSY: "Another transaction is still in flight. Wait for it to finish.",
   GEO_BLOCKED: "Tilt isn't available in your region.",

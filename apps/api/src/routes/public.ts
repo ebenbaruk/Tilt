@@ -63,7 +63,8 @@ async function verify(deps: AppDeps, signature: string): Promise<VerifyResponse>
   };
 }
 
-export function publicRoutes(app: Hono<Env>, deps: AppDeps): void {
+/** For the load balancer: registered before the rate limits (see createApp). */
+export function healthRoute(app: Hono<Env>, deps: AppDeps): void {
   app.get("/health", async (c) => {
     const ok = await deps.db.query("SELECT 1").then(
       () => true,
@@ -71,7 +72,9 @@ export function publicRoutes(app: Hono<Env>, deps: AppDeps): void {
     );
     return c.json({ ok }, ok ? 200 : 503);
   });
+}
 
+export function publicRoutes(app: Hono<Env>, deps: AppDeps): void {
   app.get("/v1/leaderboard", async (c) => {
     const competition = await latestCompetition(deps.db);
     const board = await leaderboard(deps, competition, null);

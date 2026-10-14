@@ -3,6 +3,9 @@
   grid-template-columns: minmax(0, 1fr) var(--side-column);
   gap: var(--space-10);
   align-items: start;
+  /* Handles, competition and sponsor names come from players and sponsors: a long unbroken one must wrap,
+     not push the page sideways on a phone. */
+  overflow-wrap: anywhere;
 }
 
 .main,

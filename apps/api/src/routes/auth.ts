@@ -27,12 +27,12 @@ export function authRoutes(app: Hono<Env>, deps: AppDeps): void {
     rateLimit(deps.limiters.auth, (c) => c.get("userId")),
     async (c) => {
       const userId = c.get("userId");
-      if (!deps.limiters.approveFailures.has(userId)) {
-        throw new ApiError("RATE_LIMITED", "too many wrong codes, try again later");
+      // Spent before checking the code: parallel guesses cannot all pass a check-then-take.
+      if (!deps.limiters.approveAttempts.take(userId)) {
+        throw new ApiError("RATE_LIMITED", "too many attempts, try again later");
       }
       const { userCode } = await parseBody(c, DeviceApproveSchema);
       if (!(await approveDeviceLogin(deps.db, userCode, userId))) {
-        deps.limiters.approveFailures.take(userId);
         throw new ApiError("NOT_FOUND", "unknown or expired code");
       }
       return c.json({ approved: true } satisfies DeviceApproveResponse);

@@ -18,7 +18,8 @@ export type Ctx = Context<Env>;
 export async function parseBody<T>(c: Ctx, schema: z.ZodType<T, z.ZodTypeDef, unknown>): Promise<T> {
   const parsed = schema.safeParse(await c.req.json().catch(() => undefined));
   if (!parsed.success) {
-    const fields = parsed.error.issues.map((i) => i.path.join(".") || "body").join(", ");
+    // A field failing several checks (a union of string and null) is named once.
+    const fields = [...new Set(parsed.error.issues.map((i) => i.path.join(".") || "body"))].join(", ");
     throw new ApiError("INVALID_REQUEST", `invalid ${fields}`);
   }
   return parsed.data;
@@ -146,8 +147,9 @@ export async function requireConsent(c: Ctx, privy: PrivyVerifier, now: () => nu
   });
   if (claims.userId !== c.get("userId")) throw new ApiError("FORBIDDEN", "identity token is for another user");
   const age = Math.floor(now() / 1000) - claims.issuedAt;
-  if (age > CONSENT_MAX_AGE_SECONDS || age < -CLOCK_SKEW_SECONDS) {
-    throw new ApiError("UNAUTHORIZED", "identity token too old, sign in again");
+  if (age > CONSENT_MAX_AGE_SECONDS) throw new ApiError("UNAUTHORIZED", "identity token too old, sign in again");
+  if (age < -CLOCK_SKEW_SECONDS) {
+    throw new ApiError("UNAUTHORIZED", "identity token not valid yet, check your device's clock and sign in again");
   }
   return token;
 }

@@ -38,6 +38,8 @@ export function LeaderboardView() {
   if (state.kind === "error") return <Status tone="loss">{state.message}</Status>;
 
   const { competition, sponsor, entries, dropSeedHash, dropSeed } = state.board;
+  // SponsorBlock prints "ends in …": an ended campaign shows no countdown rather than "ends in ended".
+  const sponsorLeft = sponsor ? timeLeft(sponsor.endsAt) : "ended";
   return (
     <div className={styles.layout}>
       <div className={styles.main}>
@@ -66,7 +68,11 @@ export function LeaderboardView() {
               {entries.map((entry) => (
                 <tr key={entry.rank} className={entry.isYou ? styles.you : undefined}>
                   <td>{entry.rank}</td>
-                  <td>{entry.isYou ? `${entry.handle} (you)` : entry.handle}</td>
+                  <td>
+                    {/* bdi: a handle with right-to-left marks must not flip the "(you)" after it. */}
+                    <bdi>{entry.handle}</bdi>
+                    {entry.isYou && " (you)"}
+                  </td>
                   <td className={`${styles.right} ${styles.net}`}>{formatSigned(entry.net)}</td>
                 </tr>
               ))}
@@ -81,7 +87,7 @@ export function LeaderboardView() {
               name={sponsor.name}
               tagline={sponsor.tagline}
               pool={usd(sponsor.pool)}
-              endsIn={timeLeft(sponsor.endsAt)}
+              endsIn={sponsorLeft === "ended" ? undefined : sponsorLeft}
             />
           </Box>
         )}
