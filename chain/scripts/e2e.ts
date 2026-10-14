@@ -1,5 +1,5 @@
 // End-to-end check of the Tilt program against a real Solana + MagicBlock rollup:
-// USDC vault, first deposit, the four games (multi-hand blackjack included; outcomes recomputed here from the drawn
+// USDC vault, first deposit, the four games (multi-hand blackjack with splits included; outcomes recomputed here from the drawn
 // cards / numbers), deposits, withdrawals, loss checkpoints and the attack / recovery
 // scenarios. Runs against the local MagicBlock stack by default (README), or devnet with
 // BASE_RPC / ER_RPC / ER_WS / VALIDATOR / VRF_ER_QUEUE.
@@ -102,8 +102,9 @@ const programData = PublicKey.findProgramAddressSync([program.programId.toBuffer
 const player = Keypair.generate();
 const account = pda(Buffer.from("account"), player.publicKey.toBuffer());
 const ledger = pda(Buffer.from("ledger"), player.publicKey.toBuffer());
-const table = pda(Buffer.from("table"), player.publicKey.toBuffer());
+const table = pda(Buffer.from("bjtable"), player.publicKey.toBuffer());
 const MAX_HANDS = 6;
+const MAX_SPLITS = 4;
 
 let relayer: Keypair;
 let relayerProvider: anchor.AnchorProvider;
@@ -218,7 +219,8 @@ function handGross(hand: TableHand, dealer: number[], bet: number) {
   const p = hand.cards.slice(0, hand.nCards);
   const stake = hand.doubled ? bet * 2 : bet;
   const [pt, dt] = [total(p), total(dealer)];
-  const pbj = p.length === 2 && pt === 21 && !hand.doubled;
+  // A split hand's 21 is not a blackjack.
+  const pbj = p.length === 2 && pt === 21 && !hand.doubled && !hand.split;
   const dbj = dealer.length === 2 && dt === 21;
   if (pt > 21) return 0;
   if (pbj && dbj) return stake;
@@ -240,8 +242,15 @@ function blackjackGross(t: BlackjackTable, roundStake: number) {
 
 let standsWithoutDraw = 0;
 
-/** Plays `hands` hands of `bet` left to right: double on 10/11 if allowed, hit below 17, else stand. */
-async function playBlackjack(bet: number, hands: number, allowDouble: boolean) {
+/** The active hand may be split: same-value first two cards (ace only with ace), never split aces again, a split left. */
+function canSplit(t: BlackjackTable, hand: TableHand) {
+  const [first, second] = hand.cards.map((c: number) => Math.min(c, 10));
+  const splitAces = hand.split && first === 1;
+  return t.splits < MAX_SPLITS && hand.nCards === 2 && !hand.doubled && !splitAces && first === second;
+}
+
+/** Plays `hands` hands of `bet` left to right: with `extraBets`, split every pair and double on 10/11; hit below 17, else stand. */
+async function playBlackjack(bet: number, hands: number, extraBets: boolean) {
   const a = await round(
     "blackjack",
     () => erProgram.methods.blackjackBet(new BN(bet), hands, seed()).accountsPartial(blackjackAccounts()).transaction(),
@@ -256,7 +265,9 @@ async function playBlackjack(bet: number, hands: number, allowDouble: boolean) {
         const moved = async (x: PlayerAccount) =>
           !isAwaiting(x.round) &&
           (x.round.requestId.gt(prev.round.requestId) || x.rounds > prev.rounds || (await fetchTable()).active !== t.active);
-        if (allowDouble && cards.length === 2 && (value === 10 || value === 11)) {
+        if (extraBets && canSplit(t, hand)) {
+          a = await act("split", erProgram.methods.blackjackSplit(seed()).accountsPartial(blackjackAccounts()).transaction(), moved);
+        } else if (extraBets && cards.length === 2 && (value === 10 || value === 11)) {
           a = await act("double", erProgram.methods.blackjackDouble(seed()).accountsPartial(blackjackAccounts()).transaction(), moved);
         } else if (value < 17) {
           a = await act("carte", erProgram.methods.blackjackHit(seed()).accountsPartial(blackjackAccounts()).transaction(), moved);
@@ -423,7 +434,7 @@ async function run(): Promise<number> {
   const rejectsInRollup = (name: string, tx: () => Promise<Transaction>, expected: RegExp, signer?: Keypair) =>
     rejects(name, async () => erSend(await tx(), signer ?? relayer, true), expected);
 
-  console.log("\n--- 2. Blackjack multi-mains (gains recalculés depuis les cartes) ---");
+  console.log("\n--- 2. Blackjack multi-mains et splits (gains recalculés depuis les cartes) ---");
   await rejectsInRollup("blackjack sans table refusé", () =>
     erProgram.methods.blackjackBet(new BN(usdc(1)), 1, seed()).accountsPartial(playAccounts()).transaction(), /MissingTable|6020/);
   await rejectsInRollup("plus de 6 mains refusé", () =>
@@ -432,15 +443,20 @@ async function run(): Promise<number> {
     erProgram.methods.blackjackBet(new BN(usdc(11)), 2, seed()).accountsPartial(blackjackAccounts()).transaction(), /AmountOutOfRange|6000/);
   let doubles = 0;
   let multiHand = 0;
-  for (let i = 0; i < 40 && (i < 12 || doubles === 0 || standsWithoutDraw === 0); i++) {
+  let splits = 0;
+  for (let i = 0; i < 60 && (i < 12 || doubles === 0 || splits === 0 || standsWithoutDraw === 0); i++) {
     const hands = 1 + (i % MAX_HANDS);
     const { table: t } = await playBlackjack(usdc(2), hands, true);
-    if (t.nHands !== hands) throw new Error(`blackjack: ${t.nHands} mains jouées, ${hands} demandées`);
+    if (t.nHands !== hands + t.splits) throw new Error(`blackjack: ${t.nHands} mains jouées, ${hands} demandées + ${t.splits} splits`);
+    const played = t.hands.slice(0, t.nHands);
+    if (t.splits > 0 && played.filter((h) => h.split).length < t.splits + 1) throw new Error("blackjack: mains issues d'un split non marquées");
     if (hands > 1) multiHand++;
-    if (t.hands.slice(0, t.nHands).some((h) => h.doubled)) doubles++;
+    if (played.some((h) => h.doubled)) doubles++;
+    if (t.splits > 0) splits++;
   }
-  check("mains de blackjack payées selon les cartes (3:2, push, double, croupier), une à six mains", multiHand > 0, "(chaque main vérifiée)");
+  check("mains de blackjack payées selon les cartes (3:2, push, double, split, croupier), une à six mains", multiHand > 0, "(chaque main vérifiée)");
   check("au moins un double joué et réglé sur une mise de main en plus", doubles > 0, `(${doubles} manches avec double)`);
+  check("au moins un split joué, une mise de main en plus par split", splits > 0, `(${splits} manches avec split)`);
   check("stand avec une main suivante : sans tirage", standsWithoutDraw > 0, `(${standsWithoutDraw})`);
 
   console.log("\n--- 3. Roulette ---");

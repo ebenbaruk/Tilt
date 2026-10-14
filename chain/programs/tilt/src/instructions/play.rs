@@ -206,6 +206,18 @@ pub fn blackjack_double(mut ctx: Context<Play>, client_seed: [u8; 32]) -> Result
     request_draw(&mut ctx, Draw::Double, client_seed)
 }
 
+/// Splits the active hand's pair into two hands for one more base bet; each takes one card.
+/// The round's worst case is checked again with the extra hand (see `take_split`).
+pub fn blackjack_split(mut ctx: Context<Play>, client_seed: [u8; 32]) -> Result<()> {
+    require_blackjack_turn(&ctx.accounts.account)?;
+    let table = table(&mut ctx)?;
+    require!(table.can_split(), TiltError::WrongState);
+    let (bet, hands) = (table.bet, table.n_hands + 1);
+    let config = &ctx.accounts.vault.config;
+    ctx.accounts.account.take_split(bet, hands, config)?;
+    request_draw(&mut ctx, Draw::Split, client_seed)
+}
+
 pub fn roulette_spin(
     mut ctx: Context<Play>,
     amount: u64,
@@ -305,6 +317,7 @@ mod tests {
             Draw::Double,
             Draw::Dealer,
             Draw::Spin,
+            Draw::Split,
         ] {
             assert_eq!(
                 draw_to_retry(RoundStatus::AwaitingDraw(draw)).unwrap(),

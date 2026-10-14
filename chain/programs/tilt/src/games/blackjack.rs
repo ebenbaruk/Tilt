@@ -5,9 +5,13 @@
 //!   once every hand is finished, so it never exists on-chain while the player decides.
 //! - Hands are played left to right; a natural is finished at once.
 //! - Dealer stands on all 17s. Blackjack pays 3:2. Double on any first two cards
-//!   (one card, the hand is finished). No split (spec D11).
+//!   (one card, the hand is finished).
+//! - Split two first cards of the same value (10, J, Q, K all count 10) into two hands,
+//!   at most `MAX_SPLITS` times per round: the new hand comes right after the split one,
+//!   each takes one card. Re-split and double after split are allowed, except for split
+//!   aces: one card each, finished. A split hand's two-card 21 is not a blackjack.
 //! - No hole card: a dealer blackjack beats everything but a player blackjack,
-//!   including a doubled stake.
+//!   including a doubled or split stake.
 
 use anchor_lang::prelude::*;
 
@@ -16,8 +20,13 @@ use crate::settlement::mul_div;
 
 /// Enough for any hand: the player stops at 21, the dealer at 17.
 pub const MAX_CARDS: usize = 21;
-/// Most hands one round can play against the dealer.
+/// Most hands one round deals against the dealer.
 pub const MAX_HANDS: usize = 6;
+/// Most splits one round allows, all hands together.
+pub const MAX_SPLITS: usize = 4;
+/// Most hands a round can hold: every dealt hand and every split.
+pub const MAX_TABLE_HANDS: usize = MAX_HANDS + MAX_SPLITS;
+const ACE: u8 = 1;
 /// The dealer stands on any 17, soft or hard.
 const DEALER_STANDS_ON: u8 = 17;
 const BLACKJACK: u8 = 21;
@@ -37,8 +46,13 @@ fn is_blackjack(cards: &[u8]) -> bool {
     cards.len() == 2 && total(cards) == BLACKJACK
 }
 
-/// Largest gain for a round staking `total_stake` (every hand's base bet), reached by
-/// doubling and winning every hand.
+/// A card's blackjack value, ace counted 1: what a split pair must share.
+fn value(card: u8) -> u8 {
+    card.min(10)
+}
+
+/// Largest gain for a round staking `total_stake` (every hand's base bet, split hands
+/// included), reached by doubling and winning every hand.
 pub fn max_gain(total_stake: u64) -> u64 {
     total_stake.saturating_mul(2)
 }
@@ -50,6 +64,9 @@ pub struct TableHand {
     pub cards: [u8; MAX_CARDS],
     pub n_cards: u8,
     pub doubled: bool,
+    /// Born from a split (both hands of the split): its 21 is not a blackjack, and split
+    /// aces (first card an ace) take no card after the split one.
+    pub split: bool,
 }
 
 impl TableHand {
@@ -61,24 +78,40 @@ impl TableHand {
         total(self.cards())
     }
 
-    /// Two-card 21, not from a double.
+    /// Two-card 21, neither from a double nor from a split.
     pub fn is_natural(&self) -> bool {
-        is_blackjack(self.cards()) && !self.doubled
+        is_blackjack(self.cards()) && !self.doubled && !self.split
     }
 
     pub fn is_bust(&self) -> bool {
         self.total() > BLACKJACK
     }
 
+    /// A hand from split aces: finished once it has its card.
+    fn is_split_aces(&self) -> bool {
+        self.split && self.cards[0] == ACE
+    }
+
     pub fn can_hit(&self) -> bool {
-        self.total() < BLACKJACK && (self.n_cards as usize) < MAX_CARDS && !self.doubled
+        self.total() < BLACKJACK
+            && (self.n_cards as usize) < MAX_CARDS
+            && !self.doubled
+            && !self.is_split_aces()
     }
 
     pub fn can_double(&self) -> bool {
-        self.n_cards == 2 && !self.doubled && self.total() < BLACKJACK
+        self.n_cards == 2 && !self.doubled && self.total() < BLACKJACK && !self.is_split_aces()
     }
 
-    /// Nothing left to play: 21 or more, doubled, or out of room.
+    /// Two first cards of the same value, never split aces again.
+    fn is_pair(&self) -> bool {
+        self.n_cards == 2
+            && !self.doubled
+            && !self.is_split_aces()
+            && value(self.cards[0]) == value(self.cards[1])
+    }
+
+    /// Nothing left to play: 21 or more, doubled, split aces, or out of room.
     fn is_done(&self) -> bool {
         !self.can_hit()
     }
@@ -119,13 +152,17 @@ pub struct BlackjackTable {
     pub player: Pubkey,
     /// Base bet of every hand (a doubled hand stakes twice this).
     pub bet: u64,
-    pub hands: [TableHand; MAX_HANDS],
+    /// Every hand in playing order: a hand born from a split comes right after the one
+    /// it was split from.
+    pub hands: [TableHand; MAX_TABLE_HANDS],
     pub n_hands: u8,
     /// Index of the hand to play while the round waits for the player; `n_hands` once
     /// every hand is finished.
     pub active: u8,
     pub dealer: [u8; MAX_CARDS],
     pub n_dealer: u8,
+    /// Splits played this round, all hands together (at most `MAX_SPLITS`).
+    pub splits: u8,
 }
 
 impl BlackjackTable {
@@ -184,6 +221,39 @@ impl BlackjackTable {
         let hand = &mut self.hands[self.active as usize];
         hand.doubled = true;
         hand.draw(rng);
+        self.next_hand(rng)
+    }
+
+    /// Whether the active hand may be split: a pair, and a split left this round.
+    pub fn can_split(&self) -> bool {
+        (self.splits as usize) < MAX_SPLITS
+            && (self.n_hands as usize) < MAX_TABLE_HANDS
+            && self.active_hand().is_some_and(TableHand::is_pair)
+    }
+
+    /// Splits the active hand (the caller debits one more base bet): its second card
+    /// becomes a new hand right after it, then the split hand and the new hand take one
+    /// card each, in that order. The split hand stays active unless finished (split aces,
+    /// 21). Returns true when the round is over.
+    pub fn split(&mut self, rng: &mut Rng) -> bool {
+        let at = self.active as usize;
+        let n = self.n_hands as usize;
+        self.hands.copy_within(at + 1..n, at + 2);
+        let split = &mut self.hands[at];
+        let mut new = TableHand {
+            n_cards: 1,
+            split: true,
+            ..TableHand::default()
+        };
+        new.cards[0] = split.cards[1];
+        split.cards[1] = 0;
+        split.n_cards = 1;
+        split.split = true;
+        split.draw(rng);
+        new.draw(rng);
+        self.hands[at + 1] = new;
+        self.n_hands += 1;
+        self.splits += 1;
         self.next_hand(rng)
     }
 
@@ -453,7 +523,21 @@ mod tests {
         cards.contains(&1) && cards.iter().map(|&c| c.min(10)).sum::<u8>() + 10 <= BLACKJACK
     }
 
-    /// Simple basic strategy for this rule set (no split), each hand in turn.
+    /// Pairs to split for this rule set (no hole card, S17, double after split), by pair
+    /// value (ace 1) and dealer up card (ace 11).
+    fn split_pair(pair: u8, up: u8) -> bool {
+        match pair {
+            1 => true,
+            8 => up <= 9,
+            9 => (2..=9).contains(&up) && up != 7,
+            2 | 3 | 7 => up <= 7,
+            6 => up <= 6,
+            4 => (5..=6).contains(&up),
+            _ => false,
+        }
+    }
+
+    /// Simple basic strategy for this rule set, splits included, each hand in turn.
     fn play(t: &mut BlackjackTable, rng: &mut Rng) {
         if t.deal(rng) {
             return;
@@ -461,6 +545,12 @@ mod tests {
         let up = t.dealer[0].min(10);
         let up = if up == 1 { 11 } else { up };
         loop {
+            if t.can_split() && split_pair(value(t.active_hand().unwrap().cards[0]), up) {
+                if t.split(rng) {
+                    return;
+                }
+                continue;
+            }
             let h = t.active_hand().unwrap();
             let (total, soft) = (h.total(), is_soft(h.cards()));
             let double = h.can_double()
@@ -493,19 +583,163 @@ mod tests {
     #[test]
     fn house_keeps_an_edge_with_basic_strategy() {
         for n_hands in [1, 3] {
-            let (mut staked, mut returned) = (0u64, 0u64);
+            let (mut staked, mut returned, mut splits) = (0u64, 0u64, 0u64);
             for i in 0..400_000u64 / n_hands as u64 {
                 let mut t = BlackjackTable::default();
                 t.start(BET, n_hands);
                 play(&mut t, &mut rng(i));
                 staked += t.stake();
                 returned += t.gross();
+                splits += t.splits as u64;
             }
+            assert!(splits > 0, "the strategy splits");
             let rtp = returned as f64 / staked as f64;
-            // No-hole-card, S17, 3:2, no split, infinite deck, this simple strategy: 98.7%
-            // measured on one hand (seeds fixed). ±0.6% is 3 standard errors; losing the
-            // double or 3:2 falls outside.
-            assert!((0.981..0.993).contains(&rtp), "{n_hands} hands: RTP {rtp}");
+            // No-hole-card, S17, 3:2, split (no ace re-split, double after split), infinite
+            // deck, this simple strategy: 99.2% measured on one hand (seeds fixed), 98.7%
+            // without splits. ±0.6% is 3 standard errors; losing the double or 3:2 falls
+            // outside, and the house always keeps an edge.
+            assert!((0.986..0.998).contains(&rtp), "{n_hands} hands: RTP {rtp}");
+        }
+    }
+
+    fn split_hand(cards: &[u8]) -> TableHand {
+        TableHand {
+            split: true,
+            ..hand(cards, false)
+        }
+    }
+
+    /// The two cards the next split draws from `rng(i)`: split hand first, new hand second.
+    fn next_two(i: u64) -> (u8, u8) {
+        let mut r = rng(i);
+        (r.card(), r.card())
+    }
+
+    #[test]
+    fn pairs_split_by_value() {
+        let can = |cards: &[u8]| table(&[hand(cards, false)], &[9]).can_split();
+        assert!(can(&[13, 12]), "K Q: both worth 10");
+        assert!(can(&[10, 11]));
+        assert!(can(&[8, 8]));
+        assert!(can(&[1, 1]));
+        assert!(!can(&[13, 9]), "K 9");
+        assert!(!can(&[1, 10]), "a natural is no pair");
+        assert!(!can(&[8, 8, 2]), "first two cards only");
+        assert!(!table(&[hand(&[8, 8], true)], &[9]).can_split(), "doubled");
+    }
+
+    #[test]
+    fn the_new_hand_comes_right_after_the_split_one_and_play_goes_left_to_right() {
+        // Seed whose two split cards leave both 8s hands to play (no 21 from 8 + ace is possible).
+        let i = 0;
+        let (a, b) = next_two(i);
+        let mut t = table(
+            &[
+                hand(&[10, 7], false),
+                hand(&[8, 8], false),
+                hand(&[9, 9], false),
+            ],
+            &[9],
+        );
+        t.active = 1;
+        assert!(!t.split(&mut rng(i)));
+        assert_eq!((t.n_hands, t.splits, t.active), (4, 1, 1));
+        assert_eq!(t.hands[0], hand(&[10, 7], false), "earlier hand untouched");
+        assert_eq!(t.hands[1], split_hand(&[8, a]));
+        assert_eq!(t.hands[2], split_hand(&[8, b]));
+        assert_eq!(t.hands[3], hand(&[9, 9], false), "later hand shifted right");
+        assert!(!t.stand());
+        assert_eq!(t.active, 2, "then the new hand");
+        assert!(!t.stand());
+        assert_eq!(t.active, 3, "then the hand after it");
+        assert_eq!(t.stake(), 4 * BET, "one base bet per split");
+    }
+
+    #[test]
+    fn split_aces_take_one_card_each_and_are_finished() {
+        let (a, b) = next_two(1);
+        let mut t = table(&[hand(&[1, 1], false), hand(&[10, 7], false)], &[9]);
+        assert!(!t.split(&mut rng(1)));
+        assert_eq!(
+            (t.hands[0].cards(), t.hands[1].cards()),
+            (&[1, a][..], &[1, b][..])
+        );
+        assert_eq!(t.active, 2, "both aces are finished");
+        for h in &t.hands[..2] {
+            assert!(!h.can_hit() && !h.can_double());
+        }
+        // Alone at the table, split aces end the round: the dealer plays.
+        let mut t = table(&[hand(&[1, 1], false)], &[9]);
+        assert!(t.split(&mut rng(1)));
+        assert!(total(t.dealer_cards()) >= DEALER_STANDS_ON);
+    }
+
+    #[test]
+    fn split_aces_are_never_split_again() {
+        let mut t = table(&[split_hand(&[1, 1]), split_hand(&[1, 5])], &[9]);
+        assert!(!t.can_split());
+        assert!(t.hands[0].is_done());
+        // Other split pairs may be split again.
+        t.hands[0] = split_hand(&[8, 8]);
+        assert!(t.can_split());
+    }
+
+    #[test]
+    fn splits_are_capped_per_round() {
+        let mut t = table(&[hand(&[8, 8], false)], &[9]);
+        let mut r = rng(2);
+        for split in 1..=MAX_SPLITS as u8 {
+            // Every split hand gets 8 8 again, so the same hand can be split again.
+            t.hands[0] = split_hand(&[8, 8]);
+            assert!(t.can_split(), "split {split}");
+            assert!(!t.split(&mut r));
+            assert_eq!((t.splits, t.n_hands, t.active), (split, split + 1, 0));
+        }
+        t.hands[0] = split_hand(&[8, 8]);
+        assert!(!t.can_split(), "the 5th split is refused");
+        // The cap counts every hand of the round together.
+        let mut t = table(&[hand(&[8, 8], false), hand(&[8, 8], false)], &[9]);
+        t.splits = MAX_SPLITS as u8;
+        assert!(!t.can_split());
+    }
+
+    #[test]
+    fn every_hand_and_split_fits_the_table() {
+        let pairs = [hand(&[8, 8], false); MAX_HANDS];
+        let mut t = table(&pairs, &[9]);
+        let mut r = rng(3);
+        for _ in 0..MAX_SPLITS {
+            t.hands[t.active as usize] = split_hand(&[8, 8]);
+            assert!(!t.split(&mut r));
+        }
+        assert_eq!(t.n_hands as usize, MAX_TABLE_HANDS);
+        assert_eq!(t.stake(), MAX_TABLE_HANDS as u64 * BET);
+    }
+
+    #[test]
+    fn a_split_hand_may_double() {
+        let mut t = table(&[split_hand(&[5, 6]), split_hand(&[5, 9])], &[9]);
+        assert!(t.hands[0].can_double());
+        assert!(!t.double(&mut rng(4)));
+        assert!(t.hands[0].doubled && t.hands[0].n_cards == 3);
+        assert_eq!(t.active, 1);
+        assert_eq!(t.stake(), 3 * BET);
+    }
+
+    #[test]
+    fn a_split_21_pays_even_money_and_is_not_a_blackjack() {
+        let h = split_hand(&[1, 13]);
+        assert!(!h.is_natural());
+        assert!(h.is_done());
+        assert_eq!(h.gross(&[9, 8], BET), 2_000, "1:1, not 3:2");
+        assert_eq!(h.gross(&[10, 1], BET), 0, "loses to a dealer blackjack");
+        assert_eq!(h.gross(&[10, 6, 5], BET), 1_000, "pushes a dealer 21");
+        // Only split 21s left: the dealer draws to 17, not just one card.
+        for i in 0..50 {
+            let mut t = table(&[h, split_hand(&[10, 1])], &[6]);
+            t.active = 2;
+            t.play_dealer(&mut rng(i));
+            assert!(total(t.dealer_cards()) >= DEALER_STANDS_ON);
         }
     }
 }

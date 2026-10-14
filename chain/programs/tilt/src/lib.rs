@@ -99,6 +99,10 @@ pub mod tilt {
         instructions::play::blackjack_double(ctx, client_seed)
     }
 
+    pub fn blackjack_split(ctx: Context<Play>, client_seed: [u8; 32]) -> Result<()> {
+        instructions::play::blackjack_split(ctx, client_seed)
+    }
+
     pub fn roulette_spin(
         ctx: Context<Play>,
         amount: u64,

@@ -133,6 +133,8 @@ pub enum Draw {
     Double,
     Dealer,
     Spin,
+    /// Appended last: `RoundStatus` lives in `PlayerAccount`, earlier bytes keep their meaning.
+    Split,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, InitSpace, PartialEq, Eq, Debug)]
@@ -140,7 +142,7 @@ pub enum RoundStatus {
     Idle,
     /// A VRF draw was requested; `consume_randomness` will continue the round.
     AwaitingDraw(Draw),
-    /// Blackjack only: waiting for hit, stand or double.
+    /// Blackjack only: waiting for hit, stand, double or split.
     PlayerTurn,
 }
 
@@ -162,7 +164,7 @@ pub struct BlackjackHand {
 pub struct Round {
     pub game: Game,
     pub status: RoundStatus,
-    /// Total stake, every blackjack hand and double included.
+    /// Total stake, every blackjack hand, double and split included.
     pub stake: u64,
     pub last_action: i64,
     /// Id of the VRF request the round is waiting for; any other callback is refused.
@@ -205,12 +207,16 @@ impl Round {
     ) -> Result<Option<u64>> {
         let stake = self.stake;
         let gross = match (self.game, draw) {
-            (Game::Blackjack, Draw::Deal | Draw::Hit | Draw::Double | Draw::Dealer) => {
+            (
+                Game::Blackjack,
+                Draw::Deal | Draw::Hit | Draw::Double | Draw::Split | Draw::Dealer,
+            ) => {
                 let table = table.ok_or(TiltError::MissingTable)?;
                 let over = match draw {
                     Draw::Deal => table.deal(rng),
                     Draw::Hit => table.hit(rng),
                     Draw::Double => table.double(rng),
+                    Draw::Split => table.split(rng),
                     _ => {
                         table.play_dealer(rng);
                         true
@@ -317,6 +323,28 @@ impl PlayerAccount {
             request_id: self.round.request_id,
             ..Round::default()
         };
+        Ok(())
+    }
+
+    /// Takes one more blackjack base bet `bet` mid-round (a split) after re-checking the
+    /// round like `start_round` does, now with `hands` hands of `bet`: the worst case
+    /// (every hand doubled and won) must stay within the round gain limit and the win cap.
+    /// Nothing is reserved ahead for splits, so a split the limits cannot cover is refused.
+    pub fn take_split(&mut self, bet: u64, hands: u8, config: &Config) -> Result<()> {
+        let max_gain = crate::games::blackjack::max_gain(bet.saturating_mul(hands.into()));
+        require!(
+            max_gain <= config.max_round_gain,
+            TiltError::RoundGainTooHigh
+        );
+        require!(self.balance >= bet, TiltError::InsufficientBalance);
+        // The balance the round started from: what it has staked so far comes back to it.
+        let start_balance = self.balance + self.round.stake;
+        require!(
+            self.net_win(start_balance + max_gain) <= self.max_win as i128,
+            TiltError::WinCapReached
+        );
+        self.balance -= bet;
+        self.round.stake += bet;
         Ok(())
     }
 
@@ -598,6 +626,79 @@ mod tests {
             .is_err());
     }
 
+    /// A one-hand round of 1 000 from a 10 000 balance, as `blackjack_bet` starts it.
+    fn one_hand_of_1_000(max_win: u64) -> PlayerAccount {
+        let mut a = account(10_000, max_win);
+        a.start_round(
+            Game::Blackjack,
+            1_000,
+            1,
+            crate::games::blackjack::max_gain(1_000),
+            &config(),
+            0,
+        )
+        .unwrap();
+        a
+    }
+
+    #[test]
+    fn a_split_takes_one_base_bet() {
+        let mut a = one_hand_of_1_000(10_000);
+        a.take_split(1_000, 2, &config()).unwrap();
+        assert_eq!((a.balance, a.round.stake), (8_000, 2_000));
+        let mut broke = account(1_000, 10_000);
+        broke
+            .start_round(Game::Blackjack, 1_000, 1, 2_000, &config(), 0)
+            .unwrap();
+        assert_eq!(
+            broke.take_split(1_000, 2, &config()),
+            Err(TiltError::InsufficientBalance.into())
+        );
+        assert_eq!((broke.balance, broke.round.stake), (0, 1_000));
+    }
+
+    #[test]
+    fn a_split_is_refused_once_its_worst_case_passes_the_win_cap() {
+        // Two hands of 1 000 doubled and won gain 4 000: exactly the cap.
+        let mut a = one_hand_of_1_000(4_000);
+        // A double before the split does not eat the headroom: its stake comes back too.
+        a.balance -= 1_000;
+        a.round.stake += 1_000;
+        a.take_split(1_000, 2, &config()).unwrap();
+        assert_eq!((a.balance, a.round.stake), (7_000, 3_000));
+        // Worst case actually played: the second hand doubled too, both won.
+        a.balance -= 1_000;
+        a.round.stake += 1_000;
+        a.finish_round(settle(4_000, 8_000));
+        assert!(a.net_win(a.balance) <= a.max_win as i128);
+
+        let mut a = one_hand_of_1_000(3_999);
+        assert_eq!(
+            a.take_split(1_000, 2, &config()),
+            Err(TiltError::WinCapReached.into())
+        );
+        assert_eq!((a.balance, a.round.stake), (9_000, 1_000), "nothing taken");
+    }
+
+    #[test]
+    fn a_split_is_refused_once_its_worst_case_passes_the_round_gain_limit() {
+        let at_limit = Config {
+            max_round_gain: 4_000,
+            ..config()
+        };
+        one_hand_of_1_000(10_000)
+            .take_split(1_000, 2, &at_limit)
+            .unwrap();
+        let below = Config {
+            max_round_gain: 3_999,
+            ..config()
+        };
+        assert_eq!(
+            one_hand_of_1_000(10_000).take_split(1_000, 2, &below),
+            Err(TiltError::RoundGainTooHigh.into())
+        );
+    }
+
     #[test]
     fn withdrawals_and_forfeits_do_not_change_net_win() {
         let mut a = account(1_000, 1_000);
@@ -619,6 +720,7 @@ mod tests {
             (Game::Roulette, Draw::Deal),
             (Game::Baccarat, Draw::Hit),
             (Game::Slots, Draw::Double),
+            (Game::Roulette, Draw::Split),
         ] {
             let mut round = Round {
                 game,
@@ -669,6 +771,50 @@ mod tests {
             BlackjackHand::default(),
             "legacy field untouched"
         );
+    }
+
+    #[test]
+    fn a_split_draw_plays_on_the_table() {
+        use crate::games::blackjack::TableHand;
+        let mut rng = Rng::from_vrf([4; 32]);
+        let mut round = Round {
+            game: Game::Blackjack,
+            stake: 200,
+            status: RoundStatus::AwaitingDraw(Draw::Split),
+            ..Round::default()
+        };
+        assert_eq!(
+            round.apply_draw(Draw::Split, &mut rng, None),
+            Err(TiltError::MissingTable.into())
+        );
+        let pair = |card: u8| {
+            let mut hand = TableHand {
+                n_cards: 2,
+                ..TableHand::default()
+            };
+            hand.cards[..2].copy_from_slice(&[card, card]);
+            let mut table = BlackjackTable::default();
+            table.start(100, 1);
+            table.hands[0] = hand;
+            table.n_dealer = 1;
+            table.dealer[0] = 9;
+            table
+        };
+        // 8 8: both hands still to play, back to the player.
+        let mut table = pair(8);
+        assert_eq!(
+            round.apply_draw(Draw::Split, &mut rng, Some(&mut table)),
+            Ok(None)
+        );
+        assert_eq!(round.status, RoundStatus::PlayerTurn);
+        assert_eq!((table.n_hands, table.splits), (2, 1));
+        // A A alone: both aces finished, the dealer plays and the round settles.
+        let mut table = pair(1);
+        round.status = RoundStatus::AwaitingDraw(Draw::Split);
+        let gross = round
+            .apply_draw(Draw::Split, &mut rng, Some(&mut table))
+            .unwrap();
+        assert_eq!(gross, Some(table.gross()));
     }
 
     #[test]

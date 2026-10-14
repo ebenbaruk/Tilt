@@ -211,6 +211,8 @@ export type Tilt = {
               {
                 "kind": "const",
                 "value": [
+                  98,
+                  106,
                   116,
                   97,
                   98,
@@ -392,6 +394,8 @@ export type Tilt = {
               {
                 "kind": "const",
                 "value": [
+                  98,
+                  106,
                   116,
                   97,
                   98,
@@ -569,6 +573,8 @@ export type Tilt = {
               {
                 "kind": "const",
                 "value": [
+                  98,
+                  106,
                   116,
                   97,
                   98,
@@ -738,6 +744,179 @@ export type Tilt = {
               {
                 "kind": "const",
                 "value": [
+                  98,
+                  106,
+                  116,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracleQueue",
+          "writable": true
+        },
+        {
+          "name": "programIdentity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrfProgram",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slotHashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "clientSeed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "blackjackSplit",
+      "discriminator": [
+        17,
+        28,
+        32,
+        211,
+        146,
+        46,
+        208,
+        41
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "Read-only copy of the Solana vault: relayer key and limits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The Tilt relay, acting on the player's intents."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Read-only copy of the Solana ledger, to credit new deposits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "table",
+          "docs": [
+            "The player's blackjack table: required by blackjack rounds, omitted (program id)",
+            "by the other games."
+          ],
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  106,
                   116,
                   97,
                   98,
@@ -907,6 +1086,8 @@ export type Tilt = {
               {
                 "kind": "const",
                 "value": [
+                  98,
+                  106,
                   116,
                   97,
                   98,
@@ -1128,6 +1309,8 @@ export type Tilt = {
               {
                 "kind": "const",
                 "value": [
+                  98,
+                  106,
                   116,
                   97,
                   98,
@@ -1567,6 +1750,8 @@ export type Tilt = {
               {
                 "kind": "const",
                 "value": [
+                  98,
+                  106,
                   116,
                   97,
                   98,
@@ -1805,6 +1990,8 @@ export type Tilt = {
               {
                 "kind": "const",
                 "value": [
+                  98,
+                  106,
                   116,
                   97,
                   98,
@@ -2480,6 +2667,8 @@ export type Tilt = {
               {
                 "kind": "const",
                 "value": [
+                  98,
+                  106,
                   116,
                   97,
                   98,
@@ -3116,6 +3305,8 @@ export type Tilt = {
               {
                 "kind": "const",
                 "value": [
+                  98,
+                  106,
                   116,
                   97,
                   98,
@@ -3464,6 +3655,8 @@ export type Tilt = {
               {
                 "kind": "const",
                 "value": [
+                  98,
+                  106,
                   116,
                   97,
                   98,
@@ -4211,6 +4404,10 @@ export type Tilt = {
           },
           {
             "name": "hands",
+            "docs": [
+              "Every hand in playing order: a hand born from a split comes right after the one",
+              "it was split from."
+            ],
             "type": {
               "array": [
                 {
@@ -4218,7 +4415,7 @@ export type Tilt = {
                     "name": "tableHand"
                   }
                 },
-                6
+                10
               ]
             }
           },
@@ -4245,6 +4442,13 @@ export type Tilt = {
           },
           {
             "name": "nDealer",
+            "type": "u8"
+          },
+          {
+            "name": "splits",
+            "docs": [
+              "Splits played this round, all hands together (at most `MAX_SPLITS`)."
+            ],
             "type": "u8"
           }
         ]
@@ -4393,6 +4597,9 @@ export type Tilt = {
           },
           {
             "name": "spin"
+          },
+          {
+            "name": "split"
           }
         ]
       }
@@ -4754,7 +4961,7 @@ export type Tilt = {
           {
             "name": "stake",
             "docs": [
-              "Total stake, every blackjack hand and double included."
+              "Total stake, every blackjack hand, double and split included."
             ],
             "type": "u64"
           },
@@ -4933,6 +5140,14 @@ export type Tilt = {
           },
           {
             "name": "doubled",
+            "type": "bool"
+          },
+          {
+            "name": "split",
+            "docs": [
+              "Born from a split (both hands of the split): its 21 is not a blackjack, and split",
+              "aces (first card an ace) take no card after the split one."
+            ],
             "type": "bool"
           }
         ]
