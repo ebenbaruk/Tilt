@@ -170,7 +170,10 @@ export class RpcChainReader implements ChainReader {
 
   /** The account and the blackjack table, read together so the round and its cards match. */
   async playerAccount(player: PublicKey): Promise<PlayerState | null> {
-    const [account, table] = await this.rollup.getMultipleAccountsInfo([playerAccountAddress(player), tableAddress(player)]);
+    const [account, table] = await this.rollup.getMultipleAccountsInfo([
+      playerAccountAddress(player),
+      tableAddress(player),
+    ]);
     if (!account) return null;
     const accounts = this.rollupProgram.coder.accounts;
     return decodePlayer(

@@ -27,7 +27,13 @@ const RouletteBet = z.discriminatedUnion("kind", [
 
 /** Game moves only: deposits and withdrawals are not part of this union, so the mod cannot send them. */
 export const PlayActionSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("blackjack_bet"), amount: Amount, hands: z.number().int().min(1).max(MAX_BLACKJACK_HANDS) }).strict(),
+  z
+    .object({
+      type: z.literal("blackjack_bet"),
+      amount: Amount,
+      hands: z.number().int().min(1).max(MAX_BLACKJACK_HANDS),
+    })
+    .strict(),
   z.object({ type: z.literal("blackjack_hit") }).strict(),
   z.object({ type: z.literal("blackjack_stand") }).strict(),
   z.object({ type: z.literal("blackjack_double") }).strict(),

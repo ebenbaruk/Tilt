@@ -79,7 +79,8 @@ describe("blackjack", () => {
   });
 
   it("pays each hand like the program", () => {
-    const g = (cards: number[], dealer: number[], doubled = false, bet = 1_000n) => blackjack.handGross({ cards, doubled }, dealer, bet);
+    const g = (cards: number[], dealer: number[], doubled = false, bet = 1_000n) =>
+      blackjack.handGross({ cards, doubled }, dealer, bet);
     expect(g([1, 13], [9, 8])).toBe(2_500n);
     expect(g([1, 13], [1, 10])).toBe(1_000n);
     expect(g([10, 9], [1, 10])).toBe(0n);
@@ -92,7 +93,8 @@ describe("blackjack", () => {
   });
 
   it("names each settled hand's result", () => {
-    const r = (cards: number[], dealer: number[], doubled = false) => blackjack.result({ cards, doubled }, dealer, 1_000n);
+    const r = (cards: number[], dealer: number[], doubled = false) =>
+      blackjack.result({ cards, doubled }, dealer, 1_000n);
     expect(r([1, 13], [9, 8])).toBe("blackjack");
     expect(r([1, 13], [1, 10])).toBe("push");
     expect(r([5, 6, 10], [9, 8], true)).toBe("win");
@@ -110,10 +112,22 @@ describe("blackjack", () => {
     const soft17 = table([[10, 8]], [1, 6]);
     blackjack.playDealer(soft17, rng());
     expect(soft17.dealer).toEqual([1, 6]);
-    const busts = table([[10, 6, 9], [10, 5, 8]], [4]);
+    const busts = table(
+      [
+        [10, 6, 9],
+        [10, 5, 8],
+      ],
+      [4],
+    );
     blackjack.playDealer(busts, rng());
     expect(busts.dealer).toEqual([4]);
-    const naturals = table([[1, 13], [10, 6, 9]], [4]);
+    const naturals = table(
+      [
+        [1, 13],
+        [10, 6, 9],
+      ],
+      [4],
+    );
     blackjack.playDealer(naturals, rng());
     expect(naturals.dealer).toHaveLength(2);
   });
@@ -135,22 +149,25 @@ describe("blackjack", () => {
     expect(t.dealer).toEqual([7]);
   });
 
-  it.each(vectors.blackjack.map((v, i) => ({ ...v, i })))("plays round $i ($hands.length hands) like the program", (v) => {
-    const t = blackjack.newTable(v.hands.length);
-    let next = 0;
-    const rng = () => Rng.fromVrf(bytes(v.draws[next++]));
-    for (const action of v.actions) {
-      if (action === "deal") blackjack.deal(t, rng());
-      else if (action === "hit") blackjack.hit(t, rng());
-      else if (action === "double") blackjack.double(t, rng());
-      else if (action === "stand") blackjack.stand(t);
-      else blackjack.playDealer(t, rng());
-    }
-    expect(next).toBe(v.draws.length);
-    expect(t).toEqual({ hands: v.hands, active: v.active, dealer: v.dealer });
-    expect(blackjack.tableStake(t, BigInt(v.bet)).toString()).toBe(v.stake);
-    expect(blackjack.gross(t, BigInt(v.bet)).toString()).toBe(v.gross);
-  });
+  it.each(vectors.blackjack.map((v, i) => ({ ...v, i })))(
+    "plays round $i ($hands.length hands) like the program",
+    (v) => {
+      const t = blackjack.newTable(v.hands.length);
+      let next = 0;
+      const rng = () => Rng.fromVrf(bytes(v.draws[next++]));
+      for (const action of v.actions) {
+        if (action === "deal") blackjack.deal(t, rng());
+        else if (action === "hit") blackjack.hit(t, rng());
+        else if (action === "double") blackjack.double(t, rng());
+        else if (action === "stand") blackjack.stand(t);
+        else blackjack.playDealer(t, rng());
+      }
+      expect(next).toBe(v.draws.length);
+      expect(t).toEqual({ hands: v.hands, active: v.active, dealer: v.dealer });
+      expect(blackjack.tableStake(t, BigInt(v.bet)).toString()).toBe(v.stake);
+      expect(blackjack.gross(t, BigInt(v.bet)).toString()).toBe(v.gross);
+    },
+  );
 });
 
 describe("baccarat", () => {
@@ -264,10 +281,15 @@ describe("replay (GET /verify)", () => {
   });
 
   it("replays a multi-hand round whose stand on a first hand took no draw", () => {
-    const v = vectors.blackjack.find((h) => h.hands.length > 1 && h.actions.indexOf("stand") > 0 && h.actions.indexOf("stand") < h.actions.length - 2);
+    const v = vectors.blackjack.find(
+      (h) => h.hands.length > 1 && h.actions.indexOf("stand") > 0 && h.actions.indexOf("stand") < h.actions.length - 2,
+    );
     if (!v) throw new Error("fixture needs a stand without draw before another move");
     // Compared with the snapshot: the exact hands, not just a sequence that pays the same.
-    expect(replay({ ...blackjackInput(v), snapshot: snapshotOf(v) })).toMatchObject({ matches: true, outcome: snapshotOf(v) });
+    expect(replay({ ...blackjackInput(v), snapshot: snapshotOf(v) })).toMatchObject({
+      matches: true,
+      outcome: snapshotOf(v),
+    });
     expect(replay({ ...blackjackInput(v), snapshot: null }).matches).toBe(true);
   });
 

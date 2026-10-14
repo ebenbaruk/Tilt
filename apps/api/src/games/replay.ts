@@ -124,7 +124,9 @@ function blackjackCandidates(draws: Uint8Array[], stake: bigint, snapshot: Outco
   const t = blackjack.newTable(handCounts[0]);
   blackjack.deal(t, Rng.fromVrf(draws[0]));
   const bet = stake / BigInt(t.hands.length);
-  return [{ outcome: { game: "blackjack", bet: bet.toString(), ...t }, gross: blackjack.gross(t, bet), possible: false }];
+  return [
+    { outcome: { game: "blackjack", bet: bet.toString(), ...t }, gross: blackjack.gross(t, bet), possible: false },
+  ];
 }
 
 function rouletteCandidates(randomness: Uint8Array, stake: bigint, snapshot: Outcome | null): Candidate[] {

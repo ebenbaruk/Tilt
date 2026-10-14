@@ -102,7 +102,9 @@ describe.skipIf(!db)("competitions", () => {
             player: fc.integer({ min: 0, max: 3 }),
             minute: fc.integer({ min: -60, max: 6 * 60 }),
             game: fc.constantFrom("slots" as const, "blackjack" as const),
-            table: fc.option(fc.record({ hands: fc.integer({ min: 1, max: 3 }), doubles: fc.integer({ min: 0, max: 3 }) })),
+            table: fc.option(
+              fc.record({ hands: fc.integer({ min: 1, max: 3 }), doubles: fc.integer({ min: 0, max: 3 }) }),
+            ),
             bet: fc.integer({ min: 1, max: 10 }),
             payout: fc.integer({ min: 0, max: 30 }),
           }),

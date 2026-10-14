@@ -88,7 +88,11 @@ describe("chain decoding", () => {
       draw: "double",
     });
     const roulette = { ...base, game: { roulette: {} }, roulette: { bet: { dozen: { 0: 2 } }, number: 14 } };
-    expect(decodeRound(roulette, table).outcome).toEqual({ game: "roulette", bet: { kind: "dozen", dozen: 2 }, number: 14 });
+    expect(decodeRound(roulette, table).outcome).toEqual({
+      game: "roulette",
+      bet: { kind: "dozen", dozen: 2 },
+      number: 14,
+    });
     const red = { ...roulette, roulette: { bet: { red: {} }, number: 3 } };
     expect(decodeRound(red, null).outcome).toMatchObject({ bet: { kind: "red" } });
     const baccarat = {
@@ -96,7 +100,12 @@ describe("chain decoding", () => {
       game: { baccarat: {} },
       baccarat: { bet: { tie: {} }, player: [3, 4, 0], banker: [13, 7, 2] },
     };
-    expect(decodeRound(baccarat, table).outcome).toEqual({ game: "baccarat", bet: "tie", player: [3, 4], banker: [13, 7, 2] });
+    expect(decodeRound(baccarat, table).outcome).toEqual({
+      game: "baccarat",
+      bet: "tie",
+      player: [3, 4],
+      banker: [13, 7, 2],
+    });
     expect(decodeRound({ ...base, game: { slots: {} }, slots: { reels: [6, 6, 1] } }, null).outcome).toEqual({
       game: "slots",
       reels: [6, 6, 1],
@@ -110,7 +119,8 @@ describe("chain decoding", () => {
 
 describe("RpcChainReader.playerAccount", () => {
   // The program's coder, as the reader uses it (camelCase names, like the decoded accounts).
-  const coder = new anchor.Program(idl as anchor.Idl, { connection: new Connection("http://127.0.0.1:1") }).coder.accounts;
+  const coder = new anchor.Program(idl as anchor.Idl, { connection: new Connection("http://127.0.0.1:1") }).coder
+    .accounts;
   const info = (data: Buffer): AccountInfo<Buffer> => ({ data, owner: PROGRAM_ID, executable: false, lamports: 1 });
   const account = {
     player,
@@ -125,10 +135,16 @@ describe("RpcChainReader.playerAccount", () => {
   };
 
   async function read(withTable: boolean) {
-    const reader = new RpcChainReader({ solanaRpcUrl: "http://127.0.0.1:1", rollupRpcUrl: "http://127.0.0.1:2", rollupWsUrl: "ws://127.0.0.1:2" });
+    const reader = new RpcChainReader({
+      solanaRpcUrl: "http://127.0.0.1:1",
+      rollupRpcUrl: "http://127.0.0.1:2",
+      rollupWsUrl: "ws://127.0.0.1:2",
+    });
     const accountData = await coder.encode("playerAccount", account);
     const tableData = await coder.encode("blackjackTable", { ...table, active: 1 });
-    const fetch = vi.spyOn(reader.rollup, "getMultipleAccountsInfo").mockResolvedValue([info(accountData), withTable ? info(tableData) : null]);
+    const fetch = vi
+      .spyOn(reader.rollup, "getMultipleAccountsInfo")
+      .mockResolvedValue([info(accountData), withTable ? info(tableData) : null]);
     const state = await reader.playerAccount(player);
     return { state, fetch };
   }
@@ -147,7 +163,11 @@ describe("RpcChainReader.playerAccount", () => {
   });
 
   it("is null before the first deposit", async () => {
-    const reader = new RpcChainReader({ solanaRpcUrl: "http://127.0.0.1:1", rollupRpcUrl: "http://127.0.0.1:2", rollupWsUrl: "ws://127.0.0.1:2" });
+    const reader = new RpcChainReader({
+      solanaRpcUrl: "http://127.0.0.1:1",
+      rollupRpcUrl: "http://127.0.0.1:2",
+      rollupWsUrl: "ws://127.0.0.1:2",
+    });
     vi.spyOn(reader.rollup, "getMultipleAccountsInfo").mockResolvedValue([null, null]);
     expect(await reader.playerAccount(Keypair.generate().publicKey)).toBeNull();
   });

@@ -374,10 +374,7 @@ async function main() {
     else if (bj.canHit && total < 17) action = { type: "blackjack_hit" };
     else action = { type: "blackjack_stand" };
     moves.push(`${action.type.replace("blackjack_", "")}#${bj.activeHand}`);
-    s = await move(
-      action,
-      (x) => x.round?.phase === "idle" || progress(x.round?.detail as BlackjackView) !== before,
-    );
+    s = await move(action, (x) => x.round?.phase === "idle" || progress(x.round?.detail as BlackjackView) !== before);
   }
   check(
     "blackjack : main jouée jusqu'au bout",
