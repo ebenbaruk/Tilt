@@ -284,8 +284,81 @@ describe.skipIf(!db)("api routes", () => {
         "UPDATE limits SET daily_deposit_next_at = now() - interval '1 second', daily_loss_next_at = now()",
       );
       const account = (await (await app.request("/v1/account", { headers: access(ALICE) })).json()) as AccountResponse;
-      expect(account.limits).toEqual({ dailyDeposit: "9000000", dailyLoss: null, excludedUntil: null });
+      expect(account.limits).toEqual({
+        dailyDeposit: "9000000",
+        dailyDepositNext: null,
+        dailyLoss: null,
+        dailyLossNext: null,
+        excludedUntil: null,
+      });
       expect((await putLimits({ dailyDeposit: "0", dailyLoss: null })).status).toBe(400);
+      // "-1" fails both sides of `amount | null`: the player reads the field's name once.
+      const negative = await putLimits({ dailyDeposit: "-1", dailyLoss: null });
+      expect(await negative.json()).toMatchObject({ error: { message: "invalid dailyDeposit" } });
+    });
+
+    // The web form sends both fields: changing one must not cancel a raise waiting on the other.
+    it("keeps a pending raise when the form sends it back unchanged, and shows it", async () => {
+      await putLimits({ dailyDeposit: "5000000", dailyLoss: "2000000" });
+      const raised = (await (
+        await putLimits({ dailyDeposit: "9000000", dailyLoss: "2000000" })
+      ).json()) as ResponsibleLimits;
+      expect(raised).toMatchObject({
+        dailyDeposit: "5000000",
+        dailyDepositNext: { value: "9000000" },
+        dailyLossNext: null,
+      });
+      const at = raised.dailyDepositNext?.at;
+
+      const lossOnly = (await (
+        await putLimits({ dailyDeposit: "9000000", dailyLoss: "1000000" })
+      ).json()) as ResponsibleLimits;
+      expect(lossOnly).toMatchObject({ dailyDeposit: "5000000", dailyLoss: "1000000" });
+      expect(lossOnly.dailyDepositNext).toEqual({ value: "9000000", at });
+
+      const cancelled = (await (
+        await putLimits({ dailyDeposit: "5000000", dailyLoss: "1000000" })
+      ).json()) as ResponsibleLimits;
+      expect(cancelled).toMatchObject({ dailyDeposit: "5000000", dailyDepositNext: null });
+    });
+
+    // A bet or deposit the relay already took must keep reporting its outcome: answering a retry
+    // with BLOCKED would tell the player it never happened.
+    it("a retried bet returns its outcome even once the loss limit it caused is reached", async () => {
+      await putLimits({ dailyDeposit: null, dailyLoss: "1000000" });
+      const id = randomUUID();
+      expect((await play(slots, id)).status).toBe(200);
+      await saveRound(db, {
+        signature: SIGNATURE,
+        player: wallet,
+        round: 1,
+        game: "slots",
+        stake: 1_000_000n,
+        payout: 0n,
+        fee: 0n,
+        requestId: 1n,
+        randomness: Buffer.alloc(32),
+        settledAt: new Date(),
+      });
+      const retry = await play(slots, id);
+      expect(retry.status).toBe(200);
+      expect(await retry.json()).toMatchObject({ intentId: id, status: "submitted" });
+      expect((await play(slots)).status).toBe(403);
+      expect(relay.actions()).toEqual([slots]);
+    });
+
+    it("a retried deposit returns its outcome after a self-exclusion, whatever the id's case", async () => {
+      await putLimits({ dailyDeposit: "6000000", dailyLoss: null });
+      const consent = { ...access(ALICE), ...identity(ALICE) };
+      const id = randomUUID().toUpperCase();
+      const deposit = () => app.request("/v1/account/deposit", json({ intentId: id, amount: "5000000" }, consent));
+      expect((await deposit()).status).toBe(200);
+      expect((await deposit()).status).toBe(200);
+      await exclude(30);
+      const retry = await deposit();
+      expect(retry.status).toBe(200);
+      expect(await retry.json()).toMatchObject({ intentId: id.toLowerCase(), status: "submitted" });
+      expect(relay.actions()).toEqual([{ type: "deposit", amount: "5000000" }]);
     });
   });
 
@@ -396,7 +469,13 @@ describe.skipIf(!db)("api routes", () => {
         minFirstDeposit: "1500000",
         onboardingFee: "500000",
         privySigner: { signerId: "quorum-1", policyIds: ["policy-1"] },
-        limits: { dailyDeposit: null, dailyLoss: null, excludedUntil: null },
+        limits: {
+          dailyDeposit: null,
+          dailyDepositNext: null,
+          dailyLoss: null,
+          dailyLossNext: null,
+          excludedUntil: null,
+        },
       });
       expect((await app.request("/v1/account", { headers: { authorization: "Bearer nope" } })).status).toBe(401);
     });
@@ -432,7 +511,13 @@ describe.skipIf(!db)("api routes", () => {
             payout: 0n,
             fee: 0n,
             requestId: 9n,
-            outcome: { game: "blackjack", bet: "1000000", hands: [{ cards: [1, 6], doubled: false }], active: 0, dealer: [9] },
+            outcome: {
+              game: "blackjack",
+              bet: "1000000",
+              hands: [{ cards: [1, 6], doubled: false }],
+              active: 0,
+              dealer: [9],
+            },
           },
         }),
       );
@@ -653,9 +738,9 @@ describe.skipIf(!db)("api routes", () => {
       const body = (await (await app.request(`/v1/rounds/${SIGNATURE}/verify`)).json()) as VerifyResponse;
       expect(body.matches).toBe(true);
       if (body.replayed.detail.game !== "blackjack") throw new Error("unexpected detail");
-      expect(body.replayed.detail.hands.map((h) => ({ ranks: h.cards.map((c) => c.rank), doubled: h.doubled }))).toEqual(
-        v.hands.map((h) => ({ ranks: h.cards, doubled: h.doubled })),
-      );
+      expect(
+        body.replayed.detail.hands.map((h) => ({ ranks: h.cards.map((c) => c.rank), doubled: h.doubled })),
+      ).toEqual(v.hands.map((h) => ({ ranks: h.cards, doubled: h.doubled })));
     });
 
     it("still verifies a single-hand round indexed before tables, its detail migrated", async () => {
@@ -685,7 +770,12 @@ describe.skipIf(!db)("api routes", () => {
       const { PublicKey } = await import("@solana/web3.js");
       const account = playerAccountAddress(new PublicKey(wallet)).toBase58();
       for (const [i, draw] of v.draws.entries()) {
-        await db.query("INSERT INTO draws (account, request_id, randomness, signature) VALUES ($1, $2, $3, $4)", [account, 1 + i, draw, `d${i}`]);
+        await db.query("INSERT INTO draws (account, request_id, randomness, signature) VALUES ($1, $2, $3, $4)", [
+          account,
+          1 + i,
+          draw,
+          `d${i}`,
+        ]);
       }
       const body = (await (await app.request(`/v1/rounds/${SIGNATURE}/verify`)).json()) as VerifyResponse;
       expect(body.matches).toBe(true);
@@ -737,6 +827,16 @@ describe.skipIf(!db)("api routes", () => {
       for (let i = 0; i < 10; i++) await from("6.6.6.6");
       expect((await from("6.6.6.6")).status).toBe(429);
       expect((await from("1.1.1.1")).status).toBe(200);
+    });
+
+    it("keeps answering health checks while a flood is rate limited", async () => {
+      const { deps } = testApp(db, relay, chain);
+      const limited = testApp(db, relay, chain, {
+        limiters: { ...deps.limiters, global: RateLimiter.perMinute(2), ip: RateLimiter.perMinute(2) },
+      }).app;
+      for (let i = 0; i < 5; i++) await limited.request("/v1/geo");
+      expect((await limited.request("/v1/geo")).status).toBe(429);
+      expect((await limited.request("/health")).status).toBe(200);
     });
 
     it("sets secure headers and CORS for the web origin only", async () => {

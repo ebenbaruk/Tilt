@@ -6,6 +6,7 @@
 import type { LeaderboardEntry, SponsorView } from "@tilt/mod/protocol";
 import { audit, transaction, type Db, type Queryable } from "../db";
 import { indexedThrough } from "../indexer";
+import { MAX_SPONSOR_LENGTH } from "../schemas";
 import { capTickets, drawWinners, newSeed, type Ticket } from "./drops";
 import { rankPrizes, splitPool, type Standing } from "./prizes";
 import { prizeId } from "./uuid";
@@ -150,7 +151,23 @@ export interface CampaignInput {
   commissionBps: number;
 }
 
+const MAX_TAGLINE_LENGTH = 200;
+const MAX_COMPETITION_NAME_LENGTH = 100;
+/** Control characters (ANSI escapes, newlines) and bidi overrides: they would rewrite players'
+ *  terminals or flip what the web shows. */
+const UNSAFE_TEXT = /[\p{Cc}\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u;
+
+/** Operator-typed text shown as is to every player. */
+function checkDisplayText(value: string, max: number, what: string): void {
+  if (!value.trim() || value.length > max || UNSAFE_TEXT.test(value)) {
+    throw new Error(`${what} must be 1 to ${max} printable characters`);
+  }
+}
+
 export async function createCampaign(db: Db, input: CampaignInput, actor: string): Promise<string> {
+  // The mod sends the name back with each impression, which only accepts this length.
+  checkDisplayText(input.sponsor, MAX_SPONSOR_LENGTH, "sponsor");
+  if (input.tagline !== null) checkDisplayText(input.tagline, MAX_TAGLINE_LENGTH, "tagline");
   return transaction(db, async (client) => {
     const { rows } = await client.query<{ id: string }>(
       "INSERT INTO campaigns (sponsor, tagline, budget, commission_bps) VALUES ($1, $2, $3, $4) RETURNING id",
@@ -179,6 +196,7 @@ const BPS = 10_000n;
 
 /** Opens a competition; its pools must fit in what the campaign has left after Tilt's commission. */
 export async function openCompetition(db: Db, input: CompetitionInput, actor: string): Promise<string> {
+  checkDisplayText(input.name, MAX_COMPETITION_NAME_LENGTH, "competition name");
   splitPool(input.pool, input.splitBps, input.sharedRanks); // validates the split
   return transaction(db, async (client) => {
     const { rows: campaigns } = await client.query<{ id: string; budget: string; commission_bps: number }>(

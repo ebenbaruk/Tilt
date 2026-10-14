@@ -10,7 +10,7 @@ import { clientIp, IDENTITY_HEADER, rateLimit, type Env } from "./http";
 import { log } from "./log";
 import { authRoutes } from "./routes/auth";
 import { modRoutes } from "./routes/mod";
-import { publicRoutes } from "./routes/public";
+import { healthRoute, publicRoutes } from "./routes/public";
 import { webRoutes } from "./routes/web";
 
 const MAX_BODY_BYTES = 8 * 1024;
@@ -39,6 +39,9 @@ export function createApp(deps: AppDeps): Hono<Env> {
       maxAge: 600,
     }),
   );
+  // Ahead of the rate limits: under a flood, a 429 here would make the load balancer drop a
+  // healthy instance and turn the flood into an outage.
+  healthRoute(app, deps);
   // Per IP first: a request refused there never spends a global token, so one flooding client
   // cannot drain the global bucket and lock everyone else out.
   app.use(

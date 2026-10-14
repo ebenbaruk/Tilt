@@ -13,10 +13,22 @@ export interface LimitPlan {
   value: bigint | null;
   /** A looser value waiting for the delay, or undefined when nothing is pending. */
   next?: bigint | null;
+  /** The looser value was already waiting: its delay keeps running instead of starting over. */
+  keepsDelay?: true;
 }
 
-/** What a requested limit does to the current one: stricter now, looser later. */
-export function planLimit(current: bigint | null, requested: bigint | null): LimitPlan {
+/**
+ * What a requested limit does to the current one: stricter now, looser later. `pending` is the
+ * looser value already waiting, if any: asking for it again (a form that resends the field it
+ * did not change) keeps it as it is; asking for the current value cancels it.
+ */
+export function planLimit(
+  current: bigint | null,
+  requested: bigint | null,
+  pending?: { next: bigint | null },
+): LimitPlan {
+  if (pending !== undefined && requested === pending.next)
+    return { value: current, next: pending.next, keepsDelay: true };
   if (requested === current) return { value: current };
   const stricter = requested !== null && (current === null || requested < current);
   return stricter ? { value: requested } : { value: current, next: requested };
@@ -24,13 +36,25 @@ export function planLimit(current: bigint | null, requested: bigint | null): Lim
 
 interface LimitsRow {
   daily_deposit: string | null;
+  daily_deposit_next: string | null;
+  daily_deposit_next_at: Date | null;
   daily_loss: string | null;
+  daily_loss_next: string | null;
+  daily_loss_next_at: Date | null;
   excluded_until: Date | null;
 }
 
+const LIMITS_COLUMNS =
+  "daily_deposit, daily_deposit_next, daily_deposit_next_at, daily_loss, daily_loss_next, daily_loss_next_at, excluded_until";
+
+const pendingOf = (next: string | null, at: Date | null) =>
+  at === null ? null : { value: next, at: at.toISOString() };
+
 const toView = (row: LimitsRow | undefined): ResponsibleLimits => ({
   dailyDeposit: row?.daily_deposit ?? null,
+  dailyDepositNext: row ? pendingOf(row.daily_deposit_next, row.daily_deposit_next_at) : null,
   dailyLoss: row?.daily_loss ?? null,
+  dailyLossNext: row ? pendingOf(row.daily_loss_next, row.daily_loss_next_at) : null,
   excludedUntil: row?.excluded_until && row.excluded_until > new Date() ? row.excluded_until.toISOString() : null,
 });
 
@@ -51,14 +75,17 @@ async function promoteDue(db: Queryable, userId: string): Promise<void> {
 
 export async function getLimits(db: Queryable, userId: string): Promise<ResponsibleLimits> {
   await promoteDue(db, userId);
-  const { rows } = await db.query<LimitsRow>(
-    "SELECT daily_deposit, daily_loss, excluded_until FROM limits WHERE user_id = $1",
-    [userId],
-  );
+  const { rows } = await db.query<LimitsRow>(`SELECT ${LIMITS_COLUMNS} FROM limits WHERE user_id = $1`, [userId]);
   return toView(rows[0]);
 }
 
 const asBig = (s: string | null) => (s === null ? null : BigInt(s));
+
+/** The looser value waiting, as planLimit takes it. */
+const waiting = (next: string | null, at: Date | null) => (at === null ? undefined : { next: asBig(next) });
+
+/** How the delay column changes: kept running, started now, or cleared. */
+const delayOf = (plan: LimitPlan) => (plan.keepsDelay ? "keep" : plan.next !== undefined ? "start" : "none");
 
 export async function setLimits(db: Db, userId: string, request: LimitsRequest): Promise<ResponsibleLimits> {
   await ensureUser(db, userId);
@@ -66,28 +93,36 @@ export async function setLimits(db: Db, userId: string, request: LimitsRequest):
     await client.query("INSERT INTO limits (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING", [userId]);
     await promoteDue(client, userId);
     const { rows } = await client.query<LimitsRow>(
-      "SELECT daily_deposit, daily_loss, excluded_until FROM limits WHERE user_id = $1 FOR UPDATE",
+      `SELECT ${LIMITS_COLUMNS} FROM limits WHERE user_id = $1 FOR UPDATE`,
       [userId],
     );
-    const deposit = planLimit(asBig(rows[0].daily_deposit), asBig(request.dailyDeposit));
-    const loss = planLimit(asBig(rows[0].daily_loss), asBig(request.dailyLoss));
-    const pending = (plan: LimitPlan) => plan.next !== undefined;
+    const row = rows[0];
+    const deposit = planLimit(
+      asBig(row.daily_deposit),
+      asBig(request.dailyDeposit),
+      waiting(row.daily_deposit_next, row.daily_deposit_next_at),
+    );
+    const loss = planLimit(
+      asBig(row.daily_loss),
+      asBig(request.dailyLoss),
+      waiting(row.daily_loss_next, row.daily_loss_next_at),
+    );
     const { rows: updated } = await client.query<LimitsRow>(
       `UPDATE limits SET
          daily_deposit = $2, daily_deposit_next = $3,
-         daily_deposit_next_at = CASE WHEN $4 THEN now() + $8::interval END,
+         daily_deposit_next_at = CASE $4 WHEN 'keep' THEN daily_deposit_next_at WHEN 'start' THEN now() + $8::interval END,
          daily_loss = $5, daily_loss_next = $6,
-         daily_loss_next_at = CASE WHEN $7 THEN now() + $8::interval END,
+         daily_loss_next_at = CASE $7 WHEN 'keep' THEN daily_loss_next_at WHEN 'start' THEN now() + $8::interval END,
          updated_at = now()
-       WHERE user_id = $1 RETURNING daily_deposit, daily_loss, excluded_until`,
+       WHERE user_id = $1 RETURNING ${LIMITS_COLUMNS}`,
       [
         userId,
         deposit.value?.toString() ?? null,
         deposit.next?.toString() ?? null,
-        pending(deposit),
+        delayOf(deposit),
         loss.value?.toString() ?? null,
         loss.next?.toString() ?? null,
-        pending(loss),
+        delayOf(loss),
         LOOSEN_DELAY,
       ],
     );

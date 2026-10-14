@@ -2,6 +2,7 @@
 import type { Hono } from "hono";
 import type { IntentResponse, PlayAction } from "@tilt/mod/protocol";
 import { runningCompetition } from "../competitions/store";
+import type { Queryable } from "../db";
 import type { AppDeps } from "../deps";
 import { ApiError } from "../errors";
 import { geoBlock, modAuth, parseBody, parseParam, rateLimit, type Env } from "../http";
@@ -49,9 +50,12 @@ export function modRoutes(app: Hono<Env>, deps: AppDeps): void {
       const activity: Activity = WAGERS.has(action.type)
         ? { kind: "bet", player: wallet.toBase58() }
         : { kind: "move" };
-      const reason = await blockReason(deps.db, userId, activity);
-      if (reason) throw new ApiError("BLOCKED", reason);
-      return c.json(toIntentResponse(await deps.intents.submit(userId, intentId, action)));
+      // Checked only for a new intent, under its insert: a retry reports what the relay did.
+      const guard = async (db: Queryable) => {
+        const reason = await blockReason(db, userId, activity);
+        if (reason) throw new ApiError("BLOCKED", reason);
+      };
+      return c.json(toIntentResponse(await deps.intents.submit(userId, intentId, action, { guard })));
     },
   );
 

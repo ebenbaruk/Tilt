@@ -22,6 +22,14 @@ const toMoneyResponse = (o: IntentOutcome): MoneyIntentResponse => ({
   error: o.error,
 });
 
+const USDC_UNITS = 1_000_000n;
+
+/** "5.3 USDC" from base units: an error the player reads must not look like 5 million. */
+function usdcText(units: bigint): string {
+  const fraction = (units % USDC_UNITS).toString().padStart(6, "0").replace(/0+$/, "");
+  return `${units / USDC_UNITS}${fraction ? `.${fraction}` : ""} USDC`;
+}
+
 async function requireWallet(deps: AppDeps, userId: string): Promise<PublicKey> {
   const wallet = await walletOf(deps.db, deps.relay, userId);
   if (!wallet) throw new ApiError("NOT_FOUND", "no Solana wallet yet, sign in again on the web");
@@ -33,11 +41,11 @@ async function depositAction(deps: AppDeps, wallet: PublicKey, amount: string): 
   const [deposited, config] = await Promise.all([deps.chain.deposited(wallet), deps.chain.config()]);
   if (deposited === null) {
     const min = config.onboardingFee + config.minDeposit;
-    if (BigInt(amount) < min) throw new ApiError("INVALID_REQUEST", `first deposit is at least ${min}`);
+    if (BigInt(amount) < min) throw new ApiError("INVALID_REQUEST", `first deposit is at least ${usdcText(min)}`);
     return { type: "open_account", amount };
   }
   if (BigInt(amount) < config.minDeposit)
-    throw new ApiError("INVALID_REQUEST", `deposit is at least ${config.minDeposit}`);
+    throw new ApiError("INVALID_REQUEST", `deposit is at least ${usdcText(config.minDeposit)}`);
   return { type: "deposit", amount };
 }
 

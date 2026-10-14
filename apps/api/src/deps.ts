@@ -13,8 +13,8 @@ export interface Limiters {
   ip: RateLimiter;
   token: RateLimiter;
   auth: RateLimiter;
-  /** Failed device approvals per user (brute force of user codes). */
-  approveFailures: RateLimiter;
+  /** Device approvals per user, right or wrong (brute force of user codes). */
+  approveAttempts: RateLimiter;
   play: RateLimiter;
   money: RateLimiter;
 }

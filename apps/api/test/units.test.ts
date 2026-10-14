@@ -210,5 +210,9 @@ describe("responsible limits planning", () => {
     expect(planLimit(100n, null)).toEqual({ value: 100n, next: null });
     expect(planLimit(100n, 100n)).toEqual({ value: 100n });
     expect(planLimit(null, null)).toEqual({ value: null });
+    expect(planLimit(100n, 200n, { next: 200n })).toEqual({ value: 100n, next: 200n, keepsDelay: true });
+    expect(planLimit(100n, null, { next: null })).toEqual({ value: 100n, next: null, keepsDelay: true });
+    expect(planLimit(100n, 100n, { next: 200n })).toEqual({ value: 100n });
+    expect(planLimit(100n, 300n, { next: 200n })).toEqual({ value: 100n, next: 300n });
   });
 });

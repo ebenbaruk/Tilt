@@ -83,16 +83,32 @@ export interface SessionsResponse {
 }
 /** DELETE /v1/account/sessions/:id (access token) revokes one session. */
 
+/** A looser limit waiting for its 24 h delay. */
+export interface PendingLimit {
+  /** The limit it becomes, null = no limit. */
+  value: Amount | null;
+  /** ISO time it takes effect. */
+  at: string;
+}
+
 /** Responsible gaming (spec §4.4). Limits are enforced by the api before any intent. */
 export interface ResponsibleLimits {
   /** Max deposits per rolling 24 h, null = none (the relay's own caps still apply). */
   dailyDeposit: Amount | null;
+  /** A raise (or removal) of the deposit limit waiting for its delay, null = none. */
+  dailyDepositNext: PendingLimit | null;
   /** Max net loss per rolling 24 h, null = none. */
   dailyLoss: Amount | null;
+  /** A raise (or removal) of the loss limit waiting for its delay, null = none. */
+  dailyLossNext: PendingLimit | null;
   /** ISO time until which the player is self-excluded, null = not excluded. */
   excludedUntil: string | null;
 }
-/** PUT /v1/account/limits (access token). Lowering takes effect at once; raising after 24 h. */
+/**
+ * PUT /v1/account/limits (access token). Lowering takes effect at once; raising after 24 h.
+ * Sending the value already pending keeps it (its delay keeps running); sending the current
+ * value cancels a pending raise.
+ */
 export interface LimitsRequest {
   dailyDeposit: Amount | null;
   dailyLoss: Amount | null;

@@ -100,6 +100,12 @@ describe.skipIf(!db)("device login", () => {
     expect((await approve(userCode, ALICE)).status).toBe(200);
   });
 
+  it("caps wrong codes sent in parallel too", async () => {
+    const guesses = await Promise.all(Array.from({ length: 20 }, () => approve("AAAA-AAAA", BOB)));
+    expect(guesses.filter((r) => r.status === 404)).toHaveLength(5);
+    expect(guesses.filter((r) => r.status === 429)).toHaveLength(15);
+  });
+
   it("approves a code once when two players race for it, and issues one session", async () => {
     const { deviceCode, userCode } = await start();
     const results = await Promise.all([approve(userCode, ALICE), approve(userCode, BOB), approve(userCode, ALICE)]);
