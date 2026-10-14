@@ -11,6 +11,8 @@ import {
   type Action,
   idl,
   type IntentResponse,
+  ledgerAddress,
+  playerAccountAddress,
   type PromoPayoutResponse,
   promoAddress,
   promoTokenAddress,
@@ -18,6 +20,7 @@ import {
   type Tilt,
   type UserResponse,
   vaultAddress,
+  vaultTokenAddress,
 } from "@tilt/contract";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -157,6 +160,49 @@ async function main() {
   check("dépôt au-delà du plafond du relais refusé (422)", capped.status === 422);
   const unconsented = await api("/intents", { intentId: randomUUID(), userId: user, action: { type: "deposit", amount: String(usdc(1)) } });
   check("dépôt sans jeton d'identité du joueur refusé (403)", unconsented.status === 403);
+
+  console.log("\n--- Joueur ouvert avant les tables de blackjack ---");
+  // Opened like before multi-hand: open_account + delegate_account only, no table.
+  const legacyUser = `did:privy:e2e${randomUUID().replaceAll("-", "")}`;
+  const legacyKey = Keypair.generate();
+  players.keys.set(legacyUser, legacyKey);
+  const legacyToken = await createAssociatedTokenAccountIdempotent(chain.base, admin, vault.mint, legacyKey.publicKey);
+  await mintTo(chain.base, admin, vault.mint, legacyToken, admin, usdc(20));
+  const baseProgram = new anchor.Program<Tilt>(idl, new anchor.AnchorProvider(chain.base, new anchor.Wallet(relayer), { commitment: "confirmed" }));
+  const legacyDeposit = BigInt(usdc(20));
+  const credited = legacyDeposit - BigInt(vault.config.onboardingFee.toString());
+  const multipleCap = credited * BigInt(vault.config.maxWinMultiple.toString());
+  const playerCap = BigInt(vault.config.maxPlayerWin.toString());
+  const legacyAccounts = {
+    vault: vaultAddress(),
+    payer: relayer.publicKey,
+    player: legacyKey.publicKey,
+    vaultToken: vaultTokenAddress(),
+    treasury: vault.treasury,
+    playerToken: legacyToken,
+    mint: vault.mint,
+    account: playerAccountAddress(legacyKey.publicKey),
+    ledger: ledgerAddress(legacyKey.publicKey),
+  };
+  await baseProgram.methods
+    .openAccount(new anchor.BN(legacyDeposit.toString()), new anchor.BN((multipleCap < playerCap ? multipleCap : playerCap).toString()))
+    .accountsPartial(legacyAccounts)
+    .postInstructions([await baseProgram.methods.delegateAccount().accountsPartial(legacyAccounts).instruction()])
+    .signers([legacyKey])
+    .rpc();
+  check("joueur existant sans table", (await chain.base.getAccountInfo(tableAddress(legacyKey.publicKey))) === null);
+  await until(() => chain.fetchPlayerAccount(legacyKey.publicKey).then((x) => x ?? undefined), "legacy account in rollup");
+  const legacyBet = await submit(legacyUser, { type: "blackjack_bet", amount: String(usdc(1)), hands: 1 });
+  const legacyAccount = await until(async () => {
+    const x = await chain.fetchPlayerAccount(legacyKey.publicKey);
+    return x && (x.rounds > 0 || "playerTurn" in x.round.status) ? x : undefined;
+  }, "legacy blackjack round");
+  const legacyTable = await rollupProgram.account.blackjackTable.fetch(tableAddress(legacyKey.publicKey));
+  check(
+    "1re mise de blackjack : table ouverte, déléguée, vue par le rollup, puis main jouée",
+    legacyBet.status === "submitted" && (await chain.base.getAccountInfo(tableAddress(legacyKey.publicKey))) !== null && legacyTable.nHands === 1,
+    `(statut ${JSON.stringify(legacyAccount.round.status)})`,
+  );
 
   console.log("\n--- Reprise après interruption ---");
   // Pretend the relay died before seeing the outcome (minutes ago): reconciliation must find it on-chain.
