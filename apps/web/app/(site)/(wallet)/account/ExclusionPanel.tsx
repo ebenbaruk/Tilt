@@ -22,7 +22,7 @@ export function ExclusionPanel({ onExcluded }: { onExcluded: () => void }) {
   const { auth } = useTiltAuth();
   const [days, setDays] = useState(PERIODS[1].days);
   const [understood, setUnderstood] = useState(false);
-  const [status, setStatus] = useState<{ tone: "pending" | "loss"; text: string } | null>(null);
+  const [status, setStatus] = useState<{ tone: "pending" | "success" | "loss"; text: string } | null>(null);
   const label = PERIODS.find((p) => p.days === days)?.label ?? `${days} days`;
 
   async function onSubmit(event: FormEvent) {
@@ -31,6 +31,8 @@ export function ExclusionPanel({ onExcluded }: { onExcluded: () => void }) {
     setStatus({ tone: "pending", text: "excluding" });
     try {
       await getApi().exclude(await auth(), { days });
+      // Said here too: if the account refresh fails, this panel stays on screen and must not spin forever.
+      setStatus({ tone: "success", text: `Self-excluded for ${label}.` });
       onExcluded();
     } catch (error) {
       setStatus({ tone: "loss", text: describeError(error) });
@@ -66,7 +68,7 @@ export function ExclusionPanel({ onExcluded }: { onExcluded: () => void }) {
           this lasts {label} and can&apos;t be undone early.
         </label>
         <div className={styles.row}>
-          <Button type="submit" variant="danger" disabled={!understood || status?.tone === "pending"}>
+          <Button type="submit" variant="danger" disabled={!understood || (status !== null && status.tone !== "loss")}>
             self-exclude for {label}
           </Button>
         </div>

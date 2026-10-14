@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/Button";
 import { Status } from "@/components/ui/Status";
 import { solanaTxUrl } from "@/lib/solana";
-import type { MoneyPhase } from "./useMoneyIntent";
+import type { MoneyPhase } from "@/lib/intent";
 
 export function MoneyStatus({
   phase,
@@ -20,7 +20,7 @@ export function MoneyStatus({
     case "stillPending":
       return (
         <div>
-          <Status tone="pending">Still processing. Nothing is lost: the same request is tracked until it lands.</Status>
+          <Status tone="pending">{phase.message}</Status>
           <Button onClick={onCheckAgain}>check again</Button>
         </div>
       );

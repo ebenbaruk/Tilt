@@ -7,15 +7,12 @@ import { Button } from "@/components/ui/Button";
 import { Status } from "@/components/ui/Status";
 import { getApi } from "@/lib/api";
 import { Field } from "@/components/ui/Field";
-import { approveFailure, parseUserCode, type ApproveFailure } from "@/lib/device";
+import { approveFailure, parseUserCode, stepFor, type ApproveStep } from "@/lib/device";
 import { describeError } from "@/lib/errors";
 import styles from "./connect.module.css";
 
-type Step =
-  | { kind: "idle" }
-  | { kind: "approving" }
-  | { kind: "approved" }
-  | { kind: "failed"; reason: ApproveFailure; message: string };
+/** The approve form: the code field belongs to it, so Enter in the field approves. */
+const APPROVE_FORM = "approve-terminal";
 
 /** The player types the code from their terminal (RFC 8628 §5.4): a code arriving in the link is
  *  never submitted, or someone could send a link that approves their own terminal in one click. */
@@ -37,6 +34,7 @@ export function ConnectFlow({ linkCode }: { linkCode: string | null }) {
           spellCheck={false}
           placeholder="XXXX-XXXX"
           value={typed}
+          form={APPROVE_FORM}
           onChange={(e) => setTyped(e.target.value)}
           error={malformed ? "That isn't a code: 8 letters and digits, like WDJB-MJHT." : null}
           hint={
@@ -55,21 +53,22 @@ export function ConnectFlow({ linkCode }: { linkCode: string | null }) {
 
 function Approve({ userCode }: { userCode: string | null }) {
   const { ready, authenticated, user, login, logout, getAccessToken } = usePrivy();
-  const [step, setStep] = useState<Step>({ kind: "idle" });
+  const [sent, setSent] = useState<ApproveStep>({ kind: "idle" });
+  const step = stepFor(sent, userCode);
 
   async function approve() {
     if (!userCode) return;
-    setStep({ kind: "approving" });
+    setSent({ kind: "approving" });
     try {
       const accessToken = await getAccessToken();
       if (!accessToken) {
-        setStep({ kind: "failed", reason: "login", message: "Your login expired. Log in again." });
+        setSent({ kind: "failed", reason: "login", message: "Your login expired. Log in again.", userCode });
         return;
       }
       await getApi().approveDevice({ accessToken }, { userCode });
-      setStep({ kind: "approved" });
+      setSent({ kind: "approved" });
     } catch (error) {
-      setStep({ kind: "failed", reason: approveFailure(error), message: describeError(error) });
+      setSent({ kind: "failed", reason: approveFailure(error), message: describeError(error), userCode });
     }
   }
 
@@ -86,9 +85,10 @@ function Approve({ userCode }: { userCode: string | null }) {
 
   if (step.kind === "failed" && step.reason === "expired") {
     return (
-      <Box tone="loss" title="code expired">
+      <Box tone="loss" title="code not accepted">
         <p>
-          This code expired or was already used. Run <code>/tilt login</code> again in Claude Code.
+          This code is wrong, expired or already used. Check it against your terminal, or run <code>/tilt login</code>{" "}
+          again in Claude Code.
         </p>
       </Box>
     );
@@ -108,12 +108,19 @@ function Approve({ userCode }: { userCode: string | null }) {
   return (
     <div className={styles.flow}>
       <p className={styles.muted}>logged in as {accountLabel(user)}</p>
-      <div className={styles.actions}>
-        <Button variant="solid" keyLabel="⏎" onClick={approve} disabled={!userCode || step.kind === "approving"}>
+      <form
+        id={APPROVE_FORM}
+        className={styles.actions}
+        onSubmit={(event) => {
+          event.preventDefault();
+          void approve();
+        }}
+      >
+        <Button type="submit" variant="solid" keyLabel="⏎" disabled={!userCode || step.kind === "approving"}>
           approve this terminal
         </Button>
         <Button onClick={logout}>not you? log out</Button>
-      </div>
+      </form>
       {step.kind === "approving" && <Status tone="pending">approving</Status>}
       {step.kind === "failed" && <Status tone="loss">{step.message}</Status>}
     </div>

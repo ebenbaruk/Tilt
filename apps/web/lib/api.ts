@@ -86,28 +86,47 @@ interface RequestOptions {
 
 type Fetch = typeof fetch;
 
-export function createApi(baseUrl: string, fetchImpl: Fetch = (...args) => fetch(...args)) {
+/** Longer than the API's own relay timeout (15 s), so a slow money move gets its answer before the web gives up. */
+const REQUEST_TIMEOUT_MS = 30_000;
+
+export function createApi(
+  baseUrl: string,
+  fetchImpl: Fetch = (...args) => fetch(...args),
+  timeoutMs = REQUEST_TIMEOUT_MS,
+) {
   async function request<T>(path: string, { method = "GET", body, auth, signal }: RequestOptions = {}): Promise<T> {
     const headers: Record<string, string> = { Accept: "application/json" };
     if (body !== undefined) headers["Content-Type"] = "application/json";
     if (auth) headers.Authorization = `Bearer ${auth.accessToken}`;
     if (auth?.identityToken) headers["X-Privy-Identity-Token"] = auth.identityToken;
 
+    // A hung API must end in an error the page can show, not an endless spinner.
+    const deadline = new AbortController();
+    const timer = setTimeout(() => deadline.abort(), timeoutMs);
+    const forwardAbort = () => deadline.abort();
+    if (signal?.aborted) deadline.abort();
+    signal?.addEventListener("abort", forwardAbort, { once: true });
     let response: Response;
+    let text: string;
     try {
       response = await fetchImpl(`${baseUrl}${path}`, {
         method,
         headers,
         body: body === undefined ? undefined : JSON.stringify(body),
-        signal,
+        signal: deadline.signal,
         cache: "no-store",
       });
+      // The body can fail mid-stream too: the request still went out, so it is a network error like any other.
+      text = await response.text();
     } catch (cause) {
-      if (cause instanceof DOMException && cause.name === "AbortError") throw cause;
+      // The caller gave up (e.g. the page unmounted): nothing to show.
+      if (signal?.aborted) throw cause;
       throw new ApiError("NETWORK_ERROR", "Could not reach the Tilt API.", null);
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", forwardAbort);
     }
 
-    const text = await response.text();
     let parsed: unknown = undefined;
     if (text) {
       try {

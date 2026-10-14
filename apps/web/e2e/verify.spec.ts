@@ -101,3 +101,20 @@ test("explains an unknown round", async ({ page }) => {
   await page.goto(`/verify/${SIGNATURE}`);
   await expect(page.getByText("round not found")).toBeVisible();
 });
+
+test("an answer the page can't read keeps the site and offers a retry", async ({ page }) => {
+  await page.route(`**/v1/rounds/${SIGNATURE}/verify`, (route) => json(route, 200, {}));
+  await page.goto(`/verify/${SIGNATURE}`);
+  await expect(page.getByText("this page couldn't load")).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "retry" })).toBeVisible();
+});
+
+test("never shows an API error page's internals", async ({ page }) => {
+  await page.route(`**/v1/rounds/${SIGNATURE}/verify`, (route) =>
+    route.fulfill({ status: 500, contentType: "text/html", body: "<h1>TypeError at db.ts:12</h1>" }),
+  );
+  await page.goto(`/verify/${SIGNATURE}`);
+  await expect(page.getByText("Something broke on Tilt's side.")).toBeVisible();
+  await expect(page.getByText("db.ts")).toHaveCount(0);
+});

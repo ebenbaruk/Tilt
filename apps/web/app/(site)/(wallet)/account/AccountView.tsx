@@ -1,7 +1,6 @@
 "use client";
 
 import { usePrivy } from "@privy-io/react-auth";
-import type { AccountResponse } from "@tilt/api/public";
 import { useCallback, useEffect, useState } from "react";
 import { useTiltAuth } from "@/components/privy/useTiltAuth";
 import { Box } from "@/components/ui/Box";
@@ -12,6 +11,7 @@ import { describeError } from "@/lib/errors";
 import { DepositPanel } from "./DepositPanel";
 import { ExclusionPanel } from "./ExclusionPanel";
 import { LimitsPanel } from "./LimitsPanel";
+import { refreshFailed, type Load } from "./load";
 import { Overview } from "./Overview";
 import { SessionsPanel } from "./SessionsPanel";
 import { WithdrawPanel } from "./WithdrawPanel";
@@ -34,8 +34,6 @@ export function AccountView({ withdrawOnly = false }: { withdrawOnly?: boolean }
   return <SignedIn withdrawOnly={withdrawOnly} />;
 }
 
-type Load = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; account: AccountResponse };
-
 function SignedIn({ withdrawOnly }: { withdrawOnly: boolean }) {
   const { logout } = usePrivy();
   const { auth } = useTiltAuth();
@@ -46,7 +44,7 @@ function SignedIn({ withdrawOnly }: { withdrawOnly: boolean }) {
       const account = await getApi().account(await auth());
       setLoad({ kind: "ready", account });
     } catch (error) {
-      setLoad({ kind: "error", message: describeError(error) });
+      setLoad((previous) => refreshFailed(previous, describeError(error)));
     }
   }, [auth]);
 
@@ -71,6 +69,14 @@ function SignedIn({ withdrawOnly }: { withdrawOnly: boolean }) {
   const excluded = account.limits.excludedUntil !== null && new Date(account.limits.excludedUntil) > new Date();
   return (
     <div className={styles.stack}>
+      {load.refreshError && (
+        <div>
+          <Status tone="loss">
+            Couldn&apos;t refresh your account: {load.refreshError} The figures below may be out of date.
+          </Status>
+          <Button onClick={() => void refresh()}>refresh</Button>
+        </div>
+      )}
       <Overview account={account} onLogout={logout} />
       {excluded && (
         <Box tone="loss" title="self-excluded">
