@@ -528,6 +528,12 @@ describe.skipIf(!db)("api routes", () => {
       const { rows } = await db.query("SELECT detail FROM rounds WHERE signature = $1", [SIGNATURE]);
       expect(rows[0].detail).toEqual({ game: "slots", reels: slot.reels });
     });
+
+    it("shows no round for a blackjack hand played before tables, so the mod can still bet", async () => {
+      chain.accounts.set(wallet, idleAccount({ rounds: 13, round: { ...idleAccount().round, stake: 100_000n } }));
+      const state = (await (await app.request("/v1/state", { headers: mod })).json()) as StateResponse;
+      expect(state).toMatchObject({ accountOpen: true, round: null });
+    });
   });
 
   describe("POST /v1/impressions", () => {

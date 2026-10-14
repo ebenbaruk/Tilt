@@ -23,6 +23,9 @@ async function roundView(deps: AppDeps, player: string, account: PlayerState): P
   const r = account.round;
   const idle = r.status.kind === "idle";
   if (idle && account.rounds === 0) return null;
+  // A blackjack round played before tables existed has no hands left to show: the protocol's
+  // 1..6 hands cannot describe it, so the panel starts as if no round had been played.
+  if (r.outcome.game === "blackjack" && r.outcome.hands.length === 0) return null;
   const number = idle ? account.rounds : account.rounds + 1;
   let signature: string | null = null;
   if (idle) {
