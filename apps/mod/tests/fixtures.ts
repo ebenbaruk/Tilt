@@ -25,6 +25,8 @@ export const BASE: StateResponse = {
     { rank: 414, handle: "@eli", net: "17950000", isYou: true },
   ],
   rank: 414,
+  ahead: { rank: 413, handle: "@sol", net: "21150000", isYou: false },
+  webUrl: "https://tilt.example",
   blocked: null,
 };
 

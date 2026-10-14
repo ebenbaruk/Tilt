@@ -40,10 +40,16 @@ export async function leaderboard(
   deps: AppDeps,
   competition: Competition | null,
   you: string | null,
-): Promise<{ entries: LeaderboardEntry[]; rank: number | null }> {
-  if (!competition) return { entries: [], rank: null };
+): Promise<{ entries: LeaderboardEntry[]; rank: number | null; ahead: LeaderboardEntry | null }> {
+  if (!competition) return { entries: [], rank: null, ahead: null };
   const rows = await standings(deps.db, competition, LEADERBOARD_SIZE, you);
-  return { entries: rows.map((s) => toEntry(s, you)), rank: rows.find((s) => s.player === you)?.rank ?? null };
+  const yours = rows.find((s) => s.player === you);
+  const ahead = yours && rows.find((s) => s.rank === yours.rank - 1);
+  return {
+    entries: rows.filter((s) => s.rank <= LEADERBOARD_SIZE || s === yours).map((s) => toEntry(s, you)),
+    rank: yours?.rank ?? null,
+    ahead: ahead ? toEntry(ahead, you) : null,
+  };
 }
 
 async function playerPart(deps: AppDeps, userId: string, wallet: PublicKey | null) {
@@ -80,5 +86,7 @@ export async function buildState(deps: AppDeps, userId: string): Promise<StateRe
     sponsor: competition ? sponsorView(competition) : null,
     leaderboard: board.entries,
     rank: board.rank,
+    ahead: board.ahead,
+    webUrl: deps.config.WEB_URL,
   };
 }

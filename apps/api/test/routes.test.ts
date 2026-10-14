@@ -486,6 +486,45 @@ describe.skipIf(!db)("api routes", () => {
   });
 
   describe("GET /v1/state", () => {
+    const openDaily = async () => {
+      const campaign = await createCampaign(
+        db,
+        { sponsor: "Northwind", tagline: "ship it", budget: 10_000_000n, commissionBps: 4000 },
+        "test",
+      );
+      await openCompetition(
+        db,
+        {
+          campaign,
+          name: "daily",
+          startsAt: new Date(Date.now() - 3_600_000),
+          endsAt: new Date(Date.now() + 3_600_000),
+          pool: 3_000_000n,
+          splitBps: [5000, 2500, 1000],
+          sharedRanks: 2,
+          minStake: 0n,
+          dropPool: 1_000_000n,
+          dropCount: 2,
+          ticketsPerHour: 10,
+        },
+        "test",
+      );
+    };
+    /** A settled 1 USDC slots spin netting `net` for `player`. */
+    const won = (player: string, net: bigint, round = 1) =>
+      saveRound(db, {
+        signature: `${player}-${round}`.padEnd(88, "1"),
+        player,
+        round,
+        game: "slots",
+        stake: 1_000_000n,
+        payout: 1_000_000n + net,
+        fee: 30_000n,
+        requestId: BigInt(round),
+        randomness: Buffer.alloc(32),
+        settledAt: new Date(),
+      });
+
     it("shows a closed account before the first deposit", async () => {
       chain.accounts.delete(wallet);
       const state = (await (await app.request("/v1/state", { headers: mod })).json()) as StateResponse;
@@ -495,6 +534,8 @@ describe.skipIf(!db)("api routes", () => {
         round: null,
         pendingIntentId: null,
         sponsor: null,
+        ahead: null,
+        webUrl: "https://tilt.test",
       });
       expect(state.limits).toEqual({ minBet: "100000", maxBet: "100000000" });
       expect(state.rtp).toEqual({ blackjack: "99.00", roulette: "97.30", baccarat: "98.76", slots: "96.16" });
@@ -525,40 +566,8 @@ describe.skipIf(!db)("api routes", () => {
       relay.outcome = () => ({ status: "pending" });
       const id = randomUUID();
       await play({ type: "blackjack_hit" }, id);
-      const campaign = await createCampaign(
-        db,
-        { sponsor: "Northwind", tagline: "ship it", budget: 10_000_000n, commissionBps: 4000 },
-        "test",
-      );
-      await openCompetition(
-        db,
-        {
-          campaign,
-          name: "daily",
-          startsAt: new Date(Date.now() - 3_600_000),
-          endsAt: new Date(Date.now() + 3_600_000),
-          pool: 3_000_000n,
-          splitBps: [5000, 2500, 1000],
-          sharedRanks: 2,
-          minStake: 0n,
-          dropPool: 1_000_000n,
-          dropCount: 2,
-          ticketsPerHour: 10,
-        },
-        "test",
-      );
-      await saveRound(db, {
-        signature: SIGNATURE,
-        player: wallet,
-        round: 3,
-        game: "slots",
-        stake: 1_000_000n,
-        payout: 2_970_000n,
-        fee: 30_000n,
-        requestId: 8n,
-        randomness: Buffer.alloc(32),
-        settledAt: new Date(),
-      });
+      await openDaily();
+      await won(wallet, 1_970_000n, 3);
       const state = (await (await app.request("/v1/state", { headers: mod })).json()) as StateResponse;
       expect(state).toMatchObject({
         accountOpen: true,
@@ -567,6 +576,7 @@ describe.skipIf(!db)("api routes", () => {
         sponsor: { name: "Northwind", tagline: "ship it", pool: "4000000" },
         leaderboard: [{ rank: 1, net: "1970000", isYou: true }],
         rank: 1,
+        ahead: null,
         blocked: null,
         round: {
           phase: "player_turn",
@@ -575,6 +585,35 @@ describe.skipIf(!db)("api routes", () => {
           detail: { activeHand: 0, hands: [{ total: 17, soft: true, result: null }], canHit: true },
         },
       });
+    });
+
+    it("shows who is ranked right above the player, even outside the top ten", async () => {
+      await openDaily();
+      // Eleven players ahead, one behind: the player is #12, the one to pass is #11.
+      for (let i = 1; i <= 11; i++) await won(`rival${String(i).padStart(2, "0")}`, 10_000_000n - BigInt(i));
+      await won("trailer", 1n);
+      await won(wallet, 5_000_000n);
+      const state = (await (await app.request("/v1/state", { headers: mod })).json()) as StateResponse;
+      expect(state.rank).toBe(12);
+      expect(state.ahead).toEqual({ rank: 11, handle: "riv…l11", net: "9999989", isYou: false });
+      expect(state.leaderboard.map((e) => e.rank)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12]);
+    });
+
+    it("takes the player above from the tie order when nets are equal", async () => {
+      await openDaily();
+      // Ties are ranked by wallet, so a rival sorting before every wallet ranks above an equal net.
+      await won("0tie", 2_000_000n);
+      await won(wallet, 2_000_000n);
+      const state = (await (await app.request("/v1/state", { headers: mod })).json()) as StateResponse;
+      expect(state.rank).toBe(2);
+      expect(state.ahead).toMatchObject({ rank: 1, net: "2000000", isYou: false });
+    });
+
+    it("shows no one above an unranked player", async () => {
+      await openDaily();
+      await won("rival", 1_000_000n);
+      const state = (await (await app.request("/v1/state", { headers: mod })).json()) as StateResponse;
+      expect(state).toMatchObject({ rank: null, ahead: null });
     });
 
     it("shows the last settled round with its signature and keeps its detail for /verify", async () => {

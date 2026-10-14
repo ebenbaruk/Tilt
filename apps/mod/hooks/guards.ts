@@ -188,6 +188,8 @@ export function isStateResponse(value: unknown): value is StateResponse {
     isNullable(value.sponsor, isSponsor) &&
     isArrayOf(value.leaderboard, isLeaderboardEntry) &&
     isNullable(value.rank, isInt) &&
+    (value.ahead === undefined || isNullable(value.ahead, isLeaderboardEntry)) &&
+    (value.webUrl === undefined || isString(value.webUrl)) &&
     isNullable(value.blocked, isString)
   );
 }

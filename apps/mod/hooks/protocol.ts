@@ -177,6 +177,12 @@ export interface StateResponse {
   leaderboard: LeaderboardEntry[];
   /** Player's rank in the running competition; null when not ranked. */
   rank: number | null;
+  /** The entry ranked right above the player (rank − 1), to show what it takes to pass it; null
+   *  when there is no running competition, the player is unranked or #1. Absent from older apis. */
+  ahead?: LeaderboardEntry | null;
+  /** Base URL of the web app (deposits, account). Absent from older apis; only shown or opened
+   *  when it is on the api's own site. */
+  webUrl?: string;
   /** Self-exclusion or a responsible-gaming limit blocks play; the reason is shown as is. */
   blocked: string | null;
 }

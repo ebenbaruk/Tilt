@@ -123,7 +123,8 @@ const INITIAL_BET = `CASE WHEN game <> 'blackjack' THEN stake
                           ELSE stake / ${MOST_BETS_PER_DEALT_HAND} END`;
 
 /** Ranking by net gain over all the window's rounds, among players with at least one round bet
- *  at `minStake`; ties broken by wallet so the order is stable. `limit` null = everyone. */
+ *  at `minStake`; ties broken by wallet so the order is stable. `limit` null = everyone; with a
+ *  limit, `you` and the player ranked right above `you` are returned too. */
 export async function standings(
   db: Queryable,
   c: Pick<Competition, "startsAt" | "endsAt" | "minStake">,
@@ -138,7 +139,9 @@ export async function standings(
      ), ranked AS (
        SELECT player, net, row_number() OVER (ORDER BY net DESC, player) AS rank FROM totals
      )
-     SELECT player, net, rank FROM ranked WHERE $4::int IS NULL OR rank <= $4 OR player = $5 ORDER BY rank`,
+     SELECT player, net, rank FROM ranked
+     WHERE $4::int IS NULL OR rank <= $4 OR player = $5 OR rank = (SELECT rank - 1 FROM ranked WHERE player = $5)
+     ORDER BY rank`,
     [c.startsAt, c.endsAt, c.minStake.toString(), limit, you],
   );
   return rows.map((r) => ({ player: r.player, net: BigInt(r.net), rank: Number(r.rank) }));
