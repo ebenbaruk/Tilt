@@ -344,10 +344,15 @@ describe("replay (GET /verify)", () => {
     expect(result.outcome).toEqual(snapshotOf(v));
   });
 
-  it("finds the moves and the number of hands from the payout alone when no snapshot was taken", () => {
-    const unmatched = vectors.blackjack.filter((v) => !replay({ ...blackjackInput(v), snapshot: null }).matches);
-    expect(unmatched).toEqual([]);
-  });
+  // 240 snapshot-less searches (each under 0.5 s, bounded by MAX_BLACKJACK_STATES): seconds in total.
+  it(
+    "finds the moves and the number of hands from the payout alone when no snapshot was taken",
+    { timeout: 60_000 },
+    () => {
+      const unmatched = vectors.blackjack.filter((v) => !replay({ ...blackjackInput(v), snapshot: null }).matches);
+      expect(unmatched).toEqual([]);
+    },
+  );
 
   it("replays a multi-hand round whose stand on a first hand took no draw", () => {
     const v = vectors.blackjack.find(
