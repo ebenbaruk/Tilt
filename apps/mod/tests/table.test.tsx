@@ -60,6 +60,25 @@ describe("the table in the fullscreen pane", () => {
     ]);
   });
 
+  test("once the keyboard leaves the pane, the table asks for a click again before Space", async ($, on) => {
+    await seat($, on, BASE);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+    const table = async () => textOf(await ui.drawn({ in: TABLE_KEY }));
+
+    await ui.pointer(CLICK);
+    expect(await table()).toContain("Space · play");
+
+    // The prompt (or the agents view) took the keys: ← there is Claude Code's, not the table's.
+    await ui.redraw(UNFOCUSED.props);
+    expect(await table()).toContain("click the table, then Space to play");
+
+    // ctrl+x tab gives the pane the keys back, but not the table: Space still needs a click.
+    await ui.redraw(FULLSCREEN.props);
+    expect(await table()).toContain("click the table, then Space to play");
+    await ui.pointer(CLICK);
+    expect(await table()).toContain("Space · play");
+  });
+
   test("in a blackjack turn Space hits, Enter stands and d doubles", async ($, on) => {
     const { world } = await seat($, on, BLACKJACK_TURN, { "POST /v1/play": () => SUBMITTED });
     const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });

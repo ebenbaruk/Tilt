@@ -43,11 +43,12 @@ Letter keys work everywhere (the pane and the band, inline or fullscreen):
 - Roulette: `r` red, `k` black, `o` odd, `e` even, `l` low, `g` high, `z` dozen, `c` column.
 - Baccarat: `p` player, `y` banker, `t` tie.
 
-In the fullscreen layout (`claude --settings '{"tui":"fullscreen"}'`), click the table to give it the keys:
+In the fullscreen layout (`claude --settings '{"tui":"fullscreen"}'`), click the table to give it the keys. Only a click does: `ctrl+x tab` gives the pane the letters, not Space, Enter or the arrows, and once the keyboard leaves the pane the table needs a click again (the table says so). Without it, `←` is Claude Code's own (the agents view).
 
 - `Space` or `Enter` plays a new round with the same bet and hands; in a blackjack turn `Space` hits, `Enter` stands, `d` doubles.
 - `←` / `→` lower / raise the bet, `↑` / `↓` add / remove a blackjack hand, `1`–`4` switch game. `Esc` hands the keys back.
 - The table deals the cards one by one and counts up a win; the main screen draws it still.
+- Back from the agents view, Claude Code (2.1.299) may not draw the docked pane again although it is still open: `/tilt` brings it back.
 
 When a turn starts, the pane opens without taking the keyboard. When it ends you see `✓ agent finished in 6m 14s · your hand is saved`.
 

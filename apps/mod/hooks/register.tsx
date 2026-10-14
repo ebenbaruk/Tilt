@@ -819,6 +819,7 @@ export const register: Register = (on, options) => {
         prefs: snap.prefs,
         keys: keys.map(({ key, hotkey, label }) => ({ key, hotkey, label })),
         isWide: e.props.bodyColumns >= WIDE_MIN_COLUMNS,
+        isPaneFocused: e.props.isFocused,
       };
 
       table = <Client key={TABLE_KEY} module="./table.tsx" props={props} />;

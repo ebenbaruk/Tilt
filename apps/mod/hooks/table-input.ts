@@ -22,6 +22,9 @@ export interface TableProps {
   /** The plan's keys right now (planKeys), the game switches included. */
   keys: TableKey[];
   isWide: boolean;
+  /** The pane holds the keyboard. A click on the table then gives it the raw keys; without the
+   *  pane's focus the table has none, whatever was clicked before. */
+  isPaneFocused: boolean;
 }
 
 /** What the surface module posts: press the plan's key with this address. */

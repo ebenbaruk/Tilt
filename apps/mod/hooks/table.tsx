@@ -24,8 +24,6 @@ const SHAKE_OFFSETS = [2, 0, 2, 0, 1, 0];
 const PULSE_BEAT_MS = 450;
 /** The active hand and the play-again prompt pulse this long after the last change, then rest. */
 const PULSE_WINDOW_MS = 12_000;
-/** No key or click for this long: the focus has likely moved on, so the hint comes back. */
-const FOCUS_IDLE_MS = 30_000;
 const WIN_FLASH = "#4a3b12";
 const LOSS_FLASH = "#4a1c1c";
 const PROGRESS_STEPS = 1000n;
@@ -57,13 +55,15 @@ interface TableState {
   streak: number;
   /** The last change or key: the pulses run for a while after it. */
   wokeAt: number;
+  /** Clicked or keyed since the pane last took the keyboard: the raw keys are the table's. */
   isFocused: boolean;
+  /** The pane's focus at the last props, to notice it leave. */
+  wasPaneFocused: boolean;
 }
 
 interface Runtime {
   props: TableProps;
   stopClock: (() => void) | null;
-  stopFocusTimer: (() => void) | null;
 }
 
 const runtimes = new WeakMap<object, Runtime>();
@@ -92,6 +92,7 @@ function firstState(props: TableProps): TableState {
     streak: 0,
     wokeAt: 0,
     isFocused: false,
+    wasPaneFocused: props.isPaneFocused,
   };
 }
 
@@ -101,6 +102,12 @@ function observe(props: TableProps, state: TableState): TableState {
   const round = props.state.round;
   const cards = cardsOf(round);
   let next = state;
+
+  // The keyboard left the pane (the prompt, another pane, the agents view): the table has to be
+  // clicked again before Space and the arrows are its own.
+  if (state.wasPaneFocused !== props.isPaneFocused) {
+    next = { ...next, wasPaneFocused: props.isPaneFocused, isFocused: next.isFocused && props.isPaneFocused };
+  }
 
   if ((round?.number ?? null) !== state.round) {
     next = { ...next, round: round?.number ?? null, cards, revealed: 0, lastDealAt: -DEAL_STEP_MS, effect: null };
@@ -163,19 +170,9 @@ function startClock(surface: ClientSurface<TableState>, rt: Runtime): void {
   }
 }
 
-/** A click or a key: the region holds the focus, until a long quiet says it likely moved on. */
+/** A click or a key: the table holds the raw keys while the pane keeps the keyboard. */
 function focus(surface: ClientSurface<TableState>, rt: Runtime): void {
   const state = surface.state;
-
-  rt.stopFocusTimer?.();
-  rt.stopFocusTimer = surface.every(FOCUS_IDLE_MS, () => {
-    rt.stopFocusTimer?.();
-    rt.stopFocusTimer = null;
-
-    if (surface.state !== undefined) {
-      surface.setState({ ...surface.state, isFocused: false });
-    }
-  });
 
   if (state !== undefined) {
     surface.setState({ ...state, isFocused: true, wokeAt: state.now });
@@ -304,7 +301,7 @@ export default function Table(props: TableProps, surface: ClientSurface<TableSta
   let rt = runtimes.get(surface);
 
   if (rt === undefined) {
-    rt = { props, stopClock: null, stopFocusTimer: null };
+    rt = { props, stopClock: null };
     runtimes.set(surface, rt);
     listen(surface, rt);
   }
@@ -337,7 +334,11 @@ export default function Table(props: TableProps, surface: ClientSurface<TableSta
       <Box flexDirection="column" marginTop={1}>
         {summary(ui, state, round)}
         <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-          {prompt(ui, props.keys, { isFocused: state.isFocused, isSettled: round?.phase === "idle", isPulseOn })}
+          {prompt(ui, props.keys, {
+            isFocused: state.isFocused && props.isPaneFocused,
+            isSettled: round?.phase === "idle",
+            isPulseOn,
+          })}
           {state.streak >= STREAK_SHOWN_FROM && (
             <Text color={GOLD} bold>
               {`${state.streak} wins in a row`}
