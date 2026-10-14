@@ -90,7 +90,7 @@ Dans la session :
 2. `/tilt login`, puis approuve le code dans le navigateur.
 3. Envoie un prompt : le panneau s'ouvre pendant que l'agent travaille.
 
-Touches (partout) : `1`–`4` pour les jeux, `n` pour donner ou lancer, `v`/`b` pour baisser/monter la mise par main, au blackjack `j`/`k` pour une main de moins/de plus (1 à 6) et `h`/`s`/`d` sur la main marquée `▶`. Le focus passe au panneau avec `Ctrl+X Tab`. En plein écran (`claude --plugin-dir apps/mod --settings '{"tui":"fullscreen"}'`), un clic sur la table lui donne les touches brutes : `Espace`/`Entrée` rejoue avec la même mise et les mêmes mains (en cours de main `Espace` tire, `Entrée` reste, `d` double), `←`/`→` la mise, `↑`/`↓` les mains.
+Touches (partout) : `1`–`4` pour les jeux, `n` pour donner ou lancer, `v`/`b` pour baisser/monter la mise par main, au blackjack `j`/`k` pour une main de moins/de plus (1 à 6) et `h`/`s`/`d`/`p` (hit, stand, double, split quand la main est une paire) sur la main marquée `▶`. Le focus passe au panneau avec `Ctrl+X Tab`. En plein écran (`claude --plugin-dir apps/mod --settings '{"tui":"fullscreen"}'`), un clic sur la table lui donne les touches brutes : `Espace`/`Entrée` rejoue avec la même mise et les mêmes mains (en cours de main `Espace` tire, `Entrée` reste, `d` double, `p` sépare), `←`/`→` la mise, `↑`/`↓` les mains.
 
 Le premier chargement dépose les types du moteur dans `apps/mod/.claude-plugin/types/` (ignorés par git), ce qui rend utile `pnpm --filter @tilt/mod typecheck`.
 

@@ -86,11 +86,11 @@ Référence visuelle : la maquette d'Eli (image partagée dans la conversation, 
 - Lettres (partout : panneau et bande, écran principal ou plein écran ; `Ctrl+X Tab` donne ou rend le focus) :
   - `1`–`4` : changer de jeu ; `n` : donner ou lancer.
   - `v` / `b` : baisser / monter la mise par main (bloquée au minimum et au maximum de la table).
-  - Blackjack : `j` / `k` une main de moins / de plus (1 à 6), `h`/`s`/`d` sur la main active.
+  - Blackjack : `j` / `k` une main de moins / de plus (1 à 6), `h`/`s`/`d` sur la main active, `p` la sépare (split) quand elle le peut.
   - Un raccourci ne peut être qu'un chiffre ou une lettre minuscule : Espace, Entrée, `+` et `-` sont refusés pour un bouton.
-- Plein écran + clic : la table est une surface (`Client`) qui reçoit les touches brutes après un clic sur elle (`Esc` rend le focus). `Espace` ou `Entrée` rejoue avec la même mise et les mêmes mains ; en cours de main `Espace` tire, `Entrée` reste, `d` double ; `←`/`→` la mise, `↑`/`↓` les mains, `1`–`4` le jeu. Sur l'écran principal, la surface ne reçoit jamais de touches : la table y est dessinée fixe et se joue aux lettres.
+- Plein écran + clic : la table est une surface (`Client`) qui reçoit les touches brutes après un clic sur elle (`Esc` rend le focus). `Espace` ou `Entrée` rejoue avec la même mise et les mêmes mains ; en cours de main `Espace` tire, `Entrée` reste, `d` double, `p` sépare ; `←`/`→` la mise, `↑`/`↓` les mains, `1`–`4` le jeu. Sur l'écran principal, la surface ne reçoit jamais de touches : la table y est dessinée fixe et se joue aux lettres.
 
-**Blackjack multi-mains :** 1 à 6 mains contre un seul croupier, même mise sur chaque main, jouées de gauche à droite (main active marquée `▶`). Chaque main affiche son total, BUST/BLACKJACK, le double, sa mise et, une fois soldée, son résultat (BJ/WIN/PUSH/LOSE) ; une ligne résume le net de la manche.
+**Blackjack multi-mains :** 1 à 6 mains contre un seul croupier, même mise sur chaque main, jouées de gauche à droite (main active marquée `▶`). Une paire se sépare (`p`, au plus 4 splits par manche, donc jusqu'à 10 mains, renvoyées à la ligne selon la largeur) ; une main née d'un split porte la marque `split`, et son 21 en deux cartes n'est pas un blackjack. Chaque main affiche son total, BUST/BLACKJACK, le double, sa mise et, une fois soldée, son résultat (BJ/WIN/PUSH/LOSE) ; une ligne résume le net de la manche et compte les mains nées d'un split.
 
 **Contraintes techniques (mods Claude Code) :**
 - Claude Code ≥ v2.1.287.
@@ -103,7 +103,7 @@ Référence visuelle : la maquette d'Eli (image partagée dans la conversation, 
 
 | Jeu | Version | Règles (implémentées dans `chain/`, détail dans `chain/README.md`) |
 | --- | --- | --- |
-| Blackjack | v1 | Sans carte cachée (2e carte du croupier tirée après le joueur), sabot infini, croupier reste sur 17, blackjack payé 3:2, double sur les 2 premières cartes. Pas de split en v1 (🟡 D11). RTP ≈ 99 % en stratégie de base. |
+| Blackjack | v1 | Sans carte cachée (2e carte du croupier tirée après le joueur), sabot infini, croupier reste sur 17, blackjack payé 3:2, double sur les 2 premières cartes. Split des deux premières cartes de même valeur (10, V, D, R valent tous 10 ; as seulement avec as) pour une mise de base de plus : la nouvelle main se place juste après, chacune reçoit une carte. Au plus 4 splits par manche (jusqu'à 6 + 4 = 10 mains). Re-split et double après split permis, sauf pour les as : un as splitté reçoit une seule carte et la main est finie. Un 21 en deux cartes né d'un split n'est pas un blackjack (payé 1:1). RTP ≈ 99 % en stratégie de base. |
 | Roulette | v1 | Européenne (un seul zéro), un pari par tour : plein, rouge/noir, pair/impair, manque/passe, douzaine, colonne. RTP 97,30 %. |
 | Baccarat | v1 | Punto Banco, sabot infini : joueur (1:1), banque (1:1, commission 5 %) et égalité (8:1). RTP 98,76 % / 98,94 % / ≈ 85,9 %. |
 | Slots | v1 | 3 rouleaux pondérés, table de gains publique, gain max 250×. RTP 96,16 %. |
@@ -247,7 +247,7 @@ Assurée on-chain par le VRF (§6.1) : le programme n'accepte un tirage que de l
 GET  /users/:userId    -> { userId, solanaAddress, accountOpen }        // 404 UNKNOWN_USER
 POST /intents { intentId, userId, action, consent? } -> { intentId, status, signature?, error? }
 GET  /intents/:intentId -> même réponse
-// action : open_account | deposit {amount} · blackjack_bet {amount (par main), hands 1..6} | blackjack_hit | blackjack_stand | blackjack_double
+// action : open_account | deposit {amount} · blackjack_bet {amount (par main), hands 1..6} | blackjack_hit | blackjack_stand | blackjack_double | blackjack_split
 //          roulette_spin {amount, bet} · baccarat_deal {amount, bet} · slots_spin {amount} · withdraw {amount}
 // status : pending (en vol ou issue inconnue, le relais la tranche seul) | submitted (arrivée on-chain) | failed
 // error.code : PROGRAM_ERROR (message = nom de l'erreur Anchor, ex. InsufficientBalance), ACCOUNT_NOT_OPEN,
@@ -307,7 +307,7 @@ GET  /payouts/promo/:payoutId -> même réponse
 - **Compétition** (ex. 24 h) : le classement se fait au **gain net sur toutes les manches** du joueur pendant la période (et non au solde total, qui favoriserait les gros dépôts 🟡 D10). Répartition sur le top N (ex. 50 % / 25 % / 10 % / reste partagé). Un prix de rang exige un gain net positif.
 - **Drops aléatoires :** une partie du pool (ex. 20 %) est distribuée en petits gains tirés au sort parmi les mains jouées. Une main = un ticket, quelle que soit la mise, pour que les petits joueurs gardent une chance. Tirage par **engagement puis révélation** : le hash de la graine est publié à l'ouverture, la graine à la clôture ; les gagnants sortent de HMAC(graine, signature de la manche). Un drop max par joueur.
 - **Anti-abus :**
-  - la mise minimum se juge sur la **mise initiale** (un double au blackjack ne compte pas), et ne décide que de l'éligibilité au classement et des tickets ; le gain net, lui, compte toutes les manches, sinon un joueur choisirait les mains qui comptent ;
+  - la mise minimum se juge sur la **mise initiale** (la mise de base fois les mains distribuées : un double ou un split au blackjack ne compte pas), et ne décide que de l'éligibilité au classement et des tickets ; le gain net, lui, compte toutes les manches, sinon un joueur choisirait les mains qui comptent ;
   - plafond de tickets par heure, un compte par personne (Privy + vérifs), aucun drop sur des mains annulées ;
   - une compétition ne se clôt que lorsque l'indexeur a traité tout ce qui précède sa fin ;
   - les prix sont bloqués en revue avant paiement, et chaque `payoutId` est déterministe (payé une seule fois).
@@ -462,7 +462,7 @@ Une feature est finie quand :
 | D8 | Juridique | qui s'en charge, juridiction, société | Juridiction : ✅ **Curaçao**. Reste : qui s'en charge, société, avocat avant M4 |
 | D9 | Commission sur les budgets sponsors | % | ~40 % |
 | D10 | Classement des compétitions | gain net / volume / solde | Gain net |
-| D11 | Split au blackjack v1 | oui / non | Non (v1.1) |
+| D11 | Split au blackjack v1 | oui / non | ✅ **Oui** : paires de même valeur, 4 splits max par manche, re-split et double après split, as splittés : une carte et c'est fini |
 | D12 | Nom de domaine et marque | — | — |
 | D13 | Répartition après D2 on-chain | qui porte la logique des jeux (`chain/`), que devient `api`, contrat §7 | ✅ **Validé par Eli** (2026-10-13) : jeux on-chain chez Armand, `api` en lecture + produit chez Eli |
 
