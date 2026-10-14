@@ -2,11 +2,13 @@ import type { ConfigRow, On, TurnCompleteInput } from "claude-code";
 import { describe, type Engine, expect, test } from "claude-code/testing";
 
 import type { StateResponse } from "../hooks/protocol";
-import { BASE, BLACKJACK_TURN, BLACKJACK_WIN, SLOTS } from "./fixtures";
+import { BASE, BLACKJACK_TURN, BLACKJACK_WIN, ROULETTE, SLOTS } from "./fixtures";
 import { BAND, command, later, LOGGED_IN, PANE, PANE_INLINE, PLUGIN, seat, shownText, textOf } from "./world";
 
 const POLL_MS = 5_000;
 const PANE_SYNC_MS = 2_000;
+/** Past the longest spin: the wheel and the reels have landed. */
+const SPIN_OVER_MS = 1_500;
 const LARGE_CARD_TOP = "╭─────╮";
 const LIGHT_PINK = "#c42a7f";
 const DARK_PINK = "#f779ba";
@@ -217,12 +219,13 @@ describe("around the table", () => {
   });
 
   test("the session line counts the rounds settled since the session started, not the ones before", async ($, on) => {
-    const { show } = await moving($, on, BLACKJACK_WIN);
+    const { show, clock } = await moving($, on, BLACKJACK_WIN);
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
 
     expect(textOf(await ui.drawn())).not.toContain("session ");
 
     await show({ ...SLOTS, round: SLOTS.round === null ? null : { ...SLOTS.round, number: 8 } });
+    await clock.advance(SPIN_OVER_MS);
 
     expect(textOf(await ui.drawn())).toContain("session +3.96 · 1 round");
   });
@@ -251,6 +254,7 @@ describe("around the table", () => {
 
     current = settled(SLOTS, 8);
     await clock.advance(POLL_MS);
+    await clock.advance(SPIN_OVER_MS);
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
 
     expect(textOf(await ui.drawn())).toContain("session +3.96 · 1 round");
@@ -326,6 +330,58 @@ describe("tight rooms", () => {
       expect(text.indexOf("hit")).toBeLessThan(text.indexOf("DEALER"));
     },
   );
+});
+
+describe("spins", () => {
+  test("a slots spin turns the reels, then shows the result: nothing tells it before they stop", async ($, on) => {
+    const { show, clock } = await moving($, on, BASE);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+    const won = { ...SLOTS, balance: "16360000" };
+
+    await show(won);
+    const spinning = textOf(await ui.drawn());
+
+    expect(spinning).toContain("balance 12.40 USDC");
+    expect(spinning).not.toContain("BIG WIN");
+    expect(spinning).not.toContain("+3.96");
+
+    await clock.advance(SPIN_OVER_MS);
+    const landed = textOf(await ui.drawn());
+
+    expect(landed).toContain("balance 16.36 USDC");
+    expect(landed).toContain("★ BIG WIN +3.96 USDC");
+  });
+
+  test("a roulette spin lands the ball, then names the pocket", async ($, on) => {
+    const { show, clock } = await moving($, on, { ...BASE, round: null });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+
+    await ui.press({ key: "game-roulette" });
+    await show(ROULETTE);
+    const spinning = textOf(await ui.drawn());
+
+    expect(spinning).toContain("spinning…");
+    expect(spinning).not.toContain("17 BLACK");
+
+    await clock.advance(SPIN_OVER_MS);
+    const landed = textOf(await ui.drawn());
+
+    expect(landed).toContain(" 17 BLACK ");
+    expect(landed).toContain(" ●  ");
+  });
+
+  test("the slots show their pay table, the winning line lit", async ($, on) => {
+    await seat($, on, {
+      ...SLOTS,
+      round: SLOTS.round === null ? null : { ...SLOTS.round, detail: { game: "slots", reels: ["7", "7", "7"] } },
+    });
+    const drawn = await (await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE })).drawn();
+    const text = textOf(drawn);
+
+    expect(text).toContain("PAYS × BET");
+    expect(text).toContain("7 7 7");
+    expect(text).toContain("250");
+  });
 });
 
 describe("sounds", () => {

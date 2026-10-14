@@ -11,7 +11,7 @@ import { activeGame } from "./keys";
 import type { RoundView } from "./protocol";
 import { pressFor, type TableKey, type TableProps } from "./table-input";
 import { applyTheme, FG4, FG6, GOLD, PINK, type Ui } from "./theme";
-import { gameTable, outcomeLine, roundOf } from "./view";
+import { gameTable, outcomeLine, roundOf, spinMs, spinProgress } from "./view";
 
 const FRAME_MS = 33;
 const DEAL_STEP_MS = 150;
@@ -47,6 +47,10 @@ interface TableState {
   cards: number;
   /** Cards turned over so far, in deal order. */
   revealed: number;
+  /** Frame clock time a roulette or slots round started spinning; null when none is. */
+  spinAt: number | null;
+  /** The round on the table was drawing at the last props. */
+  wasDrawing: boolean;
   lastDealAt: number;
   /** The last round counted as settled, so a redraw never counts it twice. */
   settled: number | null;
@@ -86,6 +90,8 @@ function firstState(props: TableProps): TableState {
     round: round?.number ?? null,
     cards,
     revealed: cards,
+    spinAt: null,
+    wasDrawing: round?.phase === "drawing",
     lastDealAt: 0,
     settled: round?.phase === "idle" ? round.number : null,
     effect: null,
@@ -109,8 +115,23 @@ function observe(props: TableProps, state: TableState): TableState {
     next = { ...next, wasPaneFocused: props.isPaneFocused, isFocused: next.isFocused && props.isPaneFocused };
   }
 
+  // A round that lands after drawing restarts its spin, so the reels stop one by one on the result.
+  if (round !== null && round.number === state.round && round.phase === "idle" && state.wasDrawing) {
+    next = { ...next, spinAt: spinMs(round.detail.game) > 0 ? next.now : null, wokeAt: next.now };
+  }
+
   if ((round?.number ?? null) !== state.round) {
-    next = { ...next, round: round?.number ?? null, cards, revealed: 0, lastDealAt: -DEAL_STEP_MS, effect: null };
+    const spinAt = round !== null && spinMs(round.detail.game) > 0 ? next.now : null;
+
+    next = {
+      ...next,
+      round: round?.number ?? null,
+      cards,
+      revealed: 0,
+      spinAt,
+      lastDealAt: -DEAL_STEP_MS,
+      effect: null,
+    };
     next.wokeAt = next.now;
   } else if (cards !== state.cards) {
     next = { ...next, cards, revealed: Math.min(next.revealed, cards), wokeAt: next.now };
@@ -118,7 +139,9 @@ function observe(props: TableProps, state: TableState): TableState {
 
   if (round !== null && round.phase === "idle" && round.number !== state.settled) {
     const kind = outcomeOf(round.net);
-    const dealLeft = Math.max(0, next.cards - next.revealed) * DEAL_STEP_MS;
+    // The effect waits for the last card, or for the wheel or the reels to land.
+    const spinLeft = next.spinAt === null ? 0 : Math.max(0, next.spinAt + spinMs(round.detail.game) - next.now);
+    const dealLeft = Math.max(0, next.cards - next.revealed) * DEAL_STEP_MS + spinLeft;
     const streak = kind === "win" ? next.streak + 1 : kind === "loss" ? 0 : next.streak;
 
     next = {
@@ -130,13 +153,26 @@ function observe(props: TableProps, state: TableState): TableState {
     };
   }
 
-  return next;
+  const isDrawing = round?.phase === "drawing";
+
+  return next.wasDrawing === isDrawing ? next : { ...next, wasDrawing: isDrawing };
 }
 
 const hasKey = (keys: readonly TableKey[], address: string): boolean => keys.some((key) => key.key === address);
 
+/** How far into its spin the round on the table is; null once it landed. */
+function spinElapsed(state: TableState, props: TableProps): number | null {
+  const round = props.state.round;
+
+  if (state.spinAt === null || round === null) {
+    return null;
+  }
+
+  return spinProgress(round, state.now - state.spinAt);
+}
+
 function isAnimating(state: TableState, props: TableProps): boolean {
-  const isDealing = state.revealed < state.cards;
+  const isDealing = state.revealed < state.cards || spinElapsed(state, props) !== null;
   const hasEffect = state.effect !== null && state.now < state.effect.at + COUNT_UP_MS + BALANCE_MS;
   const canPulse = hasKey(props.keys, "bj-stand") || hasKey(props.keys, "start");
 
@@ -204,11 +240,11 @@ function partOf(value: bigint, elapsed: number, span: number): bigint {
   return (value * BigInt(Math.round(progress * Number(PROGRESS_STEPS)))) / PROGRESS_STEPS;
 }
 
-function summary(ui: Ui, state: TableState, round: RoundView | null): RenderElement | null {
+function summary(ui: Ui, state: TableState, round: RoundView | null, isSpinning: boolean): RenderElement | null {
   const { Box, Text } = ui;
   const effect = state.effect;
 
-  if (round === null || round.phase !== "idle" || state.revealed < state.cards) {
+  if (round === null || round.phase !== "idle" || state.revealed < state.cards || isSpinning) {
     return null;
   }
 
@@ -336,13 +372,14 @@ export default function Table(props: TableProps, surface: ClientSurface<TableSta
   const shake =
     effect?.kind === "loss" && sinceEffect >= 0 ? (SHAKE_OFFSETS[Math.floor(sinceEffect / SHAKE_STEP_MS)] ?? 0) : 0;
   const round = roundOf(props.state, activeGame(props.state, props.prefs));
-  const fx = { revealed: state.revealed < state.cards ? state.revealed : null, isPulseOn };
+  const spinning = spinElapsed(state, props);
+  const fx = { revealed: state.revealed < state.cards ? state.revealed : null, isPulseOn, spinElapsed: spinning };
 
   return (
     <Box flexDirection="column" paddingLeft={shake}>
       {gameTable(ui, props.state, props.prefs, props.isWide, fx, props.cards)}
       <Box flexDirection="column" marginTop={1}>
-        {summary(ui, state, round)}
+        {summary(ui, state, round, spinning !== null)}
         <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
           {prompt(ui, props.keys, {
             isFocused: state.isFocused && props.isPaneFocused,

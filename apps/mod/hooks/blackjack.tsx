@@ -21,9 +21,11 @@ export interface TableFx {
   revealed: number | null;
   /** The active hand's highlight is on its bright beat. */
   isPulseOn: boolean;
+  /** How far into its spin a roulette or slots round is; null when it has landed. */
+  spinElapsed: number | null;
 }
 
-export const STILL: TableFx = { revealed: null, isPulseOn: true };
+export const STILL: TableFx = { revealed: null, isPulseOn: true, spinElapsed: null };
 
 const RESULTS: Record<BlackjackResult, { label: string; color: string }> = {
   blackjack: { label: "BJ", color: GOLD },

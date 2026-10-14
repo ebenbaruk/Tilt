@@ -52,7 +52,17 @@ import { type Settings, SETTING_FIELDS, settingsOf } from "./settings";
 import { renderSetup, SETUP_ROWS } from "./setup";
 import { isTablePost, TABLE_KEY, type TableProps } from "./table-input";
 import { applyTheme, isLightTheme, type Ui } from "./theme";
-import { bigWinOf, PANE_ROWS, type PaneLayout, renderBand, renderPane, type Snapshot, WIDE_MIN_COLUMNS } from "./view";
+import {
+  bigWinOf,
+  PANE_ROWS,
+  type PaneLayout,
+  renderBand,
+  renderPane,
+  type Snapshot,
+  spinMs,
+  spinProgress,
+  WIDE_MIN_COLUMNS,
+} from "./view";
 
 const PANE = "tilt";
 const PANE_TITLE = "tilt";
@@ -81,6 +91,7 @@ const layout = atom({ plugin: "tilt", key: "layout" } as const, {
   isLight: false,
   isOnboarded: false,
 });
+const spin = atom({ plugin: "tilt", key: "spin" } as const, { round: null, startedAt: 0, balance: "0" });
 const session = atom({ plugin: "tilt", key: "session" } as const, {
   net: "0",
   rounds: 0,
@@ -100,6 +111,8 @@ const SOUND_WIN = "sounds/win.wav";
 
 const TICK_MS = 100;
 const SPINNER_FRAME_MS = 200;
+/** A wheel or the reels move a step every tick while they spin. */
+const SPIN_FRAME_MS = 100;
 const FAST_POLL_MS = 300;
 const SLOW_POLL_MS = 5_000;
 const RETRY_MS = 1_000;
@@ -139,6 +152,8 @@ interface Runtime {
   sponsorName: string | null;
   /** undefined until read from `$.store`; null when logged out. */
   token: string | null | undefined;
+  /** A spin was playing at the last tick: its end draws the table once more. */
+  wasSpinning: boolean;
   /** The mod closed its pane to fold it: the next sync that finds it gone must not take that for the person's close. */
   isFoldingPane: boolean;
   /** Where the surface last seated the pane: inline, its height hides the agent's answer. */
@@ -790,14 +805,38 @@ async function paneSyncStep($: EngineInterface, rt: Runtime, now: number): Promi
   }
 }
 
-/** Moves the spinner while something is in motion; says whether anything is. */
-async function animate($: EngineInterface, now: number): Promise<boolean> {
+/** How far into its spin the round on the table is; null when no spin is playing. */
+async function spinElapsed($: EngineInterface, state: StateResponse | null, now: number): Promise<number | null> {
+  const playing = await read($, spin);
+  const round = state?.round;
+
+  if (round === undefined || round === null || playing.round !== round.number) {
+    return null;
+  }
+
+  return spinProgress(round, now - playing.startedAt);
+}
+
+/** The spin playing on the table, and the balance held back until it lands. */
+async function spinView($: EngineInterface): Promise<Pick<Snapshot, "spinElapsed" | "heldBalance">> {
+  const elapsed = await spinElapsed($, (await readRemote($)).state, await $.clock.now());
+
+  return { spinElapsed: elapsed, heldBalance: elapsed === null ? null : (await read($, spin)).balance };
+}
+
+/** Moves the spinner, or a spin, while something is in motion; says whether anything is. */
+async function animate($: EngineInterface, rt: Runtime, now: number): Promise<boolean> {
   const state = (await readRemote($)).state;
   const view = await read($, agent);
-  const isAnimating = view.isWorking || needsFastPoll(state, await readIntent($));
-  const frame = Math.floor(now / SPINNER_FRAME_MS);
+  const isSpinning = (await spinElapsed($, state, now)) !== null;
+  const isAnimating = isSpinning || view.isWorking || needsFastPoll(state, await readIntent($));
+  // The spin's end needs one more drawing: nothing else moves then to draw the landed table.
+  const hasLanded = rt.wasSpinning && !isSpinning;
+  const frame = hasLanded ? view.frame + 1 : Math.floor(now / (isSpinning ? SPIN_FRAME_MS : SPINNER_FRAME_MS));
 
-  if (isAnimating && frame !== view.frame) {
+  rt.wasSpinning = isSpinning;
+
+  if ((isAnimating || hasLanded) && frame !== view.frame) {
     await update($, agent, (value) => ({ ...value, frame }));
   }
 
@@ -812,8 +851,8 @@ async function step($: EngineInterface, rt: Runtime, now: number): Promise<numbe
   rt.lastTickAt = now;
   await paneSyncStep($, rt, now);
 
-  if (await animate($, now)) {
-    delays.push(SPINNER_FRAME_MS);
+  if (await animate($, rt, now)) {
+    delays.push(rt.wasSpinning ? SPIN_FRAME_MS : SPINNER_FRAME_MS);
   }
 
   const { status } = await read($, auth);
@@ -839,6 +878,11 @@ async function step($: EngineInterface, rt: Runtime, now: number): Promise<numbe
   } else {
     await intentStep($, rt, token, now);
     delays.push(await pollStep($, rt, token, now));
+
+    // A poll that brought a spin starts its frames now, not at the next tick.
+    if ((await spinElapsed($, (await readRemote($)).state, now)) !== null) {
+      delays.push(SPIN_FRAME_MS);
+    }
   }
 
   await impressionStep($, rt, token, elapsed);
@@ -893,8 +937,24 @@ async function countRound(
   const round = after.round;
   const seen = await read($, session);
 
-  if (round !== null && round.number !== before?.round?.number && before !== null) {
+  const isNew = round !== null && before !== null && round.number !== before.round?.number;
+  const hasLanded =
+    round !== null &&
+    round.phase === "idle" &&
+    before?.round?.number === round.number &&
+    before.round.phase === "drawing";
+
+  if (isNew) {
     playSound($, rt, SOUND_DEAL);
+  }
+
+  // A roulette or slots round spins on the table while it draws, and from its landing until the
+  // wheel or the last reel stops; the result shows after.
+  if ((isNew || hasLanded) && round !== null && before !== null && spinMs(round.detail.game) > 0) {
+    // On a landing the balance before the spin is the one already held.
+    const balance = isNew ? before.balance : (await read($, spin)).balance;
+
+    await update($, spin, () => ({ round: round.number, startedAt: now, balance }));
   }
 
   // The first look at the table: what is on it was played before this session.
@@ -1028,6 +1088,7 @@ async function snapshot($: EngineInterface, rt: Runtime): Promise<Snapshot> {
     session: await read($, session),
     isOnboarded: (await read($, layout)).isOnboarded,
     depositUrl: depositUrlOf(rt, (await readRemote($)).state),
+    ...(await spinView($)),
   };
 }
 
@@ -1139,6 +1200,7 @@ export const register: Register = (on, options) => {
     sponsorName: null,
     token: undefined,
     isFoldingPane: false,
+    wasSpinning: false,
     panePlacement: null,
     isTableBroken: false,
     sendingId: null,

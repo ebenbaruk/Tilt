@@ -85,6 +85,15 @@ export type TiltSession = {
   lastRound: number | null;
 };
 
+/** The roulette or slots round whose spin the table is playing, and when it started. */
+export type TiltSpin = {
+  round: number | null;
+  /** `$.clock.now()` when the round first showed on the table. */
+  startedAt: number;
+  /** The balance before the round, shown until it lands so the header does not tell the result first. */
+  balance: string;
+};
+
 declare module "claude-code" {
   interface PluginState {
     tilt: {
@@ -98,6 +107,7 @@ declare module "claude-code" {
       agent: TiltAgent;
       layout: TiltLayout;
       session: TiltSession;
+      spin: TiltSpin;
     };
   }
 }

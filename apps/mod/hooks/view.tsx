@@ -12,11 +12,10 @@ import {
   formatDuration,
   formatSigned,
   formatUsdc,
-  pocketColor,
   rouletteBetLabel,
   SEPARATOR,
 } from "./format";
-import { baccaratTable, rouletteTable, slotsTable } from "./games";
+import { baccaratTable, rouletteChip, ROULETTE_SPIN_MS, rouletteTable, SLOTS_SPIN_MS, slotsTable } from "./games";
 import {
   activeGame,
   clampHands,
@@ -46,6 +45,30 @@ export interface Snapshot {
   isOnboarded: boolean;
   /** Where to deposit, when the api named a page on its own site. */
   depositUrl: string | null;
+  /** How far into its spin the roulette or slots round on the table is; null once it landed. */
+  spinElapsed: number | null;
+  /** The balance before that round, shown while it spins; null when none spins. */
+  heldBalance: string | null;
+}
+
+/** How long a round of `game` spins on the table before it lands; 0 for the card games. */
+export function spinMs(game: Game): number {
+  return game === "roulette" ? ROULETTE_SPIN_MS : game === "slots" ? SLOTS_SPIN_MS : 0;
+}
+
+/** While the chain draws, the wheel and the reels keep turning: the first part of a spin, looped. */
+const DRAWING_LOOP_MS = 500;
+
+/**
+ * How far into its spin the round is, `elapsed` after it showed (or landed) on the table; null once
+ * it rests. A round still drawing spins on and on; the landing starts the spin's end afresh.
+ */
+export function spinProgress(round: RoundView, elapsed: number): number | null {
+  if (round.phase === "drawing") {
+    return elapsed % DRAWING_LOOP_MS;
+  }
+
+  return elapsed < spinMs(round.detail.game) ? elapsed : null;
 }
 
 export type OnCommand = (command: Command) => void;
@@ -75,12 +98,18 @@ function keyButtons(ui: Ui, keys: readonly KeyAction[], onCommand: OnCommand): R
 
   return keys.map((action) => (
     <Button key={action.key} plain hotkey={action.hotkey} onPress={() => onCommand(action.command)}>
-      <Text color={action.isSelected ? GOLD : undefined} bold={action.isSelected}>
-        {action.label}
-      </Text>
+      {action.key.startsWith(ROULETTE_KEY_PREFIX) ? (
+        rouletteChip(ui, action.key.slice(ROULETTE_KEY_PREFIX.length), action.label, action.isSelected)
+      ) : (
+        <Text color={action.isSelected ? GOLD : undefined} bold={action.isSelected}>
+          {action.label}
+        </Text>
+      )}
     </Button>
   ));
 }
+
+const ROULETTE_KEY_PREFIX = "roulette-";
 
 /** Keys a press must not reach the prompt through: dim, at their own addresses, and inert. */
 function inertButtons(ui: Ui, keys: readonly TiltKey[], scope: "held" | "echo"): RenderElement[] {
@@ -195,7 +224,7 @@ function header(
           <Text color={FG4}>
             balance{" "}
             <Text color={GOLD} bold>
-              {formatUsdc(state.balance)} USDC
+              {formatUsdc(snap.heldBalance ?? state.balance)} USDC
             </Text>
             {state.rank !== null && (
               <Text>
@@ -234,8 +263,12 @@ function outcomeText(round: RoundView): string {
   switch (round.detail.game) {
     case "blackjack":
       return blackjackOutcome(round.detail, round.net);
-    case "roulette":
-      return round.detail.number === null ? "" : `Ball on ${round.detail.number} ${pocketColor(round.detail.number)}.`;
+    case "roulette": {
+      // The pocket is on the table already: the sentence says what it did to the bet.
+      const bet = rouletteBetLabel(round.detail.bet);
+
+      return `${bet.charAt(0).toUpperCase()}${bet.slice(1)} ${BigInt(round.net) > 0n ? "wins" : "loses"}.`;
+    }
     case "baccarat":
       return `Player ${round.detail.playerPoints} · banker ${round.detail.bankerPoints}.`;
     case "slots":
@@ -280,11 +313,11 @@ export function gameTable(
     case "blackjack":
       return blackjackTable(ui, round, fx, size);
     case "roulette":
-      return rouletteTable(ui, round, prefs, isWide);
+      return rouletteTable(ui, round, prefs, isWide, fx.spinElapsed);
     case "baccarat":
       return baccaratTable(ui, round, prefs, size);
     case "slots":
-      return slotsTable(ui, round, size);
+      return slotsTable(ui, round, size, fx.spinElapsed);
   }
 }
 
@@ -592,7 +625,7 @@ function footer(ui: Ui, snap: Snapshot, state: StateResponse, game: Game, isFocu
 
   return (
     <Box flexDirection="row" flexWrap="wrap" columnGap={2} paddingX={1}>
-      {sessionText(ui, snap.session, snap.remote.fetchedAt)}
+      {snap.spinElapsed === null && sessionText(ui, snap.session, snap.remote.fetchedAt)}
       <Text color={FG6}>{`rtp ${cleanText(state.rtp[game])}% · 1% fee on wins`}</Text>
       <Box flexGrow={1} />
       {isFocused ? (
@@ -883,7 +916,7 @@ export function renderPane(
     dealing !== null
       ? dealingTable(ui, dealing, size)
       : table === null
-        ? gameTable(ui, state, snap.prefs, isWide, STILL, size)
+        ? gameTable(ui, state, snap.prefs, isWide, { ...STILL, spinElapsed: snap.spinElapsed }, size)
         : table(size);
   const gameColumn = (
     <Box flexDirection="column" flexGrow={1} marginTop={snap.agent.notice !== null || snap.agent.isWorking ? 1 : 0}>
@@ -891,8 +924,9 @@ export function renderPane(
       {state.blocked !== null && <Text color={RED}>{`Play paused · ${cleanText(state.blocked)}`}</Text>}
       {isKeysFirst && plays.length > 0 && <Box marginBottom={1}>{keyArea(ui, plays, false, steps)}</Box>}
       {shownTable}
-      {dealing === null && table === null && outcomeLine(ui, roundOf(state, game))}
-      {dealing === null && winBanner(ui, state, onCommand)}
+      {/* The result waits for the wheel or the reels to land: the text must not tell it first. */}
+      {dealing === null && table === null && snap.spinElapsed === null && outcomeLine(ui, roundOf(state, game))}
+      {dealing === null && snap.spinElapsed === null && winBanner(ui, state, onCommand)}
       {statusLine(ui, snap, state)}
       {lowBalanceLine(ui, snap, state)}
       {!isKeysFirst && plays.length > 0 && keyArea(ui, plays, size === "large", steps)}
@@ -991,7 +1025,7 @@ export function renderBand(ui: Ui, snap: Snapshot, layout: BandLayout, onCommand
         <Text color={PINK} bold>
           TILT
         </Text>
-        <Text color={GOLD}>{formatUsdc(state.balance)} USDC</Text>
+        <Text color={GOLD}>{formatUsdc(snap.heldBalance ?? state.balance)} USDC</Text>
         <Text color={FG4} wrap="truncate-end">
           {state.blocked !== null ? `play paused · ${cleanText(state.blocked)}` : handSummary(state, snap.prefs)}
         </Text>

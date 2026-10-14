@@ -85,10 +85,14 @@ const cases: [string, StateResponse, string[]][] = [
       "+1.98",
     ],
   ],
-  ["roulette, settled", ROULETTE, ["bet red", "Ball on 17 black.", "−1.00", " 17 ", "spin · 0.50", "rtp 97.30%"]],
+  [
+    "roulette, settled",
+    ROULETTE,
+    ["bet red", " 17 BLACK ", "Red loses.", "−1.00", " 17 ", "spin · 0.50", "rtp 97.30%"],
+  ],
   ["baccarat, settled", BACCARAT, ["bet banker", "PLAYER 5", "BANKER 7", "Player 5 · banker 7.", "+0.94"]],
   ["slots, settled", SLOTS, ["7", "★", "+3.96", "spin · 0.50", "rtp 96.16%"]],
-  ["slots, drawing", SLOTS_DRAWING, ["drawing", "░"]],
+  ["slots, drawing", SLOTS_DRAWING, ["drawing", "PAYS × BET"]],
   ["an account not open yet", NOT_OPEN, ["No Tilt account yet", "first deposit on the web"]],
   ["play blocked", BLOCKED, ["Play paused · Self-exclusion until 2026-11-01."]],
 ];
