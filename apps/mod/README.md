@@ -33,11 +33,21 @@ Then `/tilt login`, confirm the code in your browser, and play.
 ## Use
 
 - `/tilt` opens the pane. `/tilt login` and `/tilt logout` manage your session.
+- Blackjack plays 1 to 6 hands against one dealer, at the same bet on each hand, left to right: the hand to play is marked `▶`.
+
+Letter keys work everywhere (the pane and the band, inline or fullscreen):
+
 - `ctrl+x tab` gives the pane (or the band) the keyboard; `Esc` hands it back.
-- `1`–`4` switch game, `v` / `b` lower / raise the bet (held at the table's limits), `n` deals or spins.
-- Blackjack: `h` hit, `s` stand, `d` double.
+- `1`–`4` switch game, `v` / `b` lower / raise the bet per hand (held at the table's limits), `n` deals or spins.
+- Blackjack: `j` / `k` one hand fewer / more (1 to 6), `h` hit, `s` stand, `d` double, all on the hand marked `▶`.
 - Roulette: `r` red, `k` black, `o` odd, `e` even, `l` low, `g` high, `z` dozen, `c` column.
 - Baccarat: `p` player, `y` banker, `t` tie.
+
+In the fullscreen layout (`claude --settings '{"tui":"fullscreen"}'`), click the table to give it the keys:
+
+- `Space` or `Enter` plays a new round with the same bet and hands; in a blackjack turn `Space` hits, `Enter` stands, `d` doubles.
+- `←` / `→` lower / raise the bet, `↑` / `↓` add / remove a blackjack hand, `1`–`4` switch game. `Esc` hands the keys back.
+- The table deals the cards one by one and counts up a win; the main screen draws it still.
 
 When a turn starts, the pane opens without taking the keyboard. When it ends you see `✓ agent finished in 6m 14s · your hand is saved`.
 

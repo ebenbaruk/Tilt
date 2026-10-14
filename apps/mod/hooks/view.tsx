@@ -1,24 +1,23 @@
 // What the pane and the band draw, from the mod's state alone. No `$` here: the hooks module
 // hands in the surface's elements and one callback for every key.
-import type { Elements, RenderElement } from "claude-code";
+import type { RenderElement } from "claude-code";
 
+import { blackjackOutcome, blackjackSummary, blackjackTable, STILL, type TableFx } from "./blackjack";
+import { cardRow, handRow } from "./cards";
 import {
-  cardFace,
   cardsInline,
   cleanText,
   formatCountdown,
   formatSigned,
   formatUsdc,
-  isRedSuit,
   pocketColor,
   rouletteBetLabel,
   SEPARATOR,
 } from "./format";
 import { activeGame, type Command, GAME_LABELS, GAMES, type KeyAction, planKeys } from "./keys";
 import type { AgentView, AuthView, IntentView, Prefs, RemoteView } from "./model";
-import type { Card, Game, RoundView, SponsorView, StateResponse } from "./protocol";
-
-export type Ui = Pick<Elements["terminal"], "Box" | "Text" | "Button" | "Link">;
+import type { Game, RoundView, SponsorView, StateResponse } from "./protocol";
+import { FELT, FG1, FG4, FG6, GOLD, GREEN, LINE3, LINE4, PINK, RED, toneOf, type Ui } from "./theme";
 
 export interface Snapshot {
   auth: AuthView;
@@ -31,23 +30,6 @@ export interface Snapshot {
 
 export type OnCommand = (command: Command) => void;
 
-// The design system's oklch tokens, approximated in hex for the terminal.
-const PINK = "#f779ba";
-const GOLD = "#f1c45e";
-const GREEN = "#7ccd8e";
-const RED = "#f66d67";
-const FG1 = "#f0eee9";
-const FG4 = "#9a9aa0";
-const FG6 = "#6f7076";
-const LINE3 = "#3a3b40";
-const LINE4 = "#4a4b50";
-const FELT: Record<"red" | "black" | "green", string> = { red: "#b63132", black: "#2a2b2f", green: "#21763c" };
-// A card is one row: its face on a light chip, the suit's color as ink, so a hand fits the pane's height.
-const CARD_FACE = FG1;
-const CARD_INK: Record<"red" | "black", string> = { red: "#c4302b", black: "#1b1c1f" };
-const BLACKJACK = 21;
-const NATURAL_CARDS = 2;
-
 const SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
 /** Under this many body columns the sidebar (design: 260px, dropped under ~720px) goes below the game. */
 export const WIDE_MIN_COLUMNS = 90;
@@ -57,14 +39,8 @@ const SLOT_COLORS: Record<string, string> = { "7": PINK, "★": GOLD };
 
 export const spinnerGlyph = (frame: number): string => SPINNER[frame % SPINNER.length] ?? "⠋";
 
-const toneOf = (net: string): string => {
-  const value = BigInt(net);
-
-  return value > 0n ? GOLD : value < 0n ? RED : FG4;
-};
-
 /** The round of `game` to show: the current or last one, if it was of that game. */
-function roundOf(state: StateResponse, game: Game): RoundView | null {
+export function roundOf(state: StateResponse, game: Game): RoundView | null {
   return state.round?.detail.game === game ? state.round : null;
 }
 
@@ -136,95 +112,11 @@ function agentLine(ui: Ui, agent: AgentView): RenderElement | null {
   return null;
 }
 
-function cardRow(ui: Ui, cards: readonly Card[], hiddenAfter = false): RenderElement {
-  const { Box, Text } = ui;
-
-  return (
-    <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
-      {cards.map((card) => (
-        <Text backgroundColor={CARD_FACE} color={CARD_INK[isRedSuit(card.suit) ? "red" : "black"]} bold>
-          {` ${cardFace(card)} `}
-        </Text>
-      ))}
-      {hiddenAfter && (
-        <Text backgroundColor={LINE4} color={FG4}>
-          {" ? "}
-        </Text>
-      )}
-    </Box>
-  );
-}
-
-/** A total's verdict, drawn beside it: over 21 busts, 21 on the first two cards is a blackjack. */
-function handTag(ui: Ui, total: number, cardCount: number): RenderElement | null {
-  const { Text } = ui;
-
-  if (total > BLACKJACK) {
-    return (
-      <Text color={RED} bold>
-        {" BUST"}
-      </Text>
-    );
-  }
-
-  if (total === BLACKJACK && cardCount === NATURAL_CARDS) {
-    return (
-      <Text color={GOLD} bold>
-        {" BLACKJACK"}
-      </Text>
-    );
-  }
-
-  return null;
-}
-
-/** One row per hand: who, the total and its verdict, then the cards. */
-function handRow(
-  ui: Ui,
-  hand: { label: string; total: string; tag: RenderElement | null; meta: string | null },
-  cards: RenderElement,
-): RenderElement {
-  const { Box, Text } = ui;
-
-  return (
-    <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-      <Text color={FG4}>
-        {hand.label} <Text color={FG1}>{hand.total}</Text>
-        {hand.tag}
-        {hand.meta !== null && <Text color={FG6}>{`${SEPARATOR}${hand.meta}`}</Text>}
-      </Text>
-      {cards}
-    </Box>
-  );
-}
-
-function blackjackOutcome(round: RoundView): string {
-  if (round.detail.game !== "blackjack") {
-    return "";
-  }
-
-  const { playerTotal: you, dealerTotal: dealer } = round.detail;
-  const net = BigInt(round.net);
-
-  if (you > 21) {
-    return `Bust at ${you}.`;
-  }
-
-  if (dealer > 21) {
-    return `Dealer busts at ${dealer}.`;
-  }
-
-  if (net === 0n) {
-    return `Push at ${you}.`;
-  }
-
-  return net > 0n ? `${you} beats ${dealer}.` : `Dealer ${dealer} beats ${you}.`;
-}
-
+/** A settled round in a sentence; "" where the drawing says it all. */
 function outcomeText(round: RoundView): string {
   switch (round.detail.game) {
     case "blackjack":
-      return blackjackOutcome(round);
+      return blackjackOutcome(round.detail, round.net);
     case "roulette":
       return round.detail.number === null ? "" : `Ball on ${round.detail.number} ${pocketColor(round.detail.number)}.`;
     case "baccarat":
@@ -234,7 +126,8 @@ function outcomeText(round: RoundView): string {
   }
 }
 
-function outcomeLine(ui: Ui, round: RoundView | null): RenderElement | null {
+/** A settled round's sentence and net; `shownNet` is what a count-up has reached so far. */
+export function outcomeLine(ui: Ui, round: RoundView | null, shownNet?: string): RenderElement | null {
   const { Text } = ui;
 
   if (round === null || round.phase !== "idle") {
@@ -247,45 +140,10 @@ function outcomeLine(ui: Ui, round: RoundView | null): RenderElement | null {
     <Text color={FG4}>
       {text === "" ? "" : `${text} `}
       <Text color={toneOf(round.net)} bold>
-        {formatSigned(round.net)}
+        {formatSigned(shownNet ?? round.net)}
       </Text>
       {BigInt(round.fee) > 0n && <Text color={FG6}>{`${SEPARATOR}fee ${formatUsdc(round.fee)}`}</Text>}
     </Text>
-  );
-}
-
-function blackjackTable(ui: Ui, round: RoundView | null): RenderElement {
-  const { Box, Text } = ui;
-
-  if (round === null || round.detail.game !== "blackjack") {
-    return <Text color={FG4}>No hand yet. Deal one with n.</Text>;
-  }
-
-  const hand = round.detail;
-  const isPlayerTurn = round.phase === "player_turn";
-  const dealerHidden = isPlayerTurn && hand.dealer.length === 1;
-  const meta = [hand.playerSoft ? "soft" : null, hand.doubled ? "doubled" : null, `bet ${formatUsdc(round.stake)}`]
-    .filter((part) => part !== null)
-    .join(SEPARATOR);
-
-  return (
-    <Box flexDirection="column">
-      {handRow(
-        ui,
-        {
-          label: "DEALER",
-          total: dealerHidden ? `${hand.dealerTotal} + ?` : String(hand.dealerTotal),
-          tag: dealerHidden ? null : handTag(ui, hand.dealerTotal, hand.dealer.length),
-          meta: null,
-        },
-        cardRow(ui, hand.dealer, dealerHidden),
-      )}
-      {handRow(
-        ui,
-        { label: "YOU", total: String(hand.playerTotal), tag: handTag(ui, hand.playerTotal, hand.player.length), meta },
-        cardRow(ui, hand.player),
-      )}
-    </Box>
   );
 }
 
@@ -347,12 +205,12 @@ function baccaratTable(ui: Ui, round: RoundView | null, prefs: Prefs): RenderEle
         <Box flexDirection="column">
           {handRow(
             ui,
-            { label: "PLAYER", total: String(detail.playerPoints), tag: null, meta: null },
+            { label: "PLAYER", total: String(detail.playerPoints), tag: null },
             cardRow(ui, detail.player),
           )}
           {handRow(
             ui,
-            { label: "BANKER", total: String(detail.bankerPoints), tag: null, meta: null },
+            { label: "BANKER", total: String(detail.bankerPoints), tag: null },
             cardRow(ui, detail.banker),
           )}
         </Box>
@@ -379,13 +237,14 @@ function slotsTable(ui: Ui, round: RoundView | null): RenderElement {
   );
 }
 
-function gameTable(ui: Ui, state: StateResponse, prefs: Prefs, isWide: boolean): RenderElement {
+/** The active game's table; `fx` moves the blackjack cards and hands, `STILL` draws them at rest. */
+export function gameTable(ui: Ui, state: StateResponse, prefs: Prefs, isWide: boolean, fx: TableFx): RenderElement {
   const game = activeGame(state, prefs);
   const round = roundOf(state, game);
 
   switch (game) {
     case "blackjack":
-      return blackjackTable(ui, round);
+      return blackjackTable(ui, round, fx);
     case "roulette":
       return rouletteTable(ui, round, prefs, isWide);
     case "baccarat":
@@ -557,7 +416,14 @@ export interface PaneLayout {
   isFocused: boolean;
 }
 
-export function renderPane(ui: Ui, snap: Snapshot, layout: PaneLayout, onCommand: OnCommand): RenderElement {
+/** `table` is the table surface module's region (fullscreen terminal), drawn in place of the still table. */
+export function renderPane(
+  ui: Ui,
+  snap: Snapshot,
+  layout: PaneLayout,
+  onCommand: OnCommand,
+  table: RenderElement | null,
+): RenderElement {
   const { Box, Text } = ui;
   const state = snap.remote.state;
   const keys = state === null ? [] : planKeys({ state, prefs: snap.prefs, isBusy: snap.intent !== null });
@@ -581,8 +447,8 @@ export function renderPane(ui: Ui, snap: Snapshot, layout: PaneLayout, onCommand
   const gameColumn = (
     <Box flexDirection="column" flexGrow={1}>
       {state.blocked !== null && <Text color={RED}>{`Play paused · ${cleanText(state.blocked)}`}</Text>}
-      {gameTable(ui, state, snap.prefs, isWide)}
-      {outcomeLine(ui, roundOf(state, game))}
+      {table ?? gameTable(ui, state, snap.prefs, isWide, STILL)}
+      {table === null && outcomeLine(ui, roundOf(state, game))}
       {statusLine(ui, snap, state)}
       {playKeys.length > 0 && keyBar(ui, playKeys, layout.isFocused, onCommand)}
       {footer(ui, state, game)}
@@ -624,7 +490,7 @@ export function handSummary(state: StateResponse, prefs: Prefs): string {
 
   switch (detail.game) {
     case "blackjack":
-      return `${label} · you ${detail.playerTotal} · dealer ${detail.dealerTotal}${net}`;
+      return `${label} · ${blackjackSummary(detail)}${net}`;
     case "roulette":
       return `${label} · ${rouletteBetLabel(detail.bet)}${detail.number === null ? "" : ` · ball ${detail.number}`}${net}`;
     case "baccarat":

@@ -1,7 +1,9 @@
 // Shape checks for what the api sends. The mod cannot import zod, so these small guards are the
 // boundary: anything that fails them is shown as a one-line error instead of being drawn.
+import { MAX_HANDS, MIN_HANDS } from "./keys";
 import type {
   BaccaratBet,
+  BlackjackHandView,
   Card,
   DeviceStartResponse,
   DeviceTokenResponse,
@@ -23,6 +25,7 @@ const PHASES: readonly string[] = ["idle", "drawing", "player_turn"];
 const BACCARAT_BETS: readonly string[] = ["player", "banker", "tie"];
 const INTENT_STATUSES: readonly string[] = ["pending", "submitted", "failed"];
 const PLAIN_ROULETTE_BETS: readonly string[] = ["red", "black", "odd", "even", "low", "high"];
+const BLACKJACK_RESULTS: readonly string[] = ["blackjack", "win", "push", "lose"];
 
 const isRecord = (value: unknown): value is Json =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -68,6 +71,7 @@ const isBaccaratBet = (value: unknown): value is BaccaratBet => isOneOf(value, B
 
 /** Base units greater than zero: a stake. */
 const isStake = (value: unknown): value is string => isAmount(value) && BigInt(value) > 0n;
+const isHandCount = (value: unknown): value is number => isInt(value) && value >= MIN_HANDS && value <= MAX_HANDS;
 
 export const isPlayAction = (value: unknown): value is PlayAction => {
   if (!isRecord(value)) {
@@ -80,6 +84,7 @@ export const isPlayAction = (value: unknown): value is PlayAction => {
     case "blackjack_double":
       return true;
     case "blackjack_bet":
+      return isStake(value.amount) && isHandCount(value.hands);
     case "slots_spin":
       return isStake(value.amount);
     case "roulette_spin":
@@ -94,6 +99,25 @@ export const isPlayAction = (value: unknown): value is PlayAction => {
 const isReels = (value: unknown): value is [string, string, string] =>
   Array.isArray(value) && value.length === 3 && value.every(isString);
 
+const isBlackjackHand = (value: unknown): value is BlackjackHandView =>
+  isRecord(value) &&
+  isArrayOf(value.cards, isCard) &&
+  isInt(value.total) &&
+  isBool(value.soft) &&
+  isBool(value.doubled) &&
+  isAmount(value.stake) &&
+  (value.result === null || isOneOf(value.result, BLACKJACK_RESULTS));
+
+const isBlackjack = (value: Json): boolean =>
+  isArrayOf(value.hands, isBlackjackHand) &&
+  isHandCount(value.hands.length) &&
+  (value.activeHand === null ||
+    (isInt(value.activeHand) && value.activeHand >= 0 && value.activeHand < value.hands.length)) &&
+  isArrayOf(value.dealer, isCard) &&
+  isInt(value.dealerTotal) &&
+  isBool(value.canHit) &&
+  isBool(value.canDouble);
+
 const isDetail = (value: unknown): value is RoundView["detail"] => {
   if (!isRecord(value)) {
     return false;
@@ -101,16 +125,7 @@ const isDetail = (value: unknown): value is RoundView["detail"] => {
 
   switch (value.game) {
     case "blackjack":
-      return (
-        isArrayOf(value.player, isCard) &&
-        isArrayOf(value.dealer, isCard) &&
-        isInt(value.playerTotal) &&
-        isInt(value.dealerTotal) &&
-        isBool(value.playerSoft) &&
-        isBool(value.doubled) &&
-        isBool(value.canHit) &&
-        isBool(value.canDouble)
-      );
+      return isBlackjack(value);
     case "roulette":
       return isRouletteBet(value.bet) && isNullable(value.number, isInt);
     case "baccarat":

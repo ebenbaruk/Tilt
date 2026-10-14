@@ -1,9 +1,10 @@
 // The world beneath the plugin in tests: the api answered from a route table, and a record of
 // everything the plugin asked the engine for.
 import type { HttpResponse, On, RenderInput, SessionStartInput, UiPane } from "claude-code";
-import { type Engine, mock, type MockClock } from "claude-code/testing";
+import { type Engine, mock, type MockClock, type Mounted } from "claude-code/testing";
 
 import type { StateResponse } from "../hooks/protocol";
+import { TABLE_KEY } from "../hooks/table-input";
 
 export const PLUGIN = "tilt";
 export const NOW = Date.UTC(2026, 9, 13, 12, 0, 0);
@@ -29,6 +30,13 @@ export const PANE: RenderInput<"Pane"> = {
     scroll: { offset: 0, bodyRows: 40 },
     view: {},
   },
+};
+
+/** The same pane on the main screen: no raw keys there, so no table surface module either. */
+export const PANE_INLINE: RenderInput<"Pane"> = {
+  ...PANE,
+  viewport: { columns: 180, rows: 48, isFullscreen: false },
+  props: { ...PANE.props, placement: "inline" },
 };
 
 export const BAND: RenderInput<"AbovePrompt"> = {
@@ -179,6 +187,13 @@ export function textOf(node: unknown): string {
   const { children } = node as { children?: unknown };
 
   return textOf(children);
+}
+
+/** What a mounted drawing shows: its own tree, then the table surface module's when it holds one. */
+export async function shownText(ui: Pick<Mounted, "drawn" | "find">): Promise<string> {
+  const own = textOf(await ui.drawn());
+
+  return (await ui.find({ type: "Client" })) === undefined ? own : own + textOf(await ui.drawn({ in: TABLE_KEY }));
 }
 
 /** A logged-in session whose polls answer `state`, after its first poll. */

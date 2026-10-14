@@ -32,7 +32,7 @@ describe("keys send moves", () => {
     const [sent] = world.calls("POST /v1/play");
 
     expect(sent?.authorization).toBe(`Bearer ${TOKEN}`);
-    expect((sent?.body as PlayRequest).action).toEqual({ type: "blackjack_bet", amount: "500000" });
+    expect((sent?.body as PlayRequest).action).toEqual({ type: "blackjack_bet", amount: "500000", hands: 1 });
     expect((sent?.body as PlayRequest).intentId).toMatch(UUID);
   });
 
@@ -50,6 +50,26 @@ describe("keys send moves", () => {
     expect((world.calls("POST /v1/play")[0]?.body as PlayRequest).action).toEqual({
       type: "blackjack_bet",
       amount: "2000000",
+      hands: 1,
+    });
+  });
+
+  test("k adds a blackjack hand, j takes one back: the deal plays that many at the bet each", async ($, on) => {
+    const { world } = await seat($, on, BASE, { "POST /v1/play": answering(SUBMITTED) });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
+
+    for (let press = 0; press < 8; press++) {
+      await ui.press({ key: "hands-up" });
+    }
+
+    expect(textOf(await ui.drawn())).toContain("deal · 6 × 0.50");
+    await ui.press({ key: "hands-down" });
+    await ui.press({ key: "start" });
+
+    expect((world.calls("POST /v1/play")[0]?.body as PlayRequest).action).toEqual({
+      type: "blackjack_bet",
+      amount: "500000",
+      hands: 5,
     });
   });
 

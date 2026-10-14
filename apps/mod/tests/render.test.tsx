@@ -5,6 +5,8 @@ import {
   BACCARAT,
   BASE,
   BLACKJACK_LOSS,
+  BLACKJACK_MIXED,
+  BLACKJACK_SIX_TURN,
   BLACKJACK_TURN,
   BLACKJACK_WIN,
   BLOCKED,
@@ -13,20 +15,43 @@ import {
   SLOTS,
   SLOTS_DRAWING,
 } from "./fixtures";
-import { BAND, NOW, PANE, PLUGIN, seat, SESSION, textOf, worldOf } from "./world";
+import { BAND, NOW, PANE, PANE_INLINE, PLUGIN, seat, SESSION, shownText, textOf, worldOf } from "./world";
 
 /** The band is drawn on these two; a pane on every surface. */
 const SURFACES = ["terminal", "desktop"] as const;
-const PANE_SURFACES = ["terminal", "desktop", "vscode", "mobile"] as const;
+const PANE_SURFACES = ["desktop", "vscode", "mobile"] as const;
 
 const cases: [string, StateResponse, string[]][] = [
   [
     "blackjack, the player to act",
     BLACKJACK_TURN,
-    ["DEALER 9 + ?", " 9♥ ", " ? ", "YOU 11 · bet 1.00", " 3♣ ", " 8♦ ", "hit", "stand", "double", "rtp 99.00%"],
+    ["DEALER 9 + ?", " 9♥ ", " ? ", "▶ YOU 11", "bet 1.00", " 3♣ ", " 8♦ ", "hit", "stand", "double", "rtp 99.00%"],
   ],
-  ["blackjack, a settled win", BLACKJACK_WIN, ["19 beats 17.", "+0.99", "fee 0.01", " 10♠ ", "deal · 0.50"]],
-  ["blackjack, a settled loss", BLACKJACK_LOSS, ["YOU 24 BUST", "Bust at 24.", "−1.00", " K♣ "]],
+  [
+    "blackjack, six hands, the third to act",
+    BLACKJACK_SIX_TURN,
+    ["DEALER 9 + ?", "#1 20", "#2 21 BLACKJACK", "▶ #3 11", "#4 soft 17", "#5 16", "#6 5", " 5♣ ", "hit", "double"],
+  ],
+  ["blackjack, a settled win", BLACKJACK_WIN, ["YOU 19", "WIN 1.00", "19 beats 17.", "+0.99", "fee 0.01", " 10♠ "]],
+  ["blackjack, a settled loss", BLACKJACK_LOSS, ["YOU 24 BUST", "LOSE 1.00", "Bust at 24.", "−1.00", " K♣ "]],
+  [
+    "blackjack, four hands settled",
+    BLACKJACK_MIXED,
+    [
+      "DEALER 18",
+      "#1 21 BLACKJACK",
+      "BJ 1.00",
+      "#2 24 BUST",
+      "LOSE 1.00",
+      "#3 20",
+      "WIN 2.00 doubled",
+      "PUSH 1.00",
+      "Dealer 18 · 1 blackjack · 1 won · 1 push · 1 lost.",
+      "+2.47",
+      "fee 0.02",
+      "deal · 0.50",
+    ],
+  ],
   ["roulette, settled", ROULETTE, ["bet red", "Ball on 17 black.", "−1.00", " 17 ", "spin · 0.50", "rtp 97.30%"]],
   ["baccarat, settled", BACCARAT, ["bet banker", "PLAYER 5", "BANKER 7", "Player 5 · banker 7.", "+0.94"]],
   ["slots, settled", SLOTS, ["7", "★", "+3.96", "spin · 0.50", "rtp 96.16%"]],
@@ -50,13 +75,18 @@ describe("the pane draws each state the api sends", () => {
   for (const [name, state, expected] of cases) {
     test(name, async ($, on) => {
       await seat($, on, state);
+      const mounts = [
+        ["terminal fullscreen", PANE],
+        ["terminal inline", PANE_INLINE],
+        ...PANE_SURFACES.map((surface) => [surface, { ...PANE, surface }] as const),
+      ] as const;
 
-      for (const surface of PANE_SURFACES) {
-        const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE, surface });
-        const text = textOf(await ui.drawn());
+      for (const [where, pane] of mounts) {
+        const ui = await $.ui.mount({ plugin: PLUGIN, ...pane });
+        const text = await shownText(ui);
 
         for (const part of expected) {
-          expect(text, `${surface}: ${part}`).toContain(part);
+          expect(text, `${where}: ${part}`).toContain(part);
         }
 
         await ui.unmount();

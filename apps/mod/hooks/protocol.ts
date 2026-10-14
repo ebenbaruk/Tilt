@@ -22,7 +22,8 @@ export type BaccaratBet = "player" | "banker" | "tie";
 
 /** Game moves only. Deposits, withdrawals and account opening are web-only (spec §10.5). */
 export type PlayAction =
-  | { type: "blackjack_bet"; amount: Amount }
+  /** `amount` is the bet on EACH hand; `hands` is 1 to 6, all against one dealer. */
+  | { type: "blackjack_bet"; amount: Amount; hands: number }
   | { type: "blackjack_hit" }
   | { type: "blackjack_stand" }
   | { type: "blackjack_double" }
@@ -69,15 +70,29 @@ export type RoundPhase =
   /** Blackjack: waiting for hit, stand or double. */
   | "player_turn";
 
+/** How a blackjack hand ended against the dealer; null until the round is settled. */
+export type BlackjackResult = "blackjack" | "win" | "push" | "lose";
+
+export interface BlackjackHandView {
+  cards: Card[];
+  total: number;
+  /** Totals with a usable ace are soft, e.g. "soft 17". */
+  soft: boolean;
+  doubled: boolean;
+  /** This hand's stake, the double included. */
+  stake: Amount;
+  result: BlackjackResult | null;
+}
+
 export interface BlackjackView {
   game: "blackjack";
-  player: Card[];
+  /** One to six hands, played left to right against the same dealer. */
+  hands: BlackjackHandView[];
+  /** The hand that hit, stand and double act on while the phase is player_turn; null otherwise. */
+  activeHand: number | null;
   dealer: Card[];
-  playerTotal: number;
   dealerTotal: number;
-  /** Totals with a usable ace are soft, e.g. "soft 17". */
-  playerSoft: boolean;
-  doubled: boolean;
+  /** For the active hand. */
   canHit: boolean;
   canDouble: boolean;
 }

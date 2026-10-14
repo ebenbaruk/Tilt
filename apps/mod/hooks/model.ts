@@ -2,6 +2,7 @@
 // as `unknown`; these readers check them again with the protocol guards.
 import type { TiltAgent, TiltAuth, TiltIntent, TiltLayout, TiltPrefs, TiltRemote } from "../types";
 import { isPlayAction, isRouletteBet, isStateResponse } from "./guards";
+import { clampHands } from "./keys";
 import type { BaccaratBet, Game, PlayAction, RouletteBet, StateResponse } from "./protocol";
 
 export type AuthView = TiltAuth;
@@ -17,6 +18,8 @@ export interface RemoteView {
 export interface Prefs {
   game: Game;
   betIndex: number;
+  /** Blackjack hands per round, 1 to 6. */
+  hands: number;
   roulette: RouletteBet;
   baccarat: BaccaratBet;
 }
@@ -36,6 +39,7 @@ export const remoteView = (held: TiltRemote): RemoteView => ({
 
 export const prefsView = (held: TiltPrefs): Prefs => ({
   ...held,
+  hands: clampHands(held.hands),
   roulette: isRouletteBet(held.roulette) ? held.roulette : DEFAULT_ROULETTE_BET,
 });
 

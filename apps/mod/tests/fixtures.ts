@@ -1,5 +1,5 @@
 // StateResponses as apps/api sends them, one per screen the mod draws.
-import type { RoundView, StateResponse } from "../hooks/protocol";
+import type { BlackjackHandView, Card, RoundView, StateResponse } from "../hooks/protocol";
 import { NOW } from "./world";
 
 const HOUR = 3_600_000;
@@ -39,6 +39,18 @@ const round = (fields: Partial<RoundView> & Pick<RoundView, "detail">): RoundVie
   ...fields,
 });
 
+const card = (rank: number, suit: Card["suit"]): Card => ({ rank, suit });
+
+const hand = (cards: Card[], total: number, fields: Partial<BlackjackHandView> = {}): BlackjackHandView => ({
+  cards,
+  total,
+  soft: false,
+  doubled: false,
+  stake: "1000000",
+  result: null,
+  ...fields,
+});
+
 export const BLACKJACK_TURN: StateResponse = {
   ...BASE,
   round: round({
@@ -46,15 +58,10 @@ export const BLACKJACK_TURN: StateResponse = {
     net: "0",
     detail: {
       game: "blackjack",
-      player: [
-        { rank: 3, suit: "♣" },
-        { rank: 8, suit: "♦" },
-      ],
-      dealer: [{ rank: 9, suit: "♥" }],
-      playerTotal: 11,
+      hands: [hand([card(3, "♣"), card(8, "♦")], 11)],
+      activeHand: 0,
+      dealer: [card(9, "♥")],
       dealerTotal: 9,
-      playerSoft: false,
-      doubled: false,
       canHit: true,
       canDouble: true,
     },
@@ -69,18 +76,10 @@ export const BLACKJACK_WIN: StateResponse = {
     net: "990000",
     detail: {
       game: "blackjack",
-      player: [
-        { rank: 10, suit: "♠" },
-        { rank: 9, suit: "♥" },
-      ],
-      dealer: [
-        { rank: 9, suit: "♥" },
-        { rank: 8, suit: "♣" },
-      ],
-      playerTotal: 19,
+      hands: [hand([card(10, "♠"), card(9, "♥")], 19, { result: "win" })],
+      activeHand: null,
+      dealer: [card(9, "♥"), card(8, "♣")],
       dealerTotal: 17,
-      playerSoft: false,
-      doubled: false,
       canHit: false,
       canDouble: false,
     },
@@ -92,16 +91,63 @@ export const BLACKJACK_LOSS: StateResponse = {
   round: round({
     detail: {
       game: "blackjack",
-      player: [
-        { rank: 10, suit: "♠" },
-        { rank: 4, suit: "♦" },
-        { rank: 13, suit: "♣" },
-      ],
-      dealer: [{ rank: 6, suit: "♥" }],
-      playerTotal: 24,
+      hands: [hand([card(10, "♠"), card(4, "♦"), card(13, "♣")], 24, { result: "lose" })],
+      activeHand: null,
+      dealer: [card(6, "♥")],
       dealerTotal: 6,
-      playerSoft: false,
-      doubled: false,
+      canHit: false,
+      canDouble: false,
+    },
+  }),
+};
+
+/** Six hands, the third to play: the first stood on 20, the second is a natural. */
+export const BLACKJACK_SIX_TURN: StateResponse = {
+  ...BASE,
+  round: round({
+    phase: "player_turn",
+    stake: "6000000",
+    net: "0",
+    number: 8,
+    detail: {
+      game: "blackjack",
+      hands: [
+        hand([card(10, "♠"), card(13, "♥")], 20),
+        hand([card(1, "♠"), card(13, "♦")], 21),
+        hand([card(5, "♣"), card(6, "♥")], 11),
+        hand([card(1, "♦"), card(6, "♣")], 17, { soft: true }),
+        hand([card(9, "♠"), card(7, "♦")], 16),
+        hand([card(2, "♥"), card(3, "♠")], 5),
+      ],
+      activeHand: 2,
+      dealer: [card(9, "♥")],
+      dealerTotal: 9,
+      canHit: true,
+      canDouble: true,
+    },
+  }),
+};
+
+/** Four hands settled against a dealer 18: a natural, a bust, a doubled win and a push. */
+export const BLACKJACK_MIXED: StateResponse = {
+  ...BASE,
+  round: round({
+    stake: "5000000",
+    payout: "7500000",
+    fee: "25000",
+    net: "2475000",
+    number: 9,
+    detail: {
+      game: "blackjack",
+      hands: [
+        hand([card(1, "♥"), card(12, "♣")], 21, { result: "blackjack" }),
+        hand([card(10, "♦"), card(5, "♠"), card(9, "♣")], 24, { result: "lose" }),
+        hand([card(5, "♦"), card(6, "♣"), card(9, "♥")], 20, { doubled: true, stake: "2000000", result: "win" }),
+        hand([card(9, "♠"), card(9, "♦")], 18, { result: "push" }),
+      ],
+      activeHand: null,
+      dealer: [card(10, "♠"), card(8, "♥")],
+      dealerTotal: 18,
       canHit: false,
       canDouble: false,
     },

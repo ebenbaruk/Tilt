@@ -22,6 +22,8 @@ export type TiltRemote = {
 export type TiltPrefs = {
   game: TiltGame;
   betIndex: number;
+  /** Blackjack hands per round, 1 to 6, each at the bet. */
+  hands: number;
   /** A `RouletteBet`. */
   roulette: unknown;
   baccarat: "player" | "banker" | "tie";

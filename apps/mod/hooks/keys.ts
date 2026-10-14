@@ -8,6 +8,8 @@ export type Command =
   | { kind: "switch"; game: Game }
   /** Moves the bet one preset down (-1) or up (+1), held at the table's bounds. */
   | { kind: "bet"; step: -1 | 1 }
+  /** One blackjack hand fewer (-1) or more (+1), held between one and six. */
+  | { kind: "hands"; step: -1 | 1 }
   | { kind: "roulette-bet"; bet: RouletteBet }
   | { kind: "roulette-cycle"; target: "dozen" | "column" }
   | { kind: "baccarat-bet"; bet: BaccaratBet }
@@ -56,6 +58,19 @@ export function currentBet(limits: Limits, betIndex: number): string {
 /** The bet index one step down or up, never past the lowest or highest bet the limits allow. */
 export function stepBetIndex(limits: Limits, betIndex: number, step: -1 | 1): number {
   return clampBetIndex(limits, clampBetIndex(limits, betIndex) + step);
+}
+
+export const MIN_HANDS = 1;
+export const MAX_HANDS = 6;
+
+/** A hand count the table takes: whole, from one to six. */
+export function clampHands(hands: number): number {
+  return Number.isInteger(hands) ? Math.max(MIN_HANDS, Math.min(hands, MAX_HANDS)) : MIN_HANDS;
+}
+
+/** One blackjack hand fewer (-1) or more (+1), held between one and six. */
+export function stepHands(hands: number, step: -1 | 1): number {
+  return clampHands(clampHands(hands) + step);
 }
 
 /** A round in flight pins the game it was started in. */
@@ -157,7 +172,7 @@ function baccaratKeys(prefs: Prefs): KeyAction[] {
 export function startAction(game: Game, amount: string, prefs: Prefs): PlayAction {
   switch (game) {
     case "blackjack":
-      return { type: "blackjack_bet", amount };
+      return { type: "blackjack_bet", amount, hands: clampHands(prefs.hands) };
     case "roulette":
       return { type: "roulette_spin", amount, bet: prefs.roulette };
     case "baccarat":
@@ -165,6 +180,14 @@ export function startAction(game: Game, amount: string, prefs: Prefs): PlayActio
     case "slots":
       return { type: "slots_spin", amount };
   }
+}
+
+/** "deal · 0.50", or "deal · 3 × 0.50" for three blackjack hands. */
+function startLabel(game: Game, amount: string, prefs: Prefs): string {
+  const hands = clampHands(prefs.hands);
+  const stake = game === "blackjack" && hands > 1 ? `${hands} × ${formatUsdc(amount)}` : formatUsdc(amount);
+
+  return `${START_VERB[game]} · ${stake}`;
 }
 
 const START_VERB: Record<Game, string> = { blackjack: "deal", roulette: "spin", baccarat: "deal", slots: "spin" };
@@ -193,21 +216,30 @@ function playerTurnKeys(state: StateResponse): KeyAction[] {
   return keys;
 }
 
+function choiceKeys(game: Game, prefs: Prefs): KeyAction[] {
+  switch (game) {
+    case "blackjack":
+      return [
+        { key: "hands-down", hotkey: "j", label: "hands −", isSelected: false, command: { kind: "hands", step: -1 } },
+        { key: "hands-up", hotkey: "k", label: "hands +", isSelected: false, command: { kind: "hands", step: 1 } },
+      ];
+    case "roulette":
+      return rouletteKeys(prefs);
+    case "baccarat":
+      return baccaratKeys(prefs);
+    case "slots":
+      return [];
+  }
+}
+
 function idleKeys(game: Game, state: StateResponse, prefs: Prefs): KeyAction[] {
   const amount = currentBet(state.limits, prefs.betIndex);
-  const choices = game === "roulette" ? rouletteKeys(prefs) : game === "baccarat" ? baccaratKeys(prefs) : [];
 
   return [
-    ...choices,
+    ...choiceKeys(game, prefs),
     { key: "bet-down", hotkey: "v", label: "bet −", isSelected: false, command: { kind: "bet", step: -1 } },
     { key: "bet-up", hotkey: "b", label: "bet +", isSelected: false, command: { kind: "bet", step: 1 } },
-    {
-      key: "start",
-      hotkey: "n",
-      label: `${START_VERB[game]} · ${formatUsdc(amount)}`,
-      isSelected: false,
-      command: { kind: "start" },
-    },
+    { key: "start", hotkey: "n", label: startLabel(game, amount, prefs), isSelected: false, command: { kind: "start" } },
   ];
 }
 

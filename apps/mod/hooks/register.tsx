@@ -6,7 +6,7 @@
 // Every function that takes `$` is declared at the top of this file: the engine follows `$` only
 // here, so the other modules are plain functions over data.
 import { atom, read, update } from "claude-code";
-import type { EngineInterface, Register, Timer } from "claude-code";
+import type { EngineInterface, Register, RenderElement, Timer } from "claude-code";
 
 import {
   apiBase,
@@ -22,7 +22,16 @@ import {
   trustedVerifyUrl,
 } from "./api";
 import { cleanText, formatDuration, SEPARATOR } from "./format";
-import { activeGame, type Command, currentBet, nextRouletteBet, startAction, stepBetIndex } from "./keys";
+import {
+  activeGame,
+  type Command,
+  currentBet,
+  nextRouletteBet,
+  planKeys,
+  startAction,
+  stepBetIndex,
+  stepHands,
+} from "./keys";
 import {
   type AgentView,
   type AuthView,
@@ -35,7 +44,9 @@ import {
   type RemoteView,
 } from "./model";
 import type { IntentResponse, PlayAction, StateResponse } from "./protocol";
-import { renderBand, renderPane, type Snapshot, type Ui } from "./view";
+import { isTablePost, TABLE_KEY, type TableProps } from "./table-input";
+import type { Ui } from "./theme";
+import { renderBand, renderPane, type Snapshot, WIDE_MIN_COLUMNS } from "./view";
 
 const PANE = "tilt";
 const PANE_TITLE = "tilt";
@@ -45,6 +56,7 @@ const remote = atom({ plugin: "tilt", key: "remote" } as const, { state: null, e
 const prefs = atom({ plugin: "tilt", key: "prefs" } as const, {
   game: "blackjack",
   betIndex: 0,
+  hands: 1,
   roulette: { kind: "red" },
   baccarat: "banker",
 });
@@ -91,6 +103,8 @@ interface Runtime {
   sponsorName: string | null;
   /** undefined until read from `$.store`; null when logged out. */
   token: string | null | undefined;
+  /** The table's `Client` failed on this terminal: the pane draws the still table. */
+  isTableBroken: boolean;
 }
 
 interface StoredSession {
@@ -439,6 +453,10 @@ async function runCommand($: EngineInterface, rt: Runtime, command: Command): Pr
 
       return;
     }
+    case "hands":
+      await setPrefs($, (value) => ({ ...value, hands: stepHands(value.hands, command.step) }));
+
+      return;
     case "roulette-bet":
       await setPrefs($, (value) => ({ ...value, roulette: command.bet }));
 
@@ -465,6 +483,26 @@ function commandRunner($: EngineInterface, rt: Runtime): (command: Command) => v
   return (command) => {
     runCommand($, rt, command).catch((error: unknown) => logDebug($, `key failed: ${errorText(error)}`));
   };
+}
+
+/** A key the table surface module pressed: checked, then run as that key of the plan, if it has it now. */
+async function onTablePost($: EngineInterface, rt: Runtime, data: unknown): Promise<void> {
+  if (!isTablePost(data)) {
+    logDebug($, "ignored a malformed post from the table");
+
+    return;
+  }
+
+  const snap = await snapshot($);
+  const state = snap.remote.state;
+  const action =
+    state === null
+      ? undefined
+      : planKeys({ state, prefs: snap.prefs, isBusy: snap.intent !== null }).find((key) => key.key === data.press);
+
+  if (action !== undefined) {
+    commandRunner($, rt)(action.command);
+  }
 }
 
 // ---- background work ----
@@ -736,6 +774,7 @@ export const register: Register = (on, options) => {
     sponsorMs: 0,
     sponsorName: null,
     token: undefined,
+    isTableBroken: false,
   };
 
   on("session.start", async ($, e, next) => {
@@ -766,8 +805,40 @@ export const register: Register = (on, options) => {
   on("ui.render", { component: "Pane", requestId: PANE }, async ($, e) => {
     const ui: Ui = $.ui.resolve(e);
     const pane = { bodyColumns: e.props.bodyColumns, isFocused: e.props.isFocused };
+    const snap = await snapshot($);
+    const state = snap.remote.state;
+    let table: RenderElement | null = null;
 
-    return renderPane(ui, await snapshot($), pane, commandRunner($, rt));
+    // The fullscreen terminal hands raw keys (Space, Enter, arrows) to a clicked `Client`; the
+    // main screen never does, so there the table is drawn still and played with the letters.
+    if (e.surface === "terminal" && e.viewport?.isFullscreen === true && state !== null && !rt.isTableBroken) {
+      const { Client } = $.ui.resolve(e);
+      const keys = planKeys({ state, prefs: snap.prefs, isBusy: snap.intent !== null });
+      const props: TableProps = {
+        state,
+        prefs: snap.prefs,
+        keys: keys.map(({ key, hotkey, label }) => ({ key, hotkey, label })),
+        isWide: e.props.bodyColumns >= WIDE_MIN_COLUMNS,
+      };
+
+      table = <Client key={TABLE_KEY} module="./table.tsx" props={props} />;
+    }
+
+    return renderPane(ui, snap, pane, commandRunner($, rt), table);
+  });
+
+  on("ui.message", { element: TABLE_KEY }, async ($, e) => {
+    await onTablePost($, rt, e.data);
+
+    return {};
+  });
+
+  on("ui.fault", { element: TABLE_KEY }, ($, e, next) => {
+    // The engine draws the pane again: without the table's `Client` from now on, the still table instead.
+    rt.isTableBroken = true;
+    logDebug($, `table failed (${e.phase}): ${e.reason}`);
+
+    return next(e);
   });
 
   on("ui.render", { component: "AbovePrompt" }, async ($, e, next) => {
