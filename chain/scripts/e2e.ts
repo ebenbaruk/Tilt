@@ -660,9 +660,14 @@ async function run(): Promise<number> {
 }
 
 async function main() {
-  process.once("SIGINT", () => {
-    void restoreVault().finally(() => process.exit(130));
-  });
+  // Interrupted (Ctrl-C, kill, closed terminal) or piped into something that stopped reading
+  // (e.g. `| head`): still put the shared vault back before exiting.
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+    process.once(signal, () => {
+      void restoreVault().finally(() => process.exit(130));
+    });
+  }
+  for (const stream of [process.stdout, process.stderr]) stream.on("error", () => undefined);
   let code = 1;
   try {
     code = await run();
