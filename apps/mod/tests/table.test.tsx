@@ -3,7 +3,15 @@ import { describe, expect, test } from "claude-code/testing";
 
 import type { PlayRequest, StateResponse } from "../hooks/protocol";
 import { TABLE_KEY } from "../hooks/table-input";
-import { BASE, BLACKJACK_LOSS, BLACKJACK_MIXED, BLACKJACK_SIX_TURN, BLACKJACK_TURN, BLACKJACK_WIN } from "./fixtures";
+import {
+  BASE,
+  BLACKJACK_LOSS,
+  BLACKJACK_MIXED,
+  BLACKJACK_PAIR,
+  BLACKJACK_SIX_TURN,
+  BLACKJACK_TURN,
+  BLACKJACK_WIN,
+} from "./fixtures";
 import { FIRST_TICK_MS, movingTable, PANE, PANE_INLINE, PLUGIN, seat, textOf, type Answer } from "./world";
 
 const SUBMITTED: Answer = { status: 200, body: { intentId: "sent", status: "submitted", error: null } };
@@ -95,6 +103,18 @@ describe("the table in the fullscreen pane", () => {
       { type: "blackjack_stand" },
       { type: "blackjack_double" },
     ]);
+  });
+
+  test("on a pair p splits, once however often it is mashed", async ($, on) => {
+    const { world } = await seat($, on, BLACKJACK_PAIR, movingTable(BLACKJACK_PAIR, BLACKJACK_PAIR));
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+
+    await ui.pointer(CLICK);
+    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("Space hit · Enter stand · d double · p split");
+    await ui.key({ key: "p" });
+    await ui.key({ key: "p" });
+
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([{ type: "blackjack_split" }]);
   });
 
   test("a post presses only a key the plan has right now, and nothing malformed", async ($, on) => {

@@ -27,6 +27,8 @@ export type PlayAction =
   | { type: "blackjack_hit" }
   | { type: "blackjack_stand" }
   | { type: "blackjack_double" }
+  /** Splits the active hand's pair into two hands; at most 4 splits per round. */
+  | { type: "blackjack_split" }
   | { type: "roulette_spin"; amount: Amount; bet: RouletteBet }
   | { type: "baccarat_deal"; amount: Amount; bet: BaccaratBet }
   | { type: "slots_spin"; amount: Amount };
@@ -67,7 +69,7 @@ export type RoundPhase =
   | "idle"
   /** Waiting for the VRF draw; poll again shortly. */
   | "drawing"
-  /** Blackjack: waiting for hit, stand or double. */
+  /** Blackjack: waiting for hit, stand, double or split. */
   | "player_turn";
 
 /** How a blackjack hand ended against the dealer; null until the round is settled. */
@@ -79,6 +81,8 @@ export interface BlackjackHandView {
   /** Totals with a usable ace are soft, e.g. "soft 17". */
   soft: boolean;
   doubled: boolean;
+  /** Born from a split: a 21 on two cards pays 1:1, not 3:2. Split aces get one card each. */
+  split: boolean;
   /** This hand's stake, the double included. */
   stake: Amount;
   result: BlackjackResult | null;
@@ -86,15 +90,16 @@ export interface BlackjackHandView {
 
 export interface BlackjackView {
   game: "blackjack";
-  /** One to six hands, played left to right against the same dealer. */
+  /** One to ten hands (up to six dealt, plus up to four splits), played left to right against the same dealer. */
   hands: BlackjackHandView[];
-  /** The hand that hit, stand and double act on while the phase is player_turn; null otherwise. */
+  /** The hand that hit, stand, double and split act on while the phase is player_turn; null otherwise. */
   activeHand: number | null;
   dealer: Card[];
   dealerTotal: number;
   /** For the active hand. */
   canHit: boolean;
   canDouble: boolean;
+  canSplit: boolean;
 }
 
 export interface RouletteView {

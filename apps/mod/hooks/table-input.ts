@@ -61,7 +61,8 @@ const ARROWS: Record<string, string> = {
 /**
  * The plan key a raw key presses at the table, or null. Space and Enter play: a new round with the
  * same bet and hands, or in a blackjack turn Space hits and Enter stands. The arrows step the bet
- * and the hands; any other character is the plan's own hotkey (`d` doubles, `1`–`4` switch game).
+ * and the hands; any other character is the plan's own hotkey (`d` doubles, `p` splits, `1`–`4`
+ * switch game).
  */
 export function pressFor(event: ClientKeyEvent, keys: readonly TableKey[]): string | null {
   if (event.ctrl === true || event.meta === true) {

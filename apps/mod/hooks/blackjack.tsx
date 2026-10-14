@@ -1,5 +1,6 @@
-// The blackjack table: one dealer row over one to six hands, side by side as far as the width
-// allows, then wrapped. Drawn still by the pane, and frame by frame by the table surface module.
+// The blackjack table: one dealer row over one to ten hands (up to six dealt, plus the splits),
+// side by side as far as the width allows, then wrapped. Drawn still by the pane, and frame by
+// frame by the table surface module.
 import type { RenderElement } from "claude-code";
 
 import { BLACKJACK, cardRow, handRow, handTag } from "./cards";
@@ -7,8 +8,8 @@ import { formatUsdc, SEPARATOR } from "./format";
 import type { BlackjackHandView, BlackjackResult, BlackjackView, RoundView } from "./protocol";
 import { FG1, FG4, FG6, GOLD, GREEN, PINK, RED, type Ui } from "./theme";
 
-/** A hand's column: room for three cards, or "▶ #6 21 BLACKJACK". */
-const HAND_COLUMNS = 18;
+/** A hand's column: room for three cards, "▶ #6 21 BLACKJACK" or "▶ #10 soft 17 split". */
+const HAND_COLUMNS = 20;
 
 /** What moves on the table between two still frames; `STILL` draws it at rest. */
 export interface TableFx {
@@ -28,7 +29,8 @@ const RESULTS: Record<BlackjackResult, { label: string; color: string }> = {
 };
 
 /** Where each card falls in the deal: a first card to every hand, the dealer's, a second to every
- * hand, then what each hand drew, left to right, and the dealer's draw last. */
+ * dealt hand, then what each hand drew, left to right, and the dealer's draw last. A hand born
+ * from a split holds one card of the pair: its second card is a draw. */
 function dealOrder(detail: BlackjackView): { hands: number[][]; dealer: number[] } {
   let next = 0;
   const hands: number[][] = detail.hands.map(() => []);
@@ -41,8 +43,12 @@ function dealOrder(detail: BlackjackView): { hands: number[][]; dealer: number[]
 
   detail.hands.forEach((hand, index) => dealTo(hands[index] ?? [], hand.cards.length, 0, 1));
   dealTo(dealer, detail.dealer.length, 0, 1);
-  detail.hands.forEach((hand, index) => dealTo(hands[index] ?? [], hand.cards.length, 1, 2));
-  detail.hands.forEach((hand, index) => dealTo(hands[index] ?? [], hand.cards.length, 2, Infinity));
+  detail.hands.forEach((hand, index) => {
+    if (!hand.split) {
+      dealTo(hands[index] ?? [], hand.cards.length, 1, 2);
+    }
+  });
+  detail.hands.forEach((hand, index) => dealTo(hands[index] ?? [], hand.cards.length, hand.split ? 1 : 2, Infinity));
   dealTo(dealer, detail.dealer.length, 1, Infinity);
 
   return { hands, dealer };
@@ -83,7 +89,8 @@ function handColumn(
       <Text color={isActive ? highlight : FG4} bold={isActive}>
         {isActive ? "▶ " : ""}
         {label} <Text color={FG1}>{total}</Text>
-        {isTurned && handTag(ui, hand.total, hand.cards.length)}
+        {isTurned && handTag(ui, hand.total, hand.cards.length, !hand.split)}
+        {hand.split && <Text color={FG6}>{" split"}</Text>}
       </Text>
       {cardRow(ui, hand.cards, { faceDown })}
       {result === null ? (
@@ -140,7 +147,8 @@ const COUNT_WORDS: Record<BlackjackResult, string> = {
   lose: "lost",
 };
 
-/** A settled round in a sentence: "19 beats 17." for one hand, "Dealer 17 · 2 won · 1 lost." for more. */
+/** A settled round in a sentence: "19 beats 17." for one hand, "Dealer 17 · 2 won · 1 lost." for
+ * more, "Dealer 17 · 3 split hands · 2 won · 1 lost." when some were born from a split. */
 export function blackjackOutcome(detail: BlackjackView, net: string): string {
   const dealer = detail.dealerTotal;
   const [only] = detail.hands;
@@ -168,8 +176,10 @@ export function blackjackOutcome(detail: BlackjackView, net: string): string {
     .filter(([count]) => count > 0)
     .map(([count, word]) => `${count} ${word}`);
   const head = dealer > BLACKJACK ? `Dealer busts at ${dealer}` : `Dealer ${dealer}`;
+  const splitHands = detail.hands.filter((hand) => hand.split).length;
+  const splits = splitHands === 0 ? [] : [`${splitHands} split ${splitHands === 1 ? "hand" : "hands"}`];
 
-  return `${[head, ...counts].join(SEPARATOR)}.`;
+  return `${[head, ...splits, ...counts].join(SEPARATOR)}.`;
 }
 
 /** The hands for the band: "you 11 · dealer 9", or "hands 11 ▶19 24 · dealer 9". */

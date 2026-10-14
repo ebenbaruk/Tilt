@@ -277,6 +277,10 @@ function prompt(ui: Ui, keys: readonly TableKey[], view: PromptView): RenderElem
     parts.push("d double");
   }
 
+  if (hasKey(keys, "bj-split")) {
+    parts.push("p split");
+  }
+
   if (hasKey(keys, "bet-up")) {
     parts.push("←/→ bet");
   }

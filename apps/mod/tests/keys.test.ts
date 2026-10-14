@@ -54,11 +54,21 @@ describe("the key plan", () => {
   });
 
   test("blackjack in turn: hit, stand and double for the active hand, whatever the hand count", () => {
-    for (const state of [fixtures.BLACKJACK_TURN, fixtures.BLACKJACK_SIX_TURN]) {
+    for (const state of [fixtures.BLACKJACK_TURN, fixtures.BLACKJACK_SIX_TURN, fixtures.BLACKJACK_TEN_TURN]) {
       const keys = planKeys({ state, prefs: { ...PREFS, hands: 6 }, isBusy: false });
 
       expect(keys.map((key) => key.hotkey)).toEqual(["h", "s", "d"]);
     }
+  });
+
+  test("blackjack in turn: p splits a pair, offered only when the active hand can split", () => {
+    const keys = planKeys({ state: fixtures.BLACKJACK_PAIR, prefs: PREFS, isBusy: false });
+
+    expect(keys.map((key) => key.hotkey)).toEqual(["h", "s", "d", "p"]);
+    expect(keys.find((key) => key.hotkey === "p")?.command).toEqual({
+      kind: "play",
+      action: { type: "blackjack_split" },
+    });
   });
 
   test("the deal key names the hands and the bet per hand", () => {
@@ -156,7 +166,9 @@ describe("response guards", () => {
       { ...base, round: { ...base.round, phase: "won" } },
       withDetail({ hands: [{ ...hands[0], cards: [{ rank: 14, suit: "♠" }] }] }),
       withDetail({ hands: [] }),
-      withDetail({ hands: [...hands, ...hands.slice(0, 1)] }),
+      withDetail({ hands: [...hands, ...hands.slice(0, 5)] }),
+      withDetail({ hands: [{ ...hands[0], split: undefined }] }),
+      withDetail({ canSplit: undefined }),
       withDetail({ hands: [{ ...hands[0], result: "won" }] }),
       withDetail({ hands: [{ ...hands[0], stake: 1 }] }),
       withDetail({ activeHand: 6 }),
@@ -174,6 +186,7 @@ describe("response guards", () => {
 
   test("play actions", () => {
     expect(isPlayAction({ type: "blackjack_hit" })).toBe(true);
+    expect(isPlayAction({ type: "blackjack_split" })).toBe(true);
     expect(isPlayAction({ type: "blackjack_bet", amount: "500000", hands: 6 })).toBe(true);
     expect(isPlayAction({ type: "blackjack_bet", amount: "500000" })).toBe(false);
     expect(isPlayAction({ type: "blackjack_bet", amount: "500000", hands: 0 })).toBe(false);
@@ -221,6 +234,8 @@ describe("the table surface's input", () => {
     expect(pressFor({ key: "space" }, turn)).toBe("bj-hit");
     expect(pressFor({ key: "return" }, turn)).toBe("bj-stand");
     expect(pressFor({ key: "d" }, turn)).toBe("bj-double");
+    expect(pressFor({ key: "p" }, turn)).toBeNull();
+    expect(pressFor({ key: "p" }, keysOf(fixtures.BLACKJACK_PAIR))).toBe("bj-split");
     expect(pressFor({ key: "left" }, turn)).toBeNull();
     // No hands outside blackjack, nothing at all while a move is in flight.
     expect(pressFor({ key: "up" }, keysOf(fixtures.BASE, { ...PREFS, game: "slots" }))).toBeNull();

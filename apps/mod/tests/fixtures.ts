@@ -46,6 +46,7 @@ const hand = (cards: Card[], total: number, fields: Partial<BlackjackHandView> =
   total,
   soft: false,
   doubled: false,
+  split: false,
   stake: "1000000",
   result: null,
   ...fields,
@@ -64,6 +65,7 @@ export const BLACKJACK_TURN: StateResponse = {
       dealerTotal: 9,
       canHit: true,
       canDouble: true,
+      canSplit: false,
     },
   }),
 };
@@ -82,6 +84,7 @@ export const BLACKJACK_WIN: StateResponse = {
       dealerTotal: 17,
       canHit: false,
       canDouble: false,
+      canSplit: false,
     },
   }),
 };
@@ -97,6 +100,7 @@ export const BLACKJACK_LOSS: StateResponse = {
       dealerTotal: 6,
       canHit: false,
       canDouble: false,
+      canSplit: false,
     },
   }),
 };
@@ -124,6 +128,7 @@ export const BLACKJACK_SIX_TURN: StateResponse = {
       dealerTotal: 9,
       canHit: true,
       canDouble: true,
+      canSplit: false,
     },
   }),
 };
@@ -150,6 +155,88 @@ export const BLACKJACK_MIXED: StateResponse = {
       dealerTotal: 18,
       canHit: false,
       canDouble: false,
+      canSplit: false,
+    },
+  }),
+};
+
+/** One hand, a pair of eights: it can split. */
+export const BLACKJACK_PAIR: StateResponse = {
+  ...BASE,
+  round: round({
+    phase: "player_turn",
+    net: "0",
+    detail: {
+      game: "blackjack",
+      hands: [hand([card(8, "♠"), card(8, "♥")], 16)],
+      activeHand: 0,
+      dealer: [card(6, "♦")],
+      dealerTotal: 6,
+      canHit: true,
+      canDouble: true,
+      canSplit: true,
+    },
+  }),
+};
+
+const split = { split: true };
+
+/** Six hands dealt and four splits, the most a round holds: aces split once (one card each, the
+ * second a 21 that is no blackjack), queens once, eights twice; the third eight is to play. */
+export const BLACKJACK_TEN_TURN: StateResponse = {
+  ...BASE,
+  round: round({
+    phase: "player_turn",
+    stake: "10000000",
+    net: "0",
+    number: 10,
+    detail: {
+      game: "blackjack",
+      hands: [
+        hand([card(10, "♠"), card(13, "♥")], 20),
+        hand([card(1, "♠"), card(9, "♦")], 20, { ...split, soft: true }),
+        hand([card(1, "♥"), card(13, "♣")], 21, split),
+        hand([card(12, "♠"), card(2, "♦"), card(7, "♣")], 19, split),
+        hand([card(12, "♥"), card(10, "♦")], 20, split),
+        hand([card(8, "♠"), card(10, "♣")], 18, split),
+        hand([card(8, "♦"), card(5, "♥"), card(9, "♣")], 22, split),
+        hand([card(8, "♣"), card(3, "♦")], 11, split),
+        hand([card(5, "♣"), card(6, "♥")], 11),
+        hand([card(2, "♥"), card(3, "♠")], 5),
+      ],
+      activeHand: 7,
+      dealer: [card(9, "♥")],
+      dealerTotal: 9,
+      canHit: true,
+      canDouble: true,
+      canSplit: false,
+    },
+  }),
+};
+
+/** Split aces settled against a dealer 18: the ace and king pay 1:1 (a win, not a blackjack), the
+ * other ace pushes; the dealt 19 wins. */
+export const BLACKJACK_SPLIT_SETTLED: StateResponse = {
+  ...BASE,
+  round: round({
+    stake: "3000000",
+    payout: "5000000",
+    fee: "20000",
+    net: "1980000",
+    number: 11,
+    detail: {
+      game: "blackjack",
+      hands: [
+        hand([card(1, "♠"), card(13, "♦")], 21, { ...split, result: "win" }),
+        hand([card(1, "♥"), card(7, "♣")], 18, { ...split, soft: true, result: "push" }),
+        hand([card(10, "♣"), card(9, "♦")], 19, { result: "win" }),
+      ],
+      activeHand: null,
+      dealer: [card(10, "♠"), card(8, "♥")],
+      dealerTotal: 18,
+      canHit: false,
+      canDouble: false,
+      canSplit: false,
     },
   }),
 };

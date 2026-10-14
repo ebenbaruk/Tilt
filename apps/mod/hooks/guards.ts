@@ -1,6 +1,6 @@
 // Shape checks for what the api sends. The mod cannot import zod, so these small guards are the
 // boundary: anything that fails them is shown as a one-line error instead of being drawn.
-import { MAX_HANDS, MIN_HANDS } from "./keys";
+import { MAX_HANDS, MAX_TABLE_HANDS, MIN_HANDS } from "./keys";
 import type {
   BaccaratBet,
   BlackjackHandView,
@@ -72,6 +72,9 @@ const isBaccaratBet = (value: unknown): value is BaccaratBet => isOneOf(value, B
 /** Base units greater than zero: a stake. */
 const isStake = (value: unknown): value is string => isAmount(value) && BigInt(value) > 0n;
 const isHandCount = (value: unknown): value is number => isInt(value) && value >= MIN_HANDS && value <= MAX_HANDS;
+/** Hands on the table: the dealt ones plus the splits. */
+const isTableHandCount = (value: unknown): value is number =>
+  isInt(value) && value >= MIN_HANDS && value <= MAX_TABLE_HANDS;
 
 export const isPlayAction = (value: unknown): value is PlayAction => {
   if (!isRecord(value)) {
@@ -82,6 +85,7 @@ export const isPlayAction = (value: unknown): value is PlayAction => {
     case "blackjack_hit":
     case "blackjack_stand":
     case "blackjack_double":
+    case "blackjack_split":
       return true;
     case "blackjack_bet":
       return isStake(value.amount) && isHandCount(value.hands);
@@ -105,18 +109,20 @@ const isBlackjackHand = (value: unknown): value is BlackjackHandView =>
   isInt(value.total) &&
   isBool(value.soft) &&
   isBool(value.doubled) &&
+  isBool(value.split) &&
   isAmount(value.stake) &&
   (value.result === null || isOneOf(value.result, BLACKJACK_RESULTS));
 
 const isBlackjack = (value: Json): boolean =>
   isArrayOf(value.hands, isBlackjackHand) &&
-  isHandCount(value.hands.length) &&
+  isTableHandCount(value.hands.length) &&
   (value.activeHand === null ||
     (isInt(value.activeHand) && value.activeHand >= 0 && value.activeHand < value.hands.length)) &&
   isArrayOf(value.dealer, isCard) &&
   isInt(value.dealerTotal) &&
   isBool(value.canHit) &&
-  isBool(value.canDouble);
+  isBool(value.canDouble) &&
+  isBool(value.canSplit);
 
 const isDetail = (value: unknown): value is RoundView["detail"] => {
   if (!isRecord(value)) {

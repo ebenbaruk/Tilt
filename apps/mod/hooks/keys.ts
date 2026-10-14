@@ -62,6 +62,10 @@ export function stepBetIndex(limits: Limits, betIndex: number, step: -1 | 1): nu
 
 export const MIN_HANDS = 1;
 export const MAX_HANDS = 6;
+/** Splits per round, all hands together: each one adds a hand to the table. */
+export const MAX_SPLITS = 4;
+/** Hands a round can hold: the dealt ones plus every split. */
+export const MAX_TABLE_HANDS = MAX_HANDS + MAX_SPLITS;
 
 /** A hand count the table takes: whole, from one to six. */
 export function clampHands(hands: number): number {
@@ -211,6 +215,10 @@ function playerTurnKeys(state: StateResponse): KeyAction[] {
 
   if (detail.canDouble) {
     add("d", "double", { type: "blackjack_double" });
+  }
+
+  if (detail.canSplit) {
+    add("p", "split", { type: "blackjack_split" });
   }
 
   return keys;

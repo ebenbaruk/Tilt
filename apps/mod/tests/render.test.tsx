@@ -6,7 +6,10 @@ import {
   BASE,
   BLACKJACK_LOSS,
   BLACKJACK_MIXED,
+  BLACKJACK_PAIR,
   BLACKJACK_SIX_TURN,
+  BLACKJACK_SPLIT_SETTLED,
+  BLACKJACK_TEN_TURN,
   BLACKJACK_TURN,
   BLACKJACK_WIN,
   BLOCKED,
@@ -50,6 +53,36 @@ const cases: [string, StateResponse, string[]][] = [
       "+2.47",
       "fee 0.02",
       "deal · 0.50",
+    ],
+  ],
+  ["blackjack, a pair to split", BLACKJACK_PAIR, ["▶ YOU 16", " 8♠ ", " 8♥ ", "hit", "double", "split"]],
+  [
+    "blackjack, ten hands after four splits, a split hand to act",
+    BLACKJACK_TEN_TURN,
+    [
+      "#1 20 10♠ ",
+      "#2 soft 20 split",
+      " A♠ ",
+      "#3 21 split",
+      "#7 22 BUST split",
+      "▶ #8 11 split",
+      "#9 11 5♣ ",
+      "#10 5 2♥ ",
+      "hit",
+      "double",
+    ],
+  ],
+  [
+    "blackjack, split aces settled",
+    BLACKJACK_SPLIT_SETTLED,
+    [
+      "#1 21 split",
+      "WIN 1.00",
+      "#2 soft 18 split",
+      "PUSH 1.00",
+      "#3 19",
+      "Dealer 18 · 2 split hands · 2 won · 1 push.",
+      "+1.98",
     ],
   ],
   ["roulette, settled", ROULETTE, ["bet red", "Ball on 17 black.", "−1.00", " 17 ", "spin · 0.50", "rtp 97.30%"]],
@@ -145,7 +178,7 @@ describe("the pane draws each state the api sends", () => {
     let current: StateResponse = BASE;
     const { clock } = await seat($, on, BASE, { "GET /v1/state": () => ({ status: 200, body: current }) });
 
-    for (const state of [BASE, BLACKJACK_TURN, ROULETTE, BACCARAT, SLOTS, BLOCKED]) {
+    for (const state of [BASE, BLACKJACK_TURN, BLACKJACK_PAIR, ROULETTE, BACCARAT, SLOTS, BLOCKED]) {
       current = state;
       await clock.advance(5_000);
       const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
@@ -154,6 +187,26 @@ describe("the pane draws each state the api sends", () => {
       expect(hotkeys.length).toBeGreaterThan(0);
       expect(new Set(hotkeys).size, hotkeys.join(" ")).toBe(hotkeys.length);
       await ui.unmount();
+    }
+  });
+
+  test("a 21 on two cards after a split is no blackjack, in play or settled, narrow or wide", async ($, on) => {
+    let current: StateResponse = BLACKJACK_TEN_TURN;
+    const { clock } = await seat($, on, current, { "GET /v1/state": () => ({ status: 200, body: current }) });
+
+    for (const state of [BLACKJACK_TEN_TURN, BLACKJACK_SPLIT_SETTLED]) {
+      current = state;
+      await clock.advance(5_000);
+
+      for (const bodyColumns of [70, 160]) {
+        const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE, props: { ...PANE.props, bodyColumns } });
+        const text = await shownText(ui);
+
+        expect(text, `${bodyColumns}`).toContain(" 21 split");
+        expect(text, `${bodyColumns}`).not.toContain("BLACKJACK");
+        expect(text, `${bodyColumns}`).not.toContain("BJ ");
+        await ui.unmount();
+      }
     }
   });
 });

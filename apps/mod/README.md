@@ -33,20 +33,20 @@ Then `/tilt login`, confirm the code in your browser, and play.
 ## Use
 
 - `/tilt` opens the pane. `/tilt login` and `/tilt logout` manage your session; to switch accounts, `/tilt logout` first.
-- Blackjack plays 1 to 6 hands against one dealer, at the same bet on each hand, left to right: the hand to play is marked `▶`.
+- Blackjack plays 1 to 6 hands against one dealer, at the same bet on each hand, left to right: the hand to play is marked `▶`. A pair splits into two hands (at most 4 splits a round, so up to 10 hands, wrapped to the pane's width); hands born from a split are marked `split`, and their 21 on two cards pays 1:1, not as a blackjack. Split aces get one card each.
 
 Letter keys work everywhere (the pane and the band, inline or fullscreen):
 
 - `ctrl+x tab` gives the pane (or the band) the keyboard; `Esc` hands it back.
 - `1`–`4` switch game, `v` / `b` lower / raise the bet per hand (held at the table's limits), `n` deals or spins.
-- Blackjack: `j` / `k` one hand fewer / more (1 to 6), `h` hit, `s` stand, `d` double, all on the hand marked `▶`.
+- Blackjack: `j` / `k` one hand fewer / more (1 to 6), `h` hit, `s` stand, `d` double, `p` split (first two cards of the same value), all on the hand marked `▶`.
 - Roulette: `r` red, `k` black, `o` odd, `e` even, `l` low, `g` high, `z` dozen, `c` column.
 - Baccarat: `p` player, `y` banker, `t` tie.
 - A move is sent once: until the table shows it, the keys are dimmed and do nothing, and for 1.5 s after, the keys of the move's screen stay dimmed on letters the new screen does not use, so the rest of a mashed `n` or `s` is caught. Past that, a letter the pane has no key for goes to the prompt (Claude Code's own behavior), so a mashed `Enter` after it would send it to the agent.
 
 In the fullscreen layout (`claude --settings '{"tui":"fullscreen"}'`), click the table to give it the keys. Only a click does: `ctrl+x tab` gives the pane the letters, not Space, Enter or the arrows, and once the keyboard leaves the pane the table needs a click again (the table says so). Without it, `←` is Claude Code's own (the agents view).
 
-- `Space` or `Enter` plays a new round with the same bet and hands; in a blackjack turn `Space` hits, `Enter` stands, `d` doubles.
+- `Space` or `Enter` plays a new round with the same bet and hands; in a blackjack turn `Space` hits, `Enter` stands, `d` doubles, `p` splits.
 - `←` / `→` lower / raise the bet, `↑` / `↓` add / remove a blackjack hand, `1`–`4` switch game. `Esc` hands the keys back.
 - The table deals the cards one by one and counts up a win; the main screen draws it still.
 - Back from the agents view, Claude Code (2.1.299) may not draw the docked pane again although it is still open: `/tilt` brings it back.

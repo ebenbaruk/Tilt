@@ -41,8 +41,9 @@ export function cardRow(ui: Ui, cards: readonly Card[], options: CardRowOptions 
   );
 }
 
-/** A total's verdict, drawn beside it: over 21 busts, 21 on the first two cards is a blackjack. */
-export function handTag(ui: Ui, total: number, cardCount: number): RenderElement | null {
+/** A total's verdict, drawn beside it: over 21 busts, 21 on the first two cards is a blackjack,
+ * unless `canBeNatural` is false (a hand born from a split: its 21 is a plain 21). */
+export function handTag(ui: Ui, total: number, cardCount: number, canBeNatural = true): RenderElement | null {
   const { Text } = ui;
 
   if (total > BLACKJACK) {
@@ -53,7 +54,7 @@ export function handTag(ui: Ui, total: number, cardCount: number): RenderElement
     );
   }
 
-  if (total === BLACKJACK && cardCount === NATURAL_CARDS) {
+  if (canBeNatural && total === BLACKJACK && cardCount === NATURAL_CARDS) {
     return (
       <Text color={GOLD} bold>
         {" BLACKJACK"}
