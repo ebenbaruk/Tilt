@@ -62,9 +62,8 @@ In the fullscreen layout (`claude --settings '{"tui":"fullscreen"}'`), click the
 - `Space` or `Enter` plays a new round with the same bet and hands; in a blackjack turn `Space` hits, `Enter` stands, `d` doubles, `p` splits.
 - `←` / `→` lower / raise the bet, `↑` / `↓` add / remove a blackjack hand, `1`–`4` switch game. `Esc` hands the keys back.
 - The table deals the cards one by one and counts up a win; the main screen draws it still.
-- Back from the agents view, Claude Code (2.1.299) may not draw the docked pane again although it is still open: `/tilt` brings it back.
 
-When a turn starts, the pane opens without taking the keyboard. When it ends you see `✓ agent finished in 6m 14s · your hand is saved`, and a pane under the transcript folds to two lines so the agent's answer stays in view (not while you hold the keys; a docked pane stays). The next turn, or `/tilt`, opens it again.
+When a turn starts, the pane opens without taking the keyboard. When it ends you see `✓ agent finished in 6m 14s · your hand is saved`, and a pane under the transcript folds to two lines so the agent's answer stays in view (not while you hold the keys; a docked pane stays). The next turn, or `/tilt`, opens it again. A pane left open comes back by itself when the session starts over: back from Claude Code's agents view (`←`, then `Esc`, which moves the session to a new process) or at the next launch. Close it (✕) and it stays closed until `/tilt`.
 
 Around the table:
 
