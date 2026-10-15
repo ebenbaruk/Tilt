@@ -108,6 +108,8 @@ const STORE_ONBOARDED = "onboarded";
 /** The mod's own sound files, played only with the `sound` setting on. */
 const SOUND_DEAL = "sounds/deal.wav";
 const SOUND_WIN = "sounds/win.wav";
+/** The pane is open: a session that starts over (back from the agents view, a relaunch) reopens it. */
+const STORE_PANE = "pane";
 
 const TICK_MS = 100;
 const SPINNER_FRAME_MS = 200;
@@ -790,6 +792,10 @@ async function paneSyncStep($: EngineInterface, rt: Runtime, now: number): Promi
   const isClosedByPerson = rt.isPaneOpen && pane === undefined && !rt.isFoldingPane;
   const held = await read($, layout);
 
+  if (rt.isPaneOpen !== (pane !== undefined)) {
+    await $.store.set(STORE_PANE, pane !== undefined);
+  }
+
   rt.isPaneOpen = pane !== undefined;
 
   if (pane === undefined) {
@@ -1010,6 +1016,7 @@ async function collapse($: EngineInterface, rt: Runtime): Promise<void> {
   if (pane !== undefined && rt.panePlacement === "inline" && opensOnTurn(rt)) {
     rt.isFoldingPane = true;
     rt.isPaneOpen = false;
+    await $.store.set(STORE_PANE, false);
     await $.ui.close({ id: PANE });
     await update($, layout, (value) => ({ ...value, paneShown: false, isCollapsed: true }));
 
@@ -1117,8 +1124,20 @@ async function onSessionStart($: EngineInterface, rt: Runtime, isInteractive: bo
     await update($, layout, (value) => ({ ...value, isOnboarded: true }));
   }
 
-  if (isInteractive) {
-    ensureTicker($, rt);
+  if (!isInteractive) {
+    return;
+  }
+
+  ensureTicker($, rt);
+
+  // Claude Code's agents view (←, then Esc) runs the session on in a new process, where the mod
+  // starts over: the pane it had comes back as it was, without the keyboard.
+  const wasOpen = (await $.store.get(STORE_PANE)) === true;
+
+  if (wasOpen && rt.settings.layout !== "bottom" && !(await read($, layout)).paneDismissed) {
+    const isPlaced = await openPane($, rt, false);
+
+    await update($, layout, (value) => ({ ...value, paneShown: isPlaced }));
   }
 }
 
@@ -1153,6 +1172,8 @@ async function onTiltCommand($: EngineInterface, rt: Runtime, args: string): Pro
 
   rt.wakeAt = 0;
   await update($, layout, (value) => ({ ...value, isCollapsed: false }));
+  // Remembered at once (see STORE_PANE): the agents view may be one keypress away.
+  rt.lastPaneSyncAt = -Infinity;
 
   // Placed at the bottom, the band is the table: there is no pane to open.
   if (rt.settings.layout === "bottom") {
@@ -1180,6 +1201,7 @@ async function onTurnStart($: EngineInterface, rt: Runtime): Promise<void> {
     const isPlaced = await openPane($, rt, false);
 
     await update($, layout, (value) => ({ ...value, paneShown: isPlaced }));
+    rt.lastPaneSyncAt = -Infinity;
   }
 }
 

@@ -3,7 +3,7 @@ import type { TurnCompleteInput } from "claude-code";
 
 import type { ImpressionRequest } from "../hooks/protocol";
 import { BASE } from "./fixtures";
-import { command, NOW, PANE, PLUGIN, seat, SESSION, textOf, worldOf } from "./world";
+import { command, LOGGED_IN, NOW, PANE, PLUGIN, seat, SESSION, textOf, worldOf } from "./world";
 
 interface TurnEnd {
   reason?: "answer" | "aborted" | "error";
@@ -89,6 +89,30 @@ describe("the agent comes first", () => {
     await $.command.run(command());
     await $.turn.start({ text: "", turnId: "t3" });
     expect(world.opened).toHaveLength(3);
+  });
+
+  // Back from Claude Code's agents view (←, then Esc) the session runs in a new process: the
+  // mod starts over there, and the docked pane was gone until /tilt.
+  test("a session that left its pane open opens it again at start, without the keyboard", async ($, on) => {
+    const world = worldOf(on, { "GET /v1/state": () => ({ status: 200, body: BASE }) });
+
+    mock.clock(on, { now: NOW });
+    mock.store(on, { ...LOGGED_IN, pane: true });
+    await $.session.start(SESSION);
+
+    expect(world.opened).toEqual([{ id: "tilt", focus: false }]);
+  });
+
+  test("a pane the person closed stays closed in the next session", async ($, on) => {
+    const { world, clock } = await seat($, on, BASE);
+
+    await $.turn.start({ text: "", turnId: "t1" });
+    await clock.advance(2_000);
+    world.isClosed = true;
+    await clock.advance(2_000);
+    await $.session.start(SESSION);
+
+    expect(world.opened).toHaveLength(1);
   });
 });
 
