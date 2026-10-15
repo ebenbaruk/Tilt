@@ -583,6 +583,24 @@ async function run(): Promise<number> {
   await setConfig();
   check("libéré après la pause", (await release()) === usdc(5));
 
+  console.log("\n--- 8b. Plafond de gains glissant ---");
+  const raise = (amount: number, signer = relayer) => program.methods.raiseWinCap(new BN(amount))
+    .accountsPartial({ relayer: signer.publicKey, vault, vaultToken, ledger }).signers([signer]);
+  await rejects("relèvement du plafond par un autre que le relais refusé", () => raise(usdc(1), player).rpc(), /Unauthorized|6006/);
+  await rejects("relèvement au-delà du gain max d'une manche refusé", () => raise(usdc(2_500) + 1).rpc(), /AmountOutOfRange|6000/);
+  await setConfig({ betsPaused: true });
+  await rejects("relèvement refusé pendant la pause des mises", () => raise(usdc(1)).rpc(), /Paused|6013/);
+  await setConfig();
+  const capBefore = (await fetchLedger()).maxWin;
+  const reservedBeforeRaise = (await program.account.vault.fetch(vault)).reserved;
+  await raise(usdc(100)).rpc();
+  const raisedBy = (await fetchLedger()).maxWin.sub(capBefore);
+  const reservedBy = (await program.account.vault.fetch(vault)).reserved.sub(reservedBeforeRaise);
+  check("plafond relevé et réservé du même montant", raisedBy.eq(new BN(usdc(100))) && reservedBy.eq(raisedBy), `(+${raisedBy}, réservé +${reservedBy})`);
+  await until(async () => ((await erProgram.account.ledger.fetch(ledger)).maxWin.gt(capBefore) ? true : undefined), "raised cap in rollup");
+  await playBlackjack(usdc(1), 1, false);
+  check("le rollup prend le plafond relevé au coup suivant", (await fetchAccount()).maxWin.eq(capBefore.add(raisedBy)));
+
   console.log("\n--- 9. Pertes rendues à la maison (checkpoint) ---");
   const netWinOf = (x: PlayerAccount) => x.balance.add(x.withdrawn).sub(x.credited.sub(x.forfeited));
   if (!netWinOf(await fetchAccount()).isNeg()) {

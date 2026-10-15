@@ -124,7 +124,7 @@ fn request_draw(ctx: &mut Context<Play>, draw: Draw, client_seed: [u8; 32]) -> R
 fn start(ctx: &mut Context<Play>, game: Game, bet: u64, bets: u8, max_gain: u64) -> Result<()> {
     let (ledger, config) = (&ctx.accounts.ledger, &ctx.accounts.vault.config);
     let account = &mut ctx.accounts.account;
-    account.credit_deposits(ledger);
+    account.sync_ledger(ledger);
     account.start_round(game, bet, bets, max_gain, config, now()?)
 }
 
@@ -207,14 +207,17 @@ pub fn blackjack_double(mut ctx: Context<Play>, client_seed: [u8; 32]) -> Result
 }
 
 /// Splits the active hand's pair into two hands for one more base bet; each takes one card.
-/// The round's worst case is checked again with the extra hand (see `take_split`).
+/// The round's worst case is checked again with the extra hand (see `take_split`), against a
+/// win cap Solana may have raised since the bet.
 pub fn blackjack_split(mut ctx: Context<Play>, client_seed: [u8; 32]) -> Result<()> {
     require_blackjack_turn(&ctx.accounts.account)?;
     let table = table(&mut ctx)?;
     require!(table.can_split(), TiltError::WrongState);
     let (bet, hands) = (table.bet, table.n_hands + 1);
-    let config = &ctx.accounts.vault.config;
-    ctx.accounts.account.take_split(bet, hands, config)?;
+    let (ledger, config) = (&ctx.accounts.ledger, &ctx.accounts.vault.config);
+    let account = &mut ctx.accounts.account;
+    account.sync_ledger(ledger);
+    account.take_split(bet, hands, config)?;
     request_draw(&mut ctx, Draw::Split, client_seed)
 }
 

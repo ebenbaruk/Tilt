@@ -50,7 +50,7 @@ pub struct Withdraw<'info> {
 pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
     let min = ctx.accounts.vault.config.min_withdrawal;
     let account = &mut ctx.accounts.account;
-    account.credit_deposits(&ctx.accounts.ledger);
+    account.sync_ledger(&ctx.accounts.ledger);
     require!(
         amount > 0 && amount <= account.balance,
         TiltError::InsufficientBalance
@@ -200,7 +200,7 @@ pub struct Checkpoint<'info> {
 /// so house winnings can be withdrawn. The player's win headroom starts again from here.
 pub fn checkpoint(ctx: Context<Checkpoint>) -> Result<()> {
     let account = &mut ctx.accounts.account;
-    account.credit_deposits(&ctx.accounts.ledger);
+    account.sync_ledger(&ctx.accounts.ledger);
     require!(
         account.round.status == crate::state::RoundStatus::Idle,
         TiltError::RoundInProgress

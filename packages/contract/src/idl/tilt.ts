@@ -3074,6 +3074,96 @@ export type Tilt = {
       ]
     },
     {
+      "name": "raiseWinCap",
+      "discriminator": [
+        65,
+        167,
+        19,
+        207,
+        172,
+        97,
+        6,
+        209
+      ],
+      "accounts": [
+        {
+          "name": "relayer",
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vaultToken",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ledger.player",
+                "account": "ledger"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "releaseWithdrawals",
       "discriminator": [
         187,
@@ -4657,6 +4747,9 @@ export type Tilt = {
           },
           {
             "name": "maxWin",
+            "docs": [
+              "The player's win cap: set at the first deposit, raised by `raise_win_cap` as they win."
+            ],
             "type": "u64"
           },
           {

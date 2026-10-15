@@ -22,7 +22,7 @@ import {
   trustedVerifyUrl,
 } from "./api";
 import type { CardSize } from "./cards";
-import { cleanText, formatDuration, formatUsdc, SEPARATOR } from "./format";
+import { cleanText, formatDuration, formatUsdc, moveFailure, SEPARATOR } from "./format";
 import { isPlayAction } from "./guards";
 import {
   activeGame,
@@ -423,7 +423,7 @@ async function settleAnswer($: EngineInterface, rt: Runtime, sent: IntentView, a
   }
 
   await update($, intent, () => null);
-  await update($, message, () => cleanText(answer.error?.message ?? "Move failed."));
+  await update($, message, () => moveFailure(answer.error?.message ?? "Move failed."));
 }
 
 async function settleIntent(

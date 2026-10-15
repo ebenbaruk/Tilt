@@ -204,6 +204,41 @@ async function main() {
     `(statut ${JSON.stringify(legacyAccount.round.status)})`,
   );
 
+  console.log("\n--- Plafond de gains glissant ---");
+  // Opened with a 2 USDC win cap: a 1 USDC spin could win 250, past it.
+  const capUser = `did:privy:e2e${randomUUID().replaceAll("-", "")}`;
+  const capKey = Keypair.generate();
+  players.keys.set(capUser, capKey);
+  const capToken = await createAssociatedTokenAccountIdempotent(chain.base, admin, vault.mint, capKey.publicKey);
+  await mintTo(chain.base, admin, vault.mint, capToken, admin, usdc(20));
+  const capAccounts = {
+    ...legacyAccounts,
+    player: capKey.publicKey,
+    playerToken: capToken,
+    account: playerAccountAddress(capKey.publicKey),
+    ledger: ledgerAddress(capKey.publicKey),
+  };
+  await baseProgram.methods
+    .openAccount(new anchor.BN(usdc(20)), new anchor.BN(usdc(2)))
+    .accountsPartial(capAccounts)
+    .postInstructions([await baseProgram.methods.delegateAccount().accountsPartial(capAccounts).instruction()])
+    .signers([capKey])
+    .rpc();
+  await until(() => chain.fetchPlayerAccount(capKey.publicKey).then((x) => x ?? undefined), "capped account in rollup");
+  const capLedger = () => baseProgram.account.ledger.fetch(ledgerAddress(capKey.publicKey));
+  const capBefore = (await capLedger()).maxWin;
+  const spin = await submit(capUser, { type: "slots_spin", amount: String(usdc(1)) });
+  const spun = await until(async () => {
+    const x = await chain.fetchPlayerAccount(capKey.publicKey);
+    return x && x.rounds > 0 ? x : undefined;
+  }, "spin past the cap");
+  const capAfter = (await capLedger()).maxWin;
+  check(
+    "mise au-delà du plafond : plafond relevé depuis la bankroll, mise jouée, rien vu par le joueur",
+    spin.status === "submitted" && spun.rounds === 1 && capAfter.gt(capBefore),
+    `(plafond ${capBefore} → ${capAfter}${spin.error ? `, ${spin.error.message}` : ""})`,
+  );
+
   console.log("\n--- Reprise après interruption ---");
   // Pretend the relay died before seeing the outcome (minutes ago): reconciliation must find it on-chain.
   const LONG_AGO = "now() - interval '10 minutes'";

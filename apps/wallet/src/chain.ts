@@ -39,6 +39,8 @@ export class IntentError extends Error {
   constructor(
     readonly code: ErrorCode,
     message: string,
+    /** The simulation's logs, for a program refusal. */
+    readonly logs: readonly string[] = [],
   ) {
     super(message);
   }
@@ -52,6 +54,15 @@ export class UnconfirmedError extends Error {
   ) {
     super(message);
   }
+}
+
+/** By how much a move refused `WinCapReached` passes the player's cap, as the program logs it. */
+export function winCapShortfall(logs: readonly string[]): bigint | undefined {
+  for (const line of logs) {
+    const match = /Win cap short by (\d+)/.exec(line);
+    if (match) return BigInt(match[1]);
+  }
+  return undefined;
 }
 
 /** Anchor's error name from transaction logs ("Error Code: InsufficientBalance."). */
@@ -98,6 +109,8 @@ const ROLLUP_POLL_MS = 50;
  *  that lag each other behind a load balancer (height read on one, status on another). */
 const EXPIRY_MARGIN_BLOCKS = 150;
 const RPC_TIMEOUT_MS = 30_000;
+/** How long the rollup gets to see a win cap just raised on Solana. */
+const WIN_CAP_READY_MS = 20_000;
 /** How long the rollup gets to see a table just opened and delegated on Solana. */
 const TABLE_READY_MS = 20_000;
 const TABLE_POLL_MS = 250;
@@ -224,11 +237,42 @@ export class TiltChain {
   }
 
   /** A round action or a withdrawal, in the rollup. Blackjack needs the player's table, opened
-   *  first for players who joined before tables existed. */
+   *  first for players who joined before tables existed. A move past the player's win cap is
+   *  sent again once Solana has raised the cap from the free bankroll (the rolling win cap). */
   async play(player: PublicKey, action: RollupAction, record: RecordSend): Promise<string> {
     if (!(await this.isOpen(player))) throw new IntentError("ACCOUNT_NOT_OPEN", "no account yet: deposit first");
     if (isBlackjack(action)) await this.ensureTable(player);
-    return this.sendRollup(await this.playTransaction(player, action), record);
+    try {
+      return await this.sendRollup(await this.playTransaction(player, action), record);
+    } catch (e) {
+      // A program refusal comes from the simulation: nothing was sent, so sending again is safe.
+      const short = e instanceof IntentError && e.message === "WinCapReached" ? winCapShortfall(e.logs) : undefined;
+      if (short === undefined) throw e;
+      await this.raiseWinCap(player, short);
+      return this.sendRollup(await this.playTransaction(player, action), record);
+    }
+  }
+
+  /** Raises the player's win cap on Solana by `amount`, then waits for the rollup to see it.
+   *  A bankroll too small to cover it is the program's VaultTooSmall. */
+  private async raiseWinCap(player: PublicKey, amount: bigint): Promise<void> {
+    const ledger = await this.fetchLedger(player);
+    if (!ledger) throw new IntentError("ACCOUNT_NOT_OPEN", "no account yet: deposit first");
+    const target = BigInt(ledger.maxWin.toString()) + amount;
+    const tx = await this.program.methods.raiseWinCap(new BN(amount.toString()))
+      .accountsPartial({ relayer: this.relayer.publicKey, vault: this.vault, vaultToken: vaultTokenAddress(), ledger: ledgerAddress(player) })
+      .transaction();
+    try {
+      await this.sendBase(tx, withoutRecord);
+    } catch (e) {
+      // Nothing of the player's move went out; a raise that landed anyway only reserves bankroll.
+      if (e instanceof UnconfirmedError) throw new IntentError("NETWORK_ERROR", `win cap raise unconfirmed: ${e.message}`);
+      throw e;
+    }
+    for (const end = Date.now() + WIN_CAP_READY_MS; Date.now() < end; await sleep(TABLE_POLL_MS)) {
+      const seen = await this.rollupProgram.account.ledger.fetchNullable(ledgerAddress(player));
+      if (seen && BigInt(seen.maxWin.toString()) >= target) return;
+    }
   }
 
   /** Relay cron: requests again the draw of a round stuck waiting for it; a blackjack draw
@@ -376,7 +420,8 @@ export class TiltChain {
   private async simulateRecordSend(connection: Connection, network: Network, tx: Transaction, lastValidBlockHeight: number, record: RecordSend): Promise<string> {
     const simulation = await connection.simulateTransaction(tx);
     if (simulation.value.err) {
-      throw new IntentError("PROGRAM_ERROR", programErrorName(simulation.value.logs) ?? JSON.stringify(simulation.value.err));
+      const logs = simulation.value.logs ?? [];
+      throw new IntentError("PROGRAM_ERROR", programErrorName(logs) ?? JSON.stringify(simulation.value.err), logs);
     }
     if (!tx.signature) throw new Error("transaction is not signed by its fee payer");
     const signature = bs58.encode(tx.signature);

@@ -196,7 +196,8 @@ Sans rollup, les tirages coûtent 6 à 10× ce que rapportent les 1 % : le rollu
 - Un retrait est demandé dans le rollup puis payé sur Solana par une Magic Action (≈ 1,2–1,4 s), sans faire sortir le compte. Sur devnet, MagicBlock a payé cette transaction (40 200 lamports) : à confirmer pour le mainnet.
 - **Le rollup n'est pas cru sur parole** : le paiement vérifie la demande contre le registre Solana (dépôts réels, plafond de gains du joueur). Plafond par retrait et par 24 h, mise en attente puis libération par Tilt, pause globale.
 - Une manche non terminée survit à une déconnexion et ne bloque pas les retraits. Une main en attente du joueur n'est jamais jouée à sa place ; seul un tirage VRF jamais arrivé est relancé par le relais après un délai.
-- Restent à concevoir : sortie de secours si le rollup tombe, plafond de gains glissant (aujourd'hui à vie), multisig, audit (`chain/README.md`).
+- Plafond de gains **glissant** (2026-10-15) : relevé automatiquement par le relais depuis la bankroll libre (`raise_win_cap`), le joueur ne rencontre une limite que si la bankroll ne couvre pas la mise.
+- Restent à concevoir : sortie de secours si le rollup tombe, multisig, audit (`chain/README.md`).
 
 **Conséquences sur le reste de la spec (D13) :** la logique des jeux et l'aléa passent dans `chain/` ; le ledger Postgres, l'ancien contrat `reserve/settle` et le provably fair serveur disparaissent. L'architecture (§5), le contrat (§7), la répartition (§8) et les jalons (§14) sont réécrits en conséquence.
 

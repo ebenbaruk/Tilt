@@ -113,9 +113,39 @@ pub struct Ledger {
     pub withdrawn_paid: u64,
     /// Player losses released from the reservation (see `checkpoint`).
     pub forfeited: u64,
+    /// The player's win cap: set at the first deposit, raised by `raise_win_cap` as they win.
     pub max_win: u64,
     pub window_start: i64,
     pub window_paid: u64,
+}
+
+impl Ledger {
+    /// The rolling win cap: raises the player's cap by `amount`, reserved from the free
+    /// bankroll `free`, so the vault still covers every player's worst case and a withdrawal
+    /// is still checked against the cap. At most one round's largest gain at a time, and not
+    /// while bets are paused.
+    pub fn raise_win_cap(
+        &mut self,
+        reserved: &mut u64,
+        free: u64,
+        amount: u64,
+        config: &Config,
+    ) -> Result<()> {
+        require!(!config.bets_paused, TiltError::Paused);
+        require!(
+            amount > 0 && amount <= config.max_round_gain,
+            TiltError::AmountOutOfRange
+        );
+        require!(amount <= free, TiltError::VaultTooSmall);
+        *reserved = reserved
+            .checked_add(amount)
+            .ok_or(TiltError::AmountOutOfRange)?;
+        self.max_win = self
+            .max_win
+            .checked_add(amount)
+            .ok_or(TiltError::AmountOutOfRange)?;
+        Ok(())
+    }
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, InitSpace, PartialEq, Eq, Debug)]
@@ -267,14 +297,29 @@ pub struct PlayerAccount {
     pub round: Round,
 }
 
+/// Logged before a `WinCapReached` refusal, then the shortfall in USDC base units: the relay
+/// raises the cap by exactly that (`raise_win_cap`), no more bankroll than the move needs.
+pub const WIN_CAP_SHORT_LOG: &str = "Win cap short by ";
+
 impl PlayerAccount {
-    /// Credits deposits recorded on Solana since the last credit. A stale ledger copy can
-    /// never make `credited` go back, so a deposit is credited at most once.
-    pub fn credit_deposits(&mut self, ledger: &Ledger) {
+    /// Takes what Solana recorded since the last move: deposits (credited at most once) and a
+    /// raised win cap. A stale ledger copy can never make either go back.
+    pub fn sync_ledger(&mut self, ledger: &Ledger) {
         if ledger.deposited > self.credited {
             self.balance += ledger.deposited - self.credited;
             self.credited = ledger.deposited;
         }
+        self.max_win = self.max_win.max(ledger.max_win);
+    }
+
+    /// Refuses a round whose worst case, from `start_balance` up by `max_gain`, passes the cap.
+    fn check_win_cap(&self, start_balance: u64, max_gain: u64) -> Result<()> {
+        let short = self.net_win(start_balance + max_gain) - self.max_win as i128;
+        if short > 0 {
+            msg!("{}{}", WIN_CAP_SHORT_LOG, short);
+            return err!(TiltError::WinCapReached);
+        }
+        Ok(())
     }
 
     /// Net win so far if the balance were `balance`; losses already forfeited are not counted.
@@ -311,10 +356,7 @@ impl PlayerAccount {
             TiltError::RoundGainTooHigh
         );
         require!(self.balance >= stake, TiltError::InsufficientBalance);
-        require!(
-            self.net_win(self.balance + max_gain) <= self.max_win as i128,
-            TiltError::WinCapReached
-        );
+        self.check_win_cap(self.balance, max_gain)?;
         self.balance -= stake;
         self.round = Round {
             game,
@@ -339,10 +381,7 @@ impl PlayerAccount {
         require!(self.balance >= bet, TiltError::InsufficientBalance);
         // The balance the round started from: what it has staked so far comes back to it.
         let start_balance = self.balance + self.round.stake;
-        require!(
-            self.net_win(start_balance + max_gain) <= self.max_win as i128,
-            TiltError::WinCapReached
-        );
+        self.check_win_cap(start_balance, max_gain)?;
         self.balance -= bet;
         self.round.stake += bet;
         Ok(())
@@ -491,10 +530,87 @@ mod tests {
     #[test]
     fn deposits_are_credited_once_even_from_a_stale_ledger() {
         let mut a = account(0, 0);
-        a.credit_deposits(&ledger(500));
-        a.credit_deposits(&ledger(300)); // stale copy
-        a.credit_deposits(&ledger(500));
+        a.sync_ledger(&ledger(500));
+        a.sync_ledger(&ledger(300)); // stale copy
+        a.sync_ledger(&ledger(500));
         assert_eq!((a.balance, a.credited), (500, 500));
+    }
+
+    #[test]
+    fn a_raised_win_cap_is_taken_and_a_stale_copy_never_lowers_it() {
+        let mut a = account(0, 1_000);
+        a.sync_ledger(&Ledger {
+            max_win: 3_000,
+            ..ledger(0)
+        });
+        a.sync_ledger(&Ledger {
+            max_win: 1_000,
+            ..ledger(0)
+        }); // stale copy
+        assert_eq!(a.max_win, 3_000);
+    }
+
+    #[test]
+    fn a_raise_reserves_what_it_adds_to_the_cap_within_the_free_bankroll() {
+        let mut l = Ledger {
+            max_win: 1_000,
+            ..ledger(0)
+        };
+        let mut reserved = 5_000;
+        l.raise_win_cap(&mut reserved, 2_000, 2_000, &config())
+            .unwrap();
+        assert_eq!(
+            (l.max_win, reserved),
+            (3_000, 7_000),
+            "cap and reservation move together"
+        );
+
+        let refused = [
+            (2_000, 2_001, config(), TiltError::VaultTooSmall),
+            (u64::MAX, 50_001, config(), TiltError::AmountOutOfRange),
+            (u64::MAX, 0, config(), TiltError::AmountOutOfRange),
+            (
+                u64::MAX,
+                1,
+                Config {
+                    bets_paused: true,
+                    ..config()
+                },
+                TiltError::Paused,
+            ),
+        ];
+        for (free, amount, config, error) in refused {
+            assert_eq!(
+                l.raise_win_cap(&mut reserved, free, amount, &config),
+                Err(error.into())
+            );
+            assert_eq!(
+                (l.max_win, reserved),
+                (3_000, 7_000),
+                "nothing moves on a refusal"
+            );
+        }
+    }
+
+    #[test]
+    fn raises_never_reserve_more_than_the_vault_holds() {
+        let mut rng = crate::rng::Rng::from_vrf([7; 32]);
+        let held = 1_000_000;
+        let mut reserved = 400_000;
+        let mut ledgers = [ledger(0), ledger(0), ledger(0)];
+        for _ in 0..10_000 {
+            let player = &mut ledgers[rng.below(3) as usize];
+            let amount = rng.below(60_000);
+            let before = (reserved, player.max_win);
+            let free = held - reserved;
+            match player.raise_win_cap(&mut reserved, free, amount, &config()) {
+                Ok(()) => assert_eq!(reserved - before.0, player.max_win - before.1),
+                Err(_) => assert_eq!((reserved, player.max_win), before),
+            }
+            assert!(reserved <= held, "the vault covers every reservation");
+        }
+        let caps: u64 = ledgers.iter().map(|l| l.max_win).sum();
+        assert_eq!(reserved, 400_000 + caps, "every raise is reserved");
     }
 
     #[test]

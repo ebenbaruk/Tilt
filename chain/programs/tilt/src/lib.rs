@@ -68,6 +68,10 @@ pub mod tilt {
         instructions::account::deposit(ctx, amount)
     }
 
+    pub fn raise_win_cap(ctx: Context<RaiseWinCap>, amount: u64) -> Result<()> {
+        instructions::account::raise_win_cap(ctx, amount)
+    }
+
     pub fn open_table(ctx: Context<OpenTable>) -> Result<()> {
         instructions::table::open_table(ctx)
     }

@@ -170,3 +170,26 @@ pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
     ctx.accounts.ledger.deposited += amount;
     Ok(())
 }
+
+#[derive(Accounts)]
+pub struct RaiseWinCap<'info> {
+    #[account(address = vault.relayer @ TiltError::Unauthorized)]
+    pub relayer: Signer<'info>,
+    #[account(mut, seeds = [VAULT_SEED], bump = vault.bump)]
+    pub vault: Account<'info, Vault>,
+    #[account(seeds = [VAULT_TOKEN_SEED], bump = vault.token_bump)]
+    pub vault_token: Account<'info, TokenAccount>,
+    #[account(mut, seeds = [LEDGER_SEED, ledger.player.as_ref()], bump)]
+    pub ledger: Account<'info, Ledger>,
+}
+
+/// Solana, relayer: the rolling win cap. When a bet would take a player past their cap, the
+/// relay raises it here from the free bankroll; the rollup takes the new cap at the next move
+/// (`sync_ledger`). The player only meets a limit when the bankroll itself cannot cover the bet.
+pub fn raise_win_cap(ctx: Context<RaiseWinCap>, amount: u64) -> Result<()> {
+    let a = ctx.accounts;
+    let free = a.vault_token.amount.saturating_sub(a.vault.reserved);
+    let vault = &mut *a.vault;
+    a.ledger
+        .raise_win_cap(&mut vault.reserved, free, amount, &vault.config)
+}

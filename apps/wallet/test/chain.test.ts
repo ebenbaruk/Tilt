@@ -1,10 +1,11 @@
 // The relay's transactions, with both RPC connections stubbed: which instruction each action
-// becomes, which table it passes, and how a missing blackjack table gets opened first.
+// becomes, which table it passes, how a missing blackjack table gets opened first, and how a
+// move past the win cap raises it.
 import anchor from "@coral-xyz/anchor";
 import { type AccountInfo, Keypair, PublicKey, type Transaction } from "@solana/web3.js";
 import { type Action, idl, ledgerAddress, PROGRAM_ID, tableAddress } from "@tilt/contract";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TiltChain } from "../src/chain";
+import { TiltChain, winCapShortfall } from "../src/chain";
 
 const coder = new anchor.BorshInstructionCoder(idl as anchor.Idl);
 /** Position of the optional `table` account in every play instruction (IDL order). */
@@ -175,6 +176,62 @@ describe("blackjack table", () => {
     const { chain, player, sent } = stubbedChain({ tableOnSolana: false, rollupMisses: Infinity });
     await chain.play(player, { type: "slots_spin", amount: "1000000" }, record);
     expect(sent.rollupTableReads).toBe(0);
+    expect(sent.solana).toHaveLength(0);
+  });
+});
+
+describe("rolling win cap", () => {
+  const SHORT_LOGS = [
+    "Program log: Instruction: SlotsSpin",
+    "Program log: Win cap short by 248000000",
+    "Program log: AnchorError occurred. Error Code: WinCapReached. Error Number: 6008. Error Message: Lifetime win cap reached.",
+  ];
+  const ledgerData = (player: PublicKey, maxWin: number) =>
+    new anchor.BorshAccountsCoder(idl as anchor.Idl).encode("Ledger", {
+      player,
+      deposited: new anchor.BN(0),
+      withdrawn_paid: new anchor.BN(0),
+      forfeited: new anchor.BN(0),
+      max_win: new anchor.BN(maxWin),
+      window_start: new anchor.BN(0),
+      window_paid: new anchor.BN(0),
+    });
+
+  it("reads by how much the program found the move past the cap", () => {
+    expect(winCapShortfall(SHORT_LOGS)).toBe(248_000_000n);
+    expect(winCapShortfall(["Program log: Error Code: InsufficientBalance."])).toBeUndefined();
+  });
+
+  it("raises the cap on Solana by exactly the shortfall, waits for the rollup, then sends the move again", async () => {
+    const { chain, player, sent } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
+    const spin: Action = { type: "slots_spin", amount: "1000000" };
+    const atOpening = { ...accountInfo(PROGRAM_ID), data: await ledgerData(player, 2_000_000) };
+    const raised = { ...accountInfo(PROGRAM_ID), data: await ledgerData(player, 250_000_000) };
+    vi.mocked(chain.base.getAccountInfo).mockImplementation(async (address) => (address.equals(ledgerAddress(player)) ? atOpening : null));
+    // Anchor reads accounts with their context.
+    vi.spyOn(chain.base, "getAccountInfoAndContext").mockResolvedValue({ context: { slot: 1 }, value: atOpening });
+    vi.spyOn(chain.rollup, "getAccountInfoAndContext").mockResolvedValue({ context: { slot: 1 }, value: raised });
+    vi.mocked(chain.rollup.simulateTransaction).mockImplementationOnce(async (tx) => {
+      if (!("version" in tx)) sent.rollup.push(tx);
+      return { context: { slot: 1 }, value: { err: { InstructionError: [0, { Custom: 6008 }] }, logs: SHORT_LOGS, accounts: null, unitsConsumed: 0, returnData: null } };
+    });
+
+    await chain.play(player, spin, record);
+
+    expect(sent.solana.map(instructionNames)).toEqual([["raise_win_cap"]]);
+    const raise = coder.decode(sent.solana[0].instructions[0].data)?.data;
+    expect(raise && "amount" in raise ? String(raise.amount) : undefined).toBe("248000000");
+    expect(sent.rollup.map(instructionNames)).toEqual([["slots_spin"], ["slots_spin"]]);
+  });
+
+  it("passes any other refusal on, untouched", async () => {
+    const { chain, player, sent } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
+    vi.mocked(chain.rollup.simulateTransaction).mockImplementationOnce(async () => ({
+      context: { slot: 1 },
+      value: { err: { InstructionError: [0, { Custom: 6007 }] }, logs: ["Program log: Error Code: InsufficientBalance."], accounts: null, unitsConsumed: 0, returnData: null },
+    }));
+
+    await expect(chain.play(player, { type: "slots_spin", amount: "1000000" }, record)).rejects.toMatchObject({ code: "PROGRAM_ERROR", message: "InsufficientBalance" });
     expect(sent.solana).toHaveLength(0);
   });
 });

@@ -3,6 +3,7 @@ import { describe, expect, test } from "claude-code/testing";
 import { apiBase, trustedVerifyUrl } from "../hooks/api";
 import {
   cleanText,
+  moveFailure,
   formatCountdown,
   formatDuration,
   formatSigned,
@@ -81,6 +82,12 @@ describe("cards and pockets", () => {
 describe("boundaries", () => {
   test("server text cannot carry terminal escape sequences", () => {
     expect(cleanText("\u001b[31mred\u0007 team")).toBe("[31mred team");
+  });
+
+  test("a refusal of the program reads as a sentence, anything else as sent", () => {
+    expect(moveFailure("VaultTooSmall")).toBe("The casino cannot cover a bet this size right now: try a smaller one.");
+    expect(moveFailure("WinCapReached")).not.toContain("WinCapReached");
+    expect(moveFailure("network error, try again")).toBe("network error, try again");
   });
 
   test("server text cannot reorder or hide what follows, and long text is cut between characters", () => {

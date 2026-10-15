@@ -190,7 +190,7 @@ describe("a move in flight", () => {
     await ui.press({ key: "start" });
 
     expect(world.calls("POST /v1/play")).toHaveLength(1);
-    expect(textOf(await ui.drawn())).toContain("InsufficientBalance");
+    expect(textOf(await ui.drawn())).toContain("Not enough balance for this bet.");
     expect(await ui.find({ key: "start" })).toBeDefined();
   });
 
