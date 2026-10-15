@@ -1,9 +1,9 @@
-import { describe, expect, mock, test } from "claude-code/testing";
-import type { TurnCompleteInput } from "claude-code";
+import { describe, type Engine, expect, mock, test } from "claude-code/testing";
+import type { On, TurnCompleteInput } from "claude-code";
 
 import type { ImpressionRequest } from "../hooks/protocol";
-import { BASE } from "./fixtures";
-import { command, LOGGED_IN, NOW, PANE, PLUGIN, seat, SESSION, textOf, worldOf } from "./world";
+import { BASE, BLACKJACK_TURN } from "./fixtures";
+import { BAND, command, FIRST_TICK_MS, LOGGED_IN, NOW, PANE, PLUGIN, seat, SESSION, textOf, worldOf } from "./world";
 
 interface TurnEnd {
   reason?: "answer" | "aborted" | "error";
@@ -91,14 +91,52 @@ describe("the agent comes first", () => {
     expect(world.opened).toHaveLength(3);
   });
 
-  // Back from Claude Code's agents view (←, then Esc) the session runs in a new process: the
-  // mod starts over there, and the docked pane was gone until /tilt.
-  test("a session that left its pane open opens it again at start, without the keyboard", async ($, on) => {
-    const world = worldOf(on, { "GET /v1/state": () => ({ status: 200, body: BASE }) });
+  // Back from Claude Code's agents view (←, then Esc) the session runs in a new process, which
+  // Claude Code draws fullscreen: the mod starts over there, and the pane was gone until /tilt.
+  const MINUTE_AGO = NOW - 60_000;
 
-    mock.clock(on, { now: NOW });
-    mock.store(on, { ...LOGGED_IN, pane: true });
+  /** A session starting over with the pane open, after one played with it `placement`; its band draws once. */
+  const startOver = async ($: Engine, on: On, placement: string, startedAt: number, isFullscreen: boolean) => {
+    const world = worldOf(on, { "GET /v1/state": () => ({ status: 200, body: BLACKJACK_TURN }) });
+
+    on("session.usage", () => ({ value: { startedAt, context: { window: 200_000 }, rateLimits: [] } }));
+    const clock = mock.clock(on, { now: NOW });
+    mock.store(on, { ...LOGGED_IN, pane: true, placement });
     await $.session.start(SESSION);
+    await clock.advance(FIRST_TICK_MS);
+    const band = await $.ui.mount({
+      plugin: PLUGIN,
+      ...BAND,
+      viewport: { ...BAND.viewport, columns: 160, rows: 48, isFullscreen },
+      props: { ...BAND.props, maxRows: 30, bodyColumns: 160 },
+    });
+    // The first drawing says what the screen is; the next tick acts on it.
+    await clock.advance(FIRST_TICK_MS);
+
+    return { world, band };
+  };
+
+  test("a session that left its pane open opens it again at start, without the keyboard", async ($, on) => {
+    const { world } = await startOver($, on, "inline", MINUTE_AGO, false);
+
+    expect(world.opened).toEqual([{ id: "tilt", focus: false }]);
+  });
+
+  test("played under the transcript, a session brought back fullscreen gets the table above the prompt, no side pane", async ($, on) => {
+    const { world, band } = await startOver($, on, "inline", MINUTE_AGO, true);
+
+    expect(world.opened).toEqual([]);
+    expect(textOf(await band.drawn())).toContain("DEALER");
+  });
+
+  test("a fullscreen launch, not a session brought back, gets the pane as before", async ($, on) => {
+    const { world } = await startOver($, on, "inline", NOW, true);
+
+    expect(world.opened).toEqual([{ id: "tilt", focus: false }]);
+  });
+
+  test("a player of the docked pane gets it back docked", async ($, on) => {
+    const { world } = await startOver($, on, "dock", MINUTE_AGO, true);
 
     expect(world.opened).toEqual([{ id: "tilt", focus: false }]);
   });
