@@ -10,6 +10,8 @@ import { FG1, FG4, FG6, GOLD, GREEN, PINK, RED, type Ui } from "./theme";
 
 /** A hand's column: room for three small cards, "▶ #6 21 BLACKJACK" or "▶ #10 soft 17 split". */
 const HAND_COLUMNS = 20;
+/** The rank the api sends for an ace. */
+const ACE_RANK = 1;
 
 /** The columns a hand takes on the table, its cards at `size`. */
 export const handColumns = (cardCount: number, size: CardSize): number =>
@@ -26,6 +28,17 @@ export interface TableFx {
 }
 
 export const STILL: TableFx = { revealed: null, isPulseOn: true, spinElapsed: null };
+
+/** One card turned over every step, on the fullscreen table and on the main screen alike. */
+export const DEAL_STEP_MS = 150;
+
+/** Cards turned over `elapsed` ms into a deal that found `from` of `total` already shown (the
+ *  first new one at once); null once all are. */
+export function revealedAt(from: number, total: number, elapsed: number): number | null {
+  const revealed = from + 1 + Math.floor(elapsed / DEAL_STEP_MS);
+
+  return revealed >= total ? null : revealed;
+}
 
 const RESULTS: Record<BlackjackResult, { label: string; color: string }> = {
   blackjack: { label: "BJ", color: GOLD },
@@ -88,7 +101,9 @@ function handColumn(
   const label = detail.hands.length === 1 ? "YOU" : `#${index + 1}`;
   const total = isTurned ? `${hand.soft ? "soft " : ""}${hand.total}` : "";
   const highlight = fx.isPulseOn ? PINK : GOLD;
-  const stake = `${formatUsdc(hand.stake)}${hand.doubled ? " doubled" : ""}`;
+  // Split aces take one card each and are finished: said on the hand, or it looks like a stand.
+  const isSplitAces = hand.split && hand.cards[0]?.rank === ACE_RANK;
+  const stake = `${formatUsdc(hand.stake)}${hand.doubled ? " doubled" : ""}${isSplitAces ? " · 1 card" : ""}`;
   const result = hand.result === null || !isTurned ? null : RESULTS[hand.result];
 
   return (

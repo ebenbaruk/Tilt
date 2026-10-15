@@ -47,7 +47,9 @@ export interface Snapshot {
   depositUrl: string | null;
   /** How far into its spin the roulette or slots round on the table is; null once it landed. */
   spinElapsed: number | null;
-  /** The balance before that round, shown while it spins; null when none spins. */
+  /** Blackjack cards turned over so far, while new ones are being dealt; null when all show. */
+  revealed: number | null;
+  /** The balance before that round or those cards, shown while they play out; null otherwise. */
   heldBalance: string | null;
 }
 
@@ -916,7 +918,14 @@ export function renderPane(
     dealing !== null
       ? dealingTable(ui, dealing, size)
       : table === null
-        ? gameTable(ui, state, snap.prefs, isWide, { ...STILL, spinElapsed: snap.spinElapsed }, size)
+        ? gameTable(
+            ui,
+            state,
+            snap.prefs,
+            isWide,
+            { ...STILL, spinElapsed: snap.spinElapsed, revealed: snap.revealed },
+            size,
+          )
         : table(size);
   const gameColumn = (
     <Box flexDirection="column" flexGrow={1} marginTop={snap.agent.notice !== null || snap.agent.isWorking ? 1 : 0}>
@@ -924,9 +933,13 @@ export function renderPane(
       {state.blocked !== null && <Text color={RED}>{`Play paused · ${cleanText(state.blocked)}`}</Text>}
       {isKeysFirst && plays.length > 0 && <Box marginBottom={1}>{keyArea(ui, plays, false, steps)}</Box>}
       {shownTable}
-      {/* The result waits for the wheel or the reels to land: the text must not tell it first. */}
-      {dealing === null && table === null && snap.spinElapsed === null && outcomeLine(ui, roundOf(state, game))}
-      {dealing === null && snap.spinElapsed === null && winBanner(ui, state, onCommand)}
+      {/* The result waits for the wheel, the reels or the last card: the text must not tell it first. */}
+      {dealing === null &&
+        table === null &&
+        snap.spinElapsed === null &&
+        snap.revealed === null &&
+        outcomeLine(ui, roundOf(state, game))}
+      {dealing === null && snap.spinElapsed === null && snap.revealed === null && winBanner(ui, state, onCommand)}
       {statusLine(ui, snap, state)}
       {lowBalanceLine(ui, snap, state)}
       {!isKeysFirst && plays.length > 0 && keyArea(ui, plays, size === "large", steps)}

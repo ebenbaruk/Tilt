@@ -217,6 +217,16 @@ describe("the pane draws each state the api sends", () => {
       }
     }
   });
+
+  // Split aces finish at once: without a word the round looked like it stood on its own.
+  test("split aces say they take one card; other split hands do not", async ($, on) => {
+    await seat($, on, BLACKJACK_SPLIT_SETTLED);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE, props: { ...PANE.props, bodyColumns: 160 } });
+    const text = await shownText(ui);
+
+    // Two hands from split aces, one hand from no split.
+    expect(text.match(/· 1 card/g)).toHaveLength(2);
+  });
 });
 
 describe("before there is a game", () => {

@@ -94,6 +94,17 @@ export type TiltSpin = {
   balance: string;
 };
 
+/** The blackjack cards the table is turning over one by one, as the fullscreen table deals them. */
+export type TiltDeal = {
+  round: number | null;
+  /** Cards of the round already shown when these came (a hit brings one more). */
+  from: number;
+  /** `$.clock.now()` when they came. */
+  startedAt: number;
+  /** The balance before them, shown until the last card so the header does not tell the result first. */
+  balance: string;
+};
+
 declare module "claude-code" {
   interface PluginState {
     tilt: {
@@ -108,6 +119,7 @@ declare module "claude-code" {
       layout: TiltLayout;
       session: TiltSession;
       spin: TiltSpin;
+      deal: TiltDeal;
     };
   }
 }

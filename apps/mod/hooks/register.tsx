@@ -21,6 +21,7 @@ import {
   startDevice,
   trustedVerifyUrl,
 } from "./api";
+import { cardCount, revealedAt } from "./blackjack";
 import type { CardSize } from "./cards";
 import { cleanText, formatDuration, formatUsdc, moveFailure, SEPARATOR } from "./format";
 import { isPlayAction } from "./guards";
@@ -92,6 +93,7 @@ const layout = atom({ plugin: "tilt", key: "layout" } as const, {
   isOnboarded: false,
 });
 const spin = atom({ plugin: "tilt", key: "spin" } as const, { round: null, startedAt: 0, balance: "0" });
+const deal = atom({ plugin: "tilt", key: "deal" } as const, { round: null, from: 0, startedAt: 0, balance: "0" });
 const session = atom({ plugin: "tilt", key: "session" } as const, {
   net: "0",
   rounds: 0,
@@ -158,8 +160,8 @@ interface Runtime {
   sponsorName: string | null;
   /** undefined until read from `$.store`; null when logged out. */
   token: string | null | undefined;
-  /** A spin was playing at the last tick: its end draws the table once more. */
-  wasSpinning: boolean;
+  /** A spin or a deal was playing at the last tick: its end draws the table once more. */
+  wasMoving: boolean;
   /** The mod closed its pane to fold it: the next sync that finds it gone must not take that for the person's close. */
   isFoldingPane: boolean;
   /** Where the surface last seated the pane: inline, its height hides the agent's answer. */
@@ -836,26 +838,48 @@ async function spinElapsed($: EngineInterface, state: StateResponse | null, now:
   return spinProgress(round, now - playing.startedAt);
 }
 
-/** The spin playing on the table, and the balance held back until it lands. */
-async function spinView($: EngineInterface): Promise<Pick<Snapshot, "spinElapsed" | "heldBalance">> {
-  const elapsed = await spinElapsed($, (await readRemote($)).state, await $.clock.now());
+/** Blackjack cards turned over so far on the table; null when none is being dealt. */
+async function dealRevealed($: EngineInterface, state: StateResponse | null, now: number): Promise<number | null> {
+  const playing = await read($, deal);
+  const round = state?.round;
 
-  return { spinElapsed: elapsed, heldBalance: elapsed === null ? null : (await read($, spin)).balance };
+  if (round === undefined || round === null || round.detail.game !== "blackjack" || playing.round !== round.number) {
+    return null;
+  }
+
+  return revealedAt(playing.from, cardCount(round.detail), now - playing.startedAt);
 }
 
-/** Moves the spinner, or a spin, while something is in motion; says whether anything is. */
+/** The spin or the deal playing on the table, and the balance held back until it ends. */
+async function motionView($: EngineInterface): Promise<Pick<Snapshot, "spinElapsed" | "revealed" | "heldBalance">> {
+  const state = (await readRemote($)).state;
+  const now = await $.clock.now();
+  const elapsed = await spinElapsed($, state, now);
+  const revealed = await dealRevealed($, state, now);
+  const held =
+    elapsed !== null ? (await read($, spin)).balance : revealed !== null ? (await read($, deal)).balance : null;
+
+  return { spinElapsed: elapsed, revealed, heldBalance: held };
+}
+
+/** Whether a spin or a deal is playing on the table. */
+async function isMoving($: EngineInterface, state: StateResponse | null, now: number): Promise<boolean> {
+  return (await spinElapsed($, state, now)) !== null || (await dealRevealed($, state, now)) !== null;
+}
+
+/** Moves the spinner, a spin or a deal while something is in motion; says whether anything is. */
 async function animate($: EngineInterface, rt: Runtime, now: number): Promise<boolean> {
   const state = (await readRemote($)).state;
   const view = await read($, agent);
-  const isSpinning = (await spinElapsed($, state, now)) !== null;
-  const isAnimating = isSpinning || view.isWorking || needsFastPoll(state, await readIntent($));
-  // The spin's end needs one more drawing: nothing else moves then to draw the landed table.
-  const hasLanded = rt.wasSpinning && !isSpinning;
-  const frame = hasLanded ? view.frame + 1 : Math.floor(now / (isSpinning ? SPIN_FRAME_MS : SPINNER_FRAME_MS));
+  const moving = await isMoving($, state, now);
+  const isAnimating = moving || view.isWorking || needsFastPoll(state, await readIntent($));
+  // The end of a spin or a deal needs one more drawing: nothing else moves then to draw the table at rest.
+  const hasStopped = rt.wasMoving && !moving;
+  const frame = hasStopped ? view.frame + 1 : Math.floor(now / (moving ? SPIN_FRAME_MS : SPINNER_FRAME_MS));
 
-  rt.wasSpinning = isSpinning;
+  rt.wasMoving = moving;
 
-  if ((isAnimating || hasLanded) && frame !== view.frame) {
+  if ((isAnimating || hasStopped) && frame !== view.frame) {
     await update($, agent, (value) => ({ ...value, frame }));
   }
 
@@ -876,7 +900,7 @@ async function step($: EngineInterface, rt: Runtime, now: number): Promise<numbe
   await paneSyncStep($, rt, now);
 
   if (await animate($, rt, now)) {
-    delays.push(rt.wasSpinning ? SPIN_FRAME_MS : SPINNER_FRAME_MS);
+    delays.push(rt.wasMoving ? SPIN_FRAME_MS : SPINNER_FRAME_MS);
   }
 
   const { status } = await read($, auth);
@@ -903,8 +927,8 @@ async function step($: EngineInterface, rt: Runtime, now: number): Promise<numbe
     await intentStep($, rt, token, now);
     delays.push(await pollStep($, rt, token, now));
 
-    // A poll that brought a spin starts its frames now, not at the next tick.
-    if ((await spinElapsed($, (await readRemote($)).state, now)) !== null) {
+    // A poll that brought a spin or cards starts its frames now, not at the next tick.
+    if (await isMoving($, (await readRemote($)).state, now)) {
       delays.push(SPIN_FRAME_MS);
     }
   }
@@ -979,6 +1003,15 @@ async function countRound(
     const balance = isNew ? before.balance : (await read($, spin)).balance;
 
     await update($, spin, () => ({ round: round.number, startedAt: now, balance }));
+  }
+
+  // New blackjack cards (a deal, a card drawn, the dealer's turn) are turned over one at a time,
+  // as the fullscreen table deals them; the balance waits for the last one.
+  const cards = round?.detail.game === "blackjack" ? cardCount(round.detail) : 0;
+  const shown = !isNew && before?.round?.detail.game === "blackjack" ? cardCount(before.round.detail) : 0;
+
+  if (round !== null && before !== null && cards > shown) {
+    await update($, deal, () => ({ round: round.number, from: shown, startedAt: now, balance: before.balance }));
   }
 
   // The first look at the table: what is on it was played before this session.
@@ -1113,7 +1146,7 @@ async function snapshot($: EngineInterface, rt: Runtime): Promise<Snapshot> {
     session: await read($, session),
     isOnboarded: (await read($, layout)).isOnboarded,
     depositUrl: depositUrlOf(rt, (await readRemote($)).state),
-    ...(await spinView($)),
+    ...(await motionView($)),
   };
 }
 
@@ -1258,7 +1291,7 @@ export const register: Register = (on, options) => {
     sponsorName: null,
     token: undefined,
     isFoldingPane: false,
-    wasSpinning: false,
+    wasMoving: false,
     panePlacement: null,
     isTableBroken: false,
     sendingId: null,

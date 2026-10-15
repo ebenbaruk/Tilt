@@ -288,6 +288,23 @@ describe("a move in flight", () => {
     slow.answer("offline");
   });
 
+  // The main screen drew a deal all at once; the fullscreen table dealt it card by card.
+  test("on the main screen a deal turns its cards over one by one, as the fullscreen table does", async ($, on) => {
+    const { clock } = await seat($, on, BASE, movingTable(BASE, BLACKJACK_TURN));
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+
+    await ui.press({ key: "start" });
+    await clock.advance(FIRST_TICK_MS);
+    const dealing = textOf(await ui.drawn());
+
+    // In deal order: the first card is up, the second card of the hand not yet.
+    expect(dealing).toContain("3♣");
+    expect(dealing).not.toContain("8♦");
+
+    await clock.advance(1_000);
+    expect(textOf(await ui.drawn())).toContain("8♦");
+  });
+
   // On a fast chain the hand is dealt before the mashing stops: n is no key of the hand.
   test("n mashed past a deal that settled at once stays on the pane a moment, then gives way", async ($, on) => {
     const { world, clock } = await seat($, on, BASE, movingTable(BASE, BLACKJACK_TURN));

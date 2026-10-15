@@ -5,7 +5,7 @@
 // and no animation ever holds a key back.
 import type { ClientSurface, RenderElement } from "claude-code";
 
-import { cardCount } from "./blackjack";
+import { cardCount, DEAL_STEP_MS } from "./blackjack";
 import { formatUsdc, SEPARATOR } from "./format";
 import { activeGame } from "./keys";
 import type { RoundView } from "./protocol";
@@ -14,7 +14,6 @@ import { applyTheme, FG4, FG6, GOLD, PINK, type Ui } from "./theme";
 import { gameTable, outcomeLine, roundOf, spinMs, spinProgress } from "./view";
 
 const FRAME_MS = 33;
-const DEAL_STEP_MS = 150;
 const COUNT_UP_MS = 700;
 const BALANCE_MS = 600;
 const FLASH_MS = 600;
