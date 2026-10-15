@@ -110,6 +110,10 @@ const SOUND_DEAL = "sounds/deal.wav";
 const SOUND_WIN = "sounds/win.wav";
 /** The pane is open: a session that starts over (back from the agents view, a relaunch) reopens it. */
 const STORE_PANE = "pane";
+/** Where the surface last seated the pane, `dock` or `inline`: how the person plays. */
+const STORE_PLACEMENT = "placement";
+/** A session that began longer ago than this before its mod started was resumed, not launched. */
+const RESUMED_MS = 10_000;
 
 const TICK_MS = 100;
 const SPINNER_FRAME_MS = 200;
@@ -166,6 +170,10 @@ interface Runtime {
   sendingId: string | null;
   /** The api answered 429: no poll or resend before this time. */
   rateLimitedUntil: number;
+  /** The pane was open when the session started over: reopened once a drawing has said what the screen is. */
+  isRestorePending: boolean;
+  /** What the last drawing said: the fullscreen layout, where a pane docks. Null before any. */
+  isFullscreen: boolean | null;
 }
 
 interface StoredSession {
@@ -796,6 +804,11 @@ async function paneSyncStep($: EngineInterface, rt: Runtime, now: number): Promi
     await $.store.set(STORE_PANE, pane !== undefined);
   }
 
+  // Written here, not while drawing: a render may not change state.
+  if (rt.panePlacement !== null && (await $.store.get(STORE_PLACEMENT)) !== rt.panePlacement) {
+    await $.store.set(STORE_PLACEMENT, rt.panePlacement);
+  }
+
   rt.isPaneOpen = pane !== undefined;
 
   if (pane === undefined) {
@@ -855,6 +868,11 @@ async function step($: EngineInterface, rt: Runtime, now: number): Promise<numbe
   const delays: number[] = [PANE_SYNC_MS];
 
   rt.lastTickAt = now;
+  if (rt.isRestorePending && rt.isFullscreen !== null) {
+    rt.isRestorePending = false;
+    await restorePane($, rt, rt.isFullscreen);
+  }
+
   await paneSyncStep($, rt, now);
 
   if (await animate($, rt, now)) {
@@ -1131,14 +1149,32 @@ async function onSessionStart($: EngineInterface, rt: Runtime, isInteractive: bo
   ensureTicker($, rt);
 
   // Claude Code's agents view (←, then Esc) runs the session on in a new process, where the mod
-  // starts over: the pane it had comes back as it was, without the keyboard.
+  // starts over: the pane it had comes back (restorePane), once a drawing says what the screen is.
   const wasOpen = (await $.store.get(STORE_PANE)) === true;
 
-  if (wasOpen && rt.settings.layout !== "bottom" && !(await read($, layout)).paneDismissed) {
-    const isPlaced = await openPane($, rt, false);
+  rt.isRestorePending = wasOpen && rt.settings.layout !== "bottom" && !(await read($, layout)).paneDismissed;
+}
 
-    await update($, layout, (value) => ({ ...value, paneShown: isPlaced }));
+/**
+ * Reopens the pane a session that started over had, without the keyboard. Back from the agents
+ * view Claude Code draws the session fullscreen, where a pane docks beside the transcript: a
+ * person who played with it under the transcript gets the table above the prompt instead.
+ */
+async function restorePane($: EngineInterface, rt: Runtime, isFullscreen: boolean): Promise<void> {
+  const wasInline = (await $.store.get(STORE_PLACEMENT)) === "inline";
+  const isResumed = async () => (await $.session.usage()).startedAt < (await $.clock.now()) - RESUMED_MS;
+
+  if (isFullscreen && wasInline && (await isResumed())) {
+    rt.settings = { ...rt.settings, layout: "bottom" };
+    // Drawn again with the table in it.
+    await update($, layout, (value) => ({ ...value, paneShown: false }));
+
+    return;
   }
+
+  const isPlaced = await openPane($, rt, false);
+
+  await update($, layout, (value) => ({ ...value, paneShown: isPlaced }));
 }
 
 async function onTiltCommand($: EngineInterface, rt: Runtime, args: string): Promise<{ text: string }> {
@@ -1227,6 +1263,8 @@ export const register: Register = (on, options) => {
     isTableBroken: false,
     sendingId: null,
     rateLimitedUntil: 0,
+    isRestorePending: false,
+    isFullscreen: null,
   };
 
   on("session.start", async ($, e, next) => {
@@ -1271,6 +1309,7 @@ export const register: Register = (on, options) => {
 
     applyTheme(look.isLight);
     rt.panePlacement = e.props.placement;
+    rt.isFullscreen = e.viewport?.isFullscreen === true;
     const pane: PaneLayout = {
       bodyColumns: e.props.bodyColumns,
       bodyRows: e.props.scroll.bodyRows,
@@ -1317,6 +1356,12 @@ export const register: Register = (on, options) => {
   });
 
   on("ui.render", { component: "AbovePrompt" }, async ($, e, next) => {
+    rt.isFullscreen = e.viewport?.isFullscreen === true;
+
+    if (rt.isRestorePending) {
+      rt.wakeAt = 0;
+    }
+
     const look = await read($, layout);
 
     if (e.props.hasSurvey || look.paneShown) {
