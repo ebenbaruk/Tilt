@@ -501,6 +501,96 @@ describe("the Tower, Hilo and Keno boards", () => {
   });
 });
 
+describe("the roulette layout", () => {
+  const actionsOf = (calls: { body: unknown }[]) => calls.map((call) => (call.body as PlayRequest).action);
+  const FULLSCREEN = { ...PANE, surface: "terminal" } as const;
+  const GOLD = "#f1c45e";
+  const DRAWING: StateResponse =
+    ROULETTE.round === null
+      ? ROULETTE
+      : {
+          ...ROULETTE,
+          round: {
+            ...ROULETTE.round,
+            phase: "drawing",
+            detail: { game: "roulette", bet: { kind: "red" }, number: null },
+          },
+        };
+
+  test("lies under the wheel with the chip on the bet, the landed pocket lit", async ($, on) => {
+    await seat($, on, ROULETTE);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+
+    await ui.press({ key: "game-roulette" });
+    const table = textOf(await ui.drawn({ in: TABLE_KEY }));
+
+    for (const cell of ["2:1", "1st 12", "2nd 12", "3rd 12", "1–18", "EVEN", "BLACK", "ODD", "19–36"]) {
+      expect(table).toContain(cell);
+    }
+
+    expect(table).toMatch(/●\s*RED/);
+    expect(JSON.stringify(await ui.find({ key: "table-roulette-straight-17", in: TABLE_KEY }))).toContain(GOLD);
+    expect(JSON.stringify(await ui.find({ key: "table-roulette-straight-16", in: TABLE_KEY }))).not.toContain(GOLD);
+    // Once the table holds the keys, its prompt says the layout takes clicks.
+    await ui.pointer({ type: "down", x: 2, y: 1, button: "left" });
+    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("click the layout to bet");
+  });
+
+  test("a click on a number, RED, a dozen or a 2:1 moves the chip there, and the next spin bets it", async ($, on) => {
+    const { world, clock } = await seat($, on, ROULETTE, movingTable(ROULETTE, ROULETTE));
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+    const table = async () => textOf(await ui.drawn({ in: TABLE_KEY }));
+
+    await ui.press({ key: "game-roulette" });
+
+    for (const cell of ["straight-17", "red", "dozen-1", "column-3"]) {
+      await ui.press({ key: `table-roulette-${cell}` });
+
+      if (cell === "straight-17") {
+        expect(await table()).toContain("●17");
+        expect(await table()).toContain("bet number 17");
+      }
+
+      await ui.press({ key: "start" });
+      await clock.advance(1_000);
+    }
+
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([
+      { type: "roulette_spin", amount: "500000", bet: { kind: "straight", number: 17 } },
+      { type: "roulette_spin", amount: "500000", bet: { kind: "red" } },
+      { type: "roulette_spin", amount: "500000", bet: { kind: "dozen", dozen: 1 } },
+      { type: "roulette_spin", amount: "500000", bet: { kind: "column", column: 3 } },
+    ]);
+  });
+
+  test("is inert while the wheel draws: no cell takes a click", async ($, on) => {
+    await seat($, on, DRAWING);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+
+    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("1st 12");
+    expect(await ui.find({ key: "table-roulette-straight-17", in: TABLE_KEY })).toBeUndefined();
+    expect(await ui.find({ key: "table-roulette-red", in: TABLE_KEY })).toBeUndefined();
+    expect(await ui.find({ key: "table-roulette-dozen-1", in: TABLE_KEY })).toBeUndefined();
+  });
+
+  test("on the main screen s and d step a bet on one number, around 0 to 36", async ($, on) => {
+    await seat($, on, BASE);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+
+    await ui.press({ key: "game-roulette" });
+    expect((await ui.find({ key: "roulette-number-up" }))?.props.hotkey).toBe("d");
+    expect(await ui.find({ key: "roulette-straight-17" })).toBeUndefined();
+    await ui.press({ key: "roulette-number-up" });
+    expect(textOf(await ui.drawn())).toContain("bet number 0");
+    await ui.press({ key: "roulette-number-up" });
+    expect(textOf(await ui.drawn())).toContain("bet number 1");
+    await ui.press({ key: "roulette-number-down" });
+    await ui.press({ key: "roulette-number-down" });
+    expect(textOf(await ui.drawn())).toContain("bet number 36");
+    expect(textOf(await ui.drawn())).toContain("●36");
+  });
+});
+
 describe("before there is a game", () => {
   test("logged out, the pane says how to log in", async ($, on) => {
     worldOf(on);

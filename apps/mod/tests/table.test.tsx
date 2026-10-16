@@ -4,6 +4,7 @@ import { describe, expect, test } from "claude-code/testing";
 import type { PlayRequest, StateResponse } from "../hooks/protocol";
 import { TABLE_KEY } from "../hooks/table-input";
 import {
+  BACCARAT,
   BASE,
   BLACKJACK_LOSS,
   BLACKJACK_MIXED,
@@ -188,5 +189,63 @@ describe("the table moves", () => {
     await ui.key({ key: "return" });
 
     expect(actionsOf(world.calls("POST /v1/play"))).toEqual([{ type: "blackjack_stand" }]);
+  });
+
+  test("a baccarat round is dealt card by card, the third cards last, and the outcome waits for the last", async ($, on) => {
+    // The player draws a third card, then the banker does.
+    const thirds: StateResponse =
+      BACCARAT.round === null
+        ? BACCARAT
+        : {
+            ...BACCARAT,
+            round: {
+              ...BACCARAT.round,
+              detail: {
+                game: "baccarat",
+                bet: "banker",
+                player: [
+                  { rank: 2, suit: "♠" },
+                  { rank: 3, suit: "♥" },
+                  { rank: 4, suit: "♦" },
+                ],
+                banker: [
+                  { rank: 13, suit: "♦" },
+                  { rank: 3, suit: "♣" },
+                  { rank: 5, suit: "♠" },
+                ],
+                playerPoints: 9,
+                bankerPoints: 8,
+              },
+            },
+          };
+    let current: StateResponse = BASE;
+    const { clock } = await seat($, on, BASE, { "GET /v1/state": () => ({ status: 200, body: current }) });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+    const table = async () => textOf(await ui.drawn({ in: TABLE_KEY }));
+    const faces = ["2♠", "K♦", "3♥", "3♣", "4♦", "5♠"];
+    const seen: string[] = [];
+
+    await ui.press({ key: "game-baccarat" });
+    current = thirds;
+    await clock.advance(POLL_MS);
+
+    for (let frame = 0; frame < 40 && seen.length < faces.length; frame++) {
+      const text = await table();
+      const fresh = faces.filter((face) => text.includes(face) && !seen.includes(face));
+
+      expect(fresh.length).toBeLessThanOrEqual(1);
+      seen.push(...fresh);
+
+      if (seen.length < faces.length) {
+        expect(text).not.toContain("Player 9 · banker 8.");
+      }
+
+      await ui.advance(50);
+    }
+
+    expect(seen).toEqual(faces);
+    await ui.advance(EFFECT_MS);
+    expect(await table()).toContain("Player 9 · banker 8.");
+    expect(await table()).toContain("+0.94");
   });
 });

@@ -41,6 +41,8 @@ export type Command =
   | { kind: "keno-pick"; number: number }
   | { kind: "roulette-bet"; bet: RouletteBet }
   | { kind: "roulette-cycle"; target: "dozen" | "column" }
+  /** Roulette: a bet on one number, the one before (-1) or after (+1) the current one. */
+  | { kind: "roulette-number"; step: -1 | 1 }
   | { kind: "baccarat-bet"; bet: BaccaratBet }
   | { kind: "slots-speed"; speed: SlotsSpeed }
   /** Starts a round of the active game with the current bet, both read when the key is pressed. */
@@ -301,6 +303,13 @@ export const MINES_TILE_KEY = "mines-tile-";
 export const TOWER_TILE_KEY = "tower-tile-";
 /** The address of a Keno number's click on the fullscreen table: `keno-pick-1` to `keno-pick-40`. */
 export const KENO_PICK_KEY = "keno-pick-";
+/** The addresses of the roulette layout's cells only a click on the fullscreen table bets on:
+ *  `roulette-straight-0` to `roulette-straight-36`, `roulette-dozen-1`, `roulette-column-3`. */
+export const ROULETTE_STRAIGHT_KEY = "roulette-straight-";
+export const ROULETTE_DOZEN_KEY = "roulette-dozen-";
+export const ROULETTE_COLUMN_KEY = "roulette-column-";
+/** The wheel's pockets, 0 to 36. */
+export const ROULETTE_POCKETS = 37;
 const LETTER_A = "a".charCodeAt(0);
 /** A hidden tile's key drawn on its own: a tile of the board, its letter beside it. */
 const TILE_LABEL = "·";
@@ -327,6 +336,15 @@ export function nextRouletteBet(current: RouletteBet, kind: "dozen" | "column"):
   }
 
   return { kind: "column", column: current.kind === "column" ? step(current.column) : 1 };
+}
+
+/** A bet on the number one before or after the current one, around 0 to 36; a bet on no number starts at 0. */
+export function stepRouletteNumber(current: RouletteBet, step: -1 | 1): RouletteBet {
+  if (current.kind !== "straight") {
+    return { kind: "straight", number: 0 };
+  }
+
+  return { kind: "straight", number: (current.number + step + ROULETTE_POCKETS) % ROULETTE_POCKETS };
 }
 
 const ROULETTE_SIMPLE: readonly { hotkey: string; bet: RouletteBet }[] = [
@@ -407,6 +425,20 @@ function rouletteKeys(prefs: Prefs): KeyAction[] {
       label: column.kind === "column" ? `column ${column.column}` : "column",
       isSelected: chosen.kind === "column",
       command: { kind: "roulette-cycle", target: "column" },
+    },
+    {
+      key: "roulette-number-down",
+      hotkey: "s",
+      label: "number −",
+      isSelected: false,
+      command: { kind: "roulette-number", step: -1 },
+    },
+    {
+      key: "roulette-number-up",
+      hotkey: "d",
+      label: "number +",
+      isSelected: false,
+      command: { kind: "roulette-number", step: 1 },
     },
   ];
 }
@@ -746,12 +778,63 @@ export function planKeys({ state, prefs, isBusy }: PlanInput): KeyAction[] {
   }
 }
 
+/** A click-only key: no hotkey, so no letter ever presses it. */
+const clickKey = (key: string, label: string, isSelected: boolean, command: Command): KeyAction => ({
+  key,
+  hotkey: "",
+  label,
+  isSelected,
+  command,
+});
+
+const THIRDS = [1, 2, 3] as const;
+
+/** The roulette layout's cells a click bets on: every number, each dozen and each column. */
+function rouletteLayoutKeys(chosen: RouletteBet): KeyAction[] {
+  const pockets = Array.from({ length: ROULETTE_POCKETS }, (_, number) => number);
+
+  return [
+    ...pockets.map((number) =>
+      clickKey(
+        `${ROULETTE_STRAIGHT_KEY}${number}`,
+        String(number),
+        chosen.kind === "straight" && chosen.number === number,
+        {
+          kind: "roulette-bet",
+          bet: { kind: "straight", number },
+        },
+      ),
+    ),
+    ...THIRDS.map((dozen) =>
+      clickKey(`${ROULETTE_DOZEN_KEY}${dozen}`, `dozen ${dozen}`, chosen.kind === "dozen" && chosen.dozen === dozen, {
+        kind: "roulette-bet",
+        bet: { kind: "dozen", dozen },
+      }),
+    ),
+    ...THIRDS.map((column) =>
+      clickKey(
+        `${ROULETTE_COLUMN_KEY}${column}`,
+        `column ${column}`,
+        chosen.kind === "column" && chosen.column === column,
+        {
+          kind: "roulette-bet",
+          bet: { kind: "column", column },
+        },
+      ),
+    ),
+  ];
+}
+
 /**
- * The plan, and the keys only a click on the fullscreen table presses: the forty Keno numbers,
- * while the next round's picks can change. They have no hotkey, so no letter ever presses them.
+ * The plan, and the keys only a click on the fullscreen table presses, while the next round's
+ * choices can change: the forty Keno numbers, the roulette layout's numbers, dozens and columns.
  */
 export function tableKeys(input: PlanInput): KeyAction[] {
   const keys = planKeys(input);
+
+  if (keys.some((key) => key.key === "roulette-red")) {
+    return [...keys, ...rouletteLayoutKeys(input.prefs.roulette)];
+  }
 
   if (!keys.some((key) => key.key === "keno-random")) {
     return keys;
@@ -762,13 +845,9 @@ export function tableKeys(input: PlanInput): KeyAction[] {
 
   return [
     ...keys,
-    ...numbers.map((number) => ({
-      key: `${KENO_PICK_KEY}${number}`,
-      hotkey: "",
-      label: String(number),
-      isSelected: picks.includes(number),
-      command: { kind: "keno-pick", number } as const,
-    })),
+    ...numbers.map((number) =>
+      clickKey(`${KENO_PICK_KEY}${number}`, String(number), picks.includes(number), { kind: "keno-pick", number }),
+    ),
   ];
 }
 

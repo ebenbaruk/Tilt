@@ -2,7 +2,7 @@
 import type { RenderElement } from "claude-code";
 
 import { cardFace, isRedSuit, rankLabel } from "./format";
-import type { Card } from "./protocol";
+import type { Card, RoundView } from "./protocol";
 import { CARD_FACE, CARD_INK, FG1, FG4, FG6, GOLD, LINE4, RED, type Ui } from "./theme";
 
 export const BLACKJACK = 21;
@@ -22,6 +22,35 @@ export const largeHandColumns = (count: number): number =>
 
 const BACK_ROW = "░".repeat(LARGE_CARD_COLUMNS - 2);
 const BACK_ART = ["╭─────╮", `│${BACK_ROW}│`, `│${BACK_ROW}│`, `│${BACK_ROW}│`, "╰─────╯"];
+
+/** One card turned over every step, on the fullscreen table and on the main screen alike. */
+export const DEAL_STEP_MS = 150;
+
+/** Cards turned over `elapsed` ms into a deal that found `from` of `total` already shown (the
+ *  first new one at once); null once all are. */
+export function revealedAt(from: number, total: number, elapsed: number): number | null {
+  const revealed = from + 1 + Math.floor(elapsed / DEAL_STEP_MS);
+
+  return revealed >= total ? null : revealed;
+}
+
+/** The cards on a blackjack or baccarat table, all hands together; 0 for the other games. */
+export function dealtCards(round: RoundView | null): number {
+  const detail = round?.detail;
+
+  switch (detail?.game) {
+    case "blackjack":
+      return detail.hands.reduce((sum, hand) => sum + hand.cards.length, detail.dealer.length);
+    case "baccarat":
+      return detail.player.length + detail.banker.length;
+    default:
+      return 0;
+  }
+}
+
+/** How many of a hand's cards, dealt at these places in the deal, are still face down. */
+export const faceDownOf = (order: readonly number[], revealed: number | null): number =>
+  revealed === null ? 0 : order.filter((index) => index >= revealed).length;
 
 function faceArt(card: Card): string[] {
   const corner = `${rankLabel(card.rank)}${card.suit}`;

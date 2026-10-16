@@ -3,7 +3,7 @@
 // frame by the table surface module.
 import type { RenderElement } from "claude-code";
 
-import { BLACKJACK, type CardSize, handCards, handRow, handTag, largeHandColumns } from "./cards";
+import { BLACKJACK, type CardSize, faceDownOf, handCards, handRow, handTag, largeHandColumns } from "./cards";
 import { formatUsdc, SEPARATOR } from "./format";
 import type { BlackjackHandView, BlackjackResult, BlackjackView, RoundView } from "./protocol";
 import { FG1, FG4, FG6, GOLD, GREEN, PINK, RED, type Ui } from "./theme";
@@ -19,7 +19,7 @@ export const handColumns = (cardCount: number, size: CardSize): number =>
 
 /** What moves on the table between two still frames; `STILL` draws it at rest. */
 export interface TableFx {
-  /** Cards turned over so far, in deal order (dealOrder); null when all are. */
+  /** Blackjack or baccarat cards turned over so far, in deal order (each game's dealOrder); null when all are. */
   revealed: number | null;
   /** The active hand's highlight is on its bright beat. */
   isPulseOn: boolean;
@@ -30,17 +30,6 @@ export interface TableFx {
 }
 
 export const STILL: TableFx = { revealed: null, isPulseOn: true, spinElapsed: null, frame: 0 };
-
-/** One card turned over every step, on the fullscreen table and on the main screen alike. */
-export const DEAL_STEP_MS = 150;
-
-/** Cards turned over `elapsed` ms into a deal that found `from` of `total` already shown (the
- *  first new one at once); null once all are. */
-export function revealedAt(from: number, total: number, elapsed: number): number | null {
-  const revealed = from + 1 + Math.floor(elapsed / DEAL_STEP_MS);
-
-  return revealed >= total ? null : revealed;
-}
 
 const RESULTS: Record<BlackjackResult, { label: string; color: string }> = {
   blackjack: { label: "BJ", color: GOLD },
@@ -74,13 +63,6 @@ function dealOrder(detail: BlackjackView): { hands: number[][]; dealer: number[]
 
   return { hands, dealer };
 }
-
-export function cardCount(detail: BlackjackView): number {
-  return detail.hands.reduce((sum, hand) => sum + hand.cards.length, detail.dealer.length);
-}
-
-const faceDownOf = (order: readonly number[], revealed: number | null): number =>
-  revealed === null ? 0 : order.filter((index) => index >= revealed).length;
 
 interface HandPlace {
   index: number;

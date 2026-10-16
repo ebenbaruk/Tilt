@@ -76,7 +76,7 @@ export interface Snapshot {
   depositUrl: string | null;
   /** How far into its spin the roulette or slots round on the table is; null once it landed. */
   spinElapsed: number | null;
-  /** Blackjack cards turned over so far, while new ones are being dealt; null when all show. */
+  /** Blackjack or baccarat cards turned over so far, while new ones are being dealt; null when all show. */
   revealed: number | null;
   /** The balance before that round or those cards, shown while they play out; null otherwise. */
   heldBalance: string | null;
@@ -92,7 +92,7 @@ export function spinMs(game: Game, speed: SlotsSpeed): number {
   return game === "roulette" ? ROULETTE_SPIN_MS : game === "slots" ? SLOTS_SPIN_MS / SLOTS_SPEEDUP[speed] : 0;
 }
 
-/** While the chain draws, the wheel and the reels keep turning: the first part of a spin, looped. */
+/** While the chain draws, the reels keep turning: the first part of their spin, looped. */
 const DRAWING_LOOP_MS = 500;
 
 /**
@@ -102,7 +102,8 @@ const DRAWING_LOOP_MS = 500;
  */
 export function spinProgress(round: RoundView, elapsed: number, speed: SlotsSpeed): number | null {
   if (round.phase === "drawing") {
-    return elapsed % DRAWING_LOOP_MS;
+    // The wheel turns on at full speed, around and around: it has no stop to loop back from.
+    return round.detail.game === "roulette" ? elapsed : elapsed % DRAWING_LOOP_MS;
   }
 
   if (elapsed >= spinMs(round.detail.game, speed)) {
@@ -444,8 +445,8 @@ export function outcomeLine(ui: Ui, round: RoundView | null, shownNet?: string):
 
 /**
  * The active game's table; `fx` moves the blackjack cards and hands, `STILL` draws them at rest.
- * `tileButton` is the Button a Mines or tower tile (or, on the fullscreen table, a Keno number) is
- * pressed with, where this drawing has one.
+ * `tileButton` is the Button a Mines or tower tile (or, on the fullscreen table, a Keno number or a
+ * roulette cell) is pressed with, where this drawing has one.
  */
 export function gameTable(
   ui: Ui,
@@ -463,9 +464,9 @@ export function gameTable(
     case "blackjack":
       return blackjackTable(ui, round, fx, size);
     case "roulette":
-      return rouletteTable(ui, round, prefs, isWide, fx.spinElapsed);
+      return rouletteTable(ui, round, prefs, isWide, fx.spinElapsed, tileButton);
     case "baccarat":
-      return baccaratTable(ui, round, prefs, size);
+      return baccaratTable(ui, round, prefs, size, fx.revealed);
     case "slots":
       return slotsTable(ui, round, size, fx.spinElapsed);
     case "mines":
@@ -920,7 +921,8 @@ function footer(ui: Ui, snap: Snapshot, state: StateResponse, game: Game, isFocu
 
   return (
     <Box flexDirection="row" flexWrap="wrap" columnGap={2} paddingX={1}>
-      {snap.spinElapsed === null && sessionText(ui, snap.session, snap.remote.fetchedAt)}
+      {/* The session's net counts the round in play: it waits for the wheel, the reels or the last card too. */}
+      {snap.spinElapsed === null && snap.revealed === null && sessionText(ui, snap.session, snap.remote.fetchedAt)}
       <Text color={FG6}>{`rtp ${cleanText(state.rtp[game])}% · 1% fee on wins`}</Text>
       <Box flexGrow={1} />
       {isFocused ? (
@@ -1157,7 +1159,8 @@ function tableRows(
     case "baccarat":
       return 2 + (size === "large" ? 1 + cardRows : 2);
     case "roulette":
-      return 5;
+      // The wheel and the pocket, then the layout: three rows of numbers, the dozens, the outside bets.
+      return 11;
     case "slots":
       return size === "large" ? 5 : 3;
     case "mines":
@@ -1294,7 +1297,11 @@ export function renderPane(
             isWide,
             { ...STILL, spinElapsed: snap.spinElapsed, revealed: snap.revealed, frame: snap.agent.frame },
             size,
-            (tile) => tileElements.get(tile) ?? null,
+            (address) => {
+              const tile = tileOf(address);
+
+              return tile === null ? null : (tileElements.get(tile) ?? null);
+            },
           )
         : table(size, gameColumns(layout));
   const gameColumn = (

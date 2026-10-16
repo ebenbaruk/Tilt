@@ -15,6 +15,7 @@ import {
   stepBetIndex,
   stepHands,
   stepMines,
+  stepRouletteNumber,
   stepSetting,
   tableKeys,
   toggleKenoPick,
@@ -75,7 +76,7 @@ describe("the key plan", () => {
         .join("");
 
     expect(hotkeysOf("blackjack")).toBe(`${PAGE_1}jkvbn`);
-    expect(hotkeysOf("roulette")).toBe(`${PAGE_1}rkoelgzcvbn`);
+    expect(hotkeysOf("roulette")).toBe(`${PAGE_1}rkoelgzcsdvbn`);
     expect(hotkeysOf("baccarat")).toBe(`${PAGE_1}pytvbn`);
     expect(hotkeysOf("slots")).toBe(`${PAGE_1}xftvbn`);
     expect(hotkeysOf("mines")).toBe(`${PAGE_1}jkvbn`);
@@ -218,6 +219,31 @@ describe("bets", () => {
     expect(nextRouletteBet({ kind: "dozen", dozen: 3 }, "dozen")).toEqual({ kind: "dozen", dozen: 1 });
     expect(nextRouletteBet({ kind: "dozen", dozen: 1 }, "column")).toEqual({ kind: "column", column: 1 });
     expect(nextRouletteBet({ kind: "column", column: 1 }, "column")).toEqual({ kind: "column", column: 2 });
+  });
+
+  test("s and d step a bet on one number around 0 to 36, from 0 when the bet is on no number", () => {
+    expect(stepRouletteNumber({ kind: "red" }, 1)).toEqual({ kind: "straight", number: 0 });
+    expect(stepRouletteNumber({ kind: "dozen", dozen: 2 }, -1)).toEqual({ kind: "straight", number: 0 });
+    expect(stepRouletteNumber({ kind: "straight", number: 17 }, 1)).toEqual({ kind: "straight", number: 18 });
+    expect(stepRouletteNumber({ kind: "straight", number: 36 }, 1)).toEqual({ kind: "straight", number: 0 });
+    expect(stepRouletteNumber({ kind: "straight", number: 0 }, -1)).toEqual({ kind: "straight", number: 36 });
+  });
+
+  test("the roulette layout's numbers, dozens and columns are clicks on the fullscreen table, no letter's", () => {
+    const prefs = { ...PREFS, game: "roulette" as const, roulette: { kind: "straight" as const, number: 17 } };
+    const input = { state: fixtures.BASE, prefs, isBusy: false };
+    const keys = tableKeys(input);
+    const clicks = keys.filter((key) => key.hotkey === "");
+
+    expect(clicks).toHaveLength(37 + 3 + 3);
+    expect(new Set(keys.map((key) => key.key)).size).toBe(keys.length);
+    expect(clicks.filter((key) => key.isSelected).map((key) => key.key)).toEqual(["roulette-straight-17"]);
+    expect(clicks.find((key) => key.key === "roulette-dozen-2")?.command).toEqual({
+      kind: "roulette-bet",
+      bet: { kind: "dozen", dozen: 2 },
+    });
+    // Not while a spin is in flight.
+    expect(tableKeys({ ...input, isBusy: true }).some((key) => key.hotkey === "")).toBe(false);
   });
 
   test("j and k step the hands from one to six, held at both ends; the deal carries them", () => {

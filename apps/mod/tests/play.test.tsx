@@ -18,6 +18,8 @@ import {
 } from "./world";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+/** A win's celebration on the table. */
+const SPARKLES = /[✦✧✺✹⋆]/;
 
 const answering =
   (...answers: Answer[]): Route =>
@@ -390,6 +392,43 @@ describe("a move in flight", () => {
 
     await clock.advance(1_000);
     expect(textOf(await ui.drawn())).toContain("8♦");
+  });
+
+  test("a baccarat deal turns its cards over one at a time: player, banker, player, banker", async ($, on) => {
+    const won = { ...BACCARAT, balance: "13340500" };
+    const { clock } = await seat($, on, BASE, movingTable(BASE, won));
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+    const faces = ["2♠", "K♦", "3♥", "7♣"];
+    const seen: string[] = [];
+
+    await ui.press({ key: "game-baccarat" });
+    await ui.press({ key: "start" });
+    await clock.advance(FIRST_TICK_MS);
+
+    for (let frame = 0; frame < 30 && seen.length < faces.length; frame++) {
+      const text = textOf(await ui.drawn());
+      const fresh = faces.filter((face) => text.includes(face) && !seen.includes(face));
+
+      expect(fresh.length).toBeLessThanOrEqual(1);
+      seen.push(...fresh);
+
+      // Until the last card is up, nothing tells the result: no outcome, no win, the balance from before.
+      if (seen.length < faces.length) {
+        expect(text).not.toContain("Player 5 · banker 7.");
+        expect(text).not.toContain("+0.94");
+        expect(text).not.toMatch(SPARKLES);
+        expect(text).toContain("12.40 USDC");
+      }
+
+      await clock.advance(50);
+    }
+
+    const dealt = textOf(await ui.drawn());
+
+    expect(seen).toEqual(faces);
+    expect(dealt).toContain("Player 5 · banker 7.");
+    expect(dealt).toContain("13.34 USDC");
+    expect(dealt).toMatch(SPARKLES);
   });
 
   // On a fast chain the hand is dealt before the mashing stops: n is no key of the hand.

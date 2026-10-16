@@ -5,7 +5,7 @@ import type { RenderElement } from "claude-code";
 import { type CardSize, handCards } from "./cards";
 import { cardFace, cashOutPayout, formatUsdc, towerMultiplier } from "./format";
 import { pendingGlyph, type TileButton } from "./games";
-import { TOWER_LEVELS, TOWER_SHAPES, tileLetter } from "./keys";
+import { TOWER_LEVELS, TOWER_SHAPES, TOWER_TILE_KEY, tileLetter } from "./keys";
 import type { Prefs } from "./model";
 import type { HiloGuess, HiloView, RoundView, TowerView } from "./protocol";
 import { FG1, FG4, FG6, GOLD, LINE4, PINK, RED, type Ui } from "./theme";
@@ -151,7 +151,7 @@ export function towerTable(
     }
 
     const face = <Text dimColor>{tileLetter(tile)}</Text>;
-    const button = isPlaying ? tileButton(tile, face) : null;
+    const button = isPlaying ? tileButton(`${TOWER_TILE_KEY}${tile}`, face) : null;
 
     return button === null ? (
       glyph(isPlaying ? tileLetter(tile) : "·", isPlaying ? FG4 : LINE4, false)

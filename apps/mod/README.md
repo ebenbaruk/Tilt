@@ -53,7 +53,7 @@ Letter keys work everywhere (the pane and the band, inline or fullscreen):
 - `ctrl+x tab` gives the pane (or the band) the keyboard; `Esc` hands it back.
 - `1`–`9` switch to a game of the page shown in the header, `0` flips to the next page of games (12 games on two pages); not mid-round: a blackjack hand still to play, `▶`, a Mines, Hilo or Tower board in play, or a draw in progress keeps its game, and the key says so. `v` / `b` lower / raise the bet per hand (held at the table's limits), `n` deals, spins or plays.
 - Blackjack: `j` / `k` one hand fewer / more (1 to 6), `h` hit, `s` stand, `d` double, `p` split (first two cards of the same value), all on the hand marked `▶`. Split aces take one card each and are finished, as in a casino: their hands say `· 1 card`.
-- Roulette: `r` red, `k` black, `o` odd, `e` even, `l` low, `g` high, `z` dozen, `c` column.
+- Roulette: `r` red, `k` black, `o` odd, `e` even, `l` low, `g` high, `z` dozen, `c` column, `s` / `d` a bet on one number, the one before / after (from 0). The layout under the wheel shows the bet's chip `●` and lights the pocket the ball landed in; in fullscreen, a click on a cell (a number, a dozen, a `2:1`, an outside bet) bets on it, between spins.
 - Baccarat: `p` player, `y` banker, `t` tie.
 - Slots: `x` normal, `f` fast (the reels land three times sooner), `t` turbo (no spin: the draw shows as soon as the chain has it).
 - Mines: `j` / `k` one mine fewer / more (1 to 24, 3 by default); in play, `a`–`y` reveal the tile with that letter (5×5, row by row) and `z` cashes out, from the first safe tile. In fullscreen, a click on a tile reveals it.
@@ -65,7 +65,7 @@ In the fullscreen layout (`claude --settings '{"tui":"fullscreen"}'`), click the
 
 - `Space` or `Enter` plays a new round with the same bet and hands; in a blackjack turn `Space` hits, `Enter` stands, `d` doubles, `p` splits.
 - `←` / `→` lower / raise the bet, `↑` / `↓` add / remove a blackjack hand, `1`–`4` switch game. `Esc` hands the keys back.
-- The table deals the cards one by one and counts up a win; the main screen deals them one by one too, the result showing after the last card.
+- The table deals the cards one by one (at baccarat: player, banker, player, banker, then any third cards) and counts up a win; the main screen deals them one by one too, the result showing after the last card. The roulette wheel turns steadily while the chain draws, then slows into the drawn pocket before the ball shows.
 
 When a turn starts, the pane opens without taking the keyboard. When it ends the table stays, with `✓ agent finished in 6m 14s · your hand is saved`. `ctrl+x tab` gives it the keys and, pressed again, hands them back (as `Esc` does); `ctrl+x x` or ✕ hides it until `/tilt`. A pane left open comes back by itself when the session starts over: at the next launch, or back from Claude Code's agents view (`←`, then `Esc`). That return moves the session to a new process drawn fullscreen, where a pane would dock on the side: if you played with the pane under the transcript, the table comes back above the prompt instead (as with `layout: bottom`, for that session).
 
@@ -73,7 +73,7 @@ Around the table:
 
 - Your first time, a guide says how to give Tilt the keys and deal; it goes after your first move.
 - The bet and, at blackjack, the hands are steppers: `v ◂ bet 0.50 ▸ b`, `j ◂ ●●○○○○ 2 hands ▸ k`. If your balance does not cover the bet, the table says so before you press `n`, with a link to deposit on the web.
-- A blackjack deal shows its cards face down at once, then turns them over as the chain deals them.
+- A blackjack or baccarat deal shows its cards face down at once, then turns them over as the chain deals them.
 - A win sparkles across the table once its result shows; a win of twice the stake or more sets off fireworks and gets a banner; `w` copies a line to share.
 - The footer counts this session (`session +2.30 · 14 rounds · 22m`), as the mod saw rounds settle; the leaderboard says how far the next rank is.
 

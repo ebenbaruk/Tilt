@@ -5,9 +5,16 @@
 // and no animation ever holds a key back.
 import type { ClientSurface, RenderElement } from "claude-code";
 
-import { cardCount, DEAL_STEP_MS } from "./blackjack";
+import { DEAL_STEP_MS, dealtCards } from "./cards";
 import { formatUsdc, SEPARATOR } from "./format";
-import { activeGame, KENO_PICK_KEY, MINES_TILE_KEY, STEPPER_NAMES, TOWER_TILE_KEY } from "./keys";
+import {
+  activeGame,
+  KENO_PICK_KEY,
+  MINES_TILE_KEY,
+  ROULETTE_STRAIGHT_KEY,
+  STEPPER_NAMES,
+  TOWER_TILE_KEY,
+} from "./keys";
 import type { RoundView } from "./protocol";
 import { pressFor, stepperOf, type TableKey, type TableProps } from "./table-input";
 import { applyTheme, FG4, FG6, GOLD, PINK, type Ui } from "./theme";
@@ -43,7 +50,7 @@ interface Effect {
 interface TableState {
   /** Frame clock time, advanced by the ticker only while something moves. */
   now: number;
-  /** The round last drawn, and its blackjack card count then. */
+  /** The round last drawn, and its blackjack or baccarat card count then. */
   round: number | null;
   cards: number;
   /** Cards turned over so far, in deal order. */
@@ -79,12 +86,9 @@ const outcomeOf = (net: string): Outcome => {
   return value > 0n ? "win" : value < 0n ? "loss" : "push";
 };
 
-const cardsOf = (round: RoundView | null): number =>
-  round !== null && round.detail.game === "blackjack" ? cardCount(round.detail) : 0;
-
 function firstState(props: TableProps): TableState {
   const round = props.state.round;
-  const cards = cardsOf(round);
+  const cards = dealtCards(round);
 
   return {
     now: 0,
@@ -107,7 +111,7 @@ function firstState(props: TableProps): TableState {
  * settled round starts its effect and counts in the streak. The same object when nothing changed. */
 function observe(props: TableProps, state: TableState): TableState {
   const round = props.state.round;
-  const cards = cardsOf(round);
+  const cards = dealtCards(round);
   const speed = props.prefs.slotsSpeed;
   let next = state;
 
@@ -348,6 +352,10 @@ function prompt(
     parts.push("click a number to pick it");
   }
 
+  if (keys.some((key) => key.key.startsWith(ROULETTE_STRAIGHT_KEY))) {
+    parts.push("click the layout to bet");
+  }
+
   if (start === undefined) {
     return parts.length === 0 ? null : <Text color={FG6}>{parts.join(SEPARATOR)}</Text>;
   }
@@ -403,25 +411,21 @@ function turnPrompt(
   );
 }
 
-const BOARD_KEYS = [MINES_TILE_KEY, TOWER_TILE_KEY, KENO_PICK_KEY];
-
-/** A tile the plan can play right now (or a Keno number it can pick), as a Button around its face: a click posts its key. */
+/** A key the plan offers right now at `address` (a tile, a Keno number, a roulette cell), as a Button around its face: a click posts it. */
 function tileButton(
   ui: Ui,
   keys: readonly TableKey[],
-  tile: number,
+  address: string,
   face: RenderElement,
   post: (press: string) => void,
 ) {
   const { Button } = ui;
-  const addresses = BOARD_KEYS.map((prefix) => `${prefix}${tile}`);
-  const key = keys.find((action) => addresses.includes(action.key));
 
-  return key === undefined ? null : (
-    <Button key={`table-${key.key}`} plain onPress={() => post(key.key)}>
+  return keys.some((key) => key.key === address) ? (
+    <Button key={`table-${address}`} plain onPress={() => post(address)}>
       {face}
     </Button>
-  );
+  ) : null;
 }
 
 export default function Table(props: TableProps, surface: ClientSurface<TableState>): RenderElement {
@@ -467,8 +471,8 @@ export default function Table(props: TableProps, surface: ClientSurface<TableSta
 
   return (
     <Box flexDirection="column" paddingLeft={shake}>
-      {gameTable(ui, props.state, props.prefs, props.isWide, fx, props.cards, (tile, face) =>
-        tileButton(ui, props.keys, tile, face, post),
+      {gameTable(ui, props.state, props.prefs, props.isWide, fx, props.cards, (address, face) =>
+        tileButton(ui, props.keys, address, face, post),
       )}
       {celebration(ui, round, effect?.kind === "win" ? sinceEffect : null, props.columns - 1)}
       <Box flexDirection="column" marginTop={1}>

@@ -1,63 +1,120 @@
 // Roulette, baccarat, slots and Mines tables, drawn still by the pane and the table surface module alike.
 import type { RenderElement } from "claude-code";
 
-import { type CardSize, handCards, handRow } from "./cards";
+import { type CardSize, faceDownOf, handCards, handRow } from "./cards";
 import { cashOutPayout, cleanText, formatUsdc, pocketColor, rouletteBetLabel } from "./format";
-import { MINES_COLUMNS, tileLetter } from "./keys";
+import {
+  MINES_COLUMNS,
+  MINES_TILE_KEY,
+  ROULETTE_COLUMN_KEY,
+  ROULETTE_DOZEN_KEY,
+  ROULETTE_STRAIGHT_KEY,
+  tileLetter,
+} from "./keys";
 import type { Prefs } from "./model";
-import type { RoundView } from "./protocol";
-import { FELT, FELT_INK, FELT_INK_DIM, FG1, FG4, FG6, GOLD, GREEN, LINE3, LINE4, PINK, RED, type Ui } from "./theme";
+import type { BaccaratView, RouletteBet, RoundView } from "./protocol";
+import {
+  FELT,
+  FELT_INK,
+  FELT_INK_DIM,
+  FG1,
+  FG4,
+  FG6,
+  GOLD,
+  GREEN,
+  INK,
+  LINE3,
+  LINE4,
+  PINK,
+  RED,
+  type Ui,
+} from "./theme";
 
 /** The European wheel's pockets in their order around it, from 0. */
 const WHEEL = [
   0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7,
   28, 12, 35, 3, 26,
 ];
-/** A pocket's tile: its number centered on its felt, three rows tall. */
+/** A pocket's tile: its number centered on its felt, three rows tall; the next one starts a column after. */
 const POCKET_COLUMNS = 4;
-/** How long a spin runs on the table, and how many pockets the wheel turns by before it lands. */
-export const ROULETTE_SPIN_MS = 1_400;
+const TILE_STEP = POCKET_COLUMNS + 1;
+/** How long the wheel takes to slow from full speed into the drawn pocket, and how many pockets it turns by meanwhile. */
+export const ROULETTE_SPIN_MS = 2_000;
 const SPIN_POCKETS = 28;
+/** Full speed, in pockets a ms: the slope of the slowing's cubic ease-out at its start, so a wheel
+ *  turning at it while the chain draws slows down on landing without a change of pace. */
+const FULL_SPEED = (3 * SPIN_POCKETS) / ROULETTE_SPIN_MS;
 
 const wheelAt = (index: number): number => WHEEL[((index % WHEEL.length) + WHEEL.length) % WHEEL.length] ?? 0;
 
-/** The pockets the wheel still has to turn by, `elapsed` into a spin: fast at first, easing into the pocket. */
-function pocketsToGo(elapsed: number | null): number {
+/**
+ * Where the wheel stands under the marker, in pockets around it from 0 (a fraction is part way to
+ * the next), `elapsed` into a spin: at full speed, steadily, while the chain draws; once it has,
+ * slowing on a cubic ease-out, fast then creeping, to rest exactly on the drawn pocket.
+ */
+export function wheelPosition(pocket: number | null, elapsed: number | null, isDrawing: boolean): number {
+  const rest = pocket === null ? 0 : WHEEL.indexOf(pocket);
+
+  if (isDrawing) {
+    return rest + FULL_SPEED * (elapsed ?? 0);
+  }
+
   if (elapsed === null || elapsed >= ROULETTE_SPIN_MS) {
-    return 0;
+    return rest;
   }
 
   const left = 1 - elapsed / ROULETTE_SPIN_MS;
 
-  return Math.round(SPIN_POCKETS * left * left);
+  return rest - SPIN_POCKETS * left ** 3;
 }
 
 /**
- * The wheel unrolled around the pocket under the marker, as the design system's RouletteStrip:
- * tiles on their felt, the marker `▼` over the middle one and the ball `●` in it once it lands.
- * `pocket` null is the wheel at rest before any spin, dimmed, on 0.
+ * The wheel unrolled around `position`, as the design system's RouletteStrip: tiles on their felt,
+ * the marker `▼` over the pocket under it and the ball `●` in it once `hasBall`. `isIdle` dims the
+ * wheel: at rest before any spin, or turning while the pocket is not drawn yet.
  */
-function rouletteWheel(ui: Ui, pocket: number | null, reach: number, elapsed: number | null): RenderElement {
+function rouletteWheel(
+  ui: Ui,
+  position: number,
+  reach: number,
+  look: { hasBall: boolean; isIdle: boolean },
+): RenderElement {
   const { Box, Text } = ui;
-  const toGo = pocketsToGo(elapsed);
-  const center = (pocket === null ? 0 : WHEEL.indexOf(pocket)) - toGo;
-  const offsets = Array.from({ length: reach * 2 + 1 }, (_, index) => index - reach);
-  const hasBall = pocket !== null && toGo === 0;
-  const tile = (number: number, row: 0 | 1 | 2, isCenter: boolean) => {
-    const label = row !== 1 ? (isCenter && hasBall && row === 0 ? " ●  " : "    ") : ` ${String(number).padStart(2)} `;
+  // The strip moves a column at a time, not a pocket: the wheel creeps into its pocket at the end
+  // instead of jumping there.
+  const column = Math.round(position * TILE_STEP);
+  const shift = ((column % TILE_STEP) + TILE_STEP) % TILE_STEP;
+  const first = (column - shift) / TILE_STEP - reach;
+  // The marker stands over a tile's second column.
+  const center = Math.floor((column + 1) / TILE_STEP);
+  const width = TILE_STEP * (reach * 2 + 1) - 1;
+  const slots = Array.from({ length: reach * 2 + 2 }, (_, slot) => slot);
+  const row = (line: 0 | 1 | 2) =>
+    slots.flatMap((slot) => {
+      const index = first + slot;
+      const number = wheelAt(index);
+      const isCenter = index === center;
+      const start = slot * TILE_STEP - shift;
+      const label =
+        line !== 1 ? (isCenter && look.hasBall && line === 0 ? " ●  " : "    ") : ` ${String(number).padStart(2)} `;
+      const shown = label.slice(Math.max(0, -start), Math.max(0, width - start));
+      const gap = start + POCKET_COLUMNS;
 
-    return (
-      <Text
-        backgroundColor={FELT[pocketColor(number)]}
-        color={isCenter ? FELT_INK : FELT_INK_DIM}
-        bold={isCenter}
-        dimColor={pocket === null && !isCenter}
-      >
-        {label}
-      </Text>
-    );
-  };
-  const marker = `${" ".repeat((POCKET_COLUMNS + 1) * reach + 2)}▼`;
+      return [
+        shown.length > 0 && (
+          <Text
+            backgroundColor={FELT[pocketColor(number)]}
+            color={isCenter ? FELT_INK : FELT_INK_DIM}
+            bold={isCenter}
+            dimColor={look.isIdle && !isCenter}
+          >
+            {shown}
+          </Text>
+        ),
+        gap >= 0 && gap < width && <Text> </Text>,
+      ];
+    });
+  const marker = `${" ".repeat(TILE_STEP * reach + 2)}▼`;
   const under = marker.replace("▼", "▲");
 
   return (
@@ -66,10 +123,8 @@ function rouletteWheel(ui: Ui, pocket: number | null, reach: number, elapsed: nu
         {marker}
       </Text>
       <Box flexDirection="column" borderStyle="round" borderColor={LINE3} alignSelf="flex-start">
-        {([0, 1, 2] as const).map((row) => (
-          <Box flexDirection="row" columnGap={1}>
-            {offsets.map((offset) => tile(wheelAt(center + offset), row, offset === 0))}
-          </Box>
+        {([0, 1, 2] as const).map((line) => (
+          <Box flexDirection="row">{row(line)}</Box>
         ))}
       </Box>
       <Text color={GOLD} bold>
@@ -121,27 +176,132 @@ function pocketChip(ui: Ui, pocket: number): RenderElement {
   );
 }
 
-/** `spinElapsed`: how far into its spin the round on the table is; null draws it at rest. */
+/** The layout's number grid as on the felt, top row first: 3 6 … 36, 2 5 … 35, 1 4 … 34; each
+ *  row's `2:1` at its end bets on its column, numbered by its first number. */
+const LAYOUT_ROWS = ([3, 2, 1] as const).map((column) => ({
+  column,
+  numbers: Array.from({ length: 12 }, (_, index) => index * 3 + column),
+}));
+const DOZENS = [
+  { dozen: 1, label: "1st 12" },
+  { dozen: 2, label: "2nd 12" },
+  { dozen: 3, label: "3rd 12" },
+] as const;
+const OUTSIDE_BETS: readonly RouletteBet[] = [
+  { kind: "low" },
+  { kind: "even" },
+  { kind: "red" },
+  { kind: "black" },
+  { kind: "odd" },
+  { kind: "high" },
+];
+/** A number's cell; a `2:1` cell is one column wider, for its chip. */
+const NUMBER_CELL: Record<"wide" | "narrow", number> = { wide: 4, narrow: 3 };
+const COLUMN_CELL = 4;
+/** The chip on the cell of the bet in play. */
+const CHIP = "●";
+
+const centered = (text: string, width: number): string =>
+  text.padStart(Math.floor((width + text.length) / 2)).padEnd(width);
+
+/**
+ * The betting layout, as on a casino table: 0 on the left, the numbers in three rows of twelve,
+ * each row's `2:1`, then the dozens and the outside bets. The bet in play carries the chip `●` in
+ * gold; the pocket the ball landed in is lit gold. A cell the drawing has a Button for (a click on
+ * the fullscreen table) bets on it.
+ */
+function rouletteLayout(
+  ui: Ui,
+  bet: RouletteBet,
+  winner: number | null,
+  isWide: boolean,
+  cellButton: TileButton,
+): RenderElement {
+  const { Box, Text } = ui;
+  const width = NUMBER_CELL[isWide ? "wide" : "narrow"];
+  const betLabel = rouletteBetLabel(bet);
+  const cell = (address: string, cellBet: RouletteBet, lines: readonly string[], felt: string, cellWidth: number) => {
+    const isBet = rouletteBetLabel(cellBet) === betLabel;
+    const isWinner = cellBet.kind === "straight" && cellBet.number === winner;
+    // One Text, its lines joined: a Button holds only text, and the 0 is three rows tall.
+    const text = lines
+      .map(
+        (line, index) =>
+          `${isBet && index === Math.floor(lines.length / 2) ? CHIP : " "}${centered(line, cellWidth - 1)}`,
+      )
+      .join("\n");
+    const face = (
+      <Text backgroundColor={isWinner ? GOLD : felt} color={isWinner ? INK : isBet ? GOLD : FELT_INK} bold>
+        {text}
+      </Text>
+    );
+
+    return cellButton(address, face) ?? face;
+  };
+  const numberCell = (number: number, lines: readonly string[]) =>
+    cell(`${ROULETTE_STRAIGHT_KEY}${number}`, { kind: "straight", number }, lines, FELT[pocketColor(number)], width);
+
+  return (
+    <Box flexDirection="column">
+      <Box flexDirection="row">
+        {numberCell(0, ["", "0", ""])}
+        <Box flexDirection="column">
+          {LAYOUT_ROWS.map(({ column, numbers }) => (
+            <Box flexDirection="row">
+              {numbers.map((number) => numberCell(number, [String(number)]))}
+              {cell(`${ROULETTE_COLUMN_KEY}${column}`, { kind: "column", column }, ["2:1"], FELT.green, COLUMN_CELL)}
+            </Box>
+          ))}
+        </Box>
+      </Box>
+      <Box flexDirection="row" marginLeft={width}>
+        {DOZENS.map(({ dozen, label }) =>
+          cell(`${ROULETTE_DOZEN_KEY}${dozen}`, { kind: "dozen", dozen }, [label], FELT.green, width * 4),
+        )}
+      </Box>
+      <Box flexDirection="row" marginLeft={width}>
+        {OUTSIDE_BETS.map((outside) =>
+          cell(
+            `roulette-${outside.kind}`,
+            outside,
+            [(BET_NAMES[outside.kind] ?? outside.kind).toUpperCase()],
+            outside.kind === "red" ? FELT.red : outside.kind === "black" ? FELT.black : FELT.green,
+            width * 2,
+          ),
+        )}
+      </Box>
+    </Box>
+  );
+}
+
+/**
+ * `spinElapsed`: how far into its spin the round on the table is; null draws it at rest.
+ * `cellButton`: the Button a cell of the layout is bet on with, where the drawing has one.
+ */
 export function rouletteTable(
   ui: Ui,
   round: RoundView | null,
   prefs: Prefs,
   isWide: boolean,
   spinElapsed: number | null,
+  cellButton: TileButton,
 ): RenderElement {
   const { Box, Text } = ui;
   const detail = round?.detail.game === "roulette" ? round.detail : null;
   const isOpen = round !== null && round.phase !== "idle";
   const bet = isOpen && detail !== null ? detail.bet : prefs.roulette;
   const pocket = detail?.number ?? null;
-  const isSpinning = pocketsToGo(spinElapsed) > 0 || round?.phase === "drawing";
+  const isDrawing = round?.phase === "drawing";
+  const isSpinning = spinElapsed !== null || isDrawing;
+  const landed = isSpinning ? null : pocket;
+  const position = wheelPosition(pocket, spinElapsed, isDrawing);
 
   return (
     <Box flexDirection="column" gap={1}>
-      {rouletteWheel(ui, pocket, isWide ? 6 : 3, spinElapsed)}
+      {rouletteWheel(ui, position, isWide ? 6 : 3, { hasBall: landed !== null, isIdle: pocket === null })}
       <Box flexDirection="row" columnGap={2}>
-        {pocket !== null && !isSpinning ? (
-          pocketChip(ui, pocket)
+        {landed !== null ? (
+          pocketChip(ui, landed)
         ) : (
           <Text color={FG6}>{isSpinning ? "spinning…" : "No spin yet."}</Text>
         )}
@@ -152,14 +312,40 @@ export function rouletteTable(
           </Text>
         </Text>
       </Box>
+      {rouletteLayout(ui, bet, landed, isWide, cellButton)}
     </Box>
   );
 }
 
-export function baccaratTable(ui: Ui, round: RoundView | null, prefs: Prefs, size: CardSize): RenderElement {
+/** The two cards each side gets before either may draw a third. */
+const BACCARAT_FIRST_CARDS = 2;
+
+/** Where each baccarat card falls in the deal: player, banker, player, banker, then the player's
+ *  third card and the banker's, the order the rules draw them in. */
+function baccaratDealOrder(detail: BaccaratView): { player: number[]; banker: number[] } {
+  const thirds = BACCARAT_FIRST_CARDS * 2;
+  const bankerThird = thirds + (detail.player.length > BACCARAT_FIRST_CARDS ? 1 : 0);
+
+  return {
+    player: detail.player.map((_, card) => (card < BACCARAT_FIRST_CARDS ? card * 2 : thirds)),
+    banker: detail.banker.map((_, card) => (card < BACCARAT_FIRST_CARDS ? card * 2 + 1 : bankerThird)),
+  };
+}
+
+/** `revealed`: cards turned over so far, in deal order (baccaratDealOrder); null when all are. */
+export function baccaratTable(
+  ui: Ui,
+  round: RoundView | null,
+  prefs: Prefs,
+  size: CardSize,
+  revealed: number | null,
+): RenderElement {
   const { Box, Text } = ui;
   const detail = round?.detail.game === "baccarat" ? round.detail : null;
   const bet = round !== null && round.phase !== "idle" && detail !== null ? detail.bet : prefs.baccarat;
+  const order = detail === null ? null : baccaratDealOrder(detail);
+  const playerFaceDown = order === null ? 0 : faceDownOf(order.player, revealed);
+  const bankerFaceDown = order === null ? 0 : faceDownOf(order.banker, revealed);
 
   return (
     <Box flexDirection="column" gap={1}>
@@ -175,14 +361,14 @@ export function baccaratTable(ui: Ui, round: RoundView | null, prefs: Prefs, siz
         <Box flexDirection={size === "large" ? "row" : "column"} columnGap={6}>
           {handRow(
             ui,
-            { label: "PLAYER", total: String(detail.playerPoints), tag: null },
-            handCards(ui, detail.player, size),
+            { label: "PLAYER", total: playerFaceDown > 0 ? "" : String(detail.playerPoints), tag: null },
+            handCards(ui, detail.player, size, { faceDown: playerFaceDown }),
             size,
           )}
           {handRow(
             ui,
-            { label: "BANKER", total: String(detail.bankerPoints), tag: null },
-            handCards(ui, detail.banker, size),
+            { label: "BANKER", total: bankerFaceDown > 0 ? "" : String(detail.bankerPoints), tag: null },
+            handCards(ui, detail.banker, size, { faceDown: bankerFaceDown }),
             size,
           )}
         </Box>
@@ -345,10 +531,11 @@ const PENDING_GLYPHS = ["◐", "◓", "◑", "◒"];
 export const pendingGlyph = (frame: number): string => PENDING_GLYPHS[frame % PENDING_GLYPHS.length] ?? HIDDEN_GLYPH;
 
 /**
- * The Button a tile (or a Keno number) is pressed with where the drawing has one for it, live or
- * held; null draws it still. `face` is what the drawing shows there: a Button made for it wraps it.
+ * The Button a tile, a Keno number or a roulette cell is pressed with where the drawing has one for
+ * the key at `address` (`mines-tile-3`, `keno-pick-12`, `roulette-red`), live or held; null draws it
+ * still. `face` is what the drawing shows there: a Button made for it wraps it.
  */
-export type TileButton = (tile: number, face: RenderElement) => RenderElement | null;
+export type TileButton = (address: string, face: RenderElement) => RenderElement | null;
 
 /**
  * The 5 × 5 Mines board and its multipliers. In play a hidden tile is its key (or its letter, dim,
@@ -385,7 +572,7 @@ export function minesTable(
       return glyph(pendingGlyph(frame), PINK);
     }
 
-    const button = isOpen ? tileButton(tile, <Text dimColor>{tileLetter(tile)}</Text>) : null;
+    const button = isOpen ? tileButton(`${MINES_TILE_KEY}${tile}`, <Text dimColor>{tileLetter(tile)}</Text>) : null;
 
     return button === null ? (
       <Text dimColor>{(isOpen ? tileLetter(tile) : HIDDEN_GLYPH).padStart(TILE_COLUMNS)}</Text>

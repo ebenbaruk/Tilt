@@ -5,7 +5,7 @@ import type { RenderElement } from "claude-code";
 
 import { diceMultiplier, flipMultiplier, scaledDecimal } from "./format";
 import type { TileButton } from "./games";
-import { diceTarget, DICE_ROLLS, KENO_NUMBERS } from "./keys";
+import { diceTarget, DICE_ROLLS, KENO_NUMBERS, KENO_PICK_KEY } from "./keys";
 import type { Prefs } from "./model";
 import type { DiceView, FlipView, KenoView, LimboView, RoundView, WheelView } from "./protocol";
 import { FG1, FG4, FG6, GOLD, GREEN, LINE3, LINE4, PINK, RED, type Ui } from "./theme";
@@ -235,7 +235,7 @@ export function kenoTable(ui: Ui, round: RoundView | null, prefs: Prefs, numberB
       </Text>
     );
 
-    return detail !== null && isOpen(round) ? face : (numberButton(number, face) ?? face);
+    return detail !== null && isOpen(round) ? face : (numberButton(`${KENO_PICK_KEY}${number}`, face) ?? face);
   };
   const rows = Array.from({ length: KENO_NUMBERS / KENO_COLUMNS }, (_, row) => (
     <Box flexDirection="row">

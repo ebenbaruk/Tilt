@@ -21,8 +21,7 @@ import {
   startDevice,
   trustedVerifyUrl,
 } from "./api";
-import { cardCount, DEAL_STEP_MS, revealedAt } from "./blackjack";
-import type { CardSize } from "./cards";
+import { type CardSize, DEAL_STEP_MS, dealtCards, revealedAt } from "./cards";
 import { cleanText, formatDuration, formatUsdc, moveFailure, SEPARATOR } from "./format";
 import { isPlayAction } from "./guards";
 import {
@@ -45,6 +44,7 @@ import {
   stepBetIndex,
   stepHands,
   stepMines,
+  stepRouletteNumber,
   stepSetting,
   tableKeys,
   toggleKenoPick,
@@ -698,6 +698,10 @@ async function runCommand($: EngineInterface, rt: Runtime, command: Command): Pr
       await setPrefs($, (value) => ({ ...value, roulette: nextRouletteBet(value.roulette, command.target) }));
 
       return;
+    case "roulette-number":
+      await setPrefs($, (value) => ({ ...value, roulette: stepRouletteNumber(value.roulette, command.step) }));
+
+      return;
     case "baccarat-bet":
       await setPrefs($, (value) => ({ ...value, baccarat: command.bet }));
 
@@ -889,16 +893,16 @@ async function spinElapsed($: EngineInterface, state: StateResponse | null, now:
   return spinProgress(round, now - playing.startedAt, (await readPrefs($)).slotsSpeed);
 }
 
-/** Blackjack cards turned over so far on the table; null when none is being dealt. */
+/** Blackjack or baccarat cards turned over so far on the table; null when none is being dealt. */
 async function dealRevealed($: EngineInterface, state: StateResponse | null, now: number): Promise<number | null> {
   const playing = await read($, deal);
   const round = state?.round;
 
-  if (round === undefined || round === null || round.detail.game !== "blackjack" || playing.round !== round.number) {
+  if (round === undefined || round === null || playing.round !== round.number) {
     return null;
   }
 
-  return revealedAt(playing.from, cardCount(round.detail), now - playing.startedAt);
+  return revealedAt(playing.from, dealtCards(round), now - playing.startedAt);
 }
 
 /** How far into its win's celebration the round on the table is; null when none plays. */
@@ -1087,10 +1091,10 @@ async function countRound(
     await update($, spin, () => ({ round: round.number, startedAt: now, balance }));
   }
 
-  // New blackjack cards (a deal, a card drawn, the dealer's turn) are turned over one at a time,
-  // as the fullscreen table deals them; the balance waits for the last one.
-  const cards = round?.detail.game === "blackjack" ? cardCount(round.detail) : 0;
-  const shown = !isNew && before?.round?.detail.game === "blackjack" ? cardCount(before.round.detail) : 0;
+  // New blackjack or baccarat cards (a deal, a card drawn, the dealer's turn, a draw landing) are
+  // turned over one at a time, as the fullscreen table deals them; the balance waits for the last one.
+  const cards = dealtCards(round);
+  const shown = isNew ? 0 : dealtCards(before?.round ?? null);
 
   if (round !== null && before !== null && cards > shown) {
     await update($, deal, () => ({ round: round.number, from: shown, startedAt: now, balance: before.balance }));
@@ -1130,10 +1134,9 @@ async function resultShowsAt($: EngineInterface, round: RoundView, now: number):
   const dealing = await read($, deal);
   const speed = (await readPrefs($)).slotsSpeed;
   const spinEnd = spinning.round === round.number ? spinning.startedAt + spinMs(round.detail.game, speed) : now;
+  // The last card is up one step before the deal's length is over: the first one is at once (revealedAt).
   const dealEnd =
-    dealing.round === round.number && round.detail.game === "blackjack"
-      ? dealing.startedAt + (cardCount(round.detail) - dealing.from) * DEAL_STEP_MS
-      : now;
+    dealing.round === round.number ? dealing.startedAt + (dealtCards(round) - dealing.from - 1) * DEAL_STEP_MS : now;
 
   return Math.max(now, spinEnd, dealEnd);
 }

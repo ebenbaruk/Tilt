@@ -1,6 +1,7 @@
 import type { ConfigRow, On, TurnCompleteInput } from "claude-code";
 import { describe, type Engine, expect, test } from "claude-code/testing";
 
+import { ROULETTE_SPIN_MS, wheelPosition } from "../hooks/games";
 import type { StateResponse } from "../hooks/protocol";
 import {
   BASE,
@@ -21,7 +22,9 @@ import { BAND, command, later, LOGGED_IN, PANE, PANE_INLINE, PLUGIN, seat, shown
 
 const POLL_MS = 5_000;
 /** Past the longest spin: the wheel and the reels have landed. */
-const SPIN_OVER_MS = 1_500;
+const SPIN_OVER_MS = 2_100;
+/** A frame of the main screen's spin. */
+const SPIN_FRAME_MS = 100;
 /** Past a big win's fireworks. */
 const CELEBRATION_OVER_MS = 3_000;
 const LARGE_CARD_TOP = "╭─────╮";
@@ -348,11 +351,39 @@ describe("spins", () => {
     expect(spinning).toContain("spinning…");
     expect(spinning).not.toContain("17 BLACK");
 
+    // Slowing into the pocket, nearly there: still nothing tells it.
+    await clock.advance(ROULETTE_SPIN_MS - 2 * SPIN_FRAME_MS);
+    const creeping = textOf(await ui.drawn());
+
+    expect(creeping).toContain("spinning…");
+    expect(creeping).not.toContain("17 BLACK");
+    expect(creeping.slice(creeping.indexOf("▼"), creeping.indexOf("▲"))).not.toContain("●");
+    expect(creeping).not.toContain("Red loses.");
+
     await clock.advance(SPIN_OVER_MS);
     const landed = textOf(await ui.drawn());
 
     expect(landed).toContain(" 17 BLACK ");
-    expect(landed).toContain(" ●  ");
+    expect(landed.slice(landed.indexOf("▼"), landed.indexOf("▲"))).toContain(" ●  ");
+  });
+
+  test("the wheel turns steadily while the chain draws, then slows frame by frame into the drawn pocket", () => {
+    const frames = Math.ceil(ROULETTE_SPIN_MS / SPIN_FRAME_MS);
+    const landing = Array.from({ length: frames + 1 }, (_, frame) => wheelPosition(17, frame * SPIN_FRAME_MS, false));
+    const steps = landing.slice(1).map((position, frame) => position - (landing[frame] ?? 0));
+    const drawing = [0, 1, 2].map((frame) => wheelPosition(null, frame * SPIN_FRAME_MS, true));
+    const drawingSteps = [(drawing[1] ?? 0) - (drawing[0] ?? 0), (drawing[2] ?? 0) - (drawing[1] ?? 0)];
+    const paceAt = (isDrawing: boolean) => wheelPosition(17, 1, isDrawing) - wheelPosition(17, 0, isDrawing);
+
+    // Each frame moves the wheel on, never back, and less than the one before.
+    expect(steps.every((step) => step >= 0)).toBe(true);
+    steps.slice(1).forEach((step, frame) => expect(step).toBeLessThan(steps[frame] ?? 0));
+    expect(steps[0] ?? 0).toBeGreaterThan(20 * (steps[steps.length - 1] ?? 0));
+    // 17 is the ninth pocket around the wheel from 0: the wheel rests exactly on it.
+    expect(landing[frames]).toBe(8);
+    // While drawing: the same distance every frame, and the pace the slowing starts at.
+    expect(Math.abs((drawingSteps[1] ?? 0) - (drawingSteps[0] ?? 0))).toBeLessThan(1e-9);
+    expect(Math.abs(paceAt(false) - paceAt(true))).toBeLessThan(1e-3);
   });
 
   test("the slots show their pay table, the winning line lit", async ($, on) => {
