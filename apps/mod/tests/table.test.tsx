@@ -2,6 +2,7 @@ import type { RenderInput } from "claude-code";
 import { describe, expect, test } from "claude-code/testing";
 
 import type { PlayRequest, StateResponse } from "../hooks/protocol";
+import { WHEEL_SPIN_MS } from "../hooks/quick";
 import { TABLE_KEY } from "../hooks/table-input";
 import {
   BACCARAT,
@@ -12,6 +13,7 @@ import {
   BLACKJACK_SIX_TURN,
   BLACKJACK_TURN,
   BLACKJACK_WIN,
+  WHEEL,
 } from "./fixtures";
 import { FIRST_TICK_MS, movingTable, PANE, PANE_INLINE, PLUGIN, seat, textOf, type Answer } from "./world";
 
@@ -174,6 +176,26 @@ describe("the table moves", () => {
       expect(await table()).not.toContain("wins in a row");
     },
   );
+
+  test("a wheel spin lands before the result and the balance show", { timeoutMs: 30_000 }, async ($, on) => {
+    let current: StateResponse = { ...BASE, round: null };
+    const { clock } = await seat($, on, current, { "GET /v1/state": () => ({ status: 200, body: current }) });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+    const table = async () => textOf(await ui.drawn({ in: TABLE_KEY }));
+
+    await ui.press({ key: "game-page" });
+    current = { ...WHEEL, balance: "12895000" };
+    await clock.advance(POLL_MS);
+    await ui.advance(WHEEL_SPIN_MS - 300);
+    expect(await table()).toContain("spinning…");
+    expect(await table()).not.toContain("Landed on");
+    expect(await table()).not.toContain("+0.49");
+
+    await ui.advance(300 + EFFECT_MS);
+    expect(await table()).toContain("Landed on ×1.50.");
+    expect(await table()).toContain("balance 12.89");
+    expect(await table()).not.toContain("spinning…");
+  });
 
   test("keys go through while cards are still being dealt", async ($, on) => {
     let current: StateResponse = BASE;

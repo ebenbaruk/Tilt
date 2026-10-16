@@ -105,7 +105,7 @@ const ActionShape = z.discriminatedUnion("type", [
   }),
   /** Starts a Hilo round and draws its first card. */
   z.object({ type: z.literal("hilo_bet"), amount: Amount }),
-  /** A certain guess (higher on an ace, lower on a king) and an 11th skip are refused by the program. */
+  /** Higher or same / lower or same, strict on an ace (higher) and a king (lower); an 11th skip is refused by the program. */
   z.object({ type: z.literal("hilo_guess"), guess: HiloGuess }),
   /** Cashes out once at least one guess was right. */
   z.object({ type: z.literal("hilo_cashout") }),

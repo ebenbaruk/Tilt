@@ -72,7 +72,7 @@ export type PlayAction =
   | { type: "wheel_spin"; amount: Amount; segments: number; risk: WheelRisk }
   /** Starts a Hilo round and draws its first card. */
   | { type: "hilo_bet"; amount: Amount }
-  /** A guess on the next card; a certain one (higher on an ace, lower on a king) is refused. */
+  /** A guess on the next card: higher or same, lower or same; strict higher on an ace, strict lower on a king. */
   | { type: "hilo_guess"; guess: HiloGuess }
   /** Takes the current multiplier; needs at least one right guess. */
   | { type: "hilo_cashout" }

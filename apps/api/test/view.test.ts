@@ -476,14 +476,19 @@ describe("buildRoundView", () => {
       });
     });
 
-    it("refuses the certain guess on an ace or a king", () => {
+    it("offers the strict bet on an ace or a king: 13 / 12", () => {
       expect(buildRoundView(input(board([0], []), turn)).detail).toMatchObject({
-        higherMultiplier: null,
+        higherMultiplier: "1.0616",
         lowerMultiplier: "12.7400",
       });
       expect(buildRoundView(input(board([12], []), turn)).detail).toMatchObject({
         higherMultiplier: "12.7400",
-        lowerMultiplier: null,
+        lowerMultiplier: "1.0616",
+      });
+      // Lower from a king, right on a queen (card 11).
+      expect(buildRoundView(input(board([12, 11], ["lower"]), turn)).detail).toMatchObject({
+        multiplier: "1.0616",
+        canCashOut: true,
       });
     });
 
@@ -508,7 +513,10 @@ describe("buildRoundView", () => {
     });
 
     it("fails loudly on guesses the program would refuse", () => {
-      expect(() => buildRoundView(input(board([0, 5], ["higher"]), turn))).toThrow();
+      // An 11th skip.
+      expect(() =>
+        buildRoundView(input(board(Array<number>(12).fill(5), Array<"skip">(11).fill("skip")), turn)),
+      ).toThrow();
     });
   });
 

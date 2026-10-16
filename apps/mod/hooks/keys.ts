@@ -590,7 +590,7 @@ function towerTurnKeys(detail: TowerView, stake: string): KeyAction[] {
 
 const HILO_KEYS: Record<HiloGuess, string> = { higher: "h", lower: "l", skip: "s" };
 
-/** Higher and lower at what a right guess brings, unless certain; skip while skips are left; `z` cashes out. */
+/** Higher and lower at what a right guess brings, unless refused; skip while skips are left; `z` cashes out. */
 function hiloTurnKeys(detail: HiloView, stake: string): KeyAction[] {
   const offers: { guess: HiloGuess; label: string | null }[] = [
     { guess: "higher", label: detail.higherMultiplier === null ? null : `higher ×${detail.higherMultiplier}` },

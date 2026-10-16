@@ -18,7 +18,7 @@ import {
   SEPARATOR,
 } from "./format";
 import { hiloRight, hiloTable, towerTable } from "./climb";
-import { diceTable, flipTable, kenoTable, limboTable, rollText, wheelTable } from "./quick";
+import { diceTable, flipTable, kenoTable, limboTable, rollText, WHEEL_SPIN_MS, wheelRows, wheelTable } from "./quick";
 import {
   baccaratTable,
   minesTable,
@@ -74,7 +74,7 @@ export interface Snapshot {
   isOnboarded: boolean;
   /** Where to deposit, when the api named a page on its own site. */
   depositUrl: string | null;
-  /** How far into its spin the roulette or slots round on the table is; null once it landed. */
+  /** How far into its spin the roulette, wheel or slots round on the table is; null once it landed. */
   spinElapsed: number | null;
   /** Blackjack or baccarat cards turned over so far, while new ones are being dealt; null when all show. */
   revealed: number | null;
@@ -87,9 +87,18 @@ export interface Snapshot {
 /** How many times faster the reels turn at each slots speed; turbo shows the draw at once. */
 const SLOTS_SPEEDUP: Record<SlotsSpeed, number> = { normal: 1, fast: 3, turbo: Infinity };
 
-/** How long a round of `game` spins on the table before it lands; 0 for the card games and turbo slots. */
+/** How long a round of `game` spins on the table before it lands; 0 for the games drawn still and turbo slots. */
 export function spinMs(game: Game, speed: SlotsSpeed): number {
-  return game === "roulette" ? ROULETTE_SPIN_MS : game === "slots" ? SLOTS_SPIN_MS / SLOTS_SPEEDUP[speed] : 0;
+  switch (game) {
+    case "roulette":
+      return ROULETTE_SPIN_MS;
+    case "wheel":
+      return WHEEL_SPIN_MS;
+    case "slots":
+      return SLOTS_SPIN_MS / SLOTS_SPEEDUP[speed];
+    default:
+      return 0;
+  }
 }
 
 /** While the chain draws, the reels keep turning: the first part of their spin, looped. */
@@ -102,8 +111,8 @@ const DRAWING_LOOP_MS = 500;
  */
 export function spinProgress(round: RoundView, elapsed: number, speed: SlotsSpeed): number | null {
   if (round.phase === "drawing") {
-    // The wheel turns on at full speed, around and around: it has no stop to loop back from.
-    return round.detail.game === "roulette" ? elapsed : elapsed % DRAWING_LOOP_MS;
+    // A wheel turns on at full speed, around and around: it has no stop to loop back from.
+    return round.detail.game === "slots" ? elapsed % DRAWING_LOOP_MS : elapsed;
   }
 
   if (elapsed >= spinMs(round.detail.game, speed)) {
@@ -480,7 +489,7 @@ export function gameTable(
     case "keno":
       return kenoTable(ui, round, prefs, tileButton);
     case "wheel":
-      return wheelTable(ui, round, prefs);
+      return wheelTable(ui, round, prefs, isWide, fx.spinElapsed);
     case "hilo":
       return hiloTable(ui, round, size);
     case "tower":
@@ -1130,13 +1139,17 @@ function blackjackRows(handCards: readonly number[], size: CardSize, columns: nu
   return dealerRows + 1 + handRows * (cardRows + 2) + (handRows - 1);
 }
 
-/** The rows the active game's table takes with cards at `size`, in `columns`; a deal in flight is its face-down hands. */
+/**
+ * The rows the active game's table takes with cards at `size`, in `columns` (a wide pane's when
+ * `isWide`); a deal in flight is its face-down hands.
+ */
 function tableRows(
   state: StateResponse,
   prefs: Prefs,
   dealing: number | null,
   size: CardSize,
   columns: number,
+  isWide: boolean,
 ): number {
   const round = roundOf(state, activeGame(state, prefs));
   const cardRows = size === "large" ? LARGE_CARD_ROWS : 1;
@@ -1176,7 +1189,7 @@ function tableRows(
       // Five rows of numbers, a line of what each hit count pays.
       return 7;
     case "wheel":
-      return 5;
+      return wheelRows(prefs.wheelSegments, isWide);
     case "hilo":
       // The cards and their trail beside the multipliers, skips and cash-out.
       return Math.max((size === "large" ? cardRows : 1) + 1, 6);
@@ -1212,7 +1225,7 @@ function paneRows(snap: Snapshot, state: StateResponse, layout: PaneLayout, size
     CHROME_ROWS +
     (hasSidebar ? 0 : NARROW_EXTRA_ROWS) +
     now +
-    tableRows(state, snap.prefs, dealingHands(snap), size, columns)
+    tableRows(state, snap.prefs, dealingHands(snap), size, columns, layout.bodyColumns >= WIDE_MIN_COLUMNS)
   );
 }
 

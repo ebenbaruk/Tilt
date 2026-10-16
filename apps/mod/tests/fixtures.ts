@@ -504,7 +504,7 @@ export const HILO_TURN: StateResponse = {
   }),
 };
 
-/** An ace, no skip left: higher is certain, so only lower is offered. */
+/** An ace, no skip left: higher is strict (×13/12), lower is the ace only (×13). */
 export const HILO_ACE: StateResponse = {
   ...BASE,
   round: round({
@@ -514,7 +514,26 @@ export const HILO_ACE: StateResponse = {
       cards: [card(1, "♣")],
       guesses: [],
       multiplier: "0.9800",
+      higherMultiplier: "1.0616",
       lowerMultiplier: "12.7400",
+      skipsLeft: 0,
+      canGuess: true,
+    }),
+  }),
+};
+
+/** A king, no skip left: lower is strict (×13/12), higher is the king only (×13). */
+export const HILO_KING: StateResponse = {
+  ...BASE,
+  round: round({
+    phase: "player_turn",
+    net: "0",
+    detail: hiloBoard({
+      cards: [card(13, "♦")],
+      guesses: [],
+      multiplier: "0.9800",
+      higherMultiplier: "12.7400",
+      lowerMultiplier: "1.0616",
       skipsLeft: 0,
       canGuess: true,
     }),

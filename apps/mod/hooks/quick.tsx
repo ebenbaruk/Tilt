@@ -8,7 +8,7 @@ import type { TileButton } from "./games";
 import { diceTarget, DICE_ROLLS, KENO_NUMBERS, KENO_PICK_KEY } from "./keys";
 import type { Prefs } from "./model";
 import type { DiceView, FlipView, KenoView, LimboView, RoundView, WheelView } from "./protocol";
-import { FG1, FG4, FG6, GOLD, GREEN, LINE3, LINE4, PINK, RED, type Ui } from "./theme";
+import { BLUE, FG1, FG4, FG6, GOLD, GREEN, INK, LINE3, LINE4, PINK, RED, TEAL, type Ui } from "./theme";
 
 const isOpen = (round: RoundView | null): boolean => round !== null && round.phase !== "idle";
 
@@ -271,69 +271,292 @@ export function kenoTable(ui: Ui, round: RoundView | null, prefs: Prefs, numberB
   );
 }
 
-/** A segment's color by what it pays: nothing dim, then brighter and warmer as it pays more. */
-function segmentColor(pays: string): string {
-  const value = hundredths(pays);
+/** How long the wheel takes to slow from full speed into the drawn segment. */
+export const WHEEL_SPIN_MS = 2_500;
+/** How far it turns meanwhile, in laps: the half lap keeps the drawn segment off the pointer when the slowing starts. */
+const SPIN_LAPS = 3.5;
 
-  if (value === 0n) {
-    return LINE4;
+/**
+ * Which segment the pointer is over, `elapsed` into a spin of a wheel of `segments` (a fraction is
+ * part way to the next): turning clockwise at full speed while the chain draws; once it has,
+ * slowing on a cubic ease-out over a few laps to rest exactly on the drawn `segment`. The count
+ * falls as the wheel turns clockwise: the segment before comes under the pointer.
+ */
+export function wheelSegmentAt(
+  segments: number,
+  segment: number | null,
+  elapsed: number | null,
+  isDrawing: boolean,
+): number {
+  const rest = segment ?? 0;
+  const turn = SPIN_LAPS * segments;
+
+  if (isDrawing) {
+    // The slowing's slope at its start, so landing changes the pace without a jolt.
+    return rest - ((3 * turn) / WHEEL_SPIN_MS) * (elapsed ?? 0);
   }
 
-  return value < 200n ? FG4 : value < 500n ? GREEN : value < 2_000n ? GOLD : PINK;
+  if (elapsed === null || elapsed >= WHEEL_SPIN_MS) {
+    return rest;
+  }
+
+  return rest + turn * (1 - elapsed / WHEEL_SPIN_MS) ** 3;
 }
 
-/** The wheel unrolled into a strip, a cell per segment, the landed one under `▼`, then what each color pays. */
-export function wheelTable(ui: Ui, round: RoundView | null, prefs: Prefs): RenderElement {
+/** Multipliers under ×2 count as small wins, in cool colors; the rest are the warm big ones. */
+const BIG_WIN = 200n;
+
+/**
+ * One color per multiplier the wheel pays: nothing dim, the small wins cool (blue, teal, green as
+ * they rise), the big ones warm, the biggest pink and the others gold.
+ */
+function segmentColors(pays: readonly string[]): Map<string, string> {
+  const values = [...new Set(pays)].sort((a, b) => Number(hundredths(a) - hundredths(b)));
+  const small = values.filter((value) => hundredths(value) > 0n && hundredths(value) < BIG_WIN);
+  const big = values.filter((value) => hundredths(value) >= BIG_WIN);
+  const cool = [BLUE, TEAL, GREEN];
+  const colors = new Map<string, string>(values.map((value) => [value, LINE4]));
+
+  small.forEach((value, rank) => colors.set(value, cool[Math.min(rank, cool.length - 1)] ?? GREEN));
+  big.forEach((value, rank) => colors.set(value, rank === big.length - 1 ? PINK : GOLD));
+
+  return colors;
+}
+
+/** A cell with its gap: a multiplier label (`×19.60` at most), or a dot where there are too many to label. */
+const LABEL_CELL = 7;
+const DOT_CELL = 2;
+
+/** A ring's radii, in rows and columns from its centre, and the columns a cell takes. */
+interface Ring {
+  rows: number;
+  columns: number;
+  cell: number;
+}
+
+/** The ring for each wheel, sized to stay within 50 columns (the game column beside the sidebar) and 9 rows. */
+const RINGS: Record<number, Ring> = {
+  10: { rows: 3, columns: 12, cell: LABEL_CELL },
+  20: { rows: 4, columns: 18, cell: LABEL_CELL },
+  30: { rows: 4, columns: 16, cell: DOT_CELL },
+  40: { rows: 4, columns: 20, cell: DOT_CELL },
+  50: { rows: 4, columns: 24, cell: DOT_CELL },
+};
+const SAMPLES_PER_SLOT = 60;
+
+interface Slot {
+  row: number;
+  column: number;
+}
+
+const slotsCache = new Map<number, Slot[]>();
+
+/**
+ * Where each slot of the ring sits, clockwise from the top: evenly spread around an ellipse on a
+ * measure where a row down or a cell across is one step, so the cells stay apart both on the flat
+ * top and bottom and on the steep sides.
+ */
+function ringSlots(segments: number, ring: Ring): Slot[] {
+  const cached = slotsCache.get(segments);
+
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const samples = segments * SAMPLES_PER_SLOT;
+  const points: (Slot & { length: number })[] = [];
+  let length = 0;
+
+  for (let sample = 0; sample <= samples; sample++) {
+    const angle = (2 * Math.PI * sample) / samples;
+    const point = { row: -ring.rows * Math.cos(angle), column: ring.columns * Math.sin(angle) };
+    const before = points[sample - 1];
+
+    if (before !== undefined) {
+      length += Math.max(Math.abs(point.column - before.column) / ring.cell, Math.abs(point.row - before.row));
+    }
+
+    points.push({ ...point, length });
+  }
+
+  const slots: Slot[] = [];
+  let index = 0;
+
+  for (let slot = 0; slot < segments; slot++) {
+    while ((points[index]?.length ?? length) < (length * slot) / segments) {
+      index++;
+    }
+
+    const point = points[index] ?? { row: 0, column: 0 };
+
+    slots.push({ row: Math.round(point.row + ring.rows), column: Math.round(point.column + ring.columns) });
+  }
+
+  slotsCache.set(segments, slots);
+
+  return slots;
+}
+
+/** `text` centered in `width` columns, the odd space on the right. */
+function centered(text: string, width: number): string {
+  const left = Math.floor((width - text.length) / 2);
+
+  return `${" ".repeat(Math.max(0, left))}${text}`.padEnd(width);
+}
+
+/** A piece of a ring's row: what it draws from `column` on, `width` columns wide. */
+interface Piece {
+  column: number;
+  width: number;
+  element: RenderElement;
+}
+
+/** The wheel's segments in the narrow pane's strip: this many each side of the pointer. */
+const STRIP_REACH: Record<number, number> = { [LABEL_CELL]: 3, [DOT_CELL]: 12 };
+
+/**
+ * The wheel as a ring of segments around its centre, the fixed pointer `▼` at the top over the
+ * segment it turned to (lit); a narrow pane gets a strip of the segments around the pointer
+ * instead. Each segment shows its multiplier, or only its color with the legend under the ring;
+ * the centre names the wheel until it lands, then the landed multiplier. `spinElapsed`: how far
+ * into its spin the round on the table is; null draws it at rest.
+ */
+export function wheelTable(
+  ui: Ui,
+  round: RoundView | null,
+  prefs: Prefs,
+  isWide: boolean,
+  spinElapsed: number | null,
+): RenderElement {
   const { Box, Text } = ui;
   const detail = round?.detail.game === "wheel" ? round.detail : null;
   const isSame = detail !== null && detail.segments === prefs.wheelSegments && detail.risk === prefs.wheelRisk;
   const shown: WheelView | null = detail !== null && (isOpen(round) || isSame) ? detail : null;
   const segments = shown?.segments ?? prefs.wheelSegments;
-  const width = segments <= 20 ? 2 : 1;
-  const landed = shown?.segment ?? null;
+  const risk = shown?.risk ?? prefs.wheelRisk;
   const pays = shown?.multipliers ?? [];
-  const legend = [...new Set(pays)].sort((a, b) => Number(hundredths(a) - hundredths(b)));
+  const colors = segmentColors(pays);
+  const isDrawing = shown !== null && round?.phase === "drawing";
+  const isSpinning = shown !== null && (spinElapsed !== null || isDrawing);
+  const landed = isSpinning ? null : (shown?.segment ?? null);
+  const turn = Math.round(wheelSegmentAt(segments, shown?.segment ?? null, spinElapsed, isDrawing));
+  const ring = RINGS[segments] ?? { rows: 0, columns: 0, cell: LABEL_CELL };
+  const face = ring.cell - 1;
+  // On a dim 0× chip the theme's text reads; on a colored one, the ink made for fills.
+  const chipInk = (multiplier: string) => (hundredths(multiplier) === 0n ? FG1 : INK);
+  const cell = (slot: number): RenderElement => {
+    const multiplier = pays[(((turn + slot) % segments) + segments) % segments];
+    const color = multiplier === undefined ? LINE4 : (colors.get(multiplier) ?? LINE4);
+    const isUnder = slot === 0 && shown !== null;
+
+    if (face === 1) {
+      return (
+        <Text color={color} bold={isUnder}>
+          {isUnder ? "◉" : "●"}
+        </Text>
+      );
+    }
+
+    const label = centered(multiplier === undefined ? "·" : `×${multiplier}`, face);
+
+    return isUnder ? (
+      <Text backgroundColor={color} color={chipInk(multiplier ?? "0")} bold>
+        {label}
+      </Text>
+    ) : (
+      <Text color={color}>{label}</Text>
+    );
+  };
+  const line = (pieces: Piece[]): RenderElement => {
+    let at = 0;
+
+    return (
+      <Text>
+        {[...pieces]
+          .sort((a, b) => a.column - b.column)
+          .flatMap((piece) => {
+            const gap = " ".repeat(Math.max(0, piece.column - at));
+
+            at = piece.column + piece.width;
+
+            return [gap, piece.element];
+          })}
+      </Text>
+    );
+  };
+  const landedPays = landed === null ? null : (pays[landed] ?? "0.00");
+  const centreText = landedPays === null ? `${segments} segments · ${risk} risk` : ` ×${landedPays} `;
+  const centre =
+    landedPays === null ? (
+      <Text color={FG4}>{centreText}</Text>
+    ) : (
+      <Text backgroundColor={colors.get(landedPays) ?? LINE4} color={chipInk(landedPays)} bold>
+        {centreText}
+      </Text>
+    );
+  // The pointer stands over the middle of a cell's face.
+  const faceMiddle = Math.floor((face - 1) / 2);
+  // The colors come in the order of what they pay.
+  const legend = [...colors];
+  const isRing = isWide && RINGS[segments] !== undefined;
+  let wheel: RenderElement;
+
+  if (isRing) {
+    const slots = ringSlots(segments, ring);
+    const middle = ring.columns + faceMiddle;
+    const rows = Array.from({ length: ring.rows * 2 + 1 }, (_, row) =>
+      slots.flatMap((slot, index) =>
+        slot.row === row ? [{ column: slot.column, width: face, element: cell(index) }] : [],
+      ),
+    );
+
+    rows[ring.rows]?.push({
+      column: middle - Math.floor(centreText.length / 2),
+      width: centreText.length,
+      element: centre,
+    });
+    wheel = (
+      <Box flexDirection="column">
+        <Text color={GOLD} bold>{`${" ".repeat(middle)}▼`}</Text>
+        {rows.map(line)}
+      </Box>
+    );
+  } else {
+    const reach = STRIP_REACH[ring.cell] ?? 0;
+    const strip = Array.from({ length: reach * 2 + 1 }, (_, index) => ({
+      column: index * ring.cell,
+      width: face,
+      element: cell(index - reach),
+    }));
+
+    wheel = (
+      <Box flexDirection="column">
+        <Text color={GOLD} bold>{`${" ".repeat(reach * ring.cell + faceMiddle)}▼`}</Text>
+        {line(strip)}
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection="column" gap={1}>
-      <Box flexDirection="column">
-        <Text color={GOLD} bold>
-          {landed === null ? " " : `${" ".repeat(landed * width)}▼`}
-        </Text>
-        <Text>
-          {Array.from({ length: segments }, (_, segment) => {
-            const multiplier = pays[segment];
-
-            return multiplier === undefined ? (
-              <Text color={LINE4}>{"░".repeat(width)}</Text>
-            ) : (
-              <Text color={segmentColor(multiplier)}>{"█".repeat(width)}</Text>
-            );
-          })}
-        </Text>
-      </Box>
+      {wheel}
       <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-        <Text color={FG4}>
-          {`${segments} segments · `}
-          <Text color={FG1} bold>
-            {shown?.risk ?? prefs.wheelRisk}
-          </Text>
-          {" risk"}
-        </Text>
-        {legend.map((multiplier) => (
+        {!isRing && centre}
+        {legend.map(([multiplier, color]) => (
           <Text color={FG6}>
-            <Text color={segmentColor(multiplier)}>█</Text>
+            <Text color={color}>●</Text>
             {` ×${multiplier}`}
           </Text>
         ))}
+        {landed === null && <Text color={FG6}>{isSpinning ? "spinning…" : "No spin yet."}</Text>}
       </Box>
-      {round !== null && shown !== null && landed !== null ? (
-        <Text color={resultColor(round)} bold>
-          {`landed on ×${pays[landed] ?? "0.00"}`}
-        </Text>
-      ) : (
-        <Text color={FG6}>{shown !== null && isOpen(round) ? "spinning…" : "No spin yet."}</Text>
-      )}
     </Box>
   );
+}
+
+/** The rows `wheelTable` takes: the pointer and the ring (or the strip), a blank, the legend. */
+export function wheelRows(segments: number, isWide: boolean): number {
+  const ring = RINGS[segments];
+
+  return 1 + (isWide && ring !== undefined ? ring.rows * 2 + 1 : 1) + 2;
 }

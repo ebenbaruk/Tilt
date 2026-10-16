@@ -15,6 +15,9 @@ const isOpen = (round: RoundView): boolean => round.phase !== "idle";
 /** Cards on the table: the last ones drawn, the trail under them says the guesses. */
 const HILO_SHOWN = 8;
 const GUESS_GLYPHS: Record<HiloGuess, string> = { higher: "▲", lower: "▼", skip: "⇥" };
+/** The ranks the api sends for an ace and a king: there, higher and lower are strict bets. */
+const ACE_RANK = 1;
+const KING_RANK = 13;
 
 /** Right guesses so far: every guess but the skips, and the wrong one that busted. */
 export function hiloRight(detail: HiloView): number {
@@ -49,6 +52,7 @@ export function hiloTable(ui: Ui, round: RoundView | null, size: CardSize): Rend
   const open = isOpen(round);
   const from = Math.max(0, detail.cards.length - HILO_SHOWN);
   const right = hiloRight(detail);
+  const rank = detail.cards.at(-1)?.rank;
   const odds = (label: string, multiplier: string | null) =>
     open &&
     multiplier !== null && (
@@ -75,8 +79,8 @@ export function hiloTable(ui: Ui, round: RoundView | null, size: CardSize): Rend
             {`×${detail.multiplier}`}
           </Text>
         </Text>
-        {odds("higher or same", detail.higherMultiplier)}
-        {odds("lower or same", detail.lowerMultiplier)}
+        {odds(rank === ACE_RANK ? "higher" : "higher or same", detail.higherMultiplier)}
+        {odds(rank === KING_RANK ? "lower" : "lower or same", detail.lowerMultiplier)}
         {open && <Text color={FG6}>{`${detail.skipsLeft} ${detail.skipsLeft === 1 ? "skip" : "skips"} left`}</Text>}
         {open && detail.canCashOut && (
           <Text color={FG4}>

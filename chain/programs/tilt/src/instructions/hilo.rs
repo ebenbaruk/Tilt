@@ -316,11 +316,8 @@ mod tests {
     #[test]
     fn refused_guesses() {
         let (mut a, mut b) = started(1);
-        assert_eq!(
-            check_guess(&a.round, &b, HiloMove::Higher),
-            Err(TiltError::InvalidChoice.into()),
-            "higher than an ace is certain"
-        );
+        // Higher than an ace is strict, so never certain: allowed.
+        check_guess(&a.round, &b, HiloMove::Higher).unwrap();
         for _ in 0..10 {
             guess(&mut a, &mut b, HiloMove::Skip, 5);
         }

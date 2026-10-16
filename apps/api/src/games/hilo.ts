@@ -1,7 +1,8 @@
 // Port of `games/hilo.rs`: cards from an infinite deck (`below(52)`: rank `card % 13 + 1`, suit
 // `card / 13`), one draw each. A right higher (≥) or lower (≤) guess multiplies the fair
-// multiplier by 13 / winning ranks (fixed point ×1e6, rounded down each step); a cash-out pays
-// 0.98 × fair, capped at the round's gain. Skips draw a new card and change nothing.
+// multiplier by 13 / winning ranks (fixed point ×1e6, rounded down each step); at the edges the
+// bet is strict (higher from an ace: > 1, lower from a king: < 13), so no guess is certain. A
+// cash-out pays 0.98 × fair, capped at the round's gain. Skips draw a new card and change nothing.
 import type { Card, HiloGuess } from "@tilt/mod/protocol";
 import { MULTIPLIER_SCALE } from "./decimal";
 import type { Rng } from "./rng";
@@ -26,16 +27,16 @@ export const toCard = (card: number): Card => ({ rank: rank(card), suit: SUITS[M
 
 export const drawCard = (rng: Rng) => rng.below(CARDS);
 
-/** Ranks winning `guess` from `rank`, null for a skip. 13 means certain: refused. */
+/** Ranks winning `guess` from `rank`, null for a skip. Never 13: at the edges the bet is strict. */
 export function winningRanks(guess: HiloGuess, rank: number): number | null {
-  if (guess === "higher") return RANKS + 1 - rank;
-  if (guess === "lower") return rank;
+  if (guess === "higher") return rank === 1 ? RANKS - 1 : RANKS + 1 - rank;
+  if (guess === "lower") return rank === RANKS ? RANKS - 1 : rank;
   return null;
 }
 
 export function isRight(guess: HiloGuess, current: number, next: number): boolean {
-  if (guess === "higher") return next >= current;
-  if (guess === "lower") return next <= current;
+  if (guess === "higher") return current === 1 ? next > current : next >= current;
+  if (guess === "lower") return current === RANKS ? next < current : next <= current;
   return true;
 }
 
@@ -60,7 +61,7 @@ export interface HiloPlay {
 }
 
 /** Replays a board: `guesses[i]` led to `cards[i + 1]`. A guess the program would have refused
- *  (certain, too many skips, after the round ended) makes the sequence impossible: `null`. */
+ *  (too many skips, after the round ended) makes the sequence impossible: `null`. */
 export function play(
   stake: bigint,
   gain: bigint,

@@ -2,6 +2,7 @@ import type { ConfigRow, On, TurnCompleteInput } from "claude-code";
 import { describe, type Engine, expect, test } from "claude-code/testing";
 
 import { ROULETTE_SPIN_MS, wheelPosition } from "../hooks/games";
+import { WHEEL_SPIN_MS, wheelSegmentAt } from "../hooks/quick";
 import type { StateResponse } from "../hooks/protocol";
 import {
   BASE,
@@ -17,6 +18,7 @@ import {
   TOWER_BUSTED,
   TOWER_CASHED,
   TOWER_TURN,
+  WHEEL,
 } from "./fixtures";
 import { BAND, command, later, LOGGED_IN, PANE, PANE_INLINE, PLUGIN, seat, shownText, textOf } from "./world";
 
@@ -397,6 +399,166 @@ describe("spins", () => {
     expect(text).toContain("PAYS × BET");
     expect(text).toContain("7 7 7");
     expect(text).toContain("250");
+  });
+});
+
+interface Drawn {
+  type?: string;
+  props?: { color?: string };
+  children?: unknown;
+}
+
+const nodesOf = (node: unknown): Drawn[] =>
+  Array.isArray(node)
+    ? node.flatMap(nodesOf)
+    : typeof node === "object" && node !== null
+      ? [node as Drawn, ...nodesOf((node as Drawn).children)]
+      : [];
+
+/** The wheel's drawing: the Box its pointer `▼` heads, the ring's (or the strip's) rows under it. */
+function wheelBox(drawn: unknown): Drawn {
+  const box = nodesOf(drawn).find(
+    (node) => node.type === "Box" && Array.isArray(node.children) && textOf(node.children[0]).trim() === "▼",
+  );
+
+  expect(box).toBeDefined();
+
+  return box ?? {};
+}
+
+function wheelLines(drawn: unknown): string[] {
+  const { children } = wheelBox(drawn);
+
+  return Array.isArray(children) ? children.map(textOf) : [];
+}
+
+/** Fifty segments at high risk, landed on the last: the one that pays ×49.00. */
+const WHEEL_HIGH_50: StateResponse =
+  WHEEL.round === null
+    ? WHEEL
+    : {
+        ...WHEEL,
+        round: {
+          ...WHEEL.round,
+          payout: "24500000",
+          fee: "240000",
+          net: "23760000",
+          detail: {
+            game: "wheel",
+            segments: 50,
+            risk: "high",
+            multipliers: [...Array.from({ length: 49 }, () => "0.00"), "49.00"],
+            segment: 49,
+          },
+        },
+      };
+
+describe("the wheel", () => {
+  const hasSparkles = (text: string) => /[✦✧✺✹⋆]/.test(text);
+  const DARK_LINE4 = "#4a4b50";
+
+  test("a ring of its ten segments, each with its multiplier, the landed one under the pointer, the legend under it", async ($, on) => {
+    await seat($, on, WHEEL);
+    const drawn = await (await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE })).drawn();
+    const [pointer = "", ...ring] = wheelLines(drawn);
+    const detail = WHEEL.round?.detail;
+    const pays = detail?.game === "wheel" ? detail.multipliers : [];
+    const middle = Math.floor(ring.length / 2);
+    const at = pointer.indexOf("▼");
+    const text = textOf(drawn);
+
+    expect(pays).toHaveLength(10);
+    expect(ring).toHaveLength(7);
+    // Every segment once around the ring; the centre names the landed one.
+    const around = ring.filter((_, row) => row !== middle).join(" ");
+
+    expect((around.match(/×\d+\.\d\d/g) ?? []).sort()).toEqual(pays.map((multiplier) => `×${multiplier}`).sort());
+    expect(ring[middle]?.trim()).toBe("×1.50");
+    expect(ring[0]?.slice(at - 2, at + 3)).toBe("×1.50");
+    // One color per multiplier, in the order of what they pay.
+    const legend = ["● ×0.00", "● ×0.80", "● ×1.20", "● ×1.50"].map((entry) => text.indexOf(entry));
+
+    expect(legend.every((index, entry) => index > (legend[entry - 1] ?? 0))).toBe(true);
+  });
+
+  test("fifty segments are colored dots around the ring, the legend naming what each color pays", async ($, on) => {
+    await seat($, on, WHEEL_HIGH_50);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+
+    for (const key of ["wheel-up", "wheel-up", "wheel-up", "wheel-up", "wheel-risk", "wheel-risk"]) {
+      await ui.press({ key });
+    }
+
+    const drawn = await ui.drawn();
+    const [pointer = "", ...ring] = wheelLines(drawn);
+    const dots = nodesOf(wheelBox(drawn).children).filter(
+      (node) => node.type === "Text" && (textOf(node) === "●" || textOf(node) === "◉"),
+    );
+
+    expect(ring).toHaveLength(9);
+    expect(dots).toHaveLength(50);
+    expect(dots.filter((dot) => dot.props?.color === DARK_PINK).map(textOf)).toEqual(["◉"]);
+    expect(dots.filter((dot) => dot.props?.color === DARK_LINE4)).toHaveLength(49);
+    expect(ring[0]?.charAt(pointer.indexOf("▼"))).toBe("◉");
+    expect(ring[4]?.trim()).toBe("×49.00");
+    expect(textOf(drawn)).toContain("● ×0.00");
+    expect(textOf(drawn)).toContain("● ×49.00");
+  });
+
+  test("the ring turns steadily while the chain draws, then slows frame by frame onto the drawn segment", () => {
+    const frames = WHEEL_SPIN_MS / SPIN_FRAME_MS;
+    const landing = Array.from({ length: frames + 1 }, (_, frame) =>
+      wheelSegmentAt(20, 7, frame * SPIN_FRAME_MS, false),
+    );
+    // Clockwise: the segment under the pointer counts down.
+    const steps = landing.slice(1).map((position, frame) => (landing[frame] ?? 0) - position);
+    const drawing = [0, 1, 2].map((frame) => wheelSegmentAt(20, null, frame * SPIN_FRAME_MS, true));
+    const paceAt = (isDrawing: boolean) => wheelSegmentAt(20, 7, 0, isDrawing) - wheelSegmentAt(20, 7, 1, isDrawing);
+
+    expect(steps.every((step) => step > 0)).toBe(true);
+    steps.slice(1).forEach((step, frame) => expect(step).toBeLessThan(steps[frame] ?? 0));
+    expect(steps[0] ?? 0).toBeGreaterThan(20 * (steps[steps.length - 1] ?? 0));
+    expect(landing[frames]).toBe(7);
+    // Several laps, starting half a wheel off the drawn segment: the slowing's first frame tells nothing.
+    expect((landing[0] ?? 0) - 7).toBeGreaterThanOrEqual(3 * 20);
+    expect(Math.round(landing[0] ?? 0) % 20).not.toBe(7);
+    expect(Math.abs((drawing[0] ?? 0) - (drawing[1] ?? 0) - ((drawing[1] ?? 0) - (drawing[2] ?? 0)))).toBeLessThan(
+      1e-9,
+    );
+    expect(Math.abs(paceAt(false) - paceAt(true))).toBeLessThan(1e-3);
+  });
+
+  test("a spin lands before the result, the balance and the celebration show, and the result says it once", async ($, on) => {
+    const { show, clock } = await moving($, on, { ...BASE, round: null });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+    const untold = (text: string) => {
+      expect(text).toContain("spinning…");
+      expect(text).toContain("balance 12.40 USDC");
+      expect(text).not.toMatch(/landed on/i);
+      expect(text).not.toContain("+0.49");
+      expect(hasSparkles(text)).toBe(false);
+    };
+
+    await ui.press({ key: "game-page" });
+    await show({ ...WHEEL, balance: "12895000" });
+    untold(textOf(await ui.drawn()));
+    const turning = wheelLines(await ui.drawn()).join("\n");
+
+    await clock.advance(SPIN_FRAME_MS);
+    expect(wheelLines(await ui.drawn()).join("\n")).not.toBe(turning);
+
+    // Slowing onto the segment, nearly there: still nothing tells it.
+    await clock.advance(WHEEL_SPIN_MS - 3 * SPIN_FRAME_MS);
+    untold(textOf(await ui.drawn()));
+
+    await clock.advance(3 * SPIN_FRAME_MS);
+    const landed = textOf(await ui.drawn());
+
+    expect(landed.match(/landed on/gi)).toEqual(["Landed on"]);
+    expect(landed).toContain("Landed on ×1.50. +0.49 · fee 0.00");
+    expect(landed).toContain("balance 12.89 USDC");
+    expect(landed).not.toContain("spinning…");
+    expect(hasSparkles(landed)).toBe(true);
   });
 });
 

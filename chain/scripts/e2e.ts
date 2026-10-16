@@ -430,8 +430,13 @@ const HILO_HIGHER = 0;
 const HILO_LOWER = 1;
 const HILO_SKIP = 2;
 const rank = (card: number) => (card % 13) + 1;
-/** The likelier side from `current`, never the certain one (higher on an ace, lower on a king). */
-const likelierGuess = (current: number) => (current === 13 || (current <= 7 && current !== 1) ? HILO_HIGHER : HILO_LOWER);
+/** The likelier side from `current`: on an ace or a king, the strict bet (12 ranks of 13). */
+const likelierGuess = (current: number) => (current <= 7 ? HILO_HIGHER : HILO_LOWER);
+/** Ranks winning `guess` from `current`: or equal, except higher on an ace and lower on a king (strict). */
+const hiloWinning = (guess: number, current: number) =>
+  guess === HILO_HIGHER ? (current === 1 ? 12 : 14 - current) : current === 13 ? 12 : current;
+const hiloRight = (guess: number, current: number, next: number) =>
+  guess === HILO_HIGHER ? (current === 1 ? next > 1 : next >= current) : current === 13 ? next < 13 : next <= current;
 
 /** Hilo payout replayed from the cards and guesses: 0 on a wrong guess, else 0.98 × the fair
  *  multiplier (× 13 / winning ranks per right guess, rounded down), capped at stake + max gain. */
@@ -443,12 +448,12 @@ function hiloGross(b: HiloBoard, roundGain: bigint) {
     const guess = b.guesses[i - 1];
     if (guess === HILO_SKIP) continue;
     const [current, next] = [rank(b.cards[i - 1]), rank(b.cards[i])];
-    const right = guess === HILO_HIGHER ? next >= current : next <= current;
+    const right = hiloRight(guess, current, next);
     if (!right) {
       if (!b.busted || i !== b.nCards - 1) throw new Error(`hilo : mauvaise carte ${i} sans fin de manche`);
       return 0;
     }
-    fair = (fair * 13n) / BigInt(guess === HILO_HIGHER ? 14 - current : current);
+    fair = (fair * 13n) / BigInt(hiloWinning(guess, current));
   }
   if (b.busted) throw new Error("hilo : perdu sans mauvaise carte");
   if (fair !== BigInt(b.fair.toString())) throw new Error(`hilo : multiplicateur ${b.fair}, attendu ${fair}`);
@@ -457,8 +462,9 @@ function hiloGross(b: HiloBoard, roundGain: bigint) {
   return Number(raw < cap ? raw : cap);
 }
 
-/** One Hilo round of `bet`: skips aces, kings and sevens while it can, else guesses the likelier
- *  side, and cashes out after `target` right guesses unless a wrong card or the cap ends it first. */
+/** One Hilo round of `bet`: skips sevens while it can, else guesses the likelier side (strict on
+ *  an ace or a king), and cashes out after `target` right guesses unless a wrong card or the cap
+ *  ends it first. */
 async function playHilo(bet: number, target: number, roundGain: number) {
   const sent: number[] = [];
   await round(
@@ -473,7 +479,7 @@ async function playHilo(bet: number, target: number, roundGain: number) {
           continue;
         }
         const current = rank(b.cards[b.nCards - 1]);
-        const code = [1, 7, 13].includes(current) && b.skips < 10 ? HILO_SKIP : likelierGuess(current);
+        const code = current === 7 && b.skips < 10 ? HILO_SKIP : likelierGuess(current);
         const guess = code === HILO_SKIP ? { skip: {} } : code === HILO_LOWER ? { lower: {} } : { higher: {} };
         sent.push(code);
         a = await act("hilo carte", erProgram.methods.hiloGuess(guess, seed()).accountsPartial(hiloAccounts()).transaction(),
@@ -921,19 +927,12 @@ async function run(): Promise<number> {
   let h = await act("mise hilo", erProgram.methods.hiloBet(new BN(usdc(1)), seed()).accountsPartial(hiloAccounts()).transaction(), (x) => isPlayerTurn(x.round));
   check("mise hilo : première carte tirée, le plateau attend le joueur", (await fetchHilo()).nCards === 1);
   await rejectsInRollup("encaissement sans bonne réponse refusé", hiloCashoutTx, /WrongState|6005/);
-  // Skips until an ace or a king (whose certain side is refused) or the 10 skips are used.
-  let current = rank((await fetchHilo()).cards[0]);
-  while (current !== 1 && current !== 13 && (await fetchHilo()).skips < 10) {
+  // Skips until the 10 skips are used: the 11th is refused.
+  while ((await fetchHilo()).skips < 10) {
     const prev = h;
     h = await act("hilo passe", hiloGuessTx("skip")(), (x) => !isAwaiting(x.round) && x.round.requestId.gt(prev.round.requestId));
-    const b = await fetchHilo();
-    current = rank(b.cards[b.nCards - 1]);
   }
-  if (current === 1 || current === 13) {
-    await rejectsInRollup("choix certain refusé (plus haut sur un as, plus bas sur un roi)", hiloGuessTx(current === 1 ? "higher" : "lower"), /InvalidChoice|6022/);
-  } else {
-    await rejectsInRollup("11e passe refusée", hiloGuessTx("skip"), /InvalidChoice|6022/);
-  }
+  await rejectsInRollup("11e passe refusée", hiloGuessTx("skip"), /InvalidChoice|6022/);
   await rejectsInRollup("nouvelle manche refusée tant que le plateau hilo est ouvert", () =>
     erProgram.methods.slotsSpin(new BN(usdc(1)), seed()).accountsPartial(playAccounts()).transaction(), /RoundInProgress|6004/);
   await sleep((ROUND_TIMEOUT_SECS + 1) * 1_000);

@@ -536,10 +536,31 @@ describe("hilo", () => {
       { rank: 1, suit: "♥" },
       { rank: 13, suit: "♣" },
     ]);
-    expect(hilo.winningRanks("higher", 1)).toBe(13);
-    expect(hilo.winningRanks("lower", 13)).toBe(13);
+    // At the edges the bet is strict: 12 ranks, never 13.
+    expect(hilo.winningRanks("higher", 1)).toBe(12);
+    expect(hilo.winningRanks("lower", 13)).toBe(12);
+    expect(hilo.winningRanks("lower", 1)).toBe(1);
+    expect(hilo.winningRanks("higher", 13)).toBe(1);
     expect(hilo.winningRanks("higher", 7)).toBe(7);
+    expect(hilo.winningRanks("lower", 7)).toBe(7);
     expect(hilo.winningRanks("skip", 7)).toBeNull();
+  });
+
+  it("bets strictly lower from a king and strictly higher from an ace", () => {
+    for (let next = 1; next <= 13; next++) {
+      expect(hilo.isRight("lower", 13, next)).toBe(next < 13);
+      expect(hilo.isRight("higher", 13, next)).toBe(next === 13);
+      expect(hilo.isRight("higher", 1, next)).toBe(next > 1);
+      expect(hilo.isRight("lower", 1, next)).toBe(next === 1);
+      expect(hilo.isRight("higher", 7, next)).toBe(next >= 7);
+      expect(hilo.isRight("lower", 7, next)).toBe(next <= 7);
+    }
+    const [ace, king, queen] = [0, 12, 11];
+    // 13 / 12, rounded down.
+    expect(hilo.play(STAKE, 10n ** 12n, [king, queen], ["lower"])).toMatchObject({ fair: 1_083_333n, right: 1 });
+    expect(hilo.play(STAKE, 10n ** 12n, [king, king], ["lower"])).toMatchObject({ busted: true, ended: 0n });
+    expect(hilo.play(STAKE, 10n ** 12n, [ace, king], ["higher"])).toMatchObject({ fair: 1_083_333n, right: 1 });
+    expect(hilo.play(STAKE, 10n ** 12n, [ace, ace + 13], ["higher"])).toMatchObject({ busted: true, ended: 0n });
   });
 
   it.each(vectors.hilo.map((v, i) => ({ ...v, i })))("plays round $i like the program", (v) => {
@@ -561,14 +582,19 @@ describe("hilo", () => {
     expect(vectors.hilo.some((v) => v.busted)).toBe(true);
     expect(vectors.hilo.some((v) => v.cashout)).toBe(true);
     expect(vectors.hilo.some((v) => v.guesses.includes(2))).toBe(true);
+    // Some strict guess: higher from an ace or lower from a king.
+    expect(
+      vectors.hilo.some((v) =>
+        v.guesses.some((g, i) => {
+          const r = hilo.rank(v.cards[i]);
+          return (g === 0 && r === 1) || (g === 1 && r === 13);
+        }),
+      ),
+    ).toBe(true);
     expect(vectors.hilo.some((v) => !v.cashout && !v.busted && v.gross === "4000000")).toBe(true);
   });
 
-  it("refuses certain guesses, an 11th skip and guesses after the round ended", () => {
-    const ace = 0;
-    const king = 12;
-    expect(hilo.play(STAKE, 10n ** 12n, [ace, 5], ["higher"])).toBeNull();
-    expect(hilo.play(STAKE, 10n ** 12n, [king, 5], ["lower"])).toBeNull();
+  it("refuses an 11th skip and guesses after the round ended", () => {
     const skips = Array<HiloGuess>(11).fill("skip");
     expect(hilo.play(STAKE, 10n ** 12n, Array<number>(11).fill(5), skips.slice(0, 10))).not.toBeNull();
     expect(hilo.play(STAKE, 10n ** 12n, Array<number>(12).fill(5), skips)).toBeNull();

@@ -55,7 +55,7 @@ interface TableState {
   cards: number;
   /** Cards turned over so far, in deal order. */
   revealed: number;
-  /** Frame clock time a roulette or slots round started spinning; null when none is. */
+  /** Frame clock time a roulette, wheel or slots round started spinning; null when none is. */
   spinAt: number | null;
   /** The round on the table was drawing at the last props. */
   wasDrawing: boolean;

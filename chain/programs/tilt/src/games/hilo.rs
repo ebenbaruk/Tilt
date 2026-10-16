@@ -1,8 +1,9 @@
 //! Hilo: cards from an infinite deck; the player guesses whether the next card ranks higher
 //! (or equal) or lower (or equal) than the current one, or skips it, and cashes out whenever
-//! they want. Each card is its own VRF draw. A right guess multiplies the fair multiplier by
-//! `13 / winning ranks`; the round pays `0.98 ×` the fair multiplier (RTP 98.00% at every
-//! cash-out point, before Tilt's fee).
+//! they want. At the edges, where "or equal" would be certain, the bet is strict: lower from
+//! a king wins on 1..=12, higher from an ace on 2..=13. Each card is its own VRF draw. A right
+//! guess multiplies the fair multiplier by `13 / winning ranks`; the round pays `0.98 ×` the
+//! fair multiplier (RTP 98.00% at every cash-out point, before Tilt's fee).
 
 use anchor_lang::prelude::*;
 
@@ -51,10 +52,12 @@ pub fn draw_card(rng: &mut Rng) -> u8 {
     rng.below(CARDS as u64) as u8
 }
 
-/// Ranks winning `guess` from `rank` (`None` for a skip). 13 means certain: refused.
+/// Ranks winning `guess` from `rank` (`None` for a skip). Never 13: at the edges the bet is strict.
 pub fn winning_ranks(guess: HiloMove, rank: u8) -> Option<u8> {
     match guess {
+        HiloMove::Higher if rank == 1 => Some(RANKS - 1),
         HiloMove::Higher => Some(RANKS + 1 - rank),
+        HiloMove::Lower if rank == RANKS => Some(RANKS - 1),
         HiloMove::Lower => Some(rank),
         HiloMove::Skip => None,
     }
@@ -62,7 +65,9 @@ pub fn winning_ranks(guess: HiloMove, rank: u8) -> Option<u8> {
 
 pub fn is_right(guess: HiloMove, current: u8, next: u8) -> bool {
     match guess {
+        HiloMove::Higher if current == 1 => next > current,
         HiloMove::Higher => next >= current,
+        HiloMove::Lower if current == RANKS => next < current,
         HiloMove::Lower => next <= current,
         HiloMove::Skip => true,
     }
@@ -273,13 +278,58 @@ mod tests {
     }
 
     #[test]
-    fn certain_guesses_are_refused() {
-        let ace = board(1, 1_000_000);
-        assert!(!ace.can_guess(HiloMove::Higher));
-        assert!(ace.can_guess(HiloMove::Lower));
-        let king = board(13, 1_000_000);
-        assert!(!king.can_guess(HiloMove::Lower));
-        assert!(king.can_guess(HiloMove::Higher));
+    fn lower_from_a_king_is_strict() {
+        for next in 1..RANKS {
+            let mut b = board(13, 1_000_000);
+            assert_eq!(guess(&mut b, HiloMove::Lower, next), None, "{next}");
+            // 13 / 12, rounded down.
+            assert_eq!((b.fair, b.n_right), (1_083_333, 1));
+        }
+        let mut b = board(13, 1_000_000);
+        assert_eq!(guess(&mut b, HiloMove::Lower, 13), Some(0));
+        // Higher from a king stays "or equal": the king only, 13×.
+        let mut b = board(13, 1_000_000);
+        assert_eq!(guess(&mut b, HiloMove::Higher, 13), None);
+        assert_eq!(b.fair, 13_000_000);
+    }
+
+    #[test]
+    fn higher_from_an_ace_is_strict() {
+        for next in 2..=RANKS {
+            let mut b = board(1, 1_000_000);
+            assert_eq!(guess(&mut b, HiloMove::Higher, next), None, "{next}");
+            assert_eq!((b.fair, b.n_right), (1_083_333, 1));
+        }
+        let mut b = board(1, 1_000_000);
+        assert_eq!(guess(&mut b, HiloMove::Higher, 1), Some(0));
+        // Lower from an ace stays "or equal": the ace only, 13×.
+        let mut b = board(1, 1_000_000);
+        assert_eq!(guess(&mut b, HiloMove::Lower, 1), None);
+        assert_eq!(b.fair, 13_000_000);
+    }
+
+    #[test]
+    fn other_ranks_keep_or_equal() {
+        for current in 2..RANKS {
+            assert_eq!(winning_ranks(HiloMove::Higher, current), Some(14 - current));
+            assert_eq!(winning_ranks(HiloMove::Lower, current), Some(current));
+            assert!(is_right(HiloMove::Higher, current, current));
+            assert!(is_right(HiloMove::Lower, current, current));
+        }
+    }
+
+    #[test]
+    fn no_guess_is_certain() {
+        for current in 1..=RANKS {
+            let b = board(current, 1_000_000);
+            for guess in [HiloMove::Higher, HiloMove::Lower] {
+                assert!(
+                    winning_ranks(guess, current).unwrap() < RANKS,
+                    "{guess:?} from {current}"
+                );
+                assert!(b.can_guess(guess), "{guess:?} from {current}");
+            }
+        }
     }
 
     #[test]
@@ -337,9 +387,7 @@ mod tests {
                     .filter(|&next| is_right(guess, current, next))
                     .count() as u8;
                 assert_eq!(right, winning, "{guess:?} from {current}");
-                if winning == RANKS {
-                    continue;
-                }
+                assert!(winning < RANKS, "{guess:?} from {current}");
                 let ev = next_fair(fair, winning) * winning as u128 / RANKS as u128;
                 assert!(fair - ev <= 1, "{guess:?} from {current}: {ev}");
             }

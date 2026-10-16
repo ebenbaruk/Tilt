@@ -1080,8 +1080,8 @@ async function countRound(
     playSound($, rt, SOUND_DEAL);
   }
 
-  // A roulette or slots round spins on the table while it draws, and from its landing until the
-  // wheel or the last reel stops; the result shows after.
+  // A roulette, wheel or slots round spins on the table while it draws, and from its landing until
+  // the wheel or the last reel stops; the result shows after.
   const speed = (await readPrefs($)).slotsSpeed;
 
   if ((isNew || hasLanded) && round !== null && before !== null && spinMs(round.detail.game, speed) > 0) {
