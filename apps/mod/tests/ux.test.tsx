@@ -8,6 +8,8 @@ import { BAND, command, later, LOGGED_IN, PANE, PANE_INLINE, PLUGIN, seat, shown
 const POLL_MS = 5_000;
 /** Past the longest spin: the wheel and the reels have landed. */
 const SPIN_OVER_MS = 1_500;
+/** Past a big win's fireworks. */
+const CELEBRATION_OVER_MS = 3_000;
 const LARGE_CARD_TOP = "╭─────╮";
 const LIGHT_PINK = "#c42a7f";
 const DARK_PINK = "#f779ba";
@@ -329,6 +331,38 @@ describe("spins", () => {
     expect(text).toContain("PAYS × BET");
     expect(text).toContain("7 7 7");
     expect(text).toContain("250");
+  });
+});
+
+describe("a win celebrates", () => {
+  const hasSparkles = (text: string) => /[✦✧✺✹⋆]/.test(text);
+
+  test("fireworks once the reels land on a big win, then the table rests", async ($, on) => {
+    const { show, clock } = await moving($, on, BASE);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+
+    await ui.press({ key: "game-slots" });
+    await show({ ...SLOTS, balance: "16360000" });
+    expect(hasSparkles(textOf(await ui.drawn()))).toBe(false);
+
+    await clock.advance(SPIN_OVER_MS);
+    expect(hasSparkles(textOf(await ui.drawn()))).toBe(true);
+
+    await clock.advance(CELEBRATION_OVER_MS);
+    expect(hasSparkles(textOf(await ui.drawn()))).toBe(false);
+  });
+
+  test("a loss gets none", async ($, on) => {
+    const { show, clock } = await moving($, on, BASE);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+    const lost =
+      SLOTS.round === null ? SLOTS : { ...SLOTS, round: { ...SLOTS.round, net: "-500000", payout: "0", fee: "0" } };
+
+    await ui.press({ key: "game-slots" });
+    await show(lost);
+    await clock.advance(SPIN_OVER_MS);
+
+    expect(hasSparkles(textOf(await ui.drawn()))).toBe(false);
   });
 });
 

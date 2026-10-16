@@ -51,6 +51,8 @@ export interface Snapshot {
   revealed: number | null;
   /** The balance before that round or those cards, shown while they play out; null otherwise. */
   heldBalance: string | null;
+  /** How far into a win's celebration the table is, once its result shows; null when none plays. */
+  celebrating: number | null;
 }
 
 /** How long a round of `game` spins on the table before it lands; 0 for the card games. */
@@ -370,6 +372,135 @@ export function bigWinOf(state: StateResponse): { net: string; game: Game } | nu
   const net = BigInt(round.net);
 
   return net > 0n && net >= BigInt(round.stake) * BIG_WIN_MULTIPLE ? { net: round.net, game: round.detail.game } : null;
+}
+
+/** A win sparkles this long once its result shows; a big win sets off fireworks for longer. */
+const SPARKLES_MS = 1_600;
+const FIREWORKS_MS = 2_800;
+const SPARKLE_FRAME_MS = 100;
+const SPARKLE_GLYPHS = ["✦", "✧", "⋆", "·", "*"];
+/** Per thousand cells lit when a celebration starts; it thins out to none. */
+const SPARKLE_DENSITY = 180;
+const FIREWORK_ROWS = 3;
+const BURSTS = 3;
+const BURST_STAGGER_MS = 450;
+const BURST_LIFE_MS = 900;
+/** A burst's ring grows one cell this often. */
+const BURST_CELL_MS = 70;
+/** A burst's glyph as it ages: bright, then fading. */
+const BURST_GLYPHS = ["✺", "✹", "*", "·"];
+
+/** How long a settled round celebrates: none for a loss or a push. */
+export function celebrationMs(round: RoundView): number {
+  const net = BigInt(round.net);
+
+  if (net <= 0n) {
+    return 0;
+  }
+
+  return net >= BigInt(round.stake) * BIG_WIN_MULTIPLE ? FIREWORKS_MS : SPARKLES_MS;
+}
+
+/** A cheap, stable scramble of three small integers: the same frame draws the same sparkles. */
+function scramble(a: number, b: number, c: number): number {
+  let h = Math.imul(a, 374_761_393) ^ Math.imul(b, 668_265_263) ^ Math.imul(c, 2_246_822_519);
+
+  h = Math.imul(h ^ (h >>> 13), 1_274_126_177);
+
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+type Spark = { glyph: string; color: string } | null;
+
+/** The cells of a celebration `elapsed` into it: sparkles thinning out, and on a big win bursts opening one after another. */
+function celebrationCells(round: RoundView, elapsed: number, columns: number): Spark[][] {
+  const total = celebrationMs(round);
+  const isBig = total === FIREWORKS_MS;
+  const rows = isBig ? FIREWORK_ROWS : 1;
+  const colors = [GOLD, PINK, GREEN, FG1];
+  const frame = Math.floor(elapsed / SPARKLE_FRAME_MS);
+  const density = Math.round(SPARKLE_DENSITY * (1 - elapsed / total));
+  const cells: Spark[][] = Array.from({ length: rows }, (_, row) =>
+    Array.from({ length: columns }, (_, column) => {
+      const roll = scramble(frame, row, column);
+
+      return roll % 1000 < density
+        ? {
+            glyph: SPARKLE_GLYPHS[roll % SPARKLE_GLYPHS.length] ?? "·",
+            color: colors[(roll >>> 10) % colors.length] ?? GOLD,
+          }
+        : null;
+    }),
+  );
+
+  if (!isBig) {
+    return cells;
+  }
+
+  for (let burst = 0; burst < BURSTS; burst += 1) {
+    const age = elapsed - burst * BURST_STAGGER_MS;
+
+    if (age < 0 || age >= BURST_LIFE_MS) {
+      continue;
+    }
+
+    const center = Math.floor(((burst * 2 + 1) * columns) / (BURSTS * 2));
+    const reach = Math.floor(age / BURST_CELL_MS);
+    const spark = {
+      glyph: BURST_GLYPHS[Math.floor((age / BURST_LIFE_MS) * BURST_GLYPHS.length)] ?? "·",
+      color: colors[burst % colors.length] ?? GOLD,
+    };
+    // A cell is twice as tall as it is wide: the rows above and below take a ring narrower by half a row's height.
+    const ring: [number, number][] = [
+      [1, reach],
+      [0, Math.floor(reach * 0.85)],
+      [2, Math.floor(reach * 0.85)],
+    ];
+
+    for (const [row, offset] of ring) {
+      for (const column of [center - offset, center + offset]) {
+        const line = cells[row];
+
+        if (line !== undefined && column >= 0 && column < columns && (row === 1 || reach >= 2)) {
+          line[column] = spark;
+        }
+      }
+    }
+  }
+
+  return cells;
+}
+
+/** A win's sparkles, or a big win's fireworks, across `columns`; null when no celebration plays. */
+export function celebration(
+  ui: Ui,
+  round: RoundView | null,
+  elapsed: number | null,
+  columns: number,
+): RenderElement | null {
+  const { Box, Text } = ui;
+
+  if (round === null || elapsed === null || elapsed < 0 || elapsed >= celebrationMs(round) || columns < 1) {
+    return null;
+  }
+
+  return (
+    <Box flexDirection="column">
+      {celebrationCells(round, elapsed, columns).map((line, row) => (
+        <Text key={`sparkles-${row}`} wrap="truncate">
+          {line.map((cell, column) =>
+            cell === null ? (
+              " "
+            ) : (
+              <Text key={`spark-${column}`} color={cell.color} bold>
+                {cell.glyph}
+              </Text>
+            ),
+          )}
+        </Text>
+      ))}
+    </Box>
+  );
 }
 
 /** The big-win banner, as the design system's WinCard: the win, its sponsor, and a key to share it. */
@@ -847,10 +978,15 @@ function tableRows(
 const sidebarFits = (layout: PaneLayout): boolean =>
   layout.bodyColumns >= WIDE_MIN_COLUMNS && layout.bodyRows >= SIDEBAR_MIN_ROWS;
 
+/** The cells the game column has: the pane less its padding, and less the sidebar where it fits. */
+function gameColumns(layout: PaneLayout): number {
+  return sidebarFits(layout) ? layout.bodyColumns - SIDEBAR_COLUMNS - 3 : layout.bodyColumns - 2;
+}
+
 /** The rows the whole pane takes with cards at `size`: chrome, what shows only now (guide, banner, warnings), the table. */
 function paneRows(snap: Snapshot, state: StateResponse, layout: PaneLayout, size: CardSize): number {
   const hasSidebar = sidebarFits(layout);
-  const columns = hasSidebar ? layout.bodyColumns - SIDEBAR_COLUMNS - 3 : layout.bodyColumns - 2;
+  const columns = gameColumns(layout);
   const isIdle = state.round === null || state.round.phase === "idle";
   const isLow = state.accountOpen && isIdle && BigInt(state.balance) < totalStake(state, snap.prefs);
   const now =
@@ -875,13 +1011,13 @@ function cardSizeFor(snap: Snapshot, state: StateResponse, layout: PaneLayout): 
 /** The rows a pane asks for when it opens, at the card size the person chose. */
 export const PANE_ROWS: Record<CardSize, number> = { large: 30, small: 20 };
 
-/** `table` is the table surface module's region (fullscreen terminal), drawn in place of the still table. */
+/** `table` is the table surface module's region (fullscreen terminal), drawn in place of the still table at a card size, `columns` wide. */
 export function renderPane(
   ui: Ui,
   snap: Snapshot,
   layout: PaneLayout,
   onCommand: OnCommand,
-  table: ((size: CardSize) => RenderElement) | null,
+  table: ((size: CardSize, columns: number) => RenderElement) | null,
 ): RenderElement {
   const { Box, Text } = ui;
   const state = snap.remote.state;
@@ -926,13 +1062,14 @@ export function renderPane(
             { ...STILL, spinElapsed: snap.spinElapsed, revealed: snap.revealed },
             size,
           )
-        : table(size);
+        : table(size, gameColumns(layout));
   const gameColumn = (
     <Box flexDirection="column" flexGrow={1} marginTop={snap.agent.notice !== null || snap.agent.isWorking ? 1 : 0}>
       {!snap.isOnboarded && canPlay && firstHandGuide(ui, layout.isFocused)}
       {state.blocked !== null && <Text color={RED}>{`Play paused · ${cleanText(state.blocked)}`}</Text>}
       {isKeysFirst && plays.length > 0 && <Box marginBottom={1}>{keyArea(ui, plays, false, steps)}</Box>}
       {shownTable}
+      {table === null && celebration(ui, roundOf(state, game), snap.celebrating, gameColumns(layout) - 1)}
       {/* The result waits for the wheel, the reels or the last card: the text must not tell it first. */}
       {dealing === null &&
         table === null &&

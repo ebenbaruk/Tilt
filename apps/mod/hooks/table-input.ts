@@ -23,6 +23,8 @@ export interface TableProps {
   /** The plan's keys right now (planKeys), the game switches included. */
   keys: TableKey[];
   isWide: boolean;
+  /** The cells the table is laid out in. */
+  columns: number;
   /** The card size the pane chose for the room it has. */
   cards: CardSize;
   /** Claude Code's theme is a light one: the surface module draws with the light accents. */

@@ -11,7 +11,7 @@ import { activeGame } from "./keys";
 import type { RoundView } from "./protocol";
 import { pressFor, type TableKey, type TableProps } from "./table-input";
 import { applyTheme, FG4, FG6, GOLD, PINK, type Ui } from "./theme";
-import { gameTable, outcomeLine, roundOf, spinMs, spinProgress } from "./view";
+import { celebration, celebrationMs, gameTable, outcomeLine, roundOf, spinMs, spinProgress } from "./view";
 
 const FRAME_MS = 33;
 const COUNT_UP_MS = 700;
@@ -172,7 +172,9 @@ function spinElapsed(state: TableState, props: TableProps): number | null {
 
 function isAnimating(state: TableState, props: TableProps): boolean {
   const isDealing = state.revealed < state.cards || spinElapsed(state, props) !== null;
-  const hasEffect = state.effect !== null && state.now < state.effect.at + COUNT_UP_MS + BALANCE_MS;
+  const round = props.state.round;
+  const effectMs = Math.max(COUNT_UP_MS + BALANCE_MS, round === null ? 0 : celebrationMs(round));
+  const hasEffect = state.effect !== null && state.now < state.effect.at + effectMs;
   const canPulse = hasKey(props.keys, "bj-stand") || hasKey(props.keys, "start");
 
   return isDealing || hasEffect || (canPulse && state.now < state.wokeAt + PULSE_WINDOW_MS);
@@ -377,6 +379,7 @@ export default function Table(props: TableProps, surface: ClientSurface<TableSta
   return (
     <Box flexDirection="column" paddingLeft={shake}>
       {gameTable(ui, props.state, props.prefs, props.isWide, fx, props.cards)}
+      {celebration(ui, round, effect?.kind === "win" ? sinceEffect : null, props.columns - 1)}
       <Box flexDirection="column" marginTop={1}>
         {summary(ui, state, round, spinning !== null)}
         <Box flexDirection="row" flexWrap="wrap" columnGap={2}>

@@ -21,7 +21,7 @@ import {
   startDevice,
   trustedVerifyUrl,
 } from "./api";
-import { cardCount, revealedAt } from "./blackjack";
+import { cardCount, DEAL_STEP_MS, revealedAt } from "./blackjack";
 import type { CardSize } from "./cards";
 import { cleanText, formatDuration, formatUsdc, moveFailure, SEPARATOR } from "./format";
 import { isPlayAction } from "./guards";
@@ -48,13 +48,14 @@ import {
   remoteView,
   type RemoteView,
 } from "./model";
-import type { IntentResponse, PlayAction, StateResponse } from "./protocol";
+import type { IntentResponse, PlayAction, RoundView, StateResponse } from "./protocol";
 import { type Settings, SETTING_FIELDS, settingsOf } from "./settings";
 import { renderSetup, SETUP_ROWS } from "./setup";
 import { isTablePost, TABLE_KEY, type TableProps } from "./table-input";
 import { applyTheme, isLightTheme, type Ui } from "./theme";
 import {
   bigWinOf,
+  celebrationMs,
   PANE_ROWS,
   type PaneLayout,
   renderBand,
@@ -93,6 +94,7 @@ const layout = atom({ plugin: "tilt", key: "layout" } as const, {
 });
 const spin = atom({ plugin: "tilt", key: "spin" } as const, { round: null, startedAt: 0, balance: "0" });
 const deal = atom({ plugin: "tilt", key: "deal" } as const, { round: null, from: 0, startedAt: 0, balance: "0" });
+const celebration = atom({ plugin: "tilt", key: "celebration" } as const, { round: null, startsAt: 0 });
 const session = atom({ plugin: "tilt", key: "session" } as const, {
   net: "0",
   rounds: 0,
@@ -840,8 +842,28 @@ async function dealRevealed($: EngineInterface, state: StateResponse | null, now
   return revealedAt(playing.from, cardCount(round.detail), now - playing.startedAt);
 }
 
-/** The spin or the deal playing on the table, and the balance held back until it ends. */
-async function motionView($: EngineInterface): Promise<Pick<Snapshot, "spinElapsed" | "revealed" | "heldBalance">> {
+/** How far into its win's celebration the round on the table is; null when none plays. */
+async function celebrationElapsed(
+  $: EngineInterface,
+  state: StateResponse | null,
+  now: number,
+): Promise<number | null> {
+  const playing = await read($, celebration);
+  const round = state?.round;
+
+  if (round === undefined || round === null || playing.round !== round.number) {
+    return null;
+  }
+
+  const elapsed = now - playing.startsAt;
+
+  return elapsed >= 0 && elapsed < celebrationMs(round) ? elapsed : null;
+}
+
+/** The spin, the deal or the celebration playing on the table, and the balance held back until the round shows. */
+async function motionView(
+  $: EngineInterface,
+): Promise<Pick<Snapshot, "spinElapsed" | "revealed" | "heldBalance" | "celebrating">> {
   const state = (await readRemote($)).state;
   const now = await $.clock.now();
   const elapsed = await spinElapsed($, state, now);
@@ -849,12 +871,21 @@ async function motionView($: EngineInterface): Promise<Pick<Snapshot, "spinElaps
   const held =
     elapsed !== null ? (await read($, spin)).balance : revealed !== null ? (await read($, deal)).balance : null;
 
-  return { spinElapsed: elapsed, revealed, heldBalance: held };
+  return {
+    spinElapsed: elapsed,
+    revealed,
+    heldBalance: held,
+    celebrating: await celebrationElapsed($, state, now),
+  };
 }
 
-/** Whether a spin or a deal is playing on the table. */
+/** Whether a spin, a deal or a celebration is playing on the table. */
 async function isMoving($: EngineInterface, state: StateResponse | null, now: number): Promise<boolean> {
-  return (await spinElapsed($, state, now)) !== null || (await dealRevealed($, state, now)) !== null;
+  return (
+    (await spinElapsed($, state, now)) !== null ||
+    (await dealRevealed($, state, now)) !== null ||
+    (await celebrationElapsed($, state, now)) !== null
+  );
 }
 
 /** Moves the spinner, a spin or a deal while something is in motion; says whether anything is. */
@@ -1026,7 +1057,23 @@ async function countRound(
 
   if (BigInt(round.net) > 0n) {
     playSound($, rt, SOUND_WIN);
+    const startsAt = await resultShowsAt($, round, now);
+
+    await update($, celebration, () => ({ round: round.number, startsAt }));
   }
+}
+
+/** When `round`'s result shows on the table: after its spin lands and its last card is turned over. */
+async function resultShowsAt($: EngineInterface, round: RoundView, now: number): Promise<number> {
+  const spinning = await read($, spin);
+  const dealing = await read($, deal);
+  const spinEnd = spinning.round === round.number ? spinning.startedAt + spinMs(round.detail.game) : now;
+  const dealEnd =
+    dealing.round === round.number && round.detail.game === "blackjack"
+      ? dealing.startedAt + (cardCount(round.detail) - dealing.from) * DEAL_STEP_MS
+      : now;
+
+  return Math.max(now, spinEnd, dealEnd);
 }
 
 /** Copies a line about the last big win for the person to paste; nothing about their work is in it. */
@@ -1311,24 +1358,25 @@ export const register: Register = (on, options) => {
     };
     const snap = await snapshot($, rt);
     const state = snap.remote.state;
-    let table: ((cards: CardSize) => RenderElement) | null = null;
+    let table: ((cards: CardSize, columns: number) => RenderElement) | null = null;
 
     // The fullscreen terminal hands raw keys (Space, Enter, arrows) to a clicked `Client`; the
     // main screen never does, so there the table is drawn still and played with the letters.
     if (e.surface === "terminal" && e.viewport?.isFullscreen === true && state !== null && !rt.isTableBroken) {
       const { Client } = $.ui.resolve(e);
       const keys = planKeys({ state, prefs: snap.prefs, isBusy: snap.intent !== null });
-      const props = (cards: CardSize): TableProps => ({
+      const props = (cards: CardSize, columns: number): TableProps => ({
         state,
         prefs: snap.prefs,
         keys: keys.map(({ key, hotkey, label }) => ({ key, hotkey, label })),
         isWide: e.props.bodyColumns >= WIDE_MIN_COLUMNS,
+        columns,
         cards,
         isLight: look.isLight,
         isPaneFocused: e.props.isFocused,
       });
 
-      table = (cards) => <Client key={TABLE_KEY} module="./table.tsx" props={props(cards)} />;
+      table = (cards, columns) => <Client key={TABLE_KEY} module="./table.tsx" props={props(cards, columns)} />;
     }
 
     return renderPane(ui, snap, pane, commandRunner($, rt), table);

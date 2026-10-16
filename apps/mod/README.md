@@ -70,7 +70,7 @@ Around the table:
 - Your first time, a guide says how to give Tilt the keys and deal; it goes after your first move.
 - The bet and, at blackjack, the hands are steppers: `v ◂ bet 0.50 ▸ b`, `j ◂ ●●○○○○ 2 hands ▸ k`. If your balance does not cover the bet, the table says so before you press `n`, with a link to deposit on the web.
 - A blackjack deal shows its cards face down at once, then turns them over as the chain deals them.
-- A win of twice the stake or more gets a banner; `w` copies a line to share.
+- A win sparkles across the table once its result shows; a win of twice the stake or more sets off fireworks and gets a banner; `w` copies a line to share.
 - The footer counts this session (`session +2.30 · 14 rounds · 22m`), as the mod saw rounds settle; the leaderboard says how far the next rank is.
 
 ## Local development

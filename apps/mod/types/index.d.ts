@@ -103,6 +103,13 @@ export type TiltDeal = {
   balance: string;
 };
 
+/** The win whose sparkles the table plays, once its last card shows or its spin lands. */
+export type TiltCelebration = {
+  round: number | null;
+  /** `$.clock.now()` when its result shows. */
+  startsAt: number;
+};
+
 declare module "claude-code" {
   interface PluginState {
     tilt: {
@@ -118,6 +125,7 @@ declare module "claude-code" {
       session: TiltSession;
       spin: TiltSpin;
       deal: TiltDeal;
+      celebration: TiltCelebration;
     };
   }
 }
