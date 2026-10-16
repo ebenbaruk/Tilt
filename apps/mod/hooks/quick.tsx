@@ -8,7 +8,7 @@ import type { TileButton } from "./games";
 import { diceTarget, DICE_ROLLS, KENO_NUMBERS, KENO_PICK_KEY } from "./keys";
 import type { Prefs } from "./model";
 import type { DiceView, FlipView, KenoView, LimboView, RoundView, WheelView } from "./protocol";
-import { BLUE, FG1, FG4, FG6, GOLD, GREEN, INK, LINE3, LINE4, PINK, RED, TEAL, type Ui } from "./theme";
+import { BLUE, CARD_FACE, FG1, FG4, FG6, GOLD, GREEN, INK, LINE3, LINE4, PINK, RED, TEAL, type Ui } from "./theme";
 
 const isOpen = (round: RoundView | null): boolean => round !== null && round.phase !== "idle";
 
@@ -323,78 +323,137 @@ function segmentColors(pays: readonly string[]): Map<string, string> {
   return colors;
 }
 
-/** A cell with its gap: a multiplier label (`×19.60` at most), or a dot where there are too many to label. */
+/** A label in the strip (`×19.60` at most) with its gap, or a dot with its gap where there are too many to label. */
 const LABEL_CELL = 7;
 const DOT_CELL = 2;
+/** Up to this many segments, the strip labels each one. */
+const MAX_LABELED = 20;
+/** The strip's segments: this many each side of the pointer. */
+const STRIP_REACH: Record<number, number> = { [LABEL_CELL]: 3, [DOT_CELL]: 12 };
 
-/** A ring's radii, in rows and columns from its centre, and the columns a cell takes. */
-interface Ring {
-  rows: number;
-  columns: number;
-  cell: number;
-}
-
-/** The ring for each wheel, sized to stay within 50 columns (the game column beside the sidebar) and 9 rows. */
-const RINGS: Record<number, Ring> = {
-  10: { rows: 3, columns: 12, cell: LABEL_CELL },
-  20: { rows: 4, columns: 18, cell: LABEL_CELL },
-  30: { rows: 4, columns: 16, cell: DOT_CELL },
-  40: { rows: 4, columns: 20, cell: DOT_CELL },
-  50: { rows: 4, columns: 24, cell: DOT_CELL },
-};
-const SAMPLES_PER_SLOT = 60;
-
-interface Slot {
-  row: number;
-  column: number;
-}
-
-const slotsCache = new Map<number, Slot[]>();
+/** The discs the wheel is drawn as, biggest first: the columns each takes across, odd so the pointer stands over a middle one. */
+const DISC_COLUMNS = [31, 25, 17] as const;
+/** Beside the disc: a gap and the side's `10 segments · low risk`. */
+const SIDE_COLUMNS = 24;
 
 /**
- * Where each slot of the ring sits, clockwise from the top: evenly spread around an ellipse on a
- * measure where a row down or a cell across is one step, so the cells stay apart both on the flat
- * top and bottom and on the steep sides.
+ * The biggest disc that fits, with its side, in the `columns` and `rows` the table has; null where
+ * none does and the strip is drawn instead.
  */
-function ringSlots(segments: number, ring: Ring): Slot[] {
-  const cached = slotsCache.get(segments);
+export function wheelDisc(columns: number, rows: number): number | null {
+  return DISC_COLUMNS.find((disc) => disc + SIDE_COLUMNS <= columns && wheelRows(disc) <= rows) ?? null;
+}
 
-  if (cached !== undefined) {
-    return cached;
-  }
+/**
+ * A cell holds two pixels one over the other (`▀`: its color the top one, its fill the bottom
+ * one), near enough square: a disc as many pixels down as across takes half as many rows.
+ */
+const discHeight = (columns: number): number => (columns + 1) / 2;
 
-  const samples = segments * SAMPLES_PER_SLOT;
-  const points: (Slot & { length: number })[] = [];
-  let length = 0;
+/** How far past its radius a pixel's centre still counts as on the disc: a flat top, not a lone pixel. */
+const EDGE_PX = 0.35;
+/** The gold rim's width, as a share of the radius: a pixel at the least. */
+const RIM_SHARE = 0.1;
+/** The hub's radius, as a share of the disc's. */
+const HUB_SHARE = 0.15;
+/** Wedges at least this wide along the rim get a dark seam between them; narrower ones would be all seam. */
+const SEAM_MIN_PX = 5;
+const SEAM_HALF_PX = 0.5;
+/** The seams stay dark on either ground, as a wheel's own would; a grey of the 256-color palette, so it stays one without true color. */
+const SEAM = "#1c1c1c";
+const TAU = 2 * Math.PI;
 
-  for (let sample = 0; sample <= samples; sample++) {
-    const angle = (2 * Math.PI * sample) / samples;
-    const point = { row: -ring.rows * Math.cos(angle), column: ring.columns * Math.sin(angle) };
-    const before = points[sample - 1];
+/** A run of a disc row's cells that draw alike. */
+interface Run {
+  glyph: string;
+  color: string | null;
+  fill: string | null;
+  count: number;
+}
 
-    if (before !== undefined) {
-      length += Math.max(Math.abs(point.column - before.column) / ring.cell, Math.abs(point.row - before.row));
+/**
+ * The disc's rows, `columns` across: the wedges in `wedgeColors` clockwise, turned so that
+ * `position` (a segment, a fraction part way to the next) is under the top, inside a gold rim
+ * around a hub. Neighbouring cells drawn alike share one Text.
+ */
+function discLines(ui: Ui, columns: number, wedgeColors: readonly string[], position: number): RenderElement[] {
+  const { Text } = ui;
+  const rows = discHeight(columns);
+  const radius = columns / 2;
+  const hub = radius * HUB_SHARE;
+  const faceRadius = radius - Math.max(1, radius * RIM_SHARE);
+  const wedges = wedgeColors.length;
+  const hasSeams = (TAU * faceRadius) / wedges >= SEAM_MIN_PX;
+  const colorAt = (column: number, y: number): string | null => {
+    const dx = column + 0.5 - radius;
+    const dy = y + 0.5 - rows;
+    const distance = Math.hypot(dx, dy);
+
+    if (distance > radius + EDGE_PX) {
+      return null;
     }
 
-    points.push({ ...point, length });
-  }
-
-  const slots: Slot[] = [];
-  let index = 0;
-
-  for (let slot = 0; slot < segments; slot++) {
-    while ((points[index]?.length ?? length) < (length * slot) / segments) {
-      index++;
+    if (distance > faceRadius) {
+      return GOLD;
     }
 
-    const point = points[index] ?? { row: 0, column: 0 };
+    if (distance < hub) {
+      return CARD_FACE;
+    }
 
-    slots.push({ row: Math.round(point.row + ring.rows), column: Math.round(point.column + ring.columns) });
-  }
+    // Clockwise from the top, in wedges; the one at `position` has its middle under the pointer.
+    const along = (Math.atan2(dx, -dy) / TAU) * wedges + position + 0.5;
+    const wedge = Math.floor(along);
+    const off = along - wedge;
 
-  slotsCache.set(segments, slots);
+    if (hasSeams && (Math.min(off, 1 - off) * TAU * distance) / wedges < SEAM_HALF_PX) {
+      return SEAM;
+    }
 
-  return slots;
+    return wedgeColors[((wedge % wedges) + wedges) % wedges] ?? LINE4;
+  };
+
+  return Array.from({ length: rows }, (_, row) => {
+    const runs: Run[] = [];
+
+    for (let column = 0; column < columns; column++) {
+      const top = colorAt(column, 2 * row);
+      const bottom = colorAt(column, 2 * row + 1);
+      const cell: Omit<Run, "count"> =
+        top === null
+          ? { glyph: bottom === null ? " " : "▄", color: bottom, fill: null }
+          : bottom === null || bottom === top
+            ? { glyph: bottom === null ? "▀" : "█", color: top, fill: null }
+            : { glyph: "▀", color: top, fill: bottom };
+      const last = runs[runs.length - 1];
+
+      if (last !== undefined && last.glyph === cell.glyph && last.color === cell.color && last.fill === cell.fill) {
+        last.count++;
+      } else {
+        runs.push({ ...cell, count: 1 });
+      }
+    }
+
+    if (runs[runs.length - 1]?.color === null) {
+      runs.pop();
+    }
+
+    return (
+      <Text>
+        {runs.map(({ glyph, color, fill, count }) =>
+          color === null ? (
+            glyph.repeat(count)
+          ) : fill === null ? (
+            <Text color={color}>{glyph.repeat(count)}</Text>
+          ) : (
+            <Text color={color} backgroundColor={fill}>
+              {glyph.repeat(count)}
+            </Text>
+          ),
+        )}
+      </Text>
+    );
+  });
 }
 
 /** `text` centered in `width` columns, the odd space on the right. */
@@ -404,28 +463,21 @@ function centered(text: string, width: number): string {
   return `${" ".repeat(Math.max(0, left))}${text}`.padEnd(width);
 }
 
-/** A piece of a ring's row: what it draws from `column` on, `width` columns wide. */
-interface Piece {
-  column: number;
-  width: number;
-  element: RenderElement;
-}
-
-/** The wheel's segments in the narrow pane's strip: this many each side of the pointer. */
-const STRIP_REACH: Record<number, number> = { [LABEL_CELL]: 3, [DOT_CELL]: 12 };
+/** The space around the landed multiplier on its chip. */
+const CHIP_PAD = 3;
 
 /**
- * The wheel as a ring of segments around its centre, the fixed pointer `▼` at the top over the
- * segment it turned to (lit); a narrow pane gets a strip of the segments around the pointer
- * instead. Each segment shows its multiplier, or only its color with the legend under the ring;
- * the centre names the wheel until it lands, then the landed multiplier. `spinElapsed`: how far
- * into its spin the round on the table is; null draws it at rest.
+ * The wheel as a disc of colored wedges in a gold rim, `disc` columns across (`wheelDisc`),
+ * turning under a fixed pointer `▼` at the top; where no disc fits (null), a strip of the segments
+ * around the pointer instead. Beside it, the wheel's segments and risk until it lands, then the
+ * landed multiplier on a chip of its color; under it, what each color pays. `spinElapsed`: how
+ * far into its spin the round on the table is; null draws it at rest.
  */
 export function wheelTable(
   ui: Ui,
   round: RoundView | null,
   prefs: Prefs,
-  isWide: boolean,
+  disc: number | null,
   spinElapsed: number | null,
 ): RenderElement {
   const { Box, Text } = ui;
@@ -439,11 +491,57 @@ export function wheelTable(
   const isDrawing = shown !== null && round?.phase === "drawing";
   const isSpinning = shown !== null && (spinElapsed !== null || isDrawing);
   const landed = isSpinning ? null : (shown?.segment ?? null);
-  const turn = Math.round(wheelSegmentAt(segments, shown?.segment ?? null, spinElapsed, isDrawing));
-  const ring = RINGS[segments] ?? { rows: 0, columns: 0, cell: LABEL_CELL };
-  const face = ring.cell - 1;
+  const position = wheelSegmentAt(segments, shown?.segment ?? null, spinElapsed, isDrawing);
   // On a dim 0× chip the theme's text reads; on a colored one, the ink made for fills.
   const chipInk = (multiplier: string) => (hundredths(multiplier) === 0n ? FG1 : INK);
+  const landedPays = landed === null ? null : (pays[landed] ?? "0.00");
+  const status = <Text color={FG6}>{isSpinning ? "spinning…" : "No spin yet."}</Text>;
+  const about = <Text color={FG4}>{`${segments} segments · ${risk} risk`}</Text>;
+  // The colors come in the order of what they pay.
+  const legend = [...colors].map(([multiplier, color]) => (
+    <Text color={FG6}>
+      <Text color={color}>●</Text>
+      {` ×${multiplier}`}
+    </Text>
+  ));
+
+  if (disc !== null) {
+    const wedgeColors = Array.from({ length: segments }, (_, index) => {
+      const multiplier = pays[index];
+
+      return multiplier === undefined ? LINE4 : (colors.get(multiplier) ?? LINE4);
+    });
+    const side =
+      landedPays === null ? (
+        <Box flexDirection="column">
+          {about}
+          {status}
+        </Box>
+      ) : (
+        <Box backgroundColor={colors.get(landedPays) ?? LINE4} height={3} paddingX={CHIP_PAD} alignItems="center">
+          <Text color={chipInk(landedPays)} bold>{` ×${landedPays} `}</Text>
+        </Box>
+      );
+
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Box flexDirection="row" flexWrap="wrap" columnGap={2} alignItems="center">
+          <Box flexDirection="column">
+            <Text color={GOLD} bold>{`${" ".repeat((disc - 1) / 2)}▼`}</Text>
+            {discLines(ui, disc, wedgeColors, position)}
+          </Box>
+          {side}
+        </Box>
+        <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+          {legend}
+        </Box>
+      </Box>
+    );
+  }
+
+  const turn = Math.round(position);
+  const cellColumns = segments > MAX_LABELED ? DOT_CELL : LABEL_CELL;
+  const face = cellColumns - 1;
   const cell = (slot: number): RenderElement => {
     const multiplier = pays[(((turn + slot) % segments) + segments) % segments];
     const color = multiplier === undefined ? LINE4 : (colors.get(multiplier) ?? LINE4);
@@ -467,96 +565,34 @@ export function wheelTable(
       <Text color={color}>{label}</Text>
     );
   };
-  const line = (pieces: Piece[]): RenderElement => {
-    let at = 0;
-
-    return (
-      <Text>
-        {[...pieces]
-          .sort((a, b) => a.column - b.column)
-          .flatMap((piece) => {
-            const gap = " ".repeat(Math.max(0, piece.column - at));
-
-            at = piece.column + piece.width;
-
-            return [gap, piece.element];
-          })}
-      </Text>
-    );
-  };
-  const landedPays = landed === null ? null : (pays[landed] ?? "0.00");
-  const centreText = landedPays === null ? `${segments} segments · ${risk} risk` : ` ×${landedPays} `;
-  const centre =
-    landedPays === null ? (
-      <Text color={FG4}>{centreText}</Text>
-    ) : (
-      <Text backgroundColor={colors.get(landedPays) ?? LINE4} color={chipInk(landedPays)} bold>
-        {centreText}
-      </Text>
-    );
+  const reach = STRIP_REACH[cellColumns] ?? 0;
   // The pointer stands over the middle of a cell's face.
   const faceMiddle = Math.floor((face - 1) / 2);
-  // The colors come in the order of what they pay.
-  const legend = [...colors];
-  const isRing = isWide && RINGS[segments] !== undefined;
-  let wheel: RenderElement;
-
-  if (isRing) {
-    const slots = ringSlots(segments, ring);
-    const middle = ring.columns + faceMiddle;
-    const rows = Array.from({ length: ring.rows * 2 + 1 }, (_, row) =>
-      slots.flatMap((slot, index) =>
-        slot.row === row ? [{ column: slot.column, width: face, element: cell(index) }] : [],
-      ),
-    );
-
-    rows[ring.rows]?.push({
-      column: middle - Math.floor(centreText.length / 2),
-      width: centreText.length,
-      element: centre,
-    });
-    wheel = (
-      <Box flexDirection="column">
-        <Text color={GOLD} bold>{`${" ".repeat(middle)}▼`}</Text>
-        {rows.map(line)}
-      </Box>
-    );
-  } else {
-    const reach = STRIP_REACH[ring.cell] ?? 0;
-    const strip = Array.from({ length: reach * 2 + 1 }, (_, index) => ({
-      column: index * ring.cell,
-      width: face,
-      element: cell(index - reach),
-    }));
-
-    wheel = (
-      <Box flexDirection="column">
-        <Text color={GOLD} bold>{`${" ".repeat(reach * ring.cell + faceMiddle)}▼`}</Text>
-        {line(strip)}
-      </Box>
-    );
-  }
 
   return (
     <Box flexDirection="column" gap={1}>
-      {wheel}
+      <Box flexDirection="column">
+        <Text color={GOLD} bold>{`${" ".repeat(reach * cellColumns + faceMiddle)}▼`}</Text>
+        <Text>
+          {Array.from({ length: reach * 2 + 1 }, (_, index) => [index === 0 ? "" : " ", cell(index - reach)])}
+        </Text>
+      </Box>
       <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-        {!isRing && centre}
-        {legend.map(([multiplier, color]) => (
-          <Text color={FG6}>
-            <Text color={color}>●</Text>
-            {` ×${multiplier}`}
+        {landedPays === null ? (
+          about
+        ) : (
+          <Text backgroundColor={colors.get(landedPays) ?? LINE4} color={chipInk(landedPays)} bold>
+            {` ×${landedPays} `}
           </Text>
-        ))}
-        {landed === null && <Text color={FG6}>{isSpinning ? "spinning…" : "No spin yet."}</Text>}
+        )}
+        {legend}
+        {landedPays === null && status}
       </Box>
     </Box>
   );
 }
 
-/** The rows `wheelTable` takes: the pointer and the ring (or the strip), a blank, the legend. */
-export function wheelRows(segments: number, isWide: boolean): number {
-  const ring = RINGS[segments];
-
-  return 1 + (isWide && ring !== undefined ? ring.rows * 2 + 1 : 1) + 2;
+/** The rows `wheelTable` takes: the pointer and the disc (or the strip), a blank, the legend. */
+export function wheelRows(disc: number | null): number {
+  return 1 + (disc === null ? 1 : discHeight(disc)) + 2;
 }

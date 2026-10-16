@@ -415,7 +415,7 @@ const nodesOf = (node: unknown): Drawn[] =>
       ? [node as Drawn, ...nodesOf((node as Drawn).children)]
       : [];
 
-/** The wheel's drawing: the Box its pointer `▼` heads, the ring's (or the strip's) rows under it. */
+/** The wheel's drawing: the Box its pointer `▼` heads, the disc's (or the strip's) rows under it. */
 function wheelBox(drawn: unknown): Drawn {
   const box = nodesOf(drawn).find(
     (node) => node.type === "Box" && Array.isArray(node.children) && textOf(node.children[0]).trim() === "▼",
@@ -426,11 +426,35 @@ function wheelBox(drawn: unknown): Drawn {
   return box ?? {};
 }
 
-function wheelLines(drawn: unknown): string[] {
+function wheelRowsOf(drawn: unknown): Drawn[] {
   const { children } = wheelBox(drawn);
 
-  return Array.isArray(children) ? children.map(textOf) : [];
+  return Array.isArray(children) ? (children as Drawn[]) : [];
 }
+
+function wheelLines(drawn: unknown): string[] {
+  return wheelRowsOf(drawn).map(textOf);
+}
+
+/** The color a row draws the cell at `column` in: a half-block's top pixel, or its only one. */
+function cellColor(row: Drawn | undefined, column: number): string | undefined {
+  const pieces = [row?.children].flat(Number.POSITIVE_INFINITY);
+  let at = 0;
+
+  for (const piece of pieces) {
+    at += textOf(piece).length;
+
+    if (column < at) {
+      return typeof piece === "object" && piece !== null ? (piece as Drawn).props?.color : undefined;
+    }
+  }
+
+  return undefined;
+}
+
+/** Every color a disc's cells are drawn in. */
+const discColors = (rows: Drawn[]): Set<string | undefined> =>
+  new Set(rows.flatMap((row) => nodesOf(row.children).map((node) => node.props?.color)));
 
 /** Fifty segments at high risk, landed on the last: the one that pays ×49.00. */
 const WHEEL_HIGH_50: StateResponse =
@@ -456,56 +480,103 @@ const WHEEL_HIGH_50: StateResponse =
 describe("the wheel", () => {
   const hasSparkles = (text: string) => /[✦✧✺✹⋆]/.test(text);
   const DARK_LINE4 = "#4a4b50";
+  const DARK_GOLD = "#f1c45e";
+  const DARK_GREEN = "#7ccd8e";
+  const DARK_BLUE = "#7fa8f2";
+  const DARK_TEAL = "#5ccbc2";
+  const DARK_HUB = "#f0eee9";
+  /** The wide pane's disc: 31 columns across, 16 rows down, its middle column under the pointer. */
+  const DISC_ROWS = 16;
+  const POINTER = 15;
 
-  test("a ring of its ten segments, each with its multiplier, the landed one under the pointer, the legend under it", async ($, on) => {
+  test("a disc of colored wedges in a gold rim, the pointer over it, the landed wedge under the pointer", async ($, on) => {
     await seat($, on, WHEEL);
     const drawn = await (await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE })).drawn();
-    const [pointer = "", ...ring] = wheelLines(drawn);
-    const detail = WHEEL.round?.detail;
-    const pays = detail?.game === "wheel" ? detail.multipliers : [];
-    const middle = Math.floor(ring.length / 2);
-    const at = pointer.indexOf("▼");
+    const [pointer, ...disc] = wheelRowsOf(drawn);
     const text = textOf(drawn);
 
-    expect(pays).toHaveLength(10);
-    expect(ring).toHaveLength(7);
-    // Every segment once around the ring; the centre names the landed one.
-    const around = ring.filter((_, row) => row !== middle).join(" ");
+    expect(disc).toHaveLength(DISC_ROWS);
+    expect(textOf(pointer).indexOf("▼")).toBe(POINTER);
+    // The rim at the top and the bottom under the pointer, the wedge landed on (×1.50) just inside it.
+    expect(cellColor(disc[0], POINTER)).toBe(DARK_GOLD);
+    expect(cellColor(disc[DISC_ROWS - 1], POINTER)).toBe(DARK_GOLD);
+    expect(cellColor(disc[1], POINTER)).toBe(DARK_GREEN);
+    expect(cellColor(disc[DISC_ROWS / 2], POINTER)).toBe(DARK_HUB);
+    // Every multiplier's wedges show, colored as the legend says.
+    const colors = discColors(disc);
 
-    expect((around.match(/×\d+\.\d\d/g) ?? []).sort()).toEqual(pays.map((multiplier) => `×${multiplier}`).sort());
-    expect(ring[middle]?.trim()).toBe("×1.50");
-    expect(ring[0]?.slice(at - 2, at + 3)).toBe("×1.50");
-    // One color per multiplier, in the order of what they pay.
+    for (const color of [DARK_LINE4, DARK_BLUE, DARK_TEAL, DARK_GREEN]) {
+      expect(colors.has(color), color).toBe(true);
+    }
+
+    // The landed multiplier on its chip beside the disc; one color per multiplier, in the order of what they pay.
+    expect(text).toContain(" ×1.50 ");
+    expect(text).not.toContain("10 segments · low risk");
     const legend = ["● ×0.00", "● ×0.80", "● ×1.20", "● ×1.50"].map((entry) => text.indexOf(entry));
 
     expect(legend.every((index, entry) => index > (legend[entry - 1] ?? 0))).toBe(true);
   });
 
-  test("fifty segments are colored dots around the ring, the legend naming what each color pays", async ($, on) => {
+  test("fifty segments are thin wedges with no seams, the landed one under the pointer", async ($, on) => {
     await seat($, on, WHEEL_HIGH_50);
-    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+    // Room for the big win's banner and the first-hand guide over the biggest disc.
+    const tall = { ...PANE_INLINE, props: { ...PANE_INLINE.props, scroll: { offset: 0, bodyRows: 48 } } };
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...tall });
 
     for (const key of ["wheel-up", "wheel-up", "wheel-up", "wheel-up", "wheel-risk", "wheel-risk"]) {
       await ui.press({ key });
     }
 
     const drawn = await ui.drawn();
-    const [pointer = "", ...ring] = wheelLines(drawn);
-    const dots = nodesOf(wheelBox(drawn).children).filter(
-      (node) => node.type === "Text" && (textOf(node) === "●" || textOf(node) === "◉"),
-    );
+    const [, ...disc] = wheelRowsOf(drawn);
 
-    expect(ring).toHaveLength(9);
-    expect(dots).toHaveLength(50);
-    expect(dots.filter((dot) => dot.props?.color === DARK_PINK).map(textOf)).toEqual(["◉"]);
-    expect(dots.filter((dot) => dot.props?.color === DARK_LINE4)).toHaveLength(49);
-    expect(ring[0]?.charAt(pointer.indexOf("▼"))).toBe("◉");
-    expect(ring[4]?.trim()).toBe("×49.00");
+    expect(disc).toHaveLength(DISC_ROWS);
+    expect(cellColor(disc[1], POINTER)).toBe(DARK_PINK);
+    expect([...discColors(disc)].sort()).toEqual([DARK_LINE4, DARK_GOLD, DARK_HUB, DARK_PINK].sort());
+    expect(textOf(drawn)).toContain(" ×49.00 ");
     expect(textOf(drawn)).toContain("● ×0.00");
     expect(textOf(drawn)).toContain("● ×49.00");
   });
 
-  test("the ring turns steadily while the chain draws, then slows frame by frame onto the drawn segment", () => {
+  test(
+    "the disc is the biggest the room fits, whatever card size was chosen",
+    { options: { cards: "small" } },
+    async ($, on) => {
+      await seat($, on, WHEEL);
+      const discRows = async (bodyColumns: number, bodyRows: number) => {
+        const pane = { ...PANE_INLINE, props: { ...PANE_INLINE.props, bodyColumns, scroll: { offset: 0, bodyRows } } };
+        const ui = await $.ui.mount({ plugin: PLUGIN, ...pane });
+        const rows = wheelLines(await ui.drawn()).length - 1;
+
+        await ui.unmount();
+
+        return rows;
+      };
+
+      // 31 columns across, then 25, then 17: as many half-rows down, under the chrome and the first-hand guide.
+      expect(await discRows(120, 40)).toBe(DISC_ROWS);
+      expect(await discRows(120, 37)).toBe(13);
+      expect(await discRows(120, 33)).toBe(9);
+      expect(await discRows(120, 30)).toBe(1);
+      // A narrow pane fits the big disc too, given the rows.
+      expect(await discRows(70, 42)).toBe(DISC_ROWS);
+    },
+  );
+
+  test("where no disc fits, a strip of the segments around the pointer", async ($, on) => {
+    await seat($, on, WHEEL);
+    const pane = {
+      ...PANE_INLINE,
+      props: { ...PANE_INLINE.props, bodyColumns: 70, scroll: { offset: 0, bodyRows: 20 } },
+    };
+    const lines = wheelLines(await (await $.ui.mount({ plugin: PLUGIN, ...pane })).drawn());
+    const at = lines[0]?.indexOf("▼") ?? -1;
+
+    expect(lines).toHaveLength(2);
+    expect(lines[1]?.slice(at - 2, at + 3)).toBe("×1.50");
+  });
+
+  test("the disc turns steadily while the chain draws, then slows frame by frame onto the drawn segment", () => {
     const frames = WHEEL_SPIN_MS / SPIN_FRAME_MS;
     const landing = Array.from({ length: frames + 1 }, (_, frame) =>
       wheelSegmentAt(20, 7, frame * SPIN_FRAME_MS, false),
@@ -522,6 +593,8 @@ describe("the wheel", () => {
     // Several laps, starting half a wheel off the drawn segment: the slowing's first frame tells nothing.
     expect((landing[0] ?? 0) - 7).toBeGreaterThanOrEqual(3 * 20);
     expect(Math.round(landing[0] ?? 0) % 20).not.toBe(7);
+    // The disc turns by fractions of a wedge between frames, not a wedge at a time.
+    expect(landing.slice(1, -1).every((position) => !Number.isInteger(position))).toBe(true);
     expect(Math.abs((drawing[0] ?? 0) - (drawing[1] ?? 0) - ((drawing[1] ?? 0) - (drawing[2] ?? 0)))).toBeLessThan(
       1e-9,
     );
@@ -533,6 +606,7 @@ describe("the wheel", () => {
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
     const untold = (text: string) => {
       expect(text).toContain("spinning…");
+      expect(text).toContain("10 segments · low risk");
       expect(text).toContain("balance 12.40 USDC");
       expect(text).not.toMatch(/landed on/i);
       expect(text).not.toContain("+0.49");
@@ -542,17 +616,23 @@ describe("the wheel", () => {
     await ui.press({ key: "game-page" });
     await show({ ...WHEEL, balance: "12895000" });
     untold(textOf(await ui.drawn()));
-    const turning = wheelLines(await ui.drawn()).join("\n");
+    const turning = JSON.stringify(wheelRowsOf(await ui.drawn()));
 
     await clock.advance(SPIN_FRAME_MS);
-    expect(wheelLines(await ui.drawn()).join("\n")).not.toBe(turning);
+    expect(JSON.stringify(wheelRowsOf(await ui.drawn()))).not.toBe(turning);
 
     // Slowing onto the segment, nearly there: still nothing tells it.
     await clock.advance(WHEEL_SPIN_MS - 3 * SPIN_FRAME_MS);
     untold(textOf(await ui.drawn()));
 
     await clock.advance(3 * SPIN_FRAME_MS);
-    const landed = textOf(await ui.drawn());
+    const drawn = await ui.drawn();
+    const landed = textOf(drawn);
+
+    // At rest with the landed wedge (×1.50) under the pointer, its multiplier on the chip.
+    expect(cellColor(wheelRowsOf(drawn)[2], POINTER)).toBe(DARK_GREEN);
+    expect(landed).toContain(" ×1.50 ");
+    expect(landed).not.toContain("10 segments · low risk");
 
     expect(landed.match(/landed on/gi)).toEqual(["Landed on"]);
     expect(landed).toContain("Landed on ×1.50. +0.49 · fee 0.00");

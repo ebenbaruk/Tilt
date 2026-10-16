@@ -311,8 +311,8 @@ export const ROULETTE_COLUMN_KEY = "roulette-column-";
 /** The wheel's pockets, 0 to 36. */
 export const ROULETTE_POCKETS = 37;
 const LETTER_A = "a".charCodeAt(0);
-/** A hidden tile's key drawn on its own: a tile of the board, its letter beside it. */
-const TILE_LABEL = "·";
+/** A hidden tile's key: drawn in the corner of its tile, where only its letter (`a:`) should show. */
+const TILE_LABEL = " ";
 
 /** A tile's hotkey: tile 0 is `a`, tile 24 is `y` (`z` cashes out). */
 export function tileLetter(tile: number): string {

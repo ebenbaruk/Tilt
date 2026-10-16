@@ -18,9 +18,20 @@ import {
   SEPARATOR,
 } from "./format";
 import { hiloRight, hiloTable, towerTable } from "./climb";
-import { diceTable, flipTable, kenoTable, limboTable, rollText, WHEEL_SPIN_MS, wheelRows, wheelTable } from "./quick";
+import {
+  diceTable,
+  flipTable,
+  kenoTable,
+  limboTable,
+  rollText,
+  WHEEL_SPIN_MS,
+  wheelDisc,
+  wheelRows,
+  wheelTable,
+} from "./quick";
 import {
   baccaratTable,
+  minesBoardRows,
   minesTable,
   rouletteChip,
   ROULETTE_SPIN_MS,
@@ -454,8 +465,9 @@ export function outcomeLine(ui: Ui, round: RoundView | null, shownNet?: string):
 
 /**
  * The active game's table; `fx` moves the blackjack cards and hands, `STILL` draws them at rest.
- * `tileButton` is the Button a Mines or tower tile (or, on the fullscreen table, a Keno number or a
- * roulette cell) is pressed with, where this drawing has one.
+ * `wheel`: the Wheel's disc for the room the table has (`wheelDisc`). `tileButton` is the Button a
+ * Mines or tower tile (or, on the fullscreen table, a Keno number or a roulette cell) is pressed
+ * with, where this drawing has one.
  */
 export function gameTable(
   ui: Ui,
@@ -464,6 +476,7 @@ export function gameTable(
   isWide: boolean,
   fx: TableFx,
   size: CardSize,
+  wheel: number | null,
   tileButton: TileButton,
 ): RenderElement {
   const game = activeGame(state, prefs);
@@ -489,11 +502,11 @@ export function gameTable(
     case "keno":
       return kenoTable(ui, round, prefs, tileButton);
     case "wheel":
-      return wheelTable(ui, round, prefs, isWide, fx.spinElapsed);
+      return wheelTable(ui, round, prefs, wheel, fx.spinElapsed);
     case "hilo":
       return hiloTable(ui, round, size);
     case "tower":
-      return towerTable(ui, round, prefs, fx.frame, tileButton);
+      return towerTable(ui, round, prefs, fx.frame, size, tileButton);
   }
 }
 
@@ -1140,8 +1153,8 @@ function blackjackRows(handCards: readonly number[], size: CardSize, columns: nu
 }
 
 /**
- * The rows the active game's table takes with cards at `size`, in `columns` (a wide pane's when
- * `isWide`); a deal in flight is its face-down hands.
+ * The rows the active game's table takes with cards at `size`, in `columns`, the Wheel drawn as
+ * `wheel`; a deal in flight is its face-down hands.
  */
 function tableRows(
   state: StateResponse,
@@ -1149,7 +1162,7 @@ function tableRows(
   dealing: number | null,
   size: CardSize,
   columns: number,
-  isWide: boolean,
+  wheel: number | null,
 ): number {
   const round = roundOf(state, activeGame(state, prefs));
   const cardRows = size === "large" ? LARGE_CARD_ROWS : 1;
@@ -1177,8 +1190,7 @@ function tableRows(
     case "slots":
       return size === "large" ? 5 : 3;
     case "mines":
-      // Five rows of tiles, a blank row between them with large cards.
-      return size === "large" ? 9 : 5;
+      return minesBoardRows(size);
     case "dice":
       return 4;
     case "limbo":
@@ -1189,7 +1201,7 @@ function tableRows(
       // Five rows of numbers, a line of what each hit count pays.
       return 7;
     case "wheel":
-      return wheelRows(prefs.wheelSegments, isWide);
+      return wheelRows(wheel);
     case "hilo":
       // The cards and their trail beside the multipliers, skips and cash-out.
       return Math.max((size === "large" ? cardRows : 1) + 1, 6);
@@ -1209,10 +1221,8 @@ function gameColumns(layout: PaneLayout): number {
   return sidebarFits(layout) ? layout.bodyColumns - SIDEBAR_COLUMNS - 3 : layout.bodyColumns - 2;
 }
 
-/** The rows the whole pane takes with cards at `size`: chrome, what shows only now (guide, banner, warnings), the table. */
-function paneRows(snap: Snapshot, state: StateResponse, layout: PaneLayout, size: CardSize): number {
-  const hasSidebar = sidebarFits(layout);
-  const columns = gameColumns(layout);
+/** The rows the pane takes around its table: chrome, and what shows only now (guide, banner, warnings). */
+function aroundRows(snap: Snapshot, state: StateResponse, layout: PaneLayout): number {
   const isIdle = state.round === null || state.round.phase === "idle";
   const isLow = state.accountOpen && isIdle && BigInt(state.balance) < totalStake(state, snap.prefs);
   const now =
@@ -1221,11 +1231,18 @@ function paneRows(snap: Snapshot, state: StateResponse, layout: PaneLayout, size
     (isLow ? 1 : 0) +
     (state.blocked === null ? 0 : 1);
 
+  return CHROME_ROWS + (sidebarFits(layout) ? 0 : NARROW_EXTRA_ROWS) + now;
+}
+
+/** The Wheel's disc: the biggest that fits the columns and rows the pane leaves its table. */
+const wheelIn = (snap: Snapshot, state: StateResponse, layout: PaneLayout): number | null =>
+  wheelDisc(gameColumns(layout), layout.bodyRows - aroundRows(snap, state, layout));
+
+/** The rows the whole pane takes with cards at `size`: what is around the table, then the table. */
+function paneRows(snap: Snapshot, state: StateResponse, layout: PaneLayout, size: CardSize): number {
   return (
-    CHROME_ROWS +
-    (hasSidebar ? 0 : NARROW_EXTRA_ROWS) +
-    now +
-    tableRows(state, snap.prefs, dealingHands(snap), size, columns, layout.bodyColumns >= WIDE_MIN_COLUMNS)
+    aroundRows(snap, state, layout) +
+    tableRows(state, snap.prefs, dealingHands(snap), size, gameColumns(layout), wheelIn(snap, state, layout))
   );
 }
 
@@ -1237,13 +1254,16 @@ function cardSizeFor(snap: Snapshot, state: StateResponse, layout: PaneLayout): 
 /** The rows a pane asks for when it opens, at the card size the person chose. */
 export const PANE_ROWS: Record<CardSize, number> = { large: 30, small: 20 };
 
-/** `table` is the table surface module's region (fullscreen terminal), drawn in place of the still table at a card size, `columns` wide. */
+/**
+ * `table` is the table surface module's region (fullscreen terminal), drawn in place of the still
+ * table at a card size, `columns` wide, the Wheel drawn as `wheel`.
+ */
 export function renderPane(
   ui: Ui,
   snap: Snapshot,
   layout: PaneLayout,
   onCommand: OnCommand,
-  table: ((size: CardSize, columns: number) => RenderElement) | null,
+  table: ((size: CardSize, columns: number, wheel: number | null) => RenderElement) | null,
 ): RenderElement {
   const { Box, Text } = ui;
   const state = snap.remote.state;
@@ -1268,6 +1288,7 @@ export function renderPane(
 
   const game = activeGame(state, snap.prefs);
   const size = cardSizeFor(snap, state, layout);
+  const wheel = wheelIn(snap, state, layout);
   // Where even small cards overflow (the band at the bottom of a short terminal), the keys come
   // first, so the ones to press are always in view and the table scrolls instead.
   const isKeysFirst = paneRows(snap, state, layout, size) > layout.bodyRows;
@@ -1310,13 +1331,14 @@ export function renderPane(
             isWide,
             { ...STILL, spinElapsed: snap.spinElapsed, revealed: snap.revealed, frame: snap.agent.frame },
             size,
+            wheel,
             (address) => {
               const tile = tileOf(address);
 
               return tile === null ? null : (tileElements.get(tile) ?? null);
             },
           )
-        : table(size, gameColumns(layout));
+        : table(size, gameColumns(layout), wheel);
   const gameColumn = (
     <Box flexDirection="column" flexGrow={1} marginTop={snap.agent.notice !== null || snap.agent.isWorking ? 1 : 0}>
       {!snap.isOnboarded && canPlay && firstHandGuide(ui, layout.isFocused)}

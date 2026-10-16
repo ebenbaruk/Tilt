@@ -519,16 +519,96 @@ export function slotsTable(ui: Ui, round: RoundView | null, size: CardSize, spin
   );
 }
 
-/** A tile's cell on the Mines board: its glyph at the right of these columns, where a key's `a: ·` ends. */
-const TILE_COLUMNS = 4;
-const SAFE_GLYPH = "◆";
-const MINE_GLYPH = "✸";
-const HIDDEN_GLYPH = "·";
-/** A tile awaiting its draw turns through these, one per spinner frame. */
+/** A tile's glyphs: a gem found, the mine that ended the round, a tile awaiting its draw turning through these. */
+export const SAFE_GLYPH = "◆";
+export const MINE_GLYPH = "✸";
 const PENDING_GLYPHS = ["◐", "◓", "◑", "◒"];
+/** Spinner frames a tile awaiting its draw keeps each shade of its pulse. */
+const PULSE_FRAMES = 2;
 
-/** A Mines tile or a tower tile being drawn, at this frame. */
-export const pendingGlyph = (frame: number): string => PENDING_GLYPHS[frame % PENDING_GLYPHS.length] ?? HIDDEN_GLYPH;
+/**
+ * The tiles' fills, as Stake's: they stay dark on any ground, as the roulette felt does. A hidden
+ * tile on slate (lit on the tower's level in play, dark where a climbed level was passed by), a gem
+ * on a lighter fill, the mine on red, the tile being drawn pulsing between two shades. All found as
+ * is in the 256-color palette, so a terminal (or tmux) without true color draws them the same.
+ */
+export const TILE_FILL = {
+  hidden: "#444444",
+  /** The second shade of compact hidden tiles: their rows touch, alternate rows tell them apart. */
+  hiddenAlt: "#3a3a3a",
+  lit: "#5f8787",
+  /** A shade over the fullscreen pane's own ground (#262626), so a passed tile still shows. */
+  dark: "#303030",
+  safe: "#626262",
+  pending: ["#4e4e4e", "#767676"],
+  mine: "#af0000",
+} as const;
+export const TILE_INK = { letter: "#767676", gem: "#00ff87", mine: FELT_INK, pending: FELT_INK } as const;
+
+/**
+ * A tile's size: cells across, and whether the upper half of a row under it (`▀` in its fill) ends
+ * it, half a row above the next row of tiles. Compact tiles have none: their rows touch.
+ */
+export interface TileSize {
+  columns: number;
+  hasEdge: boolean;
+}
+
+/** A row and a half under 5 cells; compact, a row of 4, still wide enough for the main screen's `a: ` key. */
+const MINES_TILE: Record<CardSize, TileSize> = {
+  large: { columns: 5, hasEdge: true },
+  small: { columns: 4, hasEdge: false },
+};
+
+/** The rows a Mines board takes at a card size. */
+export const minesBoardRows = (size: CardSize): number => MINES_COLUMNS * (MINES_TILE[size].hasEdge ? 2 : 1);
+
+/** What a tile shows: its fill and, centred on it, a glyph in its ink. */
+export interface TileLook {
+  fill: string;
+  glyph: string | null;
+  ink: string;
+}
+
+/** A tile awaiting its draw at this frame: the spinner on a pulsing fill. */
+export const pendingLook = (frame: number): TileLook => ({
+  fill: TILE_FILL.pending[Math.floor(frame / PULSE_FRAMES) % TILE_FILL.pending.length] ?? TILE_FILL.hidden,
+  glyph: PENDING_GLYPHS[frame % PENDING_GLYPHS.length] ?? null,
+  ink: TILE_INK.pending,
+});
+
+/**
+ * A Stake tile: a block of its fill with its glyph. Where `key` (`mines-tile-3`) has a Button, the
+ * tile is it: on the main screen the Button of its hotkey in the corner (`a:`, the engine's own
+ * drawing of a key), on the fullscreen table the whole tile, its letter dim in the corner, a click
+ * anywhere on it pressing.
+ */
+export function stakeTile(
+  ui: Ui,
+  size: TileSize,
+  look: TileLook,
+  key: { address: string; letter: string } | null,
+  tileButton: TileButton,
+): RenderElement {
+  const { Box, Text } = ui;
+  const button =
+    key === null
+      ? null
+      : tileButton(key.address, <Text color={TILE_INK.letter}>{key.letter.padEnd(size.columns)}</Text>);
+
+  return (
+    <Box flexDirection="column">
+      <Box backgroundColor={look.fill} width={size.columns}>
+        {button ?? (
+          <Text color={look.ink} bold>
+            {look.glyph === null ? " ".repeat(size.columns) : centered(look.glyph, size.columns)}
+          </Text>
+        )}
+      </Box>
+      {size.hasEdge && <Text color={look.fill}>{"▀".repeat(size.columns)}</Text>}
+    </Box>
+  );
+}
 
 /**
  * The Button a tile, a Keno number or a roulette cell is pressed with where the drawing has one for
@@ -538,9 +618,10 @@ export const pendingGlyph = (frame: number): string => PENDING_GLYPHS[frame % PE
 export type TileButton = (address: string, face: RenderElement) => RenderElement | null;
 
 /**
- * The 5 × 5 Mines board and its multipliers. In play a hidden tile is its key (or its letter, dim,
- * while none is live), a safe tile ◆ in gold, the tile being drawn turning; a settled board shows
- * the safe tiles and the mine that ended it, if one did (no other mine exists: each reveal draws).
+ * The 5 × 5 Mines board as Stake's, centred, its multipliers beside it. In play a hidden tile is a
+ * slate block and its key, a safe tile a gem on a lighter fill, the tile being drawn pulsing; a
+ * settled board shows the safe tiles and the mine that ended it, if one did (no other mine exists:
+ * each reveal draws). Every state takes the same rows: nothing jumps on a reveal.
  */
 export function minesTable(
   ui: Ui,
@@ -554,39 +635,30 @@ export function minesTable(
   const detail = round?.detail.game === "mines" ? round.detail : null;
   const isOpen = round !== null && round.phase !== "idle";
   const safe = new Set(detail?.revealed ?? []);
-  const glyph = (text: string, color: string) => (
-    <Text color={color} bold>
-      {text.padStart(TILE_COLUMNS)}
-    </Text>
-  );
+  const tileSize = MINES_TILE[size];
   const tileCell = (tile: number): RenderElement => {
     if (safe.has(tile)) {
-      return glyph(SAFE_GLYPH, GOLD);
+      return stakeTile(ui, tileSize, { fill: TILE_FILL.safe, glyph: SAFE_GLYPH, ink: TILE_INK.gem }, null, tileButton);
     }
 
     if (detail?.busted === tile) {
-      return glyph(MINE_GLYPH, RED);
+      return stakeTile(ui, tileSize, { fill: TILE_FILL.mine, glyph: MINE_GLYPH, ink: TILE_INK.mine }, null, tileButton);
     }
 
     if (detail?.pending === tile) {
-      return glyph(pendingGlyph(frame), PINK);
+      return stakeTile(ui, tileSize, pendingLook(frame), null, tileButton);
     }
 
-    const button = isOpen ? tileButton(`${MINES_TILE_KEY}${tile}`, <Text dimColor>{tileLetter(tile)}</Text>) : null;
+    const isAltRow = !tileSize.hasEdge && Math.floor(tile / MINES_COLUMNS) % 2 === 1;
+    const look = { fill: isAltRow ? TILE_FILL.hiddenAlt : TILE_FILL.hidden, glyph: null, ink: TILE_INK.letter };
+    const key = isOpen ? { address: `${MINES_TILE_KEY}${tile}`, letter: tileLetter(tile) } : null;
 
-    return button === null ? (
-      <Text dimColor>{(isOpen ? tileLetter(tile) : HIDDEN_GLYPH).padStart(TILE_COLUMNS)}</Text>
-    ) : (
-      <Box width={TILE_COLUMNS} justifyContent="flex-end">
-        {button}
-      </Box>
-    );
+    return stakeTile(ui, tileSize, look, key, tileButton);
   };
-  const isLarge = size === "large";
   const board = (
-    <Box flexDirection="column" rowGap={isLarge ? 1 : 0}>
+    <Box flexDirection="column">
       {Array.from({ length: MINES_COLUMNS }, (_, row) => (
-        <Box flexDirection="row" columnGap={isLarge ? 1 : 0}>
+        <Box flexDirection="row" columnGap={1}>
           {Array.from({ length: MINES_COLUMNS }, (_, column) => tileCell(row * MINES_COLUMNS + column))}
         </Box>
       ))}
@@ -602,45 +674,45 @@ export function minesTable(
       {` ${mines === 1 ? "mine" : "mines"}`}
     </Text>
   );
+  const table = (side: RenderElement) => (
+    <Box flexDirection="row" flexWrap="wrap" columnGap={4} justifyContent="center">
+      {board}
+      {side}
+    </Box>
+  );
 
   if (detail === null || round === null) {
-    return (
-      <Box flexDirection="row" flexWrap="wrap" columnGap={3}>
-        {board}
-        <Box flexDirection="column">
-          {count}
-          <Text color={FG6}>Pick the mines with j and k, then play with n.</Text>
-        </Box>
-      </Box>
+    return table(
+      <Box flexDirection="column">
+        {count}
+        <Text color={FG6}>Pick the mines with j and k, then play with n.</Text>
+      </Box>,
     );
   }
 
-  return (
-    <Box flexDirection="row" flexWrap="wrap" columnGap={3}>
-      {board}
-      <Box flexDirection="column">
-        {count}
+  return table(
+    <Box flexDirection="column">
+      {count}
+      <Text color={FG4}>
+        multiplier{" "}
+        <Text color={FG1} bold>
+          {`×${detail.multiplier}`}
+        </Text>
+      </Text>
+      {isOpen && detail.nextMultiplier !== null && (
         <Text color={FG4}>
-          multiplier{" "}
-          <Text color={FG1} bold>
-            {`×${detail.multiplier}`}
+          next tile <Text color={FG1}>{`×${detail.nextMultiplier}`}</Text>
+        </Text>
+      )}
+      {isOpen && detail.canCashOut && (
+        <Text color={FG4}>
+          cash out{" "}
+          <Text color={GOLD} bold>
+            {formatUsdc(cashOutPayout(round.stake, detail.multiplier))}
           </Text>
         </Text>
-        {isOpen && detail.nextMultiplier !== null && (
-          <Text color={FG4}>
-            next tile <Text color={FG1}>{`×${detail.nextMultiplier}`}</Text>
-          </Text>
-        )}
-        {isOpen && detail.canCashOut && (
-          <Text color={FG4}>
-            cash out{" "}
-            <Text color={GOLD} bold>
-              {formatUsdc(cashOutPayout(round.stake, detail.multiplier))}
-            </Text>
-          </Text>
-        )}
-        <Text color={FG6}>{`${detail.revealed.length} safe`}</Text>
-      </Box>
-    </Box>
+      )}
+      <Text color={FG6}>{`${detail.revealed.length} safe`}</Text>
+    </Box>,
   );
 }

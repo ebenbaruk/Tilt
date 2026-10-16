@@ -1423,25 +1423,28 @@ export const register: Register = (on, options) => {
     };
     const snap = await snapshot($, rt);
     const state = snap.remote.state;
-    let table: ((cards: CardSize, columns: number) => RenderElement) | null = null;
+    let table: ((cards: CardSize, columns: number, wheel: number | null) => RenderElement) | null = null;
 
     // The fullscreen terminal hands raw keys (Space, Enter, arrows) to a clicked `Client`; the
     // main screen never does, so there the table is drawn still and played with the letters.
     if (e.surface === "terminal" && e.viewport?.isFullscreen === true && state !== null && !rt.isTableBroken) {
       const { Client } = $.ui.resolve(e);
       const keys = tableKeys({ state, prefs: snap.prefs, isBusy: snap.intent !== null });
-      const props = (cards: CardSize, columns: number): TableProps => ({
+      const props = (cards: CardSize, columns: number, wheel: number | null): TableProps => ({
         state,
         prefs: snap.prefs,
         keys: keys.map(({ key, hotkey, label }) => ({ key, hotkey, label })),
         isWide: e.props.bodyColumns >= WIDE_MIN_COLUMNS,
         columns,
         cards,
+        wheel,
         isLight: look.isLight,
         isPaneFocused: e.props.isFocused,
       });
 
-      table = (cards, columns) => <Client key={TABLE_KEY} module="./table.tsx" props={props(cards, columns)} />;
+      table = (cards, columns, wheel) => (
+        <Client key={TABLE_KEY} module="./table.tsx" props={props(cards, columns, wheel)} />
+      );
     }
 
     return renderPane(ui, snap, pane, commandRunner($, rt), table);

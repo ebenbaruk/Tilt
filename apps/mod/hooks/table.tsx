@@ -471,7 +471,7 @@ export default function Table(props: TableProps, surface: ClientSurface<TableSta
 
   return (
     <Box flexDirection="column" paddingLeft={shake}>
-      {gameTable(ui, props.state, props.prefs, props.isWide, fx, props.cards, (address, face) =>
+      {gameTable(ui, props.state, props.prefs, props.isWide, fx, props.cards, props.wheel, (address, face) =>
         tileButton(ui, props.keys, address, face, post),
       )}
       {celebration(ui, round, effect?.kind === "win" ? sinceEffect : null, props.columns - 1)}

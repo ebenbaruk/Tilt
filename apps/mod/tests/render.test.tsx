@@ -1,5 +1,6 @@
-import { describe, expect, mock, test } from "claude-code/testing";
+import { describe, expect, type FoundElement, type Mounted, mock, test } from "claude-code/testing";
 
+import { TILE_FILL } from "../hooks/games";
 import type { PlayRequest, StateResponse } from "../hooks/protocol";
 import { TABLE_KEY } from "../hooks/table-input";
 import {
@@ -45,6 +46,14 @@ import {
   WHEEL_DRAWING,
 } from "./fixtures";
 import { BAND, movingTable, NOW, PANE, PANE_INLINE, PLUGIN, seat, SESSION, shownText, textOf, worldOf } from "./world";
+
+/** The tiles of a Mines board or a tower drawn in the pane, or by the table surface module in `scope`. */
+async function tilesOf(ui: Pick<Mounted, "findAll">, scope?: string): Promise<FoundElement[]> {
+  const fills = new Set<unknown>(Object.values(TILE_FILL).flat());
+  const boxes = await ui.findAll(scope === undefined ? { type: "Box" } : { type: "Box", in: scope });
+
+  return boxes.filter((box) => fills.has(box.props.backgroundColor));
+}
 
 /** The band is drawn on these two; a pane on every surface. */
 const SURFACES = ["terminal", "desktop"] as const;
@@ -407,6 +416,46 @@ describe("the Mines board", () => {
       { type: "mines_cashout" },
     ]);
   });
+
+  test("the board is 25 tiles: hidden ones the keys, gems, the mine and the tile being drawn", async ($, on) => {
+    let current: StateResponse = MINES_TURN;
+    const { clock } = await seat($, on, current, { "GET /v1/state": () => ({ status: 200, body: current }) });
+    const fullscreen = await $.ui.mount({ plugin: PLUGIN, ...PANE, surface: "terminal" });
+    const table = await tilesOf(fullscreen, TABLE_KEY);
+
+    expect(table).toHaveLength(25);
+    expect(table.filter((tile) => tile.props.backgroundColor === TILE_FILL.safe)).toHaveLength(2);
+    // Each hidden tile is a Button, its letter dim in its corner: a click reveals it (the test above).
+    const buttons = (await fullscreen.findAll({ type: "Button", in: TABLE_KEY })).filter((button) =>
+      String(button.props.key).startsWith("table-mines-tile-"),
+    );
+
+    expect(buttons).toHaveLength(23);
+    expect(textOf(await fullscreen.find({ key: "table-mines-tile-0", in: TABLE_KEY }))).toMatch(/^a +$/);
+    expect(textOf(await fullscreen.find({ key: "table-mines-tile-24", in: TABLE_KEY }))).toMatch(/^y +$/);
+    await fullscreen.unmount();
+
+    for (const [state, fill, glyph] of [
+      [MINES_BUSTED, TILE_FILL.mine, "✸"],
+      [MINES_DRAWING, null, /[◐◓◑◒]/],
+    ] as const) {
+      current = state;
+      await clock.advance(5_000);
+      const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+      const tiles = await tilesOf(ui);
+
+      expect(tiles).toHaveLength(25);
+      expect(
+        tiles.filter((tile) =>
+          fill === null
+            ? TILE_FILL.pending.some((shade) => shade === tile.props.backgroundColor)
+            : tile.props.backgroundColor === fill,
+        ),
+      ).toHaveLength(1);
+      expect(textOf(await ui.drawn())).toMatch(glyph);
+      await ui.unmount();
+    }
+  });
 });
 
 describe("the Tower, Hilo and Keno boards", () => {
@@ -424,6 +473,18 @@ describe("the Tower, Hilo and Keno boards", () => {
     await ui.press({ key: "tower-tile-2" });
 
     expect(actionsOf(world.calls("POST /v1/play"))).toEqual([{ type: "tower_climb", tile: 2 }]);
+  });
+
+  test("the tower is nine levels of tiles, top first, what each pays on its left, the level in play lit", async ($, on) => {
+    await seat($, on, TOWER_TURN);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+    const tiles = await tilesOf(ui);
+    const text = textOf(await ui.drawn());
+
+    expect(tiles).toHaveLength(9 * 4);
+    expect(tiles.filter((tile) => tile.props.backgroundColor === TILE_FILL.safe)).toHaveLength(2);
+    expect(tiles.filter((tile) => tile.props.backgroundColor === TILE_FILL.lit)).toHaveLength(4);
+    expect(text.indexOf("×13.0519")).toBeLessThan(text.indexOf("×1.3066"));
   });
 
   test("a climb being drawn turns its tile and holds the others, inert", async ($, on) => {
