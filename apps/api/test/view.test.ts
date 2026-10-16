@@ -391,7 +391,7 @@ describe("buildRoundView", () => {
         picks: [3, 17, 40],
         drawn: null,
         hits: null,
-        paytable: ["0.00", "0.80", "2.10", "28.00"],
+        paytable: ["0.00", "0.80", "2.00", "26.70"],
       });
       expect(buildRoundView(input(keno, idle)).detail).toMatchObject({ drawn: keno.drawn, hits: 2 });
     });

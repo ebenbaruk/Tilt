@@ -110,7 +110,7 @@ const GAMES = [
   },
   {
     name: "Keno",
-    rtp: "98.00%",
+    rtp: "95.00%",
     rules: "Pick 1 to 10 numbers out of 40, then 10 are drawn. More hits pay more, up to 1,000× for 10 of 10.",
     tone: styles.toneGreen,
     art: <KenoCard />,

@@ -1,6 +1,6 @@
 //! Keno: the player picks 1 to 10 numbers out of 1..=40, 10 distinct numbers are drawn, and
 //! the paytable for the number of picks pays by hits. Every paytable's exact RTP (hypergeometric,
-//! computed in the tests) is between 97.90% and 98.00% before Tilt's fee.
+//! computed in the tests) is between 94.90% and 95.00% before Tilt's fee.
 
 use crate::games::{gain, to_u64};
 use crate::rng::Rng;
@@ -11,16 +11,16 @@ pub const MAX_PICKS: usize = 10;
 
 /// Stake multiples ×100 by hits (0 to n), for n = 1 to 10 picks (`PAYTABLES[n − 1]`).
 pub const PAYTABLES: [&[u64]; MAX_PICKS] = [
-    &[0, 392],
-    &[0, 170, 565],
-    &[0, 80, 210, 2_800],
-    &[0, 75, 160, 480, 5_000],
-    &[0, 25, 140, 390, 1_450, 10_000],
-    &[0, 0, 100, 350, 700, 1_870, 20_000],
-    &[0, 0, 50, 290, 440, 1_400, 3_200, 30_000],
-    &[0, 0, 0, 210, 420, 1_200, 2_900, 8_300, 50_000],
-    &[0, 0, 0, 150, 300, 800, 1_500, 5_800, 15_000, 75_000],
-    &[0, 0, 0, 140, 220, 440, 790, 2_000, 5_400, 24_700, 100_000],
+    &[0, 380],
+    &[0, 160, 580],
+    &[0, 80, 200, 2_670],
+    &[0, 70, 160, 460, 5_000],
+    &[0, 25, 135, 380, 1_370, 10_000],
+    &[0, 0, 95, 340, 700, 1_810, 20_000],
+    &[0, 0, 50, 280, 425, 1_315, 3_100, 30_000],
+    &[0, 0, 0, 205, 405, 1_155, 2_800, 8_050, 50_000],
+    &[0, 0, 0, 145, 290, 780, 1_480, 5_650, 14_600, 75_000],
+    &[0, 0, 0, 135, 215, 425, 765, 1_940, 5_250, 24_000, 100_000],
 ];
 
 /// The paytable for `picks` numbers. Needs 1 to 10 picks.
@@ -82,7 +82,7 @@ mod tests {
     }
 
     #[test]
-    fn every_paytable_returns_97_90_to_98_00_percent_exactly() {
+    fn every_paytable_returns_94_90_to_95_00_percent_exactly() {
         let all = choose(NUMBERS as u128, DRAWN as u128);
         for picks in 1..=MAX_PICKS as u128 {
             let table = paytable(picks as usize);
@@ -95,9 +95,9 @@ mod tests {
                         * table[h as usize] as u128
                 })
                 .sum();
-            // 97.90% ≤ returned / (100 × all) ≤ 98.00%.
-            assert!(returned * 10_000 >= 9_790 * 100 * all, "{picks} picks");
-            assert!(returned * 10_000 <= 9_800 * 100 * all, "{picks} picks");
+            // 94.90% ≤ returned / (100 × all) ≤ 95.00%.
+            assert!(returned * 10_000 >= 9_490 * 100 * all, "{picks} picks");
+            assert!(returned * 10_000 <= 9_500 * 100 * all, "{picks} picks");
         }
     }
 
@@ -121,7 +121,7 @@ mod tests {
         assert!(!is_valid(&[3, 3]));
         assert!(!is_valid(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]));
         assert_eq!(max_gain(1_000, &[5, 5]), None);
-        assert_eq!(max_gain(1_000, &[5]), Some(2_920));
+        assert_eq!(max_gain(1_000, &[5]), Some(2_800));
         assert_eq!(
             max_gain(1_000, &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
             Some(999_000)
@@ -149,10 +149,10 @@ mod tests {
     fn payouts_count_the_hits() {
         let drawn = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
         assert_eq!(hits(&[1, 2, 40], &drawn), 2);
-        assert_eq!(gross(1_000, 3, 2), 2_100);
+        assert_eq!(gross(1_000, 3, 2), 2_000);
         assert_eq!(gross(1_000, 3, 1), 800);
         assert_eq!(gross(1_000, 1, 0), 0);
-        // Rounded down: 106 × 3.92 = 415.52.
-        assert_eq!(gross(106, 1, 1), 415);
+        // Rounded down: 106 × 3.80 = 402.8.
+        assert_eq!(gross(106, 1, 1), 402);
     }
 }

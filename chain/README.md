@@ -45,7 +45,7 @@ scripts/
 | Dice | Tirage `below(10000)`, au-dessus ou en dessous d'un seuil, chance de 1 % à 98 % | 98,00 % (exact) | `9800 / W − 1` (W issues gagnantes sur 10 000) |
 | Limbo | Résultat `clamp(98 × 2³² / (below(2³²) + 1), 1,00×, 1 000 000×)`, gagne s'il atteint la cible (1,01× à 10 000×) | ≤ 98,00 % (arrondi en faveur de la maison) | cible − 1 |
 | Flip | 1 à 10 pièces `below(2)`, toutes du côté choisi | 98,00 % (exact) | `0,98 × 2ⁿ − 1` |
-| Keno | 1 à 10 numéros sur 40, 10 tirés sans remise (Fisher–Yates), table `keno::PAYTABLES` | 97,90 à 98,00 % selon le nombre de numéros (exact, testé) | 999 (10/10) |
+| Keno | 1 à 10 numéros sur 40, 10 tirés sans remise (Fisher–Yates), table `keno::PAYTABLES` | 94,90 à 95,00 % selon le nombre de numéros (exact, testé) | 999 (10/10) |
 | Wheel | 10 à 50 segments, risque faible/moyen/élevé, tables `wheel::multiplier` de somme `98 × segments` | 98,00 % (exact) | `0,98 × segments − 1` (risque élevé) |
 | Hilo | Carte `below(52)`, as bas. Plus haut ou égal / plus bas ou égal, un pari certain est refusé ; 10 cartes passées au plus, 64 cartes par manche. Multiplicateur `0,98 × Π 13 / issues gagnantes` (virgule fixe 10⁻⁶, arrondie vers le bas) | 98,00 % à chaque point d'encaissement | borné par `max_round_gain` |
 | Tower | 9 étages ; facile 3/4, moyen 2/3, difficile 1/2, expert 1/3, maître 1/4 cases sûres ; chaque case tirée au clic (`below(cases) < sûres`) ; `0,98 × (cases / sûres)^étages` | 98,00 % à chaque point d'encaissement | `0,98 × (cases / sûres)⁹ − 1`, borné par `max_round_gain` |

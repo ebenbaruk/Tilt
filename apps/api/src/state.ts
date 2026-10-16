@@ -19,7 +19,7 @@ export const RTP: Record<Game, string> = {
   dice: "98.00",
   limbo: "98.00",
   flip: "98.00",
-  keno: "98.00",
+  keno: "95.00",
   wheel: "98.00",
   hilo: "98.00",
   tower: "98.00",

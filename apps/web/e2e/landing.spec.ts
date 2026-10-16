@@ -33,7 +33,7 @@ test("landing shows the pitch, install commands and key sections", async ({ page
     ["Dice", "98.00%"],
     ["Limbo", "98.00%"],
     ["Flip", "98.00%"],
-    ["Keno", "98.00%"],
+    ["Keno", "95.00%"],
     ["Wheel", "98.00%"],
     ["Hilo", "98.00%"],
     ["Tower", "98.00%"],

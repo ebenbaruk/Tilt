@@ -203,7 +203,7 @@ mod tests {
             segment: 0,
         };
         assert_eq!(wheel.max_gain(1_000), None);
-        assert_eq!(QuickRound::keno(&[7]).unwrap().max_gain(1_000), Some(2_920));
+        assert_eq!(QuickRound::keno(&[7]).unwrap().max_gain(1_000), Some(2_800));
     }
 
     #[test]

@@ -475,16 +475,16 @@ describe("keno", () => {
   };
 
   it.each(Array.from({ length: keno.MAX_PICKS }, (_, i) => i + 1))(
-    "returns 97.90% to 98.00% exactly with %i picks (hypergeometric)",
+    "returns 94.90% to 95.00% exactly with %i picks (hypergeometric)",
     (n) => {
       // RTP × C(40, 10) × 100 (pay tables are ×100), in integers.
       const total = choose(keno.NUMBERS, keno.DRAWN);
       const paid = keno
         .paytable(n)
         .reduce((sum, pay, hits) => sum + pay * choose(n, hits) * choose(keno.NUMBERS - n, keno.DRAWN - hits), 0n);
-      // 97.90% ≤ paid / (100 × total) ≤ 98.00%, as 9790 × total ≤ paid × 100 ≤ 9800 × total.
-      expect(paid * 100n).toBeGreaterThanOrEqual(9_790n * total);
-      expect(paid * 100n).toBeLessThanOrEqual(9_800n * total);
+      // 94.90% ≤ paid / (100 × total) ≤ 95.00%, as 9490 × total ≤ paid × 100 ≤ 9500 × total.
+      expect(paid * 100n).toBeGreaterThanOrEqual(9_490n * total);
+      expect(paid * 100n).toBeLessThanOrEqual(9_500n * total);
     },
   );
 
