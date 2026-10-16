@@ -144,11 +144,10 @@ describe("the table moves", () => {
     };
 
     await show(BLACKJACK_SIX_TURN);
-    // Cards are dealt face down, then turned over one by one.
-    expect(await table()).not.toContain("5♣");
+    expect(await table()).toContain(" ▒▒ ");
     expect(await table()).not.toContain("▶ #3 11");
     await ui.advance(WHOLE_DEAL_MS);
-    expect(await table()).toContain("5♣");
+    expect(await table()).not.toContain(" ▒▒ ");
     expect(await table()).toContain("▶ #3 11");
 
     await show(BLACKJACK_MIXED);

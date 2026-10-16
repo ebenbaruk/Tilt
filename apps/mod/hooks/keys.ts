@@ -15,9 +15,7 @@ export type Command =
   | { kind: "baccarat-bet"; bet: BaccaratBet }
   /** Starts a round of the active game with the current bet, both read when the key is pressed. */
   | { kind: "start" }
-  | { kind: "play"; action: PlayAction }
-  /** Copies a line about the last big win, to paste where the person likes. */
-  | { kind: "share" };
+  | { kind: "play"; action: PlayAction };
 
 export interface KeyAction {
   /** The Button's address: stable across draws. */

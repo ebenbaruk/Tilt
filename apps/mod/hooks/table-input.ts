@@ -4,7 +4,6 @@
 // so a post can never do more than pressing that key would.
 import type { ClientKeyEvent } from "claude-code";
 
-import type { CardSize } from "./cards";
 import type { Prefs } from "./model";
 import type { StateResponse } from "./protocol";
 
@@ -23,10 +22,6 @@ export interface TableProps {
   /** The plan's keys right now (planKeys), the game switches included. */
   keys: TableKey[];
   isWide: boolean;
-  /** The card size the pane chose for the room it has. */
-  cards: CardSize;
-  /** Claude Code's theme is a light one: the surface module draws with the light accents. */
-  isLight: boolean;
   /** The pane holds the keyboard. A click on the table then gives it the raw keys; without the
    *  pane's focus the table has none, whatever was clicked before. */
   isPaneFocused: boolean;

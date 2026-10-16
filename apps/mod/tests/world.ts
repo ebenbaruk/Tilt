@@ -1,6 +1,6 @@
 // The world beneath the plugin in tests: the api answered from a route table, and a record of
 // everything the plugin asked the engine for.
-import type { ConfigRow, HttpResponse, On, RenderInput, SessionStartInput, UiPane } from "claude-code";
+import type { HttpResponse, On, RenderInput, SessionStartInput, UiPane } from "claude-code";
 import { type Engine, mock, type MockClock, type Mounted } from "claude-code/testing";
 
 import type { PlayRequest, StateResponse } from "../hooks/protocol";
@@ -88,16 +88,6 @@ export interface World {
   routes: Record<string, Route>;
   requests: Request[];
   opened: { id: string; focus: boolean }[];
-  /** The panes the plugin closed, by id. */
-  closed: string[];
-  /** What the plugin put on the clipboard. */
-  copied: string[];
-  /** The sound files the plugin played. */
-  played: string[];
-  /** What `$.config.list` answers: the `/config` rows, none by default. */
-  configRows: ConfigRow[];
-  /** The rows each open asked for, in order. */
-  openedRows: (number | undefined)[];
   processes: (readonly string[])[];
   /** Whether `$.ui.open` places the pane (a wide terminal) or holds it back (a narrow one). */
   isPlaced: boolean;
@@ -122,11 +112,6 @@ export function worldOf(on: On, routes: Record<string, Route> = {}): World {
     routes,
     requests: [],
     opened: [],
-    openedRows: [],
-    configRows: [],
-    closed: [],
-    copied: [],
-    played: [],
     processes: [],
     isPlaced: true,
     isClosed: false,
@@ -165,27 +150,9 @@ export function worldOf(on: On, routes: Record<string, Route> = {}): World {
   });
 
   on("command.register", ($, e) => ({ value: { command: e.name } }));
-  on("config.list", () => ({ value: world.configRows }));
-  on("ui.close", ($, e) => {
-    world.closed.push(e.id);
-    world.isClosed = true;
-
-    return { value: undefined };
-  });
-  on("ui.copy", ($, e) => {
-    world.copied.push(e.text);
-
-    return { value: { isCopied: true as const } };
-  });
-  on("audio.play", ($, e) => {
-    world.played.push("asset" in e.clip && e.clip.asset !== undefined ? e.clip.asset : "other");
-
-    return { value: undefined };
-  });
 
   on("ui.open", ($, e) => {
     world.opened.push({ id: e.id, focus: e.focus === true });
-    world.openedRows.push(e.rows);
     world.isClosed = false;
 
     return {
@@ -249,12 +216,11 @@ export async function seat(
   on: On,
   state: StateResponse,
   routes: Record<string, Route> = {},
-  stored: Readonly<Record<string, unknown>> = LOGGED_IN,
 ): Promise<{ world: World; clock: MockClock }> {
   const world = worldOf(on, { "GET /v1/state": () => ({ status: 200, body: state }), ...routes });
   const clock = mock.clock(on, { now: NOW });
 
-  mock.store(on, stored);
+  mock.store(on, LOGGED_IN);
   await $.session.start(SESSION);
   await clock.advance(FIRST_TICK_MS);
 

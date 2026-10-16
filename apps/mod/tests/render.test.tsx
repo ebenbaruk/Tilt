@@ -28,15 +28,15 @@ const cases: [string, StateResponse, string[]][] = [
   [
     "blackjack, the player to act",
     BLACKJACK_TURN,
-    ["DEALER 9 + ?", "9♥", "░░░░░", "▶ YOU 11", "bet 1.00", "3♣", "8♦", "hit", "stand", "double", "rtp 99.00%"],
+    ["DEALER 9 + ?", " 9♥ ", " ? ", "▶ YOU 11", "bet 1.00", " 3♣ ", " 8♦ ", "hit", "stand", "double", "rtp 99.00%"],
   ],
   [
     "blackjack, six hands, the third to act",
     BLACKJACK_SIX_TURN,
-    ["DEALER 9 + ?", "#1 20", "#2 21 BLACKJACK", "▶ #3 11", "#4 soft 17", "#5 16", "#6 5", "5♣", "hit", "double"],
+    ["DEALER 9 + ?", "#1 20", "#2 21 BLACKJACK", "▶ #3 11", "#4 soft 17", "#5 16", "#6 5", " 5♣ ", "hit", "double"],
   ],
-  ["blackjack, a settled win", BLACKJACK_WIN, ["YOU 19", "WIN 1.00", "19 beats 17.", "+0.99", "fee 0.01", "10♠"]],
-  ["blackjack, a settled loss", BLACKJACK_LOSS, ["YOU 24 BUST", "LOSE 1.00", "Bust at 24.", "−1.00", "K♣"]],
+  ["blackjack, a settled win", BLACKJACK_WIN, ["YOU 19", "WIN 1.00", "19 beats 17.", "+0.99", "fee 0.01", " 10♠ "]],
+  ["blackjack, a settled loss", BLACKJACK_LOSS, ["YOU 24 BUST", "LOSE 1.00", "Bust at 24.", "−1.00", " K♣ "]],
   [
     "blackjack, four hands settled",
     BLACKJACK_MIXED,
@@ -55,14 +55,14 @@ const cases: [string, StateResponse, string[]][] = [
       "deal · 0.50",
     ],
   ],
-  ["blackjack, a pair to split", BLACKJACK_PAIR, ["▶ YOU 16", "8♠", "8♥", "hit", "double", "split"]],
+  ["blackjack, a pair to split", BLACKJACK_PAIR, ["▶ YOU 16", " 8♠ ", " 8♥ ", "hit", "double", "split"]],
   [
     "blackjack, ten hands after four splits, a split hand to act",
     BLACKJACK_TEN_TURN,
     [
       "#1 20 10♠ ",
       "#2 soft 20 split",
-      "A♠",
+      " A♠ ",
       "#3 21 split",
       "#7 22 BUST split",
       "▶ #8 11 split",
@@ -85,14 +85,10 @@ const cases: [string, StateResponse, string[]][] = [
       "+1.98",
     ],
   ],
-  [
-    "roulette, settled",
-    ROULETTE,
-    ["bet red", " 17 BLACK ", "Red loses.", "−1.00", " 17 ", "spin · 0.50", "rtp 97.30%"],
-  ],
+  ["roulette, settled", ROULETTE, ["bet red", "Ball on 17 black.", "−1.00", " 17 ", "spin · 0.50", "rtp 97.30%"]],
   ["baccarat, settled", BACCARAT, ["bet banker", "PLAYER 5", "BANKER 7", "Player 5 · banker 7.", "+0.94"]],
   ["slots, settled", SLOTS, ["7", "★", "+3.96", "spin · 0.50", "rtp 96.16%"]],
-  ["slots, drawing", SLOTS_DRAWING, ["drawing", "PAYS × BET"]],
+  ["slots, drawing", SLOTS_DRAWING, ["drawing", "░"]],
   ["an account not open yet", NOT_OPEN, ["No Tilt account yet", "first deposit on the web"]],
   ["play blocked", BLOCKED, ["Play paused · Self-exclusion until 2026-11-01."]],
 ];
@@ -222,10 +218,9 @@ describe("the pane draws each state the api sends", () => {
   test("split aces say they take one card; other split hands do not", async ($, on) => {
     await seat($, on, BLACKJACK_SPLIT_SETTLED);
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE, props: { ...PANE.props, bodyColumns: 160 } });
-    const text = await shownText(ui);
 
     // Two hands from split aces, one hand from no split.
-    expect(text.match(/· 1 card/g)).toHaveLength(2);
+    expect((await shownText(ui)).match(/· 1 card/g)).toHaveLength(2);
   });
 });
 
