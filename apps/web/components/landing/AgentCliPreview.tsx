@@ -4,7 +4,8 @@ import { PlayingCard } from "@/components/tilt/PlayingCard";
 import { AgentStatus } from "./AgentStatus";
 import styles from "./AgentCliPreview.module.css";
 
-const GAMES = ["Blackjack", "Roulette", "Baccarat", "Slots", "Mines"];
+// Page 1 of the panel's game switcher: digits pick a game, 0 flips to the next page.
+const GAMES = ["Blackjack", "Roulette", "Baccarat", "Slots", "Mines", "Dice", "Limbo", "Flip", "Keno"];
 
 const BOARD = [
   { rank: "1", handle: "@0xkira", net: "+412.90" },
@@ -41,6 +42,7 @@ export function AgentCliPreview() {
                     [{i + 1}] {game}
                   </span>
                 ))}
+                <span className={styles.tab}>[0] more 1/2</span>
               </div>
               <span className={styles.spacer} />
               <span className={styles.stat}>
@@ -117,7 +119,7 @@ export function AgentCliPreview() {
             <span className={styles.placeholder}>Agent is working · your keys go to Tilt</span>
           </div>
           <div className={styles.hints}>
-            <span>1·2·3·4 switch game</span>
+            <span>1–9 switch game · 0 more games</span>
             <span>ctrl+x tab focus tilt</span>
             <span>keys go to the game while the agent works</span>
             <span className={styles.spacer} />

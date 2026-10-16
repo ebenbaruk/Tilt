@@ -18,10 +18,12 @@ export interface SettledRound {
   settledAt: Date;
 }
 
-/** A mines cash-out settles without a VRF draw: its RoundSettled carries zero randomness and
- *  the request id of the last reveal, whose draw is already indexed. */
+/** Games whose rounds can settle by a cash-out, without a VRF draw: its RoundSettled carries
+ *  zero randomness and the request id of the last draw, already indexed. */
+const CASH_OUT_GAMES: ReadonlySet<Game> = new Set(["mines", "hilo", "tower"]);
+
 export const isCashout = (r: Pick<SettledRound, "game" | "randomness">) =>
-  r.game === "mines" && r.randomness.every((b) => b === 0);
+  CASH_OUT_GAMES.has(r.game) && r.randomness.every((b) => b === 0);
 
 export interface IndexedRound extends SettledRound {
   detail: Outcome | null;

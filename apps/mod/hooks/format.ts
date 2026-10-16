@@ -30,20 +30,45 @@ export function formatSigned(net: string): string {
   return BigInt(net) > 0n && text !== "0.00" ? `+${text}` : text;
 }
 
-/** Mines multipliers come with exactly 4 decimals ("1.0312"). */
+/** Cash-out multipliers (Mines, Hilo, Tower) come with exactly 4 decimals ("1.0312"). */
 const MULTIPLIER_DECIMALS = 4;
 const MULTIPLIER_SCALE = 10n ** BigInt(MULTIPLIER_DECIMALS);
 
 /**
- * What a Mines cash-out at `multiplier` returns on `stake`, in base units, before Tilt's fee:
+ * What a cash-out at `multiplier` returns on `stake`, in base units, before Tilt's fee:
  * stake × multiplier, floored (the multiplier is floored too, so both only round down). Integer
  * math on the decimal string, never a float; the program computes the real payout.
  */
-export function minesPayout(stake: string, multiplier: string): string {
+export function cashOutPayout(stake: string, multiplier: string): string {
   const [whole = "0", fraction = ""] = multiplier.split(".");
   const scaled = BigInt(`${whole}${fraction.padEnd(MULTIPLIER_DECIMALS, "0").slice(0, MULTIPLIER_DECIMALS)}`);
 
   return ((BigInt(stake) * scaled) / MULTIPLIER_SCALE).toString();
+}
+
+/** A whole number of 10^-decimals as a decimal string: (19600n, 4) → "1.9600", (742n, 2) → "7.42". */
+export function scaledDecimal(value: bigint, decimals: number): string {
+  const scale = 10n ** BigInt(decimals);
+  const fraction = (value % scale).toString().padStart(decimals, "0");
+
+  return `${value / scale}.${fraction}`;
+}
+
+/** What a dice win pays on a winning count of `chance` rolls in 10 000: 98 % / chance, 4 decimals, floored. */
+export function diceMultiplier(chance: number): string {
+  return scaledDecimal((9_800n * MULTIPLIER_SCALE) / BigInt(chance), MULTIPLIER_DECIMALS);
+}
+
+/** What a flip of `flips` coins pays when all land on the side: 0.98 × 2^flips, 4 decimals. */
+export function flipMultiplier(flips: number): string {
+  return scaledDecimal((98n * 2n ** BigInt(flips) * MULTIPLIER_SCALE) / 100n, MULTIPLIER_DECIMALS);
+}
+
+/** Tower after `levels` safe levels: 0.98 × (tiles / safe)^levels, 4 decimals, floored, before the round's cap. */
+export function towerMultiplier(tiles: number, safe: number, levels: number): string {
+  const scaled = (98n * BigInt(tiles) ** BigInt(levels) * MULTIPLIER_SCALE) / (100n * BigInt(safe) ** BigInt(levels));
+
+  return scaledDecimal(scaled, MULTIPLIER_DECIMALS);
 }
 
 /** 31_400 → "31s", 374_000 → "6m 14s", 3_720_000 → "1h 2m". */

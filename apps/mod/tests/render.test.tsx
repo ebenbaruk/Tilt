@@ -14,6 +14,20 @@ import {
   BLACKJACK_TURN,
   BLACKJACK_WIN,
   BLOCKED,
+  DICE,
+  DICE_DRAWING,
+  DICE_LOSS,
+  FLIP,
+  FLIP_LOSS,
+  HILO_ACE,
+  HILO_BUSTED,
+  HILO_CASHED,
+  HILO_DRAWING,
+  HILO_TURN,
+  KENO,
+  KENO_DRAWING,
+  LIMBO,
+  LIMBO_WIN,
   MINES_BUSTED,
   MINES_CASHED,
   MINES_DRAWING,
@@ -22,6 +36,12 @@ import {
   ROULETTE,
   SLOTS,
   SLOTS_DRAWING,
+  TOWER_BUSTED,
+  TOWER_CASHED,
+  TOWER_DRAWING,
+  TOWER_TURN,
+  WHEEL,
+  WHEEL_DRAWING,
 } from "./fixtures";
 import { BAND, movingTable, NOW, PANE, PANE_INLINE, PLUGIN, seat, SESSION, shownText, textOf, worldOf } from "./world";
 
@@ -106,6 +126,86 @@ const cases: [string, StateResponse, string[]][] = [
   ["mines, a reveal drawing", MINES_DRAWING, ["3 mines", "multiplier ×1.1250", "1 safe", "◆"]],
   ["mines, busted", MINES_BUSTED, ["✸", "◆", "Mine on h after 1 safe tile.", "−1.00", "play · 0.50 · 3 mines"]],
   ["mines, cashed out", MINES_CASHED, ["◆", "Cashed out at ×1.4785 after 3 safe tiles.", "+0.47"]],
+  [
+    "dice, a win under the target",
+    DICE,
+    [
+      "roll under 49.00",
+      "win chance 49.00%",
+      "multiplier ×2.0000",
+      "rolled 37.42",
+      "Rolled 37.42: under 49.00 wins.",
+      "+0.99",
+      "roll · 0.50 · under 49.00",
+      "rtp 98.00%",
+    ],
+  ],
+  ["dice, a loss over the target", DICE_LOSS, ["Rolled 12.00: over 75.00 loses.", "−1.00"]],
+  ["dice, rolling", DICE_DRAWING, ["rolling…", "drawing"]],
+  [
+    "limbo, short of the target",
+    LIMBO,
+    ["×1.53", "target ×2.00", "win chance 49.00%", "×1.53 falls short of ×2.00.", "−1.00", "play · 0.50 · ×2.00"],
+  ],
+  ["limbo, the target reached", LIMBO_WIN, ["×3.12", "×3.12 reaches ×2.00.", "+0.99"]],
+  ["flip, three heads in a row", FLIP, ["3 heads in a row.", "+5.77", "BIG WIN +5.77 USDC", "flip · 0.50 · 1 × heads"]],
+  ["flip, a tail", FLIP_LOSS, ["Tails on coin 2 of 2.", "−1.00"]],
+  [
+    "keno, three hits",
+    KENO,
+    [
+      "[ 4]",
+      "[12]",
+      "[19]",
+      "5 picks",
+      "3 hits",
+      "HITS",
+      "3 ×4.00",
+      "3 hits of 5 picks.",
+      "+2.97",
+      "play · 0.50 · 5 picks",
+    ],
+  ],
+  ["keno, drawing", KENO_DRAWING, ["[ 4]", "drawing…"]],
+  [
+    "wheel, landed",
+    WHEEL,
+    [
+      "10 segments · low risk",
+      "×0.80",
+      "landed on ×1.50",
+      "Landed on ×1.50.",
+      "+0.49",
+      "spin · 0.50 · 10 segments · low",
+    ],
+  ],
+  ["wheel, spinning", WHEEL_DRAWING, ["spinning…"]],
+  [
+    "hilo, the player to guess or cash out",
+    HILO_TURN,
+    [
+      "Q♠ ▼ 9♥ ▼ 5♦",
+      "multiplier ×1.5335",
+      "higher or same ×2.2151",
+      "lower or same ×3.9871",
+      "10 skips left",
+      "cash out 1.53",
+      "2 right",
+      "rtp 98.00%",
+    ],
+  ],
+  ["hilo, an ace", HILO_ACE, ["lower ×12.7400", "0 skips left"]],
+  ["hilo, a card drawing", HILO_DRAWING, ["Q♠ ▼ 9♥ ▲ …", "drawing"]],
+  ["hilo, a wrong guess", HILO_BUSTED, ["wrong guess", "Wrong guess after 1 right.", "−1.00", "play · 0.50"]],
+  ["hilo, cashed out", HILO_CASHED, ["Cashed out at ×1.5335 after 2 right guesses.", "+0.52"]],
+  [
+    "tower, the player to climb or cash out",
+    TOWER_TURN,
+    ["easy · 3 safe of 4", "multiplier ×1.7422", "next level ×2.3229", "cash out 1.74", "2 levels", "×13.0519", "◆"],
+  ],
+  ["tower, a climb drawing", TOWER_DRAWING, ["multiplier ×1.3066", "1 level", "drawing"]],
+  ["tower, a fall", TOWER_BUSTED, ["✸", "◆", "Fell on level 3.", "−1.00", "play · 0.50 · easy"]],
+  ["tower, cashed out", TOWER_CASHED, ["Cashed out at ×1.7422 on level 2.", "+0.73"]],
   ["an account not open yet", NOT_OPEN, ["No Tilt account yet", "first deposit on the web"]],
   ["play blocked", BLOCKED, ["Play paused · Self-exclusion until 2026-11-01."]],
 ];
@@ -199,7 +299,22 @@ describe("the pane draws each state the api sends", () => {
     let current: StateResponse = BASE;
     const { clock } = await seat($, on, BASE, { "GET /v1/state": () => ({ status: 200, body: current }) });
 
-    for (const state of [BASE, BLACKJACK_TURN, BLACKJACK_PAIR, ROULETTE, BACCARAT, SLOTS, MINES_TURN, BLOCKED]) {
+    for (const state of [
+      BASE,
+      BLACKJACK_TURN,
+      BLACKJACK_PAIR,
+      ROULETTE,
+      BACCARAT,
+      SLOTS,
+      MINES_TURN,
+      DICE,
+      FLIP,
+      KENO,
+      WHEEL,
+      HILO_TURN,
+      TOWER_TURN,
+      BLOCKED,
+    ]) {
       current = state;
       await clock.advance(5_000);
       const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
@@ -296,6 +411,93 @@ describe("the Mines board", () => {
       { type: "mines_reveal", tile: 24 },
       { type: "mines_cashout" },
     ]);
+  });
+});
+
+describe("the Tower, Hilo and Keno boards", () => {
+  const actionsOf = (calls: { body: unknown }[]) => calls.map((call) => (call.body as PlayRequest).action);
+
+  test("on the main screen the next level's tiles are the keys: a press climbs", async ($, on) => {
+    const { world } = await seat($, on, TOWER_TURN, movingTable(TOWER_TURN, TOWER_TURN));
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+
+    expect((await ui.find({ key: "tower-tile-0" }))?.props.hotkey).toBe("a");
+    expect((await ui.find({ key: "tower-tile-3" }))?.props.hotkey).toBe("d");
+    expect(await ui.find({ key: "tower-tile-4" })).toBeUndefined();
+    expect(await ui.find({ key: "tower-cashout" })).toBeDefined();
+
+    await ui.press({ key: "tower-tile-2" });
+
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([{ type: "tower_climb", tile: 2 }]);
+  });
+
+  test("a climb being drawn turns its tile and holds the others, inert", async ($, on) => {
+    await seat($, on, TOWER_DRAWING);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+
+    expect(textOf(await ui.drawn())).toMatch(/[◐◓◑◒]/);
+    expect(await ui.find({ key: "tower-tile-0" })).toBeUndefined();
+    expect(await ui.find({ key: "held-tower-tile-0" })).toBeDefined();
+    expect(await ui.find({ key: "held-tower-tile-2" })).toBeUndefined();
+  });
+
+  test("in the fullscreen pane a click on a tile climbs, a click on the cash-out takes it", async ($, on) => {
+    const { world, clock } = await seat($, on, TOWER_TURN, movingTable(TOWER_TURN, TOWER_TURN));
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE, surface: "terminal" });
+
+    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("click a tile to climb");
+    await ui.press({ key: "table-tower-tile-1" });
+    await clock.advance(1_000);
+    await ui.press({ key: "table-tower-cashout" });
+
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([
+      { type: "tower_climb", tile: 1 },
+      { type: "tower_cashout" },
+    ]);
+  });
+
+  test("hilo: the guesses are keys on the main screen and clicks on the fullscreen table", async ($, on) => {
+    const { world, clock } = await seat($, on, HILO_TURN, movingTable(HILO_TURN, HILO_TURN));
+    const inline = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+
+    expect((await inline.find({ key: "hilo-higher" }))?.props.hotkey).toBe("h");
+    expect((await inline.find({ key: "hilo-skip" }))?.props.hotkey).toBe("s");
+    await inline.press({ key: "hilo-lower" });
+    await inline.unmount();
+    await clock.advance(1_000);
+
+    const full = await $.ui.mount({ plugin: PLUGIN, ...PANE, surface: "terminal" });
+
+    await full.press({ key: "table-hilo-higher" });
+    await clock.advance(1_000);
+    await full.press({ key: "table-hilo-cashout" });
+
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([
+      { type: "hilo_guess", guess: "lower" },
+      { type: "hilo_guess", guess: "higher" },
+      { type: "hilo_cashout" },
+    ]);
+  });
+
+  test("keno: on the fullscreen table a click on a number picks or unpicks it, the play carries the picks", async ($, on) => {
+    const { world } = await seat($, on, KENO, movingTable(KENO, KENO));
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE, surface: "terminal" });
+
+    await ui.press({ key: "table-keno-pick-7" });
+    await ui.press({ key: "table-keno-pick-35" });
+    await ui.press({ key: "start" });
+
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([
+      { type: "keno_play", amount: "500000", picks: [4, 7, 12, 19, 27] },
+    ]);
+  });
+
+  test("keno: on the main screen the numbers are drawn, not keys", async ($, on) => {
+    await seat($, on, KENO);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+
+    expect(await ui.find({ key: "keno-pick-7" })).toBeUndefined();
+    expect(await ui.find({ key: "keno-random" })).toBeDefined();
   });
 });
 

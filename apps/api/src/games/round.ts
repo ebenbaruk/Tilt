@@ -1,10 +1,10 @@
 // A round as the program stores it, decoded from `PlayerAccount.round` (and the blackjack
 // table) into plain TS values (see chain.ts). Everything the api shows or replays starts from this shape.
-import type { BaccaratBet, RouletteBet } from "@tilt/mod/protocol";
+import type { BaccaratBet, FlipSide, HiloGuess, RouletteBet, TowerDifficulty, WheelRisk } from "@tilt/mod/protocol";
 import type { Table } from "./blackjack";
 import type { Reels } from "./slots";
 
-export type Draw = "deal" | "hit" | "double" | "split" | "dealer" | "spin" | "reveal";
+export type Draw = "deal" | "hit" | "double" | "split" | "dealer" | "spin" | "reveal" | "card" | "climb";
 
 export type RoundStatus = { kind: "idle" } | { kind: "awaiting"; draw: Draw } | { kind: "player_turn" };
 
@@ -22,6 +22,33 @@ export type Outcome =
       game: "mines";
       mines: number;
       order: number[];
+      pending: number | null;
+      busted: number | null;
+      maxGain: string;
+    }
+  /** One-shot games, from the player's quick table. Results are meaningless until settled. */
+  | { game: "dice"; target: number; over: boolean; roll: number }
+  /** `target`, `result`: multipliers ×100. */
+  | { game: "limbo"; target: number; result: number }
+  | { game: "flip"; side: FlipSide; flips: number; results: FlipSide[] }
+  | { game: "keno"; picks: number[]; drawn: number[] }
+  | { game: "wheel"; segments: number; risk: WheelRisk; segment: number }
+  /** From the player's hilo board. `cards`: 0..51 in draw order (rank = card % 13 + 1); `guesses`:
+   *  one per card after the first; `pending`: the guess awaiting its draw. */
+  | {
+      game: "hilo";
+      cards: number[];
+      guesses: HiloGuess[];
+      pending: HiloGuess | null;
+      busted: boolean;
+      maxGain: string;
+    }
+  /** From the player's tower board. `climbed`: tile picked on each safe level; `busted`: the
+   *  tile that ended the round. */
+  | {
+      game: "tower";
+      difficulty: TowerDifficulty;
+      climbed: number[];
       pending: number | null;
       busted: number | null;
       maxGain: string;

@@ -1,20 +1,42 @@
 // Game rules and replay against the program's own Rust code: test/fixtures/rust-vectors.json was
 // produced by compiling chain/programs/tilt/src/{rng,settlement,games/*}.rs (see rust-vectors.rs).
+import type { FlipSide, HiloGuess, TowerDifficulty, WheelRisk } from "@tilt/mod/protocol";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import * as baccarat from "../src/games/baccarat";
 import * as blackjack from "../src/games/blackjack";
+import { formatFixed } from "../src/games/decimal";
+import * as dice from "../src/games/dice";
+import * as flip from "../src/games/flip";
+import * as hilo from "../src/games/hilo";
+import * as keno from "../src/games/keno";
+import * as limbo from "../src/games/limbo";
 import * as mines from "../src/games/mines";
-import { replay } from "../src/games/replay";
+import { replay, type ReplayInput } from "../src/games/replay";
 import type { Outcome } from "../src/games/round";
 import { Rng } from "../src/games/rng";
 import * as roulette from "../src/games/roulette";
 import { settle } from "../src/games/settlement";
 import * as slots from "../src/games/slots";
+import * as tower from "../src/games/tower";
+import * as wheel from "../src/games/wheel";
 import vectors from "./fixtures/rust-vectors.json";
 
 const bytes = (hex: string) => Uint8Array.from(Buffer.from(hex, "hex"));
 const STAKE = 1_000_000n;
+
+/** The JSON's strings as the protocol's literal types (fails on anything else). */
+function literal<T extends string>(values: readonly T[], value: string): T {
+  const found = values.find((v) => v === value);
+  if (found === undefined) throw new Error(`unexpected ${value}`);
+  return found;
+}
+const sideOf = (s: string) => literal<FlipSide>(flip.SIDES, s);
+const riskOf = (s: string) => literal<WheelRisk>(wheel.RISKS, s);
+const difficultyOf = (s: string) => literal<TowerDifficulty>(tower.DIFFICULTY_NAMES, s);
+const guessesOf = (codes: number[]): HiloGuess[] => codes.map((c) => literal(hilo.GUESSES, hilo.GUESSES[c] ?? ""));
+/** Flip coins as the program stores them: bit i set when coin i landed tails. */
+const coinsOf = (results: FlipSide[]) => results.reduce((bits, r, i) => bits | ((r === "tails" ? 1 : 0) << i), 0);
 
 describe("rng (port of rng.rs)", () => {
   it.each(vectors.rng)("replays the program's draws for seed $seed", (v) => {
@@ -384,6 +406,228 @@ describe("mines", () => {
   });
 });
 
+describe("dice", () => {
+  it.each(vectors.dice.map((v, i) => ({ ...v, i })))("rolls $i like the program", (v) => {
+    const roll = dice.roll(Rng.fromVrf(bytes(v.seed)));
+    expect(roll).toBe(v.roll);
+    expect(dice.gross(STAKE, v.target, v.over, roll).toString()).toBe(v.gross);
+  });
+
+  it("allows a 1% to 98% chance, under and over", () => {
+    expect([100, 9_800].map((t) => dice.isValidTarget(t, false))).toEqual([true, true]);
+    expect([99, 9_801, 0, 50.5].map((t) => dice.isValidTarget(t, false))).toEqual([false, false, false, false]);
+    expect([200, 9_900].map((t) => dice.isValidTarget(t, true))).toEqual([true, true]);
+    expect([199, 9_901, 10_001].map((t) => dice.isValidTarget(t, true))).toEqual([false, false, false]);
+  });
+
+  it("pays 98% / chance, rounded down, shown with 4 decimals", () => {
+    expect(dice.gross(STAKE, 5_000, false, 4_999)).toBe(1_960_000n);
+    expect(dice.gross(STAKE, 5_000, false, 5_000)).toBe(0n);
+    expect(dice.gross(STAKE, 5_000, true, 5_000)).toBe(1_960_000n);
+    expect(dice.gross(STAKE, 300, false, 0)).toBe(32_666_666n);
+    expect(formatFixed(dice.scaledMultiplier(5_000, true), 4)).toBe("1.9600");
+    expect(formatFixed(dice.scaledMultiplier(100, false), 4)).toBe("98.0000");
+    expect(formatFixed(dice.scaledMultiplier(200, true), 4)).toBe("1.0000");
+    expect(formatFixed(dice.scaledMultiplier(300, false), 4)).toBe("32.6666");
+  });
+});
+
+describe("limbo", () => {
+  it.each(vectors.limbo.map((v, i) => ({ ...v, i })))("draws result $i like the program", (v) => {
+    const result = limbo.result(Rng.fromVrf(bytes(v.seed)));
+    expect(result).toBe(v.result);
+    expect(limbo.gross(STAKE, v.target, result).toString()).toBe(v.gross);
+  });
+
+  it("pays the target when the result reaches it", () => {
+    expect(limbo.gross(STAKE, 200, 200)).toBe(2_000_000n);
+    expect(limbo.gross(STAKE, 200, 199)).toBe(0n);
+    expect(limbo.gross(STAKE, 1_000_000, 100_000_000)).toBe(10_000_000_000n);
+    expect([100, 101, 1_000_000, 1_000_001, 150.5].map(limbo.isValidTarget)).toEqual([false, true, true, false, false]);
+  });
+});
+
+describe("flip", () => {
+  it.each(vectors.flip.map((v, i) => ({ ...v, i })))("tosses $i like the program", (v) => {
+    const results = flip.toss(Rng.fromVrf(bytes(v.seed)), v.flips);
+    expect(coinsOf(results)).toBe(v.coins);
+    expect(flip.gross(STAKE, sideOf(v.side), results).toString()).toBe(v.gross);
+  });
+
+  it("pays 0.98 x 2^flips when every coin lands on the call", () => {
+    expect(flip.gross(STAKE, "heads", ["heads"])).toBe(1_960_000n);
+    expect(flip.gross(STAKE, "tails", ["tails", "heads"])).toBe(0n);
+    expect(flip.gross(STAKE, "tails", Array<FlipSide>(10).fill("tails"))).toBe(1_003_520_000n);
+    expect(formatFixed(flip.scaledMultiplier(1), 4)).toBe("1.9600");
+    expect(formatFixed(flip.scaledMultiplier(10), 4)).toBe("1003.5200");
+  });
+});
+
+describe("keno", () => {
+  it("mirrors the program's pay tables", () => {
+    expect(keno.PAYTABLES.map((t) => t.map(String))).toEqual(vectors.kenoPaytables);
+  });
+
+  const choose = (n: number, k: number): bigint => {
+    let c = 1n;
+    for (let i = 0; i < k; i++) c = (c * BigInt(n - i)) / BigInt(i + 1);
+    return c;
+  };
+
+  it.each(Array.from({ length: keno.MAX_PICKS }, (_, i) => i + 1))(
+    "returns 97.90% to 98.00% exactly with %i picks (hypergeometric)",
+    (n) => {
+      // RTP × C(40, 10) × 100 (pay tables are ×100), in integers.
+      const total = choose(keno.NUMBERS, keno.DRAWN);
+      const paid = keno
+        .paytable(n)
+        .reduce((sum, pay, hits) => sum + pay * choose(n, hits) * choose(keno.NUMBERS - n, keno.DRAWN - hits), 0n);
+      // 97.90% ≤ paid / (100 × total) ≤ 98.00%, as 9790 × total ≤ paid × 100 ≤ 9800 × total.
+      expect(paid * 100n).toBeGreaterThanOrEqual(9_790n * total);
+      expect(paid * 100n).toBeLessThanOrEqual(9_800n * total);
+    },
+  );
+
+  it.each(vectors.keno.map((v, i) => ({ ...v, i })))("draws $i like the program", (v) => {
+    const drawn = keno.draw(Rng.fromVrf(bytes(v.seed)));
+    expect(drawn).toEqual(v.drawn);
+    expect(new Set(drawn).size).toBe(keno.DRAWN);
+    const hits = keno.hits(v.picks, drawn);
+    expect(hits).toBe(v.hits);
+    expect(keno.gross(STAKE, v.picks.length, hits).toString()).toBe(v.gross);
+  });
+
+  it("takes 1 to 10 distinct numbers from 1 to 40", () => {
+    expect(keno.isValid([1])).toBe(true);
+    expect(keno.isValid([1, 2, 3, 4, 5, 6, 7, 8, 9, 40])).toBe(true);
+    expect(keno.isValid([])).toBe(false);
+    expect(keno.isValid([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])).toBe(false);
+    expect(keno.isValid([0])).toBe(false);
+    expect(keno.isValid([41])).toBe(false);
+    expect(keno.isValid([3, 3])).toBe(false);
+    expect(() => keno.paytable(11)).toThrow();
+  });
+});
+
+describe("wheel", () => {
+  it.each(vectors.wheelTables)("mirrors the program's $risk wheel of $segments", (t) => {
+    const multipliers = wheel.multipliers(riskOf(t.risk), t.segments);
+    expect(multipliers.map(String)).toEqual(t.multipliers);
+    expect(multipliers.reduce((a, b) => a + b, 0n)).toBe(98n * BigInt(t.segments));
+  });
+
+  it.each(vectors.wheel.map((v, i) => ({ ...v, i })))("spins $i like the program", (v) => {
+    const segment = wheel.spin(Rng.fromVrf(bytes(v.seed)), v.segments);
+    expect(segment).toBe(v.segment);
+    expect(wheel.gross(STAKE, riskOf(v.risk), v.segments, segment).toString()).toBe(v.gross);
+  });
+
+  it("has 10 to 50 segments by tens", () => {
+    expect([10, 20, 30, 40, 50].every(wheel.isValid)).toBe(true);
+    expect([0, 15, 60, 10.5].some(wheel.isValid)).toBe(false);
+  });
+});
+
+describe("hilo", () => {
+  it("maps cards to ranks (ace low) and suits", () => {
+    expect([0, 12, 13, 51].map(hilo.toCard)).toEqual([
+      { rank: 1, suit: "♠" },
+      { rank: 13, suit: "♠" },
+      { rank: 1, suit: "♥" },
+      { rank: 13, suit: "♣" },
+    ]);
+    expect(hilo.winningRanks("higher", 1)).toBe(13);
+    expect(hilo.winningRanks("lower", 13)).toBe(13);
+    expect(hilo.winningRanks("higher", 7)).toBe(7);
+    expect(hilo.winningRanks("skip", 7)).toBeNull();
+  });
+
+  it.each(vectors.hilo.map((v, i) => ({ ...v, i })))("plays round $i like the program", (v) => {
+    const cards = v.draws.map((d) => hilo.drawCard(Rng.fromVrf(bytes(d))));
+    expect(cards).toEqual(v.cards);
+    const gain = BigInt(v.maxGain);
+    const played = hilo.play(STAKE, gain, cards, guessesOf(v.guesses));
+    if (!played) throw new Error("the program's guesses must replay");
+    expect(played.fair.toString()).toBe(v.fair);
+    expect(played.busted).toBe(v.busted);
+    // The round ended on its own (bust, cap, board) unless it was cashed out.
+    expect(played.ended === null).toBe(v.cashout);
+    const gross = played.ended ?? hilo.gross(STAKE, played.fair, gain);
+    expect(gross.toString()).toBe(v.gross);
+    expect(settle(STAKE, gross)).toEqual({ payout: BigInt(v.payout), fee: BigInt(v.fee) });
+  });
+
+  it("covers busts, cash-outs, skips and the cap", () => {
+    expect(vectors.hilo.some((v) => v.busted)).toBe(true);
+    expect(vectors.hilo.some((v) => v.cashout)).toBe(true);
+    expect(vectors.hilo.some((v) => v.guesses.includes(2))).toBe(true);
+    expect(vectors.hilo.some((v) => !v.cashout && !v.busted && v.gross === "4000000")).toBe(true);
+  });
+
+  it("refuses certain guesses, an 11th skip and guesses after the round ended", () => {
+    const ace = 0;
+    const king = 12;
+    expect(hilo.play(STAKE, 10n ** 12n, [ace, 5], ["higher"])).toBeNull();
+    expect(hilo.play(STAKE, 10n ** 12n, [king, 5], ["lower"])).toBeNull();
+    const skips = Array<HiloGuess>(11).fill("skip");
+    expect(hilo.play(STAKE, 10n ** 12n, Array<number>(11).fill(5), skips.slice(0, 10))).not.toBeNull();
+    expect(hilo.play(STAKE, 10n ** 12n, Array<number>(12).fill(5), skips)).toBeNull();
+    // A 6 then a 5 on "higher": bust; no guess after it.
+    expect(hilo.play(STAKE, 10n ** 12n, [5, 4], ["higher"])).toMatchObject({ busted: true, ended: 0n });
+    expect(hilo.play(STAKE, 10n ** 12n, [5, 4, 4], ["higher", "skip"])).toBeNull();
+  });
+
+  it("shows 0.98 x the fair multiplier, rounded down, capped", () => {
+    expect(formatFixed(hilo.scaledMultiplier(STAKE, hilo.FAIR_ONE, 10n ** 12n), 4)).toBe("0.9800");
+    // A 7 then "higher" right: 13 / 7.
+    const fair = hilo.nextFair(hilo.FAIR_ONE, 7);
+    expect(fair).toBe(1_857_142n);
+    expect(formatFixed(hilo.scaledMultiplier(STAKE, fair, 10n ** 12n), 4)).toBe("1.8199");
+    expect(formatFixed(hilo.scaledMultiplier(STAKE, 100n * hilo.FAIR_ONE, 2_000_000n), 4)).toBe("3.0000");
+  });
+});
+
+describe("tower", () => {
+  it.each(vectors.tower.map((v, i) => ({ ...v, i })))("climbs round $i like the program", (v) => {
+    const difficulty = difficultyOf(v.difficulty);
+    const gain = BigInt(v.maxGain);
+    expect([tower.maxGain(STAKE, difficulty, 3_000_000n), tower.maxGain(STAKE, difficulty, 10n ** 12n)]).toContain(
+      gain,
+    );
+    let levels = 0;
+    let bust = false;
+    for (const [i, draw] of v.draws.entries()) {
+      expect(tower.canClimbMore(STAKE, difficulty, levels, gain), `climb ${i}`).toBe(true);
+      if (tower.isSafe(Rng.fromVrf(bytes(draw)), difficulty)) levels++;
+      else bust = true;
+    }
+    expect(levels).toBe(v.climbed.length);
+    expect(bust).toBe(v.busted !== null);
+    expect(bust || !tower.canClimbMore(STAKE, difficulty, levels, gain)).toBe(!v.cashout);
+    const gross = bust ? 0n : tower.gross(STAKE, difficulty, levels, gain);
+    expect(gross.toString()).toBe(v.gross);
+    expect(settle(STAKE, gross)).toEqual({ payout: BigInt(v.payout), fee: BigInt(v.fee) });
+  });
+
+  it("covers busts, cash-outs and the cap", () => {
+    expect(vectors.tower.some((v) => v.busted !== null)).toBe(true);
+    expect(vectors.tower.some((v) => v.cashout)).toBe(true);
+    expect(vectors.tower.some((v) => !v.cashout && v.busted === null && v.gross === "4000000")).toBe(true);
+  });
+
+  it("pays 0.98 x (tiles / safe)^levels, rounded down, up to the top", () => {
+    expect(tower.uncappedGross(STAKE, "easy", 1)).toBe(1_306_666n);
+    expect(tower.uncappedGross(STAKE, "hard", 9)).toBe(501_760_000n);
+    expect(tower.uncappedGross(STAKE, "master", 9)).toBe(256_901_120_000n);
+    expect(tower.maxGain(STAKE, "hard", 10n ** 12n)).toBe(500_760_000n);
+    expect(tower.canClimbMore(STAKE, "easy", 9, 10n ** 12n)).toBe(false);
+    expect(tower.canClimbMore(STAKE, "easy", 8, 10n ** 12n)).toBe(true);
+    expect(formatFixed(tower.scaledMultiplier(STAKE, "easy", 0, 10n ** 12n), 4)).toBe("1.0000");
+    expect(formatFixed(tower.scaledMultiplier(STAKE, "medium", 2, 10n ** 12n), 4)).toBe("2.2050");
+    expect(formatFixed(tower.scaledMultiplier(STAKE, "master", 9, 2_000_000n), 4)).toBe("3.0000");
+  });
+});
+
 describe("replay (GET /verify)", () => {
   const snapshotOf = (v: (typeof vectors.blackjack)[number]): Outcome => ({
     game: "blackjack",
@@ -557,6 +801,157 @@ describe("replay (GET /verify)", () => {
     expect(replay({ ...afterBust, snapshot: null }).matches).toBe(false);
   });
 
+  /** A one-draw round as the indexer stores it: the program's payout and fee from `gross`. */
+  const oneDraw = (game: Outcome["game"], seed: string, gross: string): Omit<ReplayInput, "snapshot"> => {
+    const { payout, fee } = settle(STAKE, BigInt(gross));
+    return { game, stake: STAKE, onChain: { payout, fee }, draws: [bytes(seed)] };
+  };
+
+  it("replays every one-draw round from its draw and choice, with and without the snapshot", () => {
+    const rounds: { input: Omit<ReplayInput, "snapshot">; snapshot: Outcome }[] = [
+      ...vectors.dice.map((v) => ({
+        input: oneDraw("dice", v.seed, v.gross),
+        snapshot: { game: "dice", target: v.target, over: v.over, roll: v.roll } as const,
+      })),
+      ...vectors.limbo.map((v) => ({
+        input: oneDraw("limbo", v.seed, v.gross),
+        snapshot: { game: "limbo", target: v.target, result: v.result } as const,
+      })),
+      ...vectors.flip.map((v) => ({
+        input: oneDraw("flip", v.seed, v.gross),
+        snapshot: {
+          game: "flip",
+          side: sideOf(v.side),
+          flips: v.flips,
+          results: Array.from({ length: v.flips }, (_, i) => flip.SIDES[(v.coins >> i) & 1]),
+        } as const,
+      })),
+      ...vectors.keno.map((v) => ({
+        input: oneDraw("keno", v.seed, v.gross),
+        snapshot: { game: "keno", picks: v.picks, drawn: v.drawn } as const,
+      })),
+      ...vectors.wheel.map((v) => ({
+        input: oneDraw("wheel", v.seed, v.gross),
+        snapshot: { game: "wheel", segments: v.segments, risk: riskOf(v.risk), segment: v.segment } as const,
+      })),
+    ];
+    for (const { input, snapshot } of rounds) {
+      const label = JSON.stringify(snapshot);
+      expect(replay({ ...input, snapshot }), label).toMatchObject({ matches: true, outcome: snapshot });
+      // Without the snapshot, a choice reproducing the payout is found from the same draw.
+      const blind = replay({ ...input, snapshot: null });
+      expect(blind.matches, label).toBe(true);
+      expect(blind.settlement, label).toEqual(input.onChain);
+    }
+  });
+
+  it("does not match a one-draw round with another draw, choice or payout", () => {
+    const win = vectors.dice.find((v) => v.gross !== "0");
+    const loss = vectors.dice.find((v) => v.gross === "0");
+    if (!win || !loss) throw new Error("fixture needs a dice win and a loss");
+    const snapshot = { game: "dice", target: win.target, over: win.over, roll: win.roll } as const;
+    const input = oneDraw("dice", win.seed, win.gross);
+    expect(replay({ ...input, draws: [bytes(loss.seed)], snapshot }).matches).toBe(false);
+    expect(replay({ ...input, snapshot: { ...snapshot, over: !win.over } }).matches).toBe(false);
+    expect(replay({ ...input, onChain: { payout: input.onChain.payout + 1n, fee: 0n }, snapshot }).matches).toBe(false);
+    // A choice the program refuses never matches.
+    expect(replay({ ...input, snapshot: { ...snapshot, target: 10_001, over: false } }).matches).toBe(false);
+    const kenoWin = vectors.keno.find((v) => v.gross !== "0");
+    if (!kenoWin) throw new Error("fixture needs a keno win");
+    const keno: Outcome = { game: "keno", picks: [...kenoWin.picks, kenoWin.picks[0]], drawn: kenoWin.drawn };
+    expect(replay({ ...oneDraw("keno", kenoWin.seed, kenoWin.gross), snapshot: keno }).matches).toBe(false);
+  });
+
+  const hiloSnapshot = (v: (typeof vectors.hilo)[number]): Extract<Outcome, { game: "hilo" }> => ({
+    game: "hilo",
+    cards: v.cards,
+    guesses: guessesOf(v.guesses),
+    pending: null,
+    busted: v.busted,
+    maxGain: v.maxGain,
+  });
+  const multiInput = (game: "hilo" | "tower", v: { draws: string[]; payout: string; fee: string }) => ({
+    game,
+    stake: STAKE,
+    onChain: { payout: BigInt(v.payout), fee: BigInt(v.fee) },
+    draws: v.draws.map(bytes),
+  });
+
+  it.each(vectors.hilo.map((v, i) => ({ ...v, i })))("replays hilo round $i from its cards and board", (v) => {
+    expect(replay({ ...multiInput("hilo", v), snapshot: hiloSnapshot(v) })).toMatchObject({
+      matches: true,
+      outcome: hiloSnapshot(v),
+      gross: BigInt(v.gross),
+    });
+  });
+
+  it("replays cashed-out and busted hilo rounds without a board, guesses aside", () => {
+    const uncapped = vectors.hilo.filter((v) => v.maxGain !== "3000000");
+    const cashedOut = uncapped.find((v) => v.cashout && v.draws.length > 3);
+    const busted = uncapped.find((v) => v.busted && v.draws.length > 3);
+    if (!cashedOut || !busted) throw new Error("fixture needs a long cash-out and a late bust");
+    const cash = replay({ ...multiInput("hilo", cashedOut), snapshot: null });
+    expect(cash).toMatchObject({ matches: true, gross: BigInt(cashedOut.gross), outcome: { cards: cashedOut.cards } });
+    const bust = replay({ ...multiInput("hilo", busted), snapshot: null });
+    expect(bust).toMatchObject({ matches: true, gross: 0n, outcome: { busted: true, cards: busted.cards } });
+  });
+
+  it("does not match a hilo round with a draw missing or after the round ended, or other guesses", () => {
+    const v = vectors.hilo.find((h) => h.cashout && h.draws.length > 2 && !h.guesses.includes(2));
+    const bust = vectors.hilo.find((h) => h.busted);
+    if (!v || !bust) throw new Error("fixture needs a cash-out and a bust");
+    const input = { ...multiInput("hilo", v), snapshot: hiloSnapshot(v) };
+    expect(replay({ ...input, draws: input.draws.slice(0, -1) }).matches).toBe(false);
+    const flipped = guessesOf(v.guesses).map((g): HiloGuess => (g === "higher" ? "lower" : "higher"));
+    expect(replay({ ...input, snapshot: { ...hiloSnapshot(v), guesses: flipped } }).matches).toBe(false);
+    const afterBust = { ...multiInput("hilo", bust), draws: [...bust.draws, ...v.draws].map(bytes) };
+    expect(replay({ ...afterBust, snapshot: hiloSnapshot(bust) }).matches).toBe(false);
+    // A cash-out needs a right guess: the first card alone settles nothing.
+    expect(replay({ ...input, draws: input.draws.slice(0, 1), snapshot: null }).matches).toBe(false);
+  });
+
+  const towerSnapshot = (v: (typeof vectors.tower)[number]): Extract<Outcome, { game: "tower" }> => ({
+    game: "tower",
+    difficulty: difficultyOf(v.difficulty),
+    climbed: v.climbed,
+    pending: null,
+    busted: v.busted,
+    maxGain: v.maxGain,
+  });
+
+  it.each(vectors.tower.map((v, i) => ({ ...v, i })))("replays tower round $i from its climbs and board", (v) => {
+    expect(replay({ ...multiInput("tower", v), snapshot: towerSnapshot(v) })).toMatchObject({
+      matches: true,
+      outcome: towerSnapshot(v),
+      gross: BigInt(v.gross),
+    });
+  });
+
+  it("replays cashed-out and busted tower rounds without a board, tiles aside", () => {
+    const uncapped = vectors.tower.filter((v) => v.maxGain !== "3000000");
+    const cashedOut = uncapped.find((v) => v.cashout && v.draws.length > 1);
+    const busted = uncapped.find((v) => v.busted !== null && v.draws.length > 1);
+    if (!cashedOut || !busted) throw new Error("fixture needs a cash-out and a late bust");
+    const cash = replay({ ...multiInput("tower", cashedOut), snapshot: null });
+    expect(cash).toMatchObject({ matches: true, gross: BigInt(cashedOut.gross), outcome: { busted: null } });
+    const bust = replay({ ...multiInput("tower", busted), snapshot: null });
+    expect(bust).toMatchObject({ matches: true, gross: 0n });
+    expect(bust.outcome.game === "tower" && bust.outcome.busted).toBe(0);
+  });
+
+  it("does not match a tower round with a draw missing or after the round ended, or another difficulty", () => {
+    const v = vectors.tower.find((t) => t.cashout && t.draws.length > 1);
+    const bust = vectors.tower.find((t) => t.busted !== null);
+    if (!v || !bust) throw new Error("fixture needs a cash-out and a bust");
+    const input = { ...multiInput("tower", v), snapshot: towerSnapshot(v) };
+    expect(replay({ ...input, draws: input.draws.slice(1) }).matches).toBe(false);
+    const other = v.difficulty === "easy" ? "master" : "easy";
+    expect(replay({ ...input, snapshot: { ...towerSnapshot(v), difficulty: other } }).matches).toBe(false);
+    const afterBust = { ...multiInput("tower", bust), draws: [...bust.draws, ...v.draws].map(bytes) };
+    expect(replay({ ...afterBust, snapshot: towerSnapshot(bust) }).matches).toBe(false);
+    expect(replay({ ...afterBust, snapshot: null }).matches).toBe(false);
+  });
+
   it("never throws, whatever the draws and amounts", () => {
     const game = fc.constantFrom(
       "blackjack" as const,
@@ -564,6 +959,13 @@ describe("replay (GET /verify)", () => {
       "baccarat" as const,
       "slots" as const,
       "mines" as const,
+      "dice" as const,
+      "limbo" as const,
+      "flip" as const,
+      "keno" as const,
+      "wheel" as const,
+      "hilo" as const,
+      "tower" as const,
     );
     fc.assert(
       fc.property(

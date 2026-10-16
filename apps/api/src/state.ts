@@ -16,6 +16,13 @@ export const RTP: Record<Game, string> = {
   baccarat: "98.76",
   slots: "96.16",
   mines: "99.00",
+  dice: "98.00",
+  limbo: "98.00",
+  flip: "98.00",
+  keno: "98.00",
+  wheel: "98.00",
+  hilo: "98.00",
+  tower: "98.00",
 };
 export const LEADERBOARD_SIZE = 10;
 

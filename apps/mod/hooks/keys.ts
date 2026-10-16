@@ -1,8 +1,24 @@
 // Which keys a drawing offers, as data: the panel and the band render the same plan, and the
 // tests check it is conflict-free without drawing anything.
-import { formatUsdc, minesPayout } from "./format";
+import { cashOutPayout, formatUsdc, scaledDecimal } from "./format";
 import type { Prefs, SlotsSpeed } from "./model";
-import type { BaccaratBet, Game, Limits, MinesView, PlayAction, RouletteBet, StateResponse } from "./protocol";
+import type {
+  BaccaratBet,
+  BlackjackView,
+  FlipSide,
+  Game,
+  HiloGuess,
+  HiloView,
+  Limits,
+  MinesView,
+  PlayAction,
+  RouletteBet,
+  RoundView,
+  StateResponse,
+  TowerDifficulty,
+  TowerView,
+  WheelRisk,
+} from "./protocol";
 
 export type Command =
   | { kind: "switch"; game: Game }
@@ -12,6 +28,17 @@ export type Command =
   | { kind: "hands"; step: -1 | 1 }
   /** One Mines mine fewer (-1) or more (+1), held between 1 and 24. */
   | { kind: "mines"; step: -1 | 1 }
+  /** A choice of the new games one preset down (-1) or up (+1), held at both ends. */
+  | { kind: "step"; setting: Setting; step: -1 | 1 }
+  /** Dice: rolls over the target instead of under it, or back. */
+  | { kind: "dice-over" }
+  | { kind: "flip-side"; side: FlipSide }
+  /** Wheel: the next risk, low after high. */
+  | { kind: "wheel-risk" }
+  /** Keno: as many new picks, chosen at random on the player's side (a choice, not an outcome). */
+  | { kind: "keno-random" }
+  /** Keno: picks or unpicks one number, held between 1 and 10 picks. */
+  | { kind: "keno-pick"; number: number }
   | { kind: "roulette-bet"; bet: RouletteBet }
   | { kind: "roulette-cycle"; target: "dozen" | "column" }
   | { kind: "baccarat-bet"; bet: BaccaratBet }
@@ -25,13 +52,30 @@ export type Command =
 export interface KeyAction {
   /** The Button's address: stable across draws. */
   key: string;
+  /** One digit or one lowercase letter; "" for a key only a click presses (see tableKeys). */
   hotkey: string;
   label: string;
   isSelected: boolean;
   command: Command;
 }
 
-export const GAMES: readonly Game[] = ["blackjack", "roulette", "baccarat", "slots", "mines"];
+/** The game switcher's order: digits 1 to 9 pick a game of the page shown, 0 turns the page. */
+export const GAMES: readonly Game[] = [
+  "blackjack",
+  "roulette",
+  "baccarat",
+  "slots",
+  "mines",
+  "dice",
+  "limbo",
+  "flip",
+  "keno",
+  "wheel",
+  "hilo",
+  "tower",
+];
+const GAMES_PER_PAGE = 9;
+const GAME_PAGES = Math.ceil(GAMES.length / GAMES_PER_PAGE);
 
 export const GAME_LABELS: Record<Game, string> = {
   blackjack: "Blackjack",
@@ -39,7 +83,17 @@ export const GAME_LABELS: Record<Game, string> = {
   baccarat: "Baccarat",
   slots: "Slots",
   mines: "Mines",
+  dice: "Dice",
+  limbo: "Limbo",
+  flip: "Flip",
+  keno: "Keno",
+  wheel: "Wheel",
+  hilo: "Hilo",
+  tower: "Tower",
 };
+
+/** The switcher page a game is on, from 0. */
+export const gamePage = (game: Game): number => Math.floor(GAMES.indexOf(game) / GAMES_PER_PAGE);
 
 const BASE_UNITS_PER_USDC = 1_000_000n;
 const BET_PRESETS = [1n, 2n, 5n, 10n, 25n].map((usdc) => usdc * BASE_UNITS_PER_USDC);
@@ -100,8 +154,153 @@ export function stepMines(mines: number, step: -1 | 1): number {
   return clampMines(clampMines(mines) + step);
 }
 
+/** Dice rolls 0 to 9999 (00.00 to 99.99); the winning count is 1 % to 98 % of them. */
+export const DICE_ROLLS = 10_000;
+export const MIN_DICE_CHANCE = 100;
+export const MAX_DICE_CHANCE = 9_800;
+/** Limbo targets are multipliers × 100: 1.01× to 10 000×. */
+export const MIN_LIMBO_TARGET = 101;
+export const MAX_LIMBO_TARGET = 1_000_000;
+export const MIN_FLIPS = 1;
+export const MAX_FLIPS = 10;
+/** Keno: numbers 1 to 40, 1 to 10 picks, ten drawn. */
+export const KENO_NUMBERS = 40;
+export const MIN_KENO_PICKS = 1;
+export const MAX_KENO_PICKS = 10;
+export const KENO_DRAWN = 10;
+export const WHEEL_SEGMENTS: readonly number[] = [10, 20, 30, 40, 50];
+export const WHEEL_RISKS: readonly WheelRisk[] = ["low", "medium", "high"];
+export const FLIP_SIDES: readonly FlipSide[] = ["heads", "tails"];
+export const HILO_GUESSES: readonly HiloGuess[] = ["higher", "lower", "skip"];
+export const MAX_HILO_SKIPS = 10;
+/** Cards a Hilo board keeps: the first, then one per guess. */
+export const MAX_HILO_CARDS = 64;
+export const TOWER_LEVELS = 9;
+export const TOWER_DIFFICULTIES: readonly TowerDifficulty[] = ["easy", "medium", "hard", "expert", "master"];
+/** Tiles per level and safe tiles among them. */
+export const TOWER_SHAPES: Record<TowerDifficulty, { tiles: number; safe: number }> = {
+  easy: { tiles: 4, safe: 3 },
+  medium: { tiles: 3, safe: 2 },
+  hard: { tiles: 2, safe: 1 },
+  expert: { tiles: 3, safe: 1 },
+  master: { tiles: 4, safe: 1 },
+};
+export const MAX_TOWER_TILES = 4;
+
+/** Dice win chances j and k step through, as winning rolls in 10 000: 49 % pays ×2. */
+export const DICE_CHANCES: readonly number[] = [100, 500, 1_000, 2_500, 4_900, 6_600, 7_500, 9_000, 9_800];
+export const DEFAULT_DICE_CHANCE = 4_900;
+/** Limbo targets j and k step through, × 100. */
+export const LIMBO_TARGETS: readonly number[] = [150, 200, 300, 500, 1_000, 2_500, 10_000, 100_000];
+export const DEFAULT_LIMBO_TARGET = 200;
+export const DEFAULT_KENO_PICKS: readonly number[] = [4, 12, 19, 27, 35];
+export const DEFAULT_WHEEL_SEGMENTS = 10;
+
+/** The choices `step` moves, by the address of their j and k keys (`dice-down`, `dice-up`). */
+export type Setting = "dice" | "limbo" | "flips" | "keno" | "wheel" | "tower";
+
+/** What each pair of j and k keys steps, as the table's prompt names it: `↑/↓ chance`. */
+export const STEPPER_NAMES: Record<string, string> = {
+  hands: "hands",
+  mines: "mines",
+  dice: "chance",
+  limbo: "target",
+  flips: "coins",
+  keno: "picks",
+  wheel: "segments",
+  tower: "difficulty",
+};
+
+/** `value` when it is one of `options`, else `fallback`: a stored pref another plugin could have broken. */
+export function optionOr<T>(options: readonly T[], value: T | undefined, fallback: T): T {
+  return value !== undefined && options.includes(value) ? value : fallback;
+}
+
+/** The option one step down or up from `value`, held at both ends. */
+function stepThrough<T>(options: readonly T[], value: T, step: -1 | 1): T {
+  const index = Math.max(0, options.indexOf(value));
+
+  return options[Math.max(0, Math.min(index + step, options.length - 1))] ?? value;
+}
+
+/** The option after `value`, the first after the last. */
+export function cycle<T>(options: readonly T[], value: T): T {
+  return options[(options.indexOf(value) + 1) % options.length] ?? value;
+}
+
+/** A coin count a flip takes: whole, from 1 to 10. */
+export function clampFlips(flips: number): number {
+  return Number.isInteger(flips) ? Math.max(MIN_FLIPS, Math.min(flips, MAX_FLIPS)) : MIN_FLIPS;
+}
+
+/** `random(bound)` is a whole number from 0 to bound − 1. */
+export type RandomBelow = (bound: number) => number;
+
+const byValue = (a: number, b: number): number => a - b;
+
+/** `count` distinct Keno numbers chosen with `random`, in order. */
+export function randomPicks(count: number, random: RandomBelow): number[] {
+  const pool = Array.from({ length: KENO_NUMBERS }, (_, index) => index + 1);
+
+  for (let index = 0; index < count; index++) {
+    const other = index + random(KENO_NUMBERS - index);
+    const picked = pool[other] ?? 0;
+
+    pool[other] = pool[index] ?? 0;
+    pool[index] = picked;
+  }
+
+  return pool.slice(0, count).sort(byValue);
+}
+
+/** Picks `number` or drops it, never below 1 pick or past 10. */
+export function toggleKenoPick(picks: readonly number[], number: number): number[] {
+  if (picks.includes(number)) {
+    return picks.length > MIN_KENO_PICKS ? picks.filter((pick) => pick !== number) : [...picks];
+  }
+
+  return picks.length < MAX_KENO_PICKS ? [...picks, number].sort(byValue) : [...picks];
+}
+
+/** One pick fewer (the highest goes) or one more (a random free number), held between 1 and 10. */
+function stepKenoPicks(picks: readonly number[], step: -1 | 1, random: RandomBelow): number[] {
+  if (step < 0) {
+    return picks.length > MIN_KENO_PICKS ? picks.slice(0, -1) : [...picks];
+  }
+
+  const free = Array.from({ length: KENO_NUMBERS }, (_, index) => index + 1).filter((n) => !picks.includes(n));
+  const added = free[random(free.length)];
+
+  return picks.length < MAX_KENO_PICKS && added !== undefined ? [...picks, added].sort(byValue) : [...picks];
+}
+
+/** The prefs after j (-1) or k (+1) on one of the new games' choices. */
+export function stepSetting(prefs: Prefs, setting: Setting, step: -1 | 1, random: RandomBelow): Prefs {
+  switch (setting) {
+    case "dice":
+      return { ...prefs, diceChance: stepThrough(DICE_CHANCES, prefs.diceChance, step) };
+    case "limbo":
+      return { ...prefs, limboTarget: stepThrough(LIMBO_TARGETS, prefs.limboTarget, step) };
+    case "flips":
+      return { ...prefs, flips: clampFlips(clampFlips(prefs.flips) + step) };
+    case "keno":
+      return { ...prefs, kenoPicks: stepKenoPicks(prefs.kenoPicks, step, random) };
+    case "wheel":
+      return { ...prefs, wheelSegments: stepThrough(WHEEL_SEGMENTS, prefs.wheelSegments, step) };
+    case "tower":
+      return { ...prefs, towerDifficulty: stepThrough(TOWER_DIFFICULTIES, prefs.towerDifficulty, step) };
+  }
+}
+
+/** The roll a dice bet targets: the chance itself under, the rolls above the rest over. */
+export const diceTarget = (chance: number, over: boolean): number => (over ? DICE_ROLLS - chance : chance);
+
 /** The address of the key revealing a tile: `mines-tile-0` to `mines-tile-24`. */
 export const MINES_TILE_KEY = "mines-tile-";
+/** The address of the key climbing onto a tile of the next tower level: `tower-tile-0` to `tower-tile-3`. */
+export const TOWER_TILE_KEY = "tower-tile-";
+/** The address of a Keno number's click on the fullscreen table: `keno-pick-1` to `keno-pick-40`. */
+export const KENO_PICK_KEY = "keno-pick-";
 const LETTER_A = "a".charCodeAt(0);
 /** A hidden tile's key drawn on its own: a tile of the board, its letter beside it. */
 const TILE_LABEL = "·";
@@ -152,17 +351,33 @@ export interface PlanInput {
   isBusy: boolean;
 }
 
-/** Always drawn: mid-round a press explains why it does not switch (see runCommand). */
+/**
+ * Always drawn: mid-round a press explains why it does not switch (see runCommand). Digits 1 to 9
+ * pick the games of the shown game's page; 0 turns to the next page, on its first game.
+ */
 function switchKeys(state: StateResponse, prefs: Prefs): KeyAction[] {
   const shown = activeGame(state, prefs);
+  const page = gamePage(shown);
+  const nextPage = (page + 1) % GAME_PAGES;
+  const games = GAMES.slice(page * GAMES_PER_PAGE, (page + 1) * GAMES_PER_PAGE);
+  const turn: KeyAction = {
+    key: "game-page",
+    hotkey: "0",
+    label: `more ${page + 1}/${GAME_PAGES}`,
+    isSelected: false,
+    command: { kind: "switch", game: GAMES[nextPage * GAMES_PER_PAGE] ?? shown },
+  };
 
-  return GAMES.map((game, index) => ({
-    key: `game-${game}`,
-    hotkey: String(index + 1),
-    label: GAME_LABELS[game],
-    isSelected: game === shown,
-    command: { kind: "switch", game },
-  }));
+  return [
+    ...games.map((game, index) => ({
+      key: `game-${game}`,
+      hotkey: String(index + 1),
+      label: GAME_LABELS[game],
+      isSelected: game === shown,
+      command: { kind: "switch", game } as const,
+    })),
+    turn,
+  ];
 }
 
 function rouletteKeys(prefs: Prefs): KeyAction[] {
@@ -218,17 +433,58 @@ export function startAction(game: Game, amount: string, prefs: Prefs): PlayActio
       return { type: "slots_spin", amount };
     case "mines":
       return { type: "mines_bet", amount, mines: clampMines(prefs.mines) };
+    case "dice":
+      return {
+        type: "dice_roll",
+        amount,
+        target: diceTarget(prefs.diceChance, prefs.diceOver),
+        over: prefs.diceOver,
+      };
+    case "limbo":
+      return { type: "limbo_play", amount, target: prefs.limboTarget };
+    case "flip":
+      return { type: "flip_play", amount, side: prefs.flipSide, flips: clampFlips(prefs.flips) };
+    case "keno":
+      return { type: "keno_play", amount, picks: [...prefs.kenoPicks] };
+    case "wheel":
+      return { type: "wheel_spin", amount, segments: prefs.wheelSegments, risk: prefs.wheelRisk };
+    case "hilo":
+      return { type: "hilo_bet", amount };
+    case "tower":
+      return { type: "tower_bet", amount, difficulty: prefs.towerDifficulty };
   }
 }
 
-/** "deal · 0.50", "deal · 3 × 0.50" for three blackjack hands, "play · 0.50 · 3 mines". */
+const plural = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`;
+
+/** What the start key adds after the bet: the choices the round is played with. */
+function startDetail(game: Game, prefs: Prefs): string {
+  switch (game) {
+    case "mines":
+      return ` · ${plural(clampMines(prefs.mines), "mine", "mines")}`;
+    case "dice":
+      return ` · ${prefs.diceOver ? "over" : "under"} ${scaledDecimal(BigInt(diceTarget(prefs.diceChance, prefs.diceOver)), 2)}`;
+    case "limbo":
+      return ` · ×${scaledDecimal(BigInt(prefs.limboTarget), 2)}`;
+    case "flip":
+      return ` · ${clampFlips(prefs.flips)} × ${prefs.flipSide}`;
+    case "keno":
+      return ` · ${plural(prefs.kenoPicks.length, "pick", "picks")}`;
+    case "wheel":
+      return ` · ${prefs.wheelSegments} segments · ${prefs.wheelRisk}`;
+    case "tower":
+      return ` · ${prefs.towerDifficulty}`;
+    default:
+      return "";
+  }
+}
+
+/** "deal · 0.50", "deal · 3 × 0.50" for three blackjack hands, "play · 0.50 · 3 mines", "roll · 0.50 · under 49.00". */
 function startLabel(game: Game, amount: string, prefs: Prefs): string {
   const hands = clampHands(prefs.hands);
   const stake = game === "blackjack" && hands > 1 ? `${hands} × ${formatUsdc(amount)}` : formatUsdc(amount);
-  const mines = clampMines(prefs.mines);
-  const board = game === "mines" ? ` · ${mines} ${mines === 1 ? "mine" : "mines"}` : "";
 
-  return `${START_VERB[game]} · ${stake}${board}`;
+  return `${START_VERB[game]} · ${stake}${startDetail(game, prefs)}`;
 }
 
 const START_VERB: Record<Game, string> = {
@@ -237,7 +493,27 @@ const START_VERB: Record<Game, string> = {
   baccarat: "deal",
   slots: "spin",
   mines: "play",
+  dice: "roll",
+  limbo: "play",
+  flip: "flip",
+  keno: "play",
+  wheel: "spin",
+  hilo: "play",
+  tower: "play",
 };
+
+/** A cash-out key on `z` at the current multiplier: what it returns before Tilt's fee. */
+function cashOutKey(game: "mines" | "hilo" | "tower", stake: string, multiplier: string): KeyAction {
+  const action: PlayAction = { type: `${game}_cashout` };
+
+  return {
+    key: `${game}-cashout`,
+    hotkey: "z",
+    label: `cash out · ${formatUsdc(cashOutPayout(stake, multiplier))}`,
+    isSelected: false,
+    command: { kind: "play", action },
+  };
+}
 
 /** A tile key for every tile still hidden while the board takes a reveal, then `z` to cash out. */
 function minesTurnKeys(detail: MinesView, stake: string): KeyAction[] {
@@ -254,30 +530,65 @@ function minesTurnKeys(detail: MinesView, stake: string): KeyAction[] {
     }));
 
   if (detail.canCashOut) {
-    keys.push({
-      key: "mines-cashout",
-      hotkey: "z",
-      label: `cash out · ${formatUsdc(minesPayout(stake, detail.multiplier))}`,
-      isSelected: false,
-      command: { kind: "play", action: { type: "mines_cashout" } },
-    });
+    keys.push(cashOutKey("mines", stake, detail.multiplier));
   }
 
   return keys;
 }
 
-function playerTurnKeys(state: StateResponse): KeyAction[] {
-  const round = state.round;
-  const detail = round?.detail;
+/** A key per tile of the next level while the tower takes a climb (`a` to `d`), then `z` to cash out. */
+function towerTurnKeys(detail: TowerView, stake: string): KeyAction[] {
+  const tiles = detail.canClimb ? Array.from({ length: detail.tiles }, (_, tile) => tile) : [];
+  const keys: KeyAction[] = tiles
+    .filter((tile) => tile !== detail.pending)
+    .map((tile) => ({
+      key: `${TOWER_TILE_KEY}${tile}`,
+      hotkey: tileLetter(tile),
+      label: TILE_LABEL,
+      isSelected: false,
+      command: { kind: "play", action: { type: "tower_climb", tile } },
+    }));
 
-  if (round && detail?.game === "mines") {
-    return minesTurnKeys(detail, round.stake);
+  if (detail.canCashOut) {
+    keys.push(cashOutKey("tower", stake, detail.multiplier));
   }
 
-  if (detail?.game !== "blackjack") {
-    return [];
+  return keys;
+}
+
+const HILO_KEYS: Record<HiloGuess, string> = { higher: "h", lower: "l", skip: "s" };
+
+/** Higher and lower at what a right guess brings, unless certain; skip while skips are left; `z` cashes out. */
+function hiloTurnKeys(detail: HiloView, stake: string): KeyAction[] {
+  const offers: { guess: HiloGuess; label: string | null }[] = [
+    { guess: "higher", label: detail.higherMultiplier === null ? null : `higher ×${detail.higherMultiplier}` },
+    { guess: "lower", label: detail.lowerMultiplier === null ? null : `lower ×${detail.lowerMultiplier}` },
+    { guess: "skip", label: detail.skipsLeft > 0 ? `skip · ${detail.skipsLeft} left` : null },
+  ];
+  const keys: KeyAction[] = detail.canGuess
+    ? offers.flatMap(({ guess, label }) =>
+        label === null
+          ? []
+          : [
+              {
+                key: `hilo-${guess}`,
+                hotkey: HILO_KEYS[guess],
+                label,
+                isSelected: false,
+                command: { kind: "play", action: { type: "hilo_guess", guess } } as const,
+              },
+            ],
+      )
+    : [];
+
+  if (detail.canCashOut) {
+    keys.push(cashOutKey("hilo", stake, detail.multiplier));
   }
 
+  return keys;
+}
+
+function blackjackTurnKeys(detail: BlackjackView): KeyAction[] {
   const keys: KeyAction[] = [];
   const add = (hotkey: string, label: string, action: PlayAction) =>
     keys.push({ key: `bj-${label}`, hotkey, label, isSelected: false, command: { kind: "play", action } });
@@ -299,19 +610,45 @@ function playerTurnKeys(state: StateResponse): KeyAction[] {
   return keys;
 }
 
+function playerTurnKeys(state: StateResponse): KeyAction[] {
+  const round = state.round;
+
+  switch (round?.detail.game) {
+    case "blackjack":
+      return blackjackTurnKeys(round.detail);
+    case "mines":
+      return minesTurnKeys(round.detail, round.stake);
+    case "hilo":
+      return hiloTurnKeys(round.detail, round.stake);
+    case "tower":
+      return towerTurnKeys(round.detail, round.stake);
+    default:
+      return [];
+  }
+}
+
 const SLOTS_SPEED_KEYS: readonly { hotkey: string; speed: SlotsSpeed }[] = [
   { hotkey: "x", speed: "normal" },
   { hotkey: "f", speed: "fast" },
   { hotkey: "t", speed: "turbo" },
 ];
 
+/** `j` and `k` around a choice: `<address>-down` and `<address>-up`, labelled "mines −" and "mines +". */
+function stepKeys(address: string, command: (step: -1 | 1) => Command): KeyAction[] {
+  const name = STEPPER_NAMES[address] ?? address;
+
+  return [
+    { key: `${address}-down`, hotkey: "j", label: `${name} −`, isSelected: false, command: command(-1) },
+    { key: `${address}-up`, hotkey: "k", label: `${name} +`, isSelected: false, command: command(1) },
+  ];
+}
+
+const settingKeys = (setting: Setting): KeyAction[] => stepKeys(setting, (step) => ({ kind: "step", setting, step }));
+
 function choiceKeys(game: Game, prefs: Prefs): KeyAction[] {
   switch (game) {
     case "blackjack":
-      return [
-        { key: "hands-down", hotkey: "j", label: "hands −", isSelected: false, command: { kind: "hands", step: -1 } },
-        { key: "hands-up", hotkey: "k", label: "hands +", isSelected: false, command: { kind: "hands", step: 1 } },
-      ];
+      return stepKeys("hands", (step) => ({ kind: "hands", step }));
     case "roulette":
       return rouletteKeys(prefs);
     case "baccarat":
@@ -325,10 +662,51 @@ function choiceKeys(game: Game, prefs: Prefs): KeyAction[] {
         command: { kind: "slots-speed", speed },
       }));
     case "mines":
+      return stepKeys("mines", (step) => ({ kind: "mines", step }));
+    case "dice":
       return [
-        { key: "mines-down", hotkey: "j", label: "mines −", isSelected: false, command: { kind: "mines", step: -1 } },
-        { key: "mines-up", hotkey: "k", label: "mines +", isSelected: false, command: { kind: "mines", step: 1 } },
+        ...settingKeys("dice"),
+        {
+          key: "dice-over",
+          hotkey: "o",
+          label: prefs.diceOver ? "roll over" : "roll under",
+          isSelected: false,
+          command: { kind: "dice-over" },
+        },
       ];
+    case "limbo":
+      return settingKeys("limbo");
+    case "flip":
+      return [
+        ...FLIP_SIDES.map((side) => ({
+          key: `flip-${side}`,
+          hotkey: side === "heads" ? "h" : "t",
+          label: side,
+          isSelected: prefs.flipSide === side,
+          command: { kind: "flip-side", side } as const,
+        })),
+        ...settingKeys("flips"),
+      ];
+    case "keno":
+      return [
+        ...settingKeys("keno"),
+        { key: "keno-random", hotkey: "r", label: "random picks", isSelected: false, command: { kind: "keno-random" } },
+      ];
+    case "wheel":
+      return [
+        ...settingKeys("wheel"),
+        {
+          key: "wheel-risk",
+          hotkey: "r",
+          label: `${prefs.wheelRisk} risk`,
+          isSelected: false,
+          command: { kind: "wheel-risk" },
+        },
+      ];
+    case "hilo":
+      return [];
+    case "tower":
+      return settingKeys("tower");
   }
 }
 
@@ -369,6 +747,59 @@ export function planKeys({ state, prefs, isBusy }: PlanInput): KeyAction[] {
 }
 
 /**
+ * The plan, and the keys only a click on the fullscreen table presses: the forty Keno numbers,
+ * while the next round's picks can change. They have no hotkey, so no letter ever presses them.
+ */
+export function tableKeys(input: PlanInput): KeyAction[] {
+  const keys = planKeys(input);
+
+  if (!keys.some((key) => key.key === "keno-random")) {
+    return keys;
+  }
+
+  const picks = input.prefs.kenoPicks;
+  const numbers = Array.from({ length: KENO_NUMBERS }, (_, index) => index + 1);
+
+  return [
+    ...keys,
+    ...numbers.map((number) => ({
+      key: `${KENO_PICK_KEY}${number}`,
+      hotkey: "",
+      label: String(number),
+      isSelected: picks.includes(number),
+      command: { kind: "keno-pick", number } as const,
+    })),
+  ];
+}
+
+/**
+ * The round as it will be once the draw in flight lands, for the keys it will offer: a Mines
+ * reveal, a tower climb or a Hilo card lands back on the player's turn (unless it busts), any
+ * other draw settles the round.
+ */
+function afterDraw(round: RoundView): RoundView {
+  const detail = round.detail;
+  const turn = { ...round, phase: "player_turn" as const };
+
+  switch (detail.game) {
+    case "mines":
+      return {
+        ...turn,
+        detail: { ...detail, canReveal: detail.nextMultiplier !== null, canCashOut: detail.revealed.length > 0 },
+      };
+    case "tower":
+      return {
+        ...turn,
+        detail: { ...detail, canClimb: detail.nextMultiplier !== null, canCashOut: detail.climbed.length > 0 },
+      };
+    case "hilo":
+      return { ...turn, detail: { ...detail, canGuess: true } };
+    default:
+      return { ...round, phase: "idle" };
+  }
+}
+
+/**
  * The play keys a move in flight or a draw holds back, drawn dim and inert in their place: a key
  * no Button of the focused pane takes goes to the prompt, where a mashed Enter would then send
  * "nnnn" to the agent. Empty while play is open, blocked, or the account is not open.
@@ -381,25 +812,9 @@ export function heldKeys({ state, prefs, isBusy }: PlanInput): KeyAction[] {
     return [];
   }
 
-  // A Mines reveal being drawn holds the board's keys, the tiles mashed meanwhile included: the
-  // keys the board offers once the draw lands, unless the tile was a mine.
-  const settled =
-    round?.phase !== "drawing"
-      ? state
-      : round.detail.game === "mines"
-        ? {
-            ...state,
-            round: {
-              ...round,
-              phase: "player_turn" as const,
-              detail: {
-                ...round.detail,
-                canReveal: round.detail.nextMultiplier !== null,
-                canCashOut: round.detail.revealed.length > 0,
-              },
-            },
-          }
-        : { ...state, round: { ...round, phase: "idle" as const } };
+  // A reveal, a climb or a card being drawn holds the board's keys, the ones mashed meanwhile
+  // included: the keys the board offers once the draw lands, unless it busts.
+  const settled = round?.phase !== "drawing" ? state : { ...state, round: afterDraw(round) };
 
   return planKeys({ state: { ...settled, pendingIntentId: null }, prefs, isBusy: false }).filter(
     (key) => key.command.kind !== "switch",

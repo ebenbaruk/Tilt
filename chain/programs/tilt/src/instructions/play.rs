@@ -273,11 +273,12 @@ pub fn slots_spin(mut ctx: Context<Play>, amount: u64, client_seed: [u8; 32]) ->
 /// Relay cron. A draw that never arrived within `round_timeout_secs` is requested again
 /// under a new id (the late answer to the old one, if it ever comes, is refused). A hand
 /// waiting for the player is never closed for them: they come back to it whenever they want.
-/// Blackjack retries must pass the table, like the original request; Mines retries go through
-/// `expire_mines_round`, which calls back with the board.
+/// Blackjack retries must pass the table, like the original request; the games playing on
+/// their own account (Mines, the one-draw games, Hilo, Tower) retry through their own
+/// `expire_*_round`, which calls back with that account.
 pub fn expire_round(mut ctx: Context<Play>, client_seed: [u8; 32]) -> Result<()> {
     let round = &ctx.accounts.account.round;
-    require!(round.game != Game::Mines, TiltError::WrongState);
+    require!(round.game.draws_in_round(), TiltError::WrongState);
     let draw = expired_draw(round, ctx.accounts.vault.config.round_timeout_secs)?;
     request_draw(&mut ctx, draw, client_seed)
 }
@@ -363,6 +364,8 @@ mod tests {
             Draw::Spin,
             Draw::Split,
             Draw::Reveal,
+            Draw::Card,
+            Draw::Climb,
         ] {
             assert_eq!(
                 draw_to_retry(RoundStatus::AwaitingDraw(draw)).unwrap(),

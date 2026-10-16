@@ -1,5 +1,6 @@
 // Indexes the program's rollup activity: RoundSettled events (one per settled round) and every
-// VRF callback (blackjack and mines rounds take several draws, and only the last one is in the event).
+// VRF callback (blackjack, mines, hilo and tower rounds take several draws, and only the last one
+// is in the event).
 // Live feed from `onLogs`, plus a periodic backfill from a signature cursor that catches
 // anything the websocket missed. Never crashes the process: errors are logged and retried.
 import anchor from "@coral-xyz/anchor";
@@ -13,12 +14,22 @@ import { log } from "./log";
 import { isCashout, saveDetail, saveDraw, saveRound, type DrawRecord, type SettledRound } from "./rounds";
 
 const coder = new anchor.BorshCoder(idl as anchor.Idl);
-/** VRF callbacks: blackjack, roulette, baccarat and slots draws, then mines reveals. */
+/** VRF callbacks: blackjack, roulette, baccarat and slots draws, mines reveals, the one-draw
+ *  games' draws (quick table), hilo cards and tower climbs. */
 const CALLBACK_LOGS = [
   "Program log: Instruction: ConsumeRandomness",
   "Program log: Instruction: ConsumeMinesRandomness",
+  "Program log: Instruction: ConsumeQuickRandomness",
+  "Program log: Instruction: ConsumeHiloRandomness",
+  "Program log: Instruction: ConsumeTowerRandomness",
 ];
-const CALLBACKS = new Set(["consume_randomness", "consume_mines_randomness"]);
+const CALLBACKS = new Set([
+  "consume_randomness",
+  "consume_mines_randomness",
+  "consume_quick_randomness",
+  "consume_hilo_randomness",
+  "consume_tower_randomness",
+]);
 const PROGRAM = PROGRAM_ID.toBase58();
 const PROGRAM_DATA = "Program data: ";
 const INVOKE_LOG = /^Program ([1-9A-HJ-NP-Za-km-z]+) invoke \[\d+\]$/;
@@ -56,6 +67,13 @@ const GAMES: Record<string, Game> = {
   Baccarat: "baccarat",
   Slots: "slots",
   Mines: "mines",
+  Dice: "dice",
+  Limbo: "limbo",
+  Flip: "flip",
+  Keno: "keno",
+  Wheel: "wheel",
+  Hilo: "hilo",
+  Tower: "tower",
 };
 
 const bigOf = (v: unknown) => BigInt(String(v));
@@ -111,8 +129,7 @@ export interface RawInstruction {
   data: Buffer;
 }
 
-/** VRF callbacks (`consume_randomness`, `consume_mines_randomness`) among a transaction's
- *  instructions (top level or CPI). */
+/** VRF callbacks (`CALLBACKS`) among a transaction's instructions (top level or CPI). */
 export function decodeCallbacks(instructions: RawInstruction[]): Omit<DrawRecord, "signature">[] {
   const draws: Omit<DrawRecord, "signature">[] = [];
   for (const ix of instructions) {

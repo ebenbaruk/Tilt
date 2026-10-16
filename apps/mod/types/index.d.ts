@@ -3,7 +3,19 @@
 // `unknown` here and checked with the guards in hooks/guards.ts on every read: any plugin can read
 // this state and hook its writes, so the mod does not trust it blindly either.
 
-export type TiltGame = "blackjack" | "roulette" | "baccarat" | "slots" | "mines";
+export type TiltGame =
+  | "blackjack"
+  | "roulette"
+  | "baccarat"
+  | "slots"
+  | "mines"
+  | "dice"
+  | "limbo"
+  | "flip"
+  | "keno"
+  | "wheel"
+  | "hilo"
+  | "tower";
 
 export type TiltAuth =
   | { status: "out"; message: string | null }
@@ -31,6 +43,22 @@ export type TiltPrefs = {
   slotsSpeed: "normal" | "fast" | "turbo";
   /** Mines per board, 1 to 24; absent from prefs stored before Mines. */
   mines?: number;
+  // The games below were added after Mines: absent from prefs stored before them.
+  /** Dice winning count, 100 to 9800 (1 % to 98 % of the rolls). */
+  diceChance?: number;
+  /** Dice wins over the target (true) or under it. */
+  diceOver?: boolean;
+  /** Limbo target multiplier × 100, 101 to 1 000 000. */
+  limboTarget?: number;
+  flipSide?: "heads" | "tails";
+  /** Coins per flip, 1 to 10. */
+  flips?: number;
+  /** Keno numbers picked, 1 to 10 distinct numbers from 1 to 40. */
+  kenoPicks?: unknown;
+  /** Wheel segments: 10, 20, 30, 40 or 50. */
+  wheelSegments?: number;
+  wheelRisk?: "low" | "medium" | "high";
+  towerDifficulty?: "easy" | "medium" | "hard" | "expert" | "master";
 };
 
 /** A move sent to the api and not drawn yet; resent with the same id until it settles. */

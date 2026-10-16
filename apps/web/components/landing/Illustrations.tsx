@@ -168,6 +168,121 @@ export function Fan(props: Props) {
   );
 }
 
+/** A multiplier curve shooting past its target line. */
+export function LimboCurve(props: Props) {
+  return (
+    <svg viewBox="0 0 160 120" aria-hidden="true" focusable="false" {...props}>
+      <rect x="8" y="10" width="144" height="100" rx="16" fill="var(--paper)" {...STROKE} />
+      <path d="M22 56 h116" stroke="var(--orange)" strokeWidth={3} strokeDasharray="8 7" strokeLinecap="round" />
+      <path d="M24 96 C70 94 104 76 124 30" fill="none" {...STROKE} strokeWidth={5} />
+      <path d="M112 30 l14 -6 l2 15" fill="none" {...STROKE} strokeWidth={5} />
+      <text x="30" y="44" fontFamily="var(--font-anton)" fontSize="24" fill="var(--green)">
+        2.00×
+      </text>
+    </svg>
+  );
+}
+
+/** A coin showing heads. */
+export function Coin(props: Props) {
+  return (
+    <svg viewBox="0 0 120 120" aria-hidden="true" focusable="false" {...props}>
+      <circle cx="60" cy="60" r="52" fill="var(--yellow)" {...STROKE} />
+      <circle cx="60" cy="60" r="38" fill="none" {...STROKE} strokeWidth={3} strokeDasharray="6 6" />
+      <text x="60" y="76" textAnchor="middle" fontFamily="var(--font-caprasimo)" fontSize="44" fill={INK}>
+        H
+      </text>
+    </svg>
+  );
+}
+
+/** A keno card: picked numbers, two of them hit. */
+export function KenoCard(props: Props) {
+  const picked = new Set([1, 6, 11, 13]);
+  const hits = new Set([6, 13]);
+  const cells = [0, 1, 2, 3].flatMap((row) => [0, 1, 2, 3].map((col) => ({ x: 34 + col * 24, y: 14 + row * 24 })));
+  return (
+    <svg viewBox="0 0 160 120" aria-hidden="true" focusable="false" {...props}>
+      <rect x="24" y="4" width="112" height="112" rx="16" fill="var(--paper)" {...STROKE} />
+      {cells.map(({ x, y }, i) => (
+        <rect
+          key={i}
+          x={x}
+          y={y}
+          width="20"
+          height="20"
+          rx="5"
+          fill={hits.has(i) ? "var(--orange)" : picked.has(i) ? "var(--yellow)" : "var(--paper)"}
+          {...STROKE}
+          strokeWidth={2.5}
+        />
+      ))}
+    </svg>
+  );
+}
+
+/** A prize wheel with uneven segments and a pointer. */
+export function PrizeWheel(props: Props) {
+  const fills = ["var(--yellow)", "var(--paper)", "var(--green)", "var(--paper)", "var(--orange)"];
+  return (
+    <svg viewBox="0 0 120 120" aria-hidden="true" focusable="false" {...props}>
+      <circle cx="60" cy="64" r="50" fill="var(--paper)" {...STROKE} />
+      {Array.from({ length: 10 }, (_, i) => (
+        <path
+          key={i}
+          d="M60 64 L60 14 A50 50 0 0 1 89.4 23.5 Z"
+          fill={fills[i % fills.length]}
+          stroke={INK}
+          strokeWidth={2}
+          transform={`rotate(${i * 36} 60 64)`}
+        />
+      ))}
+      <circle cx="60" cy="64" r="10" fill="var(--sky)" {...STROKE} strokeWidth={3} />
+      <path d="M50 4 h20 l-10 16 z" fill="var(--orange)" {...STROKE} strokeWidth={3} />
+    </svg>
+  );
+}
+
+/** A card between a higher and a lower arrow. */
+export function HiloCard(props: Props) {
+  return (
+    <svg viewBox="0 0 160 120" aria-hidden="true" focusable="false" {...props}>
+      <rect x="50" y="12" width="60" height="96" rx="10" fill="var(--paper)" {...STROKE} />
+      <text x="80" y="74" textAnchor="middle" fontFamily="var(--font-caprasimo)" fontSize="38" fill="var(--orange)">
+        7
+      </text>
+      <path d="M26 50 l12 -16 l12 16 z" fill="var(--green)" {...STROKE} strokeWidth={3} />
+      <path d="M110 70 l12 16 l12 -16 z" fill="var(--yellow)" {...STROKE} strokeWidth={3} />
+    </svg>
+  );
+}
+
+/** A tower of tile rows: the lower levels climbed, the top still to pick. */
+export function Tower(props: Props) {
+  // Tile picked on each row, top to bottom: the top row is still to climb.
+  const climbed = [null, 2, 0];
+  return (
+    <svg viewBox="0 0 160 120" aria-hidden="true" focusable="false" {...props}>
+      <rect x="28" y="6" width="104" height="108" rx="16" fill="var(--paper)" {...STROKE} />
+      {climbed.flatMap((picked, row) =>
+        [0, 1, 2].map((col) => (
+          <rect
+            key={`${row}-${col}`}
+            x={40 + col * 28}
+            y={18 + row * 32}
+            width="24"
+            height="22"
+            rx="6"
+            fill={col === picked ? "var(--green)" : "var(--yellow)"}
+            {...STROKE}
+            strokeWidth={3}
+          />
+        )),
+      )}
+    </svg>
+  );
+}
+
 /** A friendly terminal: where Tilt lives. */
 export function Terminal(props: Props) {
   return (

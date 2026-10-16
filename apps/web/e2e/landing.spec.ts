@@ -30,12 +30,21 @@ test("landing shows the pitch, install commands and key sections", async ({ page
     ["Baccarat", "98.94%"],
     ["Slots", "96.16%"],
     ["Mines", "99.00%"],
+    ["Dice", "98.00%"],
+    ["Limbo", "98.00%"],
+    ["Flip", "98.00%"],
+    ["Keno", "98.00%"],
+    ["Wheel", "98.00%"],
+    ["Hilo", "98.00%"],
+    ["Tower", "98.00%"],
   ]) {
     await expect(page.locator("#games li", { hasText: game })).toContainText(rtp);
   }
   await expect(page.getByText("1% of the gain, on winning rounds only")).toBeVisible();
   const panel = page.getByRole("region", { name: "Tilt panel" });
   await expect(panel).toContainText("[5] Mines");
+  await expect(panel).toContainText("[9] Keno");
+  await expect(panel).toContainText("[0] more 1/2");
   await expect(panel).toContainText("Hit, stand or double.");
   // The mock must stay monospace whatever font the landing uses.
   expect(await panel.evaluate((el) => getComputedStyle(el).fontFamily)).toMatch(/JetBrains|mono/i);

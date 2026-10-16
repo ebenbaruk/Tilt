@@ -7,6 +7,13 @@ export type RouletteDetail = Extract<Detail, { game: "roulette" }>;
 export type BaccaratDetail = Extract<Detail, { game: "baccarat" }>;
 export type SlotsDetail = Extract<Detail, { game: "slots" }>;
 export type MinesDetail = Extract<Detail, { game: "mines" }>;
+export type DiceDetail = Extract<Detail, { game: "dice" }>;
+export type LimboDetail = Extract<Detail, { game: "limbo" }>;
+export type FlipDetail = Extract<Detail, { game: "flip" }>;
+export type KenoDetail = Extract<Detail, { game: "keno" }>;
+export type WheelDetail = Extract<Detail, { game: "wheel" }>;
+export type HiloDetail = Extract<Detail, { game: "hilo" }>;
+export type TowerDetail = Extract<Detail, { game: "tower" }>;
 export type Card = BlackjackDetail["dealer"][number];
 export type BlackjackHand = BlackjackDetail["hands"][number];
 export type RouletteBet = RouletteDetail["bet"];
@@ -17,7 +24,19 @@ export const GAME_NAMES: Record<Game, string> = {
   baccarat: "Baccarat",
   slots: "Slots",
   mines: "Mines",
+  dice: "Dice",
+  limbo: "Limbo",
+  flip: "Flip",
+  keno: "Keno",
+  wheel: "Wheel",
+  hilo: "Hilo",
+  tower: "Tower",
 };
+
+/** An on-chain count of hundredths (dice roll 0–9999, target, chance) as "7.25". Integer math, no floats. */
+export function hundredths(value: number): string {
+  return `${Math.floor(value / 100)}.${String(value % 100).padStart(2, "0")}`;
+}
 
 export function describeRouletteBet(bet: RouletteBet): string {
   switch (bet.kind) {

@@ -1,6 +1,7 @@
 // Port of `games/mines.rs`: a 5×5 board, `mines` mines, no layout drawn in advance. Each reveal
 // draws fresh randomness: with `k` tiles already revealed (all safe) the clicked tile is a mine
 // iff `below(25 − k) < mines`, which is distributed exactly like a uniformly random layout.
+import { formatFixed, MULTIPLIER_DECIMALS, MULTIPLIER_SCALE } from "./decimal";
 import type { Rng } from "./rng";
 
 export const TILES = 25;
@@ -11,8 +12,6 @@ export const NO_TILE = 255;
 /** House edge of 1%: the multiplier is 99/100 of the fair odds. */
 const EDGE_NUMERATOR = 99n;
 const EDGE_DENOMINATOR = 100n;
-/** Display precision of a multiplier: 4 decimals. */
-const MULTIPLIER_SCALE = 10_000n;
 
 /** Safe tiles on a board with `mines` mines: revealing them all clears the board. */
 export const safeTiles = (mines: number) => TILES - mines;
@@ -54,10 +53,7 @@ export const canRevealMore = (stake: bigint, mines: number, revealed: number, ga
 export const isMine = (rng: Rng, mines: number, revealed: number) => rng.below(TILES - revealed) < mines;
 
 /** A multiplier in units of 1/10 000, rounded down, as "1.0312". */
-export function formatMultiplier(scaled: bigint): string {
-  const fraction = (scaled % MULTIPLIER_SCALE).toString().padStart(4, "0");
-  return `${scaled / MULTIPLIER_SCALE}.${fraction}`;
-}
+export const formatMultiplier = (scaled: bigint) => formatFixed(scaled, MULTIPLIER_DECIMALS);
 
 /** The multiplier a cash-out after `revealed` tiles pays, in units of 1/10 000 (round cap
  *  included); 1 before any reveal. */

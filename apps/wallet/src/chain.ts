@@ -3,10 +3,13 @@
 import anchor from "@coral-xyz/anchor";
 import type { IdlAccounts, IdlTypes, Program as ProgramT } from "@coral-xyz/anchor";
 import { createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { Connection, Keypair, PublicKey, Transaction } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey, Transaction, type TransactionInstruction } from "@solana/web3.js";
 import {
   type Action,
   type ErrorCode,
+  type FlipSide,
+  hiloBoardAddress,
+  type HiloGuess,
   idl,
   ledgerAddress,
   minesBoardAddress,
@@ -15,10 +18,14 @@ import {
   promoAddress,
   promoPayoutAddress,
   promoTokenAddress,
+  quickTableAddress,
   tableAddress,
   type Tilt,
+  towerBoardAddress,
+  type TowerDifficulty,
   vaultAddress,
   vaultTokenAddress,
+  type WheelRisk,
 } from "@tilt/contract";
 import { randomBytes } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -38,17 +45,39 @@ const isBlackjack = (action: RollupAction) => action.type.startsWith("blackjack_
 
 /** Per-player game accounts the rollup must hold before that game's first move: opened and
  *  delegated on Solana by the relayer, never closed. */
-type GameAccount = "table" | "board";
+type GameAccount = "table" | "quick" | "mines" | "hilo" | "tower";
 const GAME_ACCOUNTS: Record<GameAccount, { label: string; address: (player: PublicKey) => PublicKey }> = {
   table: { label: "blackjack table", address: tableAddress },
-  board: { label: "mines board", address: minesBoardAddress },
+  quick: { label: "one-draw table", address: quickTableAddress },
+  mines: { label: "mines board", address: minesBoardAddress },
+  hilo: { label: "hilo board", address: hiloBoardAddress },
+  tower: { label: "tower board", address: towerBoardAddress },
 };
 
-function gameAccountOf(action: RollupAction): GameAccount | undefined {
-  if (isBlackjack(action)) return "table";
-  if (action.type.startsWith("mines_")) return "board";
-  return undefined;
-}
+/** The account each game plays on, by game name (the program's `Game` variant, and the prefix of
+ *  its actions). Roulette, baccarat and slots play on the player account alone. */
+const GAME_ACCOUNT_OF: Partial<Record<string, GameAccount>> = {
+  blackjack: "table",
+  dice: "quick",
+  limbo: "quick",
+  flip: "quick",
+  keno: "quick",
+  wheel: "quick",
+  mines: "mines",
+  hilo: "hilo",
+  tower: "tower",
+};
+
+const FLIP_SIDE: Record<FlipSide, IdlTypes<Tilt>["coinSide"]> = { heads: { heads: {} }, tails: { tails: {} } };
+const WHEEL_RISK: Record<WheelRisk, IdlTypes<Tilt>["wheelRisk"]> = { low: { low: {} }, medium: { medium: {} }, high: { high: {} } };
+const HILO_MOVE: Record<HiloGuess, IdlTypes<Tilt>["hiloMove"]> = { higher: { higher: {} }, lower: { lower: {} }, skip: { skip: {} } };
+const TOWER_DIFFICULTY: Record<TowerDifficulty, IdlTypes<Tilt>["towerDifficulty"]> = {
+  easy: { easy: {} },
+  medium: { medium: {} },
+  hard: { hard: {} },
+  expert: { expert: {} },
+  master: { master: {} },
+};
 
 /** A refusal the API can show to the player, e.g. the program's "InsufficientBalance". */
 export class IntentError extends Error {
@@ -252,13 +281,14 @@ export class TiltChain {
     return this.sendBase(new Transaction().add(ix), record, { wallet, players });
   }
 
-  /** A round action or a withdrawal, in the rollup. Blackjack needs the player's table and
-   *  Mines their board, opened first on the player's first move of that game. A move past the
+  /** A round action or a withdrawal, in the rollup. Blackjack needs the player's table and the
+   *  other games but roulette, baccarat and slots their own account (one-draw table, Mines, Hilo
+   *  or Tower board), opened first on the player's first move of that game. A move past the
    *  player's win cap is sent again once Solana has raised the cap from the free bankroll (the
    *  rolling win cap). */
   async play(player: PublicKey, action: RollupAction, record: RecordSend): Promise<string> {
     if (!(await this.isOpen(player))) throw new IntentError("ACCOUNT_NOT_OPEN", "no account yet: deposit first");
-    const gameAccount = gameAccountOf(action);
+    const gameAccount = GAME_ACCOUNT_OF[action.type.split("_")[0]];
     if (gameAccount) await this.ensureGameAccount(player, gameAccount);
     try {
       return await this.sendRollup(await this.playTransaction(player, action), record);
@@ -294,18 +324,34 @@ export class TiltChain {
   }
 
   /** Relay cron: requests again the draw of a round stuck waiting for it. A blackjack draw
-   *  writes to the table and a Mines reveal to the board, so they are passed along. */
+   *  writes to the table and the games with their own account call back with it, so it is
+   *  passed along. */
   async expireRound(player: PublicKey, game: Game): Promise<string> {
     const m = this.rollupProgram.methods;
-    const tx = "mines" in game
-      ? await m.expireMinesRound(seed()).accountsPartial(this.minesAccounts(player)).transaction()
-      : await m.expireRound(seed()).accountsPartial(this.playAccounts(player, "blackjack" in game)).transaction();
+    const kind = GAME_ACCOUNT_OF[Object.keys(game)[0]];
+    let tx: Transaction;
+    switch (kind) {
+      case "quick":
+        tx = await m.expireQuickRound(seed()).accountsPartial(this.quickAccounts(player)).transaction();
+        break;
+      case "mines":
+        tx = await m.expireMinesRound(seed()).accountsPartial(this.boardAccounts(player, "mines")).transaction();
+        break;
+      case "hilo":
+        tx = await m.expireHiloRound(seed()).accountsPartial(this.boardAccounts(player, "hilo")).transaction();
+        break;
+      case "tower":
+        tx = await m.expireTowerRound(seed()).accountsPartial(this.boardAccounts(player, "tower")).transaction();
+        break;
+      default:
+        tx = await m.expireRound(seed()).accountsPartial(this.playAccounts(player, kind === "table")).transaction();
+    }
     return this.sendRollup(tx, withoutRecord);
   }
 
-  /** Makes sure the rollup holds the player's blackjack table or Mines board. Idempotent: an
-   *  account already on Solana is not opened again, only waited for. Nothing of the player's
-   *  moves in here, so any failure is TABLE_NOT_READY and the action can simply be sent again. */
+  /** Makes sure the rollup holds the player's game account. Idempotent: an account already on
+   *  Solana is not opened again, only waited for. Nothing of the player's moves in here, so any
+   *  failure is TABLE_NOT_READY and the action can simply be sent again. */
   async ensureGameAccount(player: PublicKey, kind: GameAccount): Promise<void> {
     const key = `${kind}:${player.toBase58()}`;
     if (this.gameAccountsReady.has(key)) return;
@@ -313,7 +359,7 @@ export class TiltChain {
     try {
       if (!(await this.rollupHolds(address))) {
         if ((await this.base.getAccountInfo(address)) === null) {
-          const instructions = kind === "table" ? await this.tableInstructions(player) : await this.minesBoardInstructions(player);
+          const instructions = await this.gameAccountInstructions(player, kind);
           await this.sendBase(new Transaction().add(...instructions), withoutRecord);
         }
         await this.waitForRollup(address);
@@ -377,14 +423,27 @@ export class TiltChain {
     };
   }
 
-  /** Mines moves: the board instead of the optional table. */
-  private minesAccounts(player: PublicKey) {
+  /** Moves of the games with their own board (Mines, Hilo, Tower): the board instead of the
+   *  optional table. */
+  private boardAccounts(player: PublicKey, kind: "mines" | "hilo" | "tower") {
     return {
       vault: this.vault,
       payer: this.relayer.publicKey,
       account: playerAccountAddress(player),
       ledger: ledgerAddress(player),
-      board: minesBoardAddress(player),
+      board: GAME_ACCOUNTS[kind].address(player),
+      oracleQueue: this.vrfQueue,
+    };
+  }
+
+  /** One-draw games: the player's one-draw table instead of the optional blackjack table. */
+  private quickAccounts(player: PublicKey) {
+    return {
+      vault: this.vault,
+      payer: this.relayer.publicKey,
+      account: playerAccountAddress(player),
+      ledger: ledgerAddress(player),
+      quick: quickTableAddress(player),
       oracleQueue: this.vrfQueue,
     };
   }
@@ -398,13 +457,25 @@ export class TiltChain {
     ];
   }
 
-  /** open_mines_board + delegate_mines_board, paid by the relayer like the table. */
-  private async minesBoardInstructions(player: PublicKey) {
-    const accounts = { vault: this.vault, payer: this.relayer.publicKey, player, ledger: ledgerAddress(player), board: minesBoardAddress(player) };
-    return [
-      await this.program.methods.openMinesBoard().accountsPartial(accounts).instruction(),
-      await this.program.methods.delegateMinesBoard().accountsPartial(accounts).instruction(),
-    ];
+  /** open_* + delegate_* of a game account, paid by the relayer like the table. */
+  private async gameAccountInstructions(player: PublicKey, kind: GameAccount): Promise<TransactionInstruction[]> {
+    const m = this.program.methods;
+    const base = { vault: this.vault, payer: this.relayer.publicKey, player, ledger: ledgerAddress(player) };
+    const board = { ...base, board: GAME_ACCOUNTS[kind].address(player) };
+    switch (kind) {
+      case "table":
+        return this.tableInstructions(player);
+      case "quick": {
+        const quick = { ...base, quick: quickTableAddress(player) };
+        return [await m.openQuickTable().accountsPartial(quick).instruction(), await m.delegateQuickTable().accountsPartial(quick).instruction()];
+      }
+      case "mines":
+        return [await m.openMinesBoard().accountsPartial(board).instruction(), await m.delegateMinesBoard().accountsPartial(board).instruction()];
+      case "hilo":
+        return [await m.openHiloBoard().accountsPartial(board).instruction(), await m.delegateHiloBoard().accountsPartial(board).instruction()];
+      case "tower":
+        return [await m.openTowerBoard().accountsPartial(board).instruction(), await m.delegateTowerBoard().accountsPartial(board).instruction()];
+    }
   }
 
   /** The rollup holds a delegated account as owned by the program again. */
@@ -442,11 +513,33 @@ export class TiltChain {
       case "slots_spin":
         return m.slotsSpin(new BN(action.amount), seed()).accountsPartial(accounts).transaction();
       case "mines_bet":
-        return m.minesBet(new BN(action.amount), action.mines).accountsPartial(this.minesAccounts(player)).transaction();
+        return m.minesBet(new BN(action.amount), action.mines).accountsPartial(this.boardAccounts(player, "mines")).transaction();
       case "mines_reveal":
-        return m.minesReveal(action.tile, seed()).accountsPartial(this.minesAccounts(player)).transaction();
+        return m.minesReveal(action.tile, seed()).accountsPartial(this.boardAccounts(player, "mines")).transaction();
       case "mines_cashout":
-        return m.minesCashout().accountsPartial(this.minesAccounts(player)).transaction();
+        return m.minesCashout().accountsPartial(this.boardAccounts(player, "mines")).transaction();
+      case "dice_roll":
+        return m.diceRoll(new BN(action.amount), action.target, action.over, seed()).accountsPartial(this.quickAccounts(player)).transaction();
+      case "limbo_play":
+        return m.limboPlay(new BN(action.amount), action.target, seed()).accountsPartial(this.quickAccounts(player)).transaction();
+      case "flip_play":
+        return m.flipPlay(new BN(action.amount), FLIP_SIDE[action.side], action.flips, seed()).accountsPartial(this.quickAccounts(player)).transaction();
+      case "keno_play":
+        return m.kenoPlay(new BN(action.amount), Buffer.from(action.picks), seed()).accountsPartial(this.quickAccounts(player)).transaction();
+      case "wheel_spin":
+        return m.wheelSpin(new BN(action.amount), action.segments, WHEEL_RISK[action.risk], seed()).accountsPartial(this.quickAccounts(player)).transaction();
+      case "hilo_bet":
+        return m.hiloBet(new BN(action.amount), seed()).accountsPartial(this.boardAccounts(player, "hilo")).transaction();
+      case "hilo_guess":
+        return m.hiloGuess(HILO_MOVE[action.guess], seed()).accountsPartial(this.boardAccounts(player, "hilo")).transaction();
+      case "hilo_cashout":
+        return m.hiloCashout().accountsPartial(this.boardAccounts(player, "hilo")).transaction();
+      case "tower_bet":
+        return m.towerBet(new BN(action.amount), TOWER_DIFFICULTY[action.difficulty]).accountsPartial(this.boardAccounts(player, "tower")).transaction();
+      case "tower_climb":
+        return m.towerClimb(action.tile, seed()).accountsPartial(this.boardAccounts(player, "tower")).transaction();
+      case "tower_cashout":
+        return m.towerCashout().accountsPartial(this.boardAccounts(player, "tower")).transaction();
       case "withdraw": {
         const vault = await this.fetchVault();
         return m.withdraw(new BN(action.amount))

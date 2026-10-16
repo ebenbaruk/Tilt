@@ -238,38 +238,8 @@ pub fn consume_mines_randomness(
 mod tests {
     use super::*;
     use crate::games::mines::{gross_uncapped, TILES};
+    use crate::instructions::testing::{account, config};
     use crate::settlement::settle;
-
-    fn config() -> Config {
-        Config {
-            min_bet: 106,
-            max_bet: 1_000_000,
-            max_round_gain: 50_000_000,
-            max_player_win: 100_000_000,
-            max_win_multiple: 10,
-            onboarding_fee: 0,
-            min_deposit: 2,
-            min_withdrawal: 1,
-            max_withdrawal: 1_000,
-            player_daily_cap: 1_000,
-            daily_cap: 1_000,
-            round_timeout_secs: 60,
-            validator: Pubkey::new_unique(),
-            vrf_queue: Pubkey::new_unique(),
-            deposits_paused: false,
-            bets_paused: false,
-            payouts_paused: false,
-        }
-    }
-
-    fn account() -> PlayerAccount {
-        PlayerAccount {
-            credited: 10_000_000,
-            balance: 10_000_000,
-            max_win: 100_000_000,
-            ..PlayerAccount::default()
-        }
-    }
 
     /// A round of 1 000 000 on `mines` mines, waiting for the player.
     fn started(mines: u8) -> (PlayerAccount, MinesBoard) {

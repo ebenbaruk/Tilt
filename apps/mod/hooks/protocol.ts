@@ -4,7 +4,19 @@
 // Amounts are integer USDC base units (6 decimals) as decimal strings, never floats.
 
 export type Amount = string;
-export type Game = "blackjack" | "roulette" | "baccarat" | "slots" | "mines";
+export type Game =
+  | "blackjack"
+  | "roulette"
+  | "baccarat"
+  | "slots"
+  | "mines"
+  | "dice"
+  | "limbo"
+  | "flip"
+  | "keno"
+  | "wheel"
+  | "hilo"
+  | "tower";
 
 /** Same shape as `RouletteBet` in `@tilt/contract` (relay schema). */
 export type RouletteBet =
@@ -19,6 +31,13 @@ export type RouletteBet =
   | { kind: "column"; column: 1 | 2 | 3 };
 
 export type BaccaratBet = "player" | "banker" | "tie";
+
+export type FlipSide = "heads" | "tails";
+export type WheelRisk = "low" | "medium" | "high";
+/** Higher: the next rank is ≥ the current one. Lower: ≤. Skip: a new card, the multiplier unchanged. */
+export type HiloGuess = "higher" | "lower" | "skip";
+/** Tiles per level and safe tiles among them: easy 4/3, medium 3/2, hard 2/1, expert 3/1, master 4/1. */
+export type TowerDifficulty = "easy" | "medium" | "hard" | "expert" | "master";
 
 /** Game moves only. Deposits, withdrawals and account opening are web-only (spec §10.5). */
 export type PlayAction =
@@ -37,7 +56,32 @@ export type PlayAction =
   /** Reveals tile 0 to 24 (row × 5 + column), one not revealed yet. */
   | { type: "mines_reveal"; tile: number }
   /** Takes the current multiplier; needs at least one safe tile. */
-  | { type: "mines_cashout" };
+  | { type: "mines_cashout" }
+  /**
+   * Rolls 00.00 to 99.99 (`roll` 0 to 9999). Under wins iff roll < target, over iff roll ≥ target;
+   * the winning count (target, or 10000 − target) is 100 to 9800 (1 % to 98 %).
+   */
+  | { type: "dice_roll"; amount: Amount; target: number; over: boolean }
+  /** `target` is the multiplier × 100, 101 to 1 000 000 (1.01× to 10 000×). */
+  | { type: "limbo_play"; amount: Amount; target: number }
+  /** Wins iff every one of `flips` coins (1 to 10) lands on `side`. */
+  | { type: "flip_play"; amount: Amount; side: FlipSide; flips: number }
+  /** 1 to 10 distinct numbers from 1 to 40; ten are drawn. */
+  | { type: "keno_play"; amount: Amount; picks: number[] }
+  /** `segments` is 10, 20, 30, 40 or 50. */
+  | { type: "wheel_spin"; amount: Amount; segments: number; risk: WheelRisk }
+  /** Starts a Hilo round and draws its first card. */
+  | { type: "hilo_bet"; amount: Amount }
+  /** A guess on the next card; a certain one (higher on an ace, lower on a king) is refused. */
+  | { type: "hilo_guess"; guess: HiloGuess }
+  /** Takes the current multiplier; needs at least one right guess. */
+  | { type: "hilo_cashout" }
+  /** Opens a 9-level tower; no draw until the first climb. */
+  | { type: "tower_bet"; amount: Amount; difficulty: TowerDifficulty }
+  /** Picks tile 0 to tiles − 1 of the current level. */
+  | { type: "tower_climb"; tile: number }
+  /** Takes the current multiplier; needs at least one level climbed. */
+  | { type: "tower_cashout" };
 
 // ---- Auth: device-code login (`/tilt login`) ----
 
@@ -75,7 +119,7 @@ export type RoundPhase =
   | "idle"
   /** Waiting for the VRF draw; poll again shortly. */
   | "drawing"
-  /** Blackjack: waiting for hit, stand, double or split. Mines: waiting for a reveal or a cash-out. */
+  /** Blackjack: waiting for hit, stand, double or split. Mines, Hilo, Tower: waiting for a move or a cash-out. */
   | "player_turn";
 
 /** How a blackjack hand ended against the dealer; null until the round is settled. */
@@ -148,6 +192,93 @@ export interface MinesView {
   canReveal: boolean;
 }
 
+export interface DiceView {
+  game: "dice";
+  /** 100 to 9900, in hundredths of the roll. */
+  target: number;
+  over: boolean;
+  /** 0 to 9999 (shown as 00.00 to 99.99) once settled. */
+  roll: number | null;
+  /** Payout multiplier on a win, 4 decimals ("1.9600"). */
+  multiplier: string;
+}
+
+export interface LimboView {
+  game: "limbo";
+  /** Multipliers with 2 decimals: "2.00". */
+  target: string;
+  result: string | null;
+}
+
+export interface FlipView {
+  game: "flip";
+  side: FlipSide;
+  flips: number;
+  /** One per coin once settled. */
+  results: FlipSide[] | null;
+  /** Payout multiplier on a win, 4 decimals. */
+  multiplier: string;
+}
+
+export interface KenoView {
+  game: "keno";
+  /** 1 to 10 distinct numbers from 1 to 40. */
+  picks: number[];
+  /** The ten numbers drawn, once settled. */
+  drawn: number[] | null;
+  hits: number | null;
+  /** Multiplier for 0 to picks.length hits, 2 decimals ("0.00", "3.50"). */
+  paytable: string[];
+}
+
+export interface WheelView {
+  game: "wheel";
+  segments: number;
+  risk: WheelRisk;
+  /** One per segment, 2 decimals. */
+  multipliers: string[];
+  /** Landed segment once settled. */
+  segment: number | null;
+}
+
+export interface HiloView {
+  game: "hilo";
+  /** Cards in draw order; empty while the first one is drawn. */
+  cards: Card[];
+  /** One per card after the first: the guess that drew it. */
+  guesses: HiloGuess[];
+  /** Guess awaiting its draw, null when none. */
+  pending: HiloGuess | null;
+  /** Current multiplier, 4 decimals; "0.9800" before any right guess. */
+  multiplier: string;
+  /** Multiplier after a right guess, null when that guess is refused. */
+  higherMultiplier: string | null;
+  lowerMultiplier: string | null;
+  skipsLeft: number;
+  canGuess: boolean;
+  canCashOut: boolean;
+  busted: boolean;
+}
+
+export interface TowerView {
+  game: "tower";
+  difficulty: TowerDifficulty;
+  tiles: number;
+  levels: 9;
+  /** Tile picked on each safe level, bottom first. */
+  climbed: number[];
+  /** Tile awaiting its draw on the next level, null when none. */
+  pending: number | null;
+  /** Tile picked on the level that busted, null otherwise. */
+  busted: number | null;
+  /** Current multiplier, 4 decimals; "1.0000" before any level. */
+  multiplier: string;
+  /** Multiplier the next safe level would bring, null when no climb is left. */
+  nextMultiplier: string | null;
+  canClimb: boolean;
+  canCashOut: boolean;
+}
+
 export interface RoundView {
   phase: RoundPhase;
   stake: Amount;
@@ -161,7 +292,19 @@ export interface RoundView {
   number: number;
   /** Signature of the settling transaction, once indexed. */
   settledSignature: string | null;
-  detail: BlackjackView | RouletteView | BaccaratView | SlotsView | MinesView;
+  detail:
+    | BlackjackView
+    | RouletteView
+    | BaccaratView
+    | SlotsView
+    | MinesView
+    | DiceView
+    | LimboView
+    | FlipView
+    | KenoView
+    | WheelView
+    | HiloView
+    | TowerView;
 }
 
 export interface SponsorView {

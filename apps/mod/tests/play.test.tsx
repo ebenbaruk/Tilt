@@ -1,7 +1,7 @@
 import { describe, expect, test } from "claude-code/testing";
 
-import type { PlayRequest } from "../hooks/protocol";
-import { BACCARAT, BASE, BLACKJACK_TURN, BLACKJACK_WIN, ROULETTE } from "./fixtures";
+import type { PlayAction, PlayRequest } from "../hooks/protocol";
+import { BACCARAT, BASE, BLACKJACK_TURN, BLACKJACK_WIN, HILO_TURN, ROULETTE, TOWER_TURN } from "./fixtures";
 import {
   BAND,
   FIRST_TICK_MS,
@@ -128,6 +128,93 @@ describe("keys send moves", () => {
     await ui.press({ key: "bj-hit" });
 
     expect((world.calls("POST /v1/play")[0]?.body as PlayRequest).action).toEqual({ type: "blackjack_hit" });
+  });
+});
+
+describe("each new game sends its own move", () => {
+  const plays: [string, string[], PlayAction][] = [
+    [
+      "dice: o rolls over, k a higher chance",
+      ["game-dice", "dice-over", "dice-up"],
+      { type: "dice_roll", amount: "500000", target: 3400, over: true },
+    ],
+    [
+      "limbo: k twice for ×5",
+      ["game-limbo", "limbo-up", "limbo-up"],
+      { type: "limbo_play", amount: "500000", target: 500 },
+    ],
+    [
+      "flip: t for tails, k twice for three coins",
+      ["game-flip", "flip-tails", "flips-up", "flips-up"],
+      { type: "flip_play", amount: "500000", side: "tails", flips: 3 },
+    ],
+    [
+      "keno: j drops a pick",
+      ["game-keno", "keno-down"],
+      { type: "keno_play", amount: "500000", picks: [4, 12, 19, 27] },
+    ],
+    [
+      "wheel: 0 to its page, k for 20 segments, r twice for high risk",
+      ["game-page", "wheel-up", "wheel-risk", "wheel-risk"],
+      { type: "wheel_spin", amount: "500000", segments: 20, risk: "high" },
+    ],
+    ["hilo: 0 then 2", ["game-page", "game-hilo"], { type: "hilo_bet", amount: "500000" }],
+    [
+      "tower: 0 then 3, k twice for hard",
+      ["game-page", "game-tower", "tower-up", "tower-up"],
+      { type: "tower_bet", amount: "500000", difficulty: "hard" },
+    ],
+  ];
+
+  for (const [name, presses, action] of plays) {
+    test(name, async ($, on) => {
+      const { world } = await seat($, on, BASE, { "POST /v1/play": answering(SUBMITTED) });
+      const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
+
+      for (const key of presses) {
+        await ui.press({ key });
+      }
+
+      await ui.press({ key: "start" });
+
+      expect(world.calls("POST /v1/play").map((call) => (call.body as PlayRequest).action)).toEqual([action]);
+    });
+  }
+
+  test("r picks five new keno numbers, all distinct", async ($, on) => {
+    const { world } = await seat($, on, BASE, { "POST /v1/play": answering(SUBMITTED) });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
+
+    await ui.press({ key: "game-keno" });
+    await ui.press({ key: "keno-random" });
+    await ui.press({ key: "start" });
+
+    const sent = (world.calls("POST /v1/play")[0]?.body as PlayRequest).action;
+    const picks = sent.type === "keno_play" ? sent.picks : [];
+
+    expect(new Set(picks).size).toBe(5);
+    expect(picks.every((pick) => Number.isInteger(pick) && pick >= 1 && pick <= 40)).toBe(true);
+  });
+
+  test("a climbs onto the first tile of the next tower level", async ($, on) => {
+    const { world } = await seat($, on, TOWER_TURN, { "POST /v1/play": answering(SUBMITTED) });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
+
+    await ui.press({ key: "tower-tile-0" });
+
+    expect((world.calls("POST /v1/play")[0]?.body as PlayRequest).action).toEqual({ type: "tower_climb", tile: 0 });
+  });
+
+  test("l guesses lower in a hilo turn", async ($, on) => {
+    const { world } = await seat($, on, HILO_TURN, { "POST /v1/play": answering(SUBMITTED) });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
+
+    await ui.press({ key: "hilo-lower" });
+
+    expect((world.calls("POST /v1/play")[0]?.body as PlayRequest).action).toEqual({
+      type: "hilo_guess",
+      guess: "lower",
+    });
   });
 });
 

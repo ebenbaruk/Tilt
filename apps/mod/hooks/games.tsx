@@ -2,7 +2,7 @@
 import type { RenderElement } from "claude-code";
 
 import { type CardSize, handCards, handRow } from "./cards";
-import { cleanText, formatUsdc, minesPayout, pocketColor, rouletteBetLabel } from "./format";
+import { cashOutPayout, cleanText, formatUsdc, pocketColor, rouletteBetLabel } from "./format";
 import { MINES_COLUMNS, tileLetter } from "./keys";
 import type { Prefs } from "./model";
 import type { RoundView } from "./protocol";
@@ -341,8 +341,14 @@ const HIDDEN_GLYPH = "·";
 /** A tile awaiting its draw turns through these, one per spinner frame. */
 const PENDING_GLYPHS = ["◐", "◓", "◑", "◒"];
 
-/** The Button a tile is pressed with where the drawing has one for it (live or held); null draws it still. */
-export type TileButton = (tile: number) => RenderElement | null;
+/** A Mines tile or a tower tile being drawn, at this frame. */
+export const pendingGlyph = (frame: number): string => PENDING_GLYPHS[frame % PENDING_GLYPHS.length] ?? HIDDEN_GLYPH;
+
+/**
+ * The Button a tile (or a Keno number) is pressed with where the drawing has one for it, live or
+ * held; null draws it still. `face` is what the drawing shows there: a Button made for it wraps it.
+ */
+export type TileButton = (tile: number, face: RenderElement) => RenderElement | null;
 
 /**
  * The 5 × 5 Mines board and its multipliers. In play a hidden tile is its key (or its letter, dim,
@@ -376,10 +382,10 @@ export function minesTable(
     }
 
     if (detail?.pending === tile) {
-      return glyph(PENDING_GLYPHS[frame % PENDING_GLYPHS.length] ?? HIDDEN_GLYPH, PINK);
+      return glyph(pendingGlyph(frame), PINK);
     }
 
-    const button = isOpen ? tileButton(tile) : null;
+    const button = isOpen ? tileButton(tile, <Text dimColor>{tileLetter(tile)}</Text>) : null;
 
     return button === null ? (
       <Text dimColor>{(isOpen ? tileLetter(tile) : HIDDEN_GLYPH).padStart(TILE_COLUMNS)}</Text>
@@ -442,7 +448,7 @@ export function minesTable(
           <Text color={FG4}>
             cash out{" "}
             <Text color={GOLD} bold>
-              {formatUsdc(minesPayout(round.stake, detail.multiplier))}
+              {formatUsdc(cashOutPayout(round.stake, detail.multiplier))}
             </Text>
           </Text>
         )}

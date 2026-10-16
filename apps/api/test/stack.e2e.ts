@@ -21,11 +21,13 @@ import type {
   BlackjackView,
   DeviceStartResponse,
   DeviceTokenResponse,
+  HiloView,
   IntentResponse as PlayResponse,
   MinesView,
   PlayAction,
   RoundView,
   StateResponse,
+  TowerView,
 } from "@tilt/mod/protocol";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -444,6 +446,75 @@ async function main() {
     `(${minesEnd}, cases ${minesBoard.revealed.join(",")}, mine ${minesBoard.busted}, ×${minesBoard.multiplier})`,
   );
   checkRound("mines", balance, s);
+
+  // One-draw games: one round each, settled by its single draw.
+  const oneDraw: PlayAction[] = [
+    { type: "dice_roll", amount: usdc(1).toString(), target: 5_000, over: true },
+    { type: "limbo_play", amount: usdc(1).toString(), target: 200 },
+    { type: "flip_play", amount: usdc(1).toString(), side: "heads", flips: 2 },
+    { type: "keno_play", amount: usdc(1).toString(), picks: [3, 11, 17, 25, 38] },
+    { type: "wheel_spin", amount: usdc(1).toString(), segments: 20, risk: "medium" },
+  ];
+  for (const action of oneDraw) {
+    balance = BigInt(s.balance);
+    next = (s.round?.number ?? 0) + 1;
+    s = await move(action, (x) => x.round?.number === next && x.round.phase === "idle");
+    const game = action.type.split("_")[0];
+    check(`${game} : manche jouée`, s.round?.detail.game === game, JSON.stringify(s.round?.detail));
+    checkRound(game, balance, s);
+  }
+
+  // Hilo: the bet draws the first card; then guess the likelier side (the smaller multiplier)
+  // until two right guesses, then cash out (no draw) unless a wrong guess ended the round.
+  balance = BigInt(s.balance);
+  next = (s.round?.number ?? 0) + 1;
+  const hiloOf = (x: StateResponse) => x.round?.detail as HiloView;
+  s = await move({ type: "hilo_bet", amount: usdc(1).toString() }, (x) => x.round?.number === next);
+  let guesses = 0;
+  while (s.round?.phase === "player_turn" && guesses < 2) {
+    const hilo = hiloOf(s);
+    const higher = Number(hilo.higherMultiplier ?? Infinity);
+    const lower = Number(hilo.lowerMultiplier ?? Infinity);
+    const cards = hilo.cards.length;
+    s = await move(
+      { type: "hilo_guess", guess: higher <= lower ? "higher" : "lower" },
+      (x) => x.round?.phase === "idle" || hiloOf(x).cards.length > cards,
+    );
+    guesses++;
+  }
+  if (s.round?.phase === "player_turn") s = await move({ type: "hilo_cashout" }, (x) => x.round?.phase === "idle");
+  const hiloEnd = hiloOf(s);
+  check(
+    "hilo : manche terminée",
+    s.round?.phase === "idle" && hiloEnd.cards.length >= 2,
+    `(${hiloEnd.busted ? "perdu" : "encaissement"}, cartes ${hiloEnd.cards.map((c) => c.rank).join(",")}, ×${hiloEnd.multiplier})`,
+  );
+  checkRound("hilo", balance, s);
+
+  // Tower, easy: climb tile 0 on two levels (one draw each), then cash out unless a bad tile
+  // ended the round first.
+  balance = BigInt(s.balance);
+  next = (s.round?.number ?? 0) + 1;
+  const towerOf = (x: StateResponse) => x.round?.detail as TowerView;
+  s = await move(
+    { type: "tower_bet", amount: usdc(1).toString(), difficulty: "easy" },
+    (x) => x.round?.number === next,
+  );
+  while (s.round?.phase === "player_turn" && towerOf(s).climbed.length < 2) {
+    const levels = towerOf(s).climbed.length;
+    s = await move(
+      { type: "tower_climb", tile: 0 },
+      (x) => x.round?.phase === "idle" || towerOf(x).climbed.length > levels,
+    );
+  }
+  if (s.round?.phase === "player_turn") s = await move({ type: "tower_cashout" }, (x) => x.round?.phase === "idle");
+  const towerEnd = towerOf(s);
+  check(
+    "tower : manche terminée",
+    s.round?.phase === "idle" && (towerEnd.busted !== null || towerEnd.climbed.length === 2),
+    `(niveaux ${towerEnd.climbed.length}, perdu sur ${towerEnd.busted}, ×${towerEnd.multiplier})`,
+  );
+  checkRound("tower", balance, s);
 
   const money = await call("POST", "/v1/play", mod, {
     intentId: randomUUID(),

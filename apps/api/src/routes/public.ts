@@ -14,13 +14,13 @@ import { drawsBetween, findRound, isCashout, previousRequestId, type IndexedRoun
 import { SignatureParam } from "../schemas";
 import { leaderboard } from "../state";
 
-/** Games whose rounds take several draws (one per card or per tile). */
-const MULTI_DRAW: ReadonlySet<Game> = new Set(["blackjack", "mines"]);
+/** Games whose rounds take several draws (one per card, tile or climb). */
+const MULTI_DRAW: ReadonlySet<Game> = new Set(["blackjack", "mines", "hilo", "tower"]);
 
-/** VRF outputs of a round in request order. Blackjack and mines need every draw since the
+/** VRF outputs of a round in request order. Multi-draw games need every draw since the
  *  previous round settled; without that bound (previous round not indexed) only the last one is
- *  known. A mines cash-out settles without a draw (zero randomness in the event): its last draw
- *  is the last reveal's. */
+ *  known. A cash-out settles without a draw (zero randomness in the event): its last draw is
+ *  the last move's. */
 async function roundDraws(deps: AppDeps, round: IndexedRound): Promise<{ draws: Buffer[]; complete: boolean }> {
   const settledByDraw = !isCashout(round);
   if (!MULTI_DRAW.has(round.game)) return { draws: [round.randomness], complete: true };

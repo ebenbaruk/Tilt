@@ -46,4 +46,6 @@ pub enum TiltError {
     MissingTable,
     #[msg("Mines tile already revealed or off the board")]
     InvalidTile,
+    #[msg("Choice outside the game's rules")]
+    InvalidChoice,
 }

@@ -3,18 +3,33 @@
 import type {
   BaccaratView,
   BlackjackView,
+  DiceView,
+  FlipView,
+  HiloGuess,
+  HiloView,
+  KenoView,
+  LimboView,
   MinesView,
   RoundPhase,
   RoundView,
   RouletteView,
   SlotsView,
+  TowerView,
+  WheelView,
 } from "@tilt/mod/protocol";
 import * as baccarat from "./baccarat";
 import * as blackjack from "./blackjack";
 import { toCards } from "./cards";
+import { formatFixed, HUNDREDTHS_DECIMALS, MULTIPLIER_DECIMALS } from "./decimal";
+import * as dice from "./dice";
+import * as flip from "./flip";
+import * as hilo from "./hilo";
+import * as keno from "./keno";
 import * as mines from "./mines";
 import type { Outcome, RoundStatus } from "./round";
 import { glyphs } from "./slots";
+import * as tower from "./tower";
+import * as wheel from "./wheel";
 
 export interface RoundViewInput {
   /** Player wallet (base58): seeds the cosmetic suits. */
@@ -93,6 +108,57 @@ function minesView(o: Extract<Outcome, { game: "mines" }>, r: RoundViewInput, ph
   };
 }
 
+/** Same as mines: the program's integer math, round cap included. */
+function towerView(o: Extract<Outcome, { game: "tower" }>, r: RoundViewInput, phase: RoundPhase): TowerView {
+  const gain = BigInt(o.maxGain);
+  const levels = o.climbed.length;
+  const more = phase !== "idle" && tower.canClimbMore(r.stake, o.difficulty, levels, gain);
+  const turn = phase === "player_turn";
+  const multiplier = (l: number) =>
+    formatFixed(tower.scaledMultiplier(r.stake, o.difficulty, l, gain), MULTIPLIER_DECIMALS);
+  return {
+    game: "tower",
+    difficulty: o.difficulty,
+    tiles: tower.DIFFICULTIES[o.difficulty].tiles,
+    levels: tower.LEVELS,
+    climbed: o.climbed,
+    pending: o.pending,
+    busted: o.busted,
+    multiplier: multiplier(levels),
+    nextMultiplier: more ? multiplier(levels + 1) : null,
+    canClimb: turn && more,
+    canCashOut: turn && levels >= 1,
+  };
+}
+
+/** The fair multiplier replayed from the board's cards and guesses; shown ×0.98, capped. */
+function hiloView(o: Extract<Outcome, { game: "hilo" }>, r: RoundViewInput, phase: RoundPhase): HiloView {
+  const gain = BigInt(o.maxGain);
+  const played = hilo.play(r.stake, gain, o.cards, o.guesses);
+  if (!played) throw new Error("hilo board with guesses the rules refuse");
+  const last = o.cards.at(-1);
+  const inPlay = phase === "player_turn" && last !== undefined && o.pending === null && !o.busted;
+  const multiplier = (fair: bigint) => formatFixed(hilo.scaledMultiplier(r.stake, fair, gain), MULTIPLIER_DECIMALS);
+  /** The multiplier after a right `guess`, null when the program would refuse it. */
+  const after = (guess: HiloGuess) => {
+    const winning = last === undefined ? null : hilo.winningRanks(guess, hilo.rank(last));
+    return inPlay && winning !== null && winning < hilo.RANKS ? multiplier(hilo.nextFair(played.fair, winning)) : null;
+  };
+  return {
+    game: "hilo",
+    cards: o.cards.map(hilo.toCard),
+    guesses: o.guesses,
+    pending: o.pending,
+    multiplier: multiplier(played.fair),
+    higherMultiplier: after("higher"),
+    lowerMultiplier: after("lower"),
+    skipsLeft: hilo.MAX_SKIPS - played.skips,
+    canGuess: inPlay,
+    canCashOut: inPlay && played.right >= 1,
+    busted: o.busted,
+  };
+}
+
 function detailView(r: RoundViewInput, phase: RoundPhase): RoundView["detail"] {
   const settled = phase === "idle";
   const o = r.outcome;
@@ -106,8 +172,50 @@ function detailView(r: RoundViewInput, phase: RoundPhase): RoundView["detail"] {
     case "slots":
       // The program leaves the reels at [0, 0, 0] until the spin lands.
       return { game: "slots", reels: settled ? glyphs(o.reels) : null } satisfies SlotsView;
+    case "dice":
+      return {
+        game: "dice",
+        target: o.target,
+        over: o.over,
+        roll: settled ? o.roll : null,
+        multiplier: formatFixed(dice.scaledMultiplier(o.target, o.over), MULTIPLIER_DECIMALS),
+      } satisfies DiceView;
+    case "limbo":
+      return {
+        game: "limbo",
+        target: formatFixed(BigInt(o.target), HUNDREDTHS_DECIMALS),
+        result: settled ? formatFixed(BigInt(o.result), HUNDREDTHS_DECIMALS) : null,
+      } satisfies LimboView;
+    case "flip":
+      return {
+        game: "flip",
+        side: o.side,
+        flips: o.flips,
+        results: settled ? o.results : null,
+        multiplier: formatFixed(flip.scaledMultiplier(o.flips), MULTIPLIER_DECIMALS),
+      } satisfies FlipView;
+    case "keno":
+      return {
+        game: "keno",
+        picks: o.picks,
+        drawn: settled ? o.drawn : null,
+        hits: settled ? keno.hits(o.picks, o.drawn) : null,
+        paytable: keno.paytable(o.picks.length).map((m) => formatFixed(m, HUNDREDTHS_DECIMALS)),
+      } satisfies KenoView;
+    case "wheel":
+      return {
+        game: "wheel",
+        segments: o.segments,
+        risk: o.risk,
+        multipliers: wheel.multipliers(o.risk, o.segments).map((m) => formatFixed(m, HUNDREDTHS_DECIMALS)),
+        segment: settled ? o.segment : null,
+      } satisfies WheelView;
+    case "hilo":
+      return hiloView(o, r, phase);
     case "mines":
       return minesView(o, r, phase);
+    case "tower":
+      return towerView(o, r, phase);
   }
 }
 

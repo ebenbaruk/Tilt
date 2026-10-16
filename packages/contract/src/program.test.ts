@@ -1,6 +1,14 @@
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { describe, expect, it } from "vitest";
-import { idl, minesBoardAddress, PROGRAM_ID, tableAddress } from "./program";
+import {
+  hiloBoardAddress,
+  idl,
+  minesBoardAddress,
+  PROGRAM_ID,
+  quickTableAddress,
+  tableAddress,
+  towerBoardAddress,
+} from "./program";
 
 describe("IDL", () => {
   it("only lets the VRF callback write to a player account PDA", () => {
@@ -49,4 +57,58 @@ describe("IDL", () => {
       expect(minesBoardAddress(player).equals(expected), name).toBe(true);
     }
   });
+
+  const games = [
+    {
+      account: "quick",
+      seed: "quick",
+      address: quickTableAddress,
+      callback: "consume_quick_randomness",
+      instructions: ["open_quick_table", "dice_roll", "limbo_play", "flip_play", "keno_play", "wheel_spin", "expire_quick_round"],
+    },
+    {
+      account: "board",
+      seed: "hilo",
+      address: hiloBoardAddress,
+      callback: "consume_hilo_randomness",
+      instructions: ["open_hilo_board", "hilo_bet", "hilo_guess", "hilo_cashout", "expire_hilo_round"],
+    },
+    {
+      account: "board",
+      seed: "tower",
+      address: towerBoardAddress,
+      callback: "consume_tower_randomness",
+      instructions: ["open_tower_board", "tower_bet", "tower_climb", "tower_cashout", "expire_tower_round"],
+    },
+  ];
+
+  for (const game of games) {
+    it(`only lets ${game.callback} write to the player's account and ${game.seed} PDAs`, () => {
+      const callback = idl.instructions.find((i) => i.name === game.callback);
+      const seeds = (name: string) => {
+        const account = callback?.accounts.find((a) => a.name === name);
+        return account && "pda" in account ? account.pda?.seeds : undefined;
+      };
+      expect(seeds("account")).toEqual([
+        { kind: "const", value: Array.from(Buffer.from("account")) },
+        { kind: "account", path: "account.player", account: "PlayerAccount" },
+      ]);
+      expect(seeds(game.account)).toEqual([
+        { kind: "const", value: Array.from(Buffer.from(game.seed)) },
+        { kind: "account", path: "account.player", account: "PlayerAccount" },
+      ]);
+    });
+
+    it(`derives the ${game.seed} account the program expects on every move`, () => {
+      const player = Keypair.generate().publicKey;
+      for (const name of game.instructions) {
+        const account = idl.instructions.find((i) => i.name === name)?.accounts.find((a) => a.name === game.account);
+        const seeds = account && "pda" in account ? account.pda?.seeds : undefined;
+        const prefix = Buffer.from(seeds?.[0]?.value ?? []);
+        expect(prefix.toString(), name).toBe(game.seed);
+        const [expected] = PublicKey.findProgramAddressSync([prefix, player.toBuffer()], PROGRAM_ID);
+        expect(game.address(player).equals(expected), name).toBe(true);
+      }
+    });
+  }
 });

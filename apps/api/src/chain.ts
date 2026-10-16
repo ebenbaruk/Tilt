@@ -4,24 +4,39 @@ import anchor from "@coral-xyz/anchor";
 import type { IdlAccounts, IdlTypes, Program as ProgramT } from "@coral-xyz/anchor";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import {
+  hiloBoardAddress,
   idl,
   ledgerAddress,
   minesBoardAddress,
   playerAccountAddress,
+  quickTableAddress,
   tableAddress,
   type Tilt,
+  towerBoardAddress,
   vaultAddress,
 } from "@tilt/contract";
-import type { BaccaratBet, RouletteBet } from "@tilt/mod/protocol";
+import type { BaccaratBet, FlipSide, RouletteBet } from "@tilt/mod/protocol";
+import * as flip from "./games/flip";
+import * as hilo from "./games/hilo";
 import { NO_TILE } from "./games/mines";
 import type { ChainRound, Draw, Outcome, RoundStatus } from "./games/round";
 import type { Reels } from "./games/slots";
+import * as tower from "./games/tower";
+import * as wheel from "./games/wheel";
 
 const { Program } = anchor;
 type PlayerAccountData = IdlAccounts<Tilt>["playerAccount"];
-type TableData = IdlAccounts<Tilt>["blackjackTable"];
-type BoardData = IdlAccounts<Tilt>["minesBoard"];
 type RoundData = IdlTypes<Tilt>["round"];
+
+/** The player's per-game PDAs (null when not opened yet), read with the account. */
+export interface GameAccounts {
+  table: IdlAccounts<Tilt>["blackjackTable"] | null;
+  mines: IdlAccounts<Tilt>["minesBoard"] | null;
+  quick: IdlAccounts<Tilt>["quickTable"] | null;
+  hilo: IdlAccounts<Tilt>["hiloBoard"] | null;
+  tower: IdlAccounts<Tilt>["towerBoard"] | null;
+}
+type TableData = NonNullable<GameAccounts["table"]>;
 
 export interface PlayerState {
   balance: bigint;
@@ -77,6 +92,8 @@ function draw(d: IdlTypes<Tilt>["draw"]): Draw {
   if ("split" in d) return "split";
   if ("dealer" in d) return "dealer";
   if ("reveal" in d) return "reveal";
+  if ("card" in d) return "card";
+  if ("climb" in d) return "climb";
   return "spin";
 }
 
@@ -122,7 +139,7 @@ function blackjackOutcome(t: TableData | null): Outcome {
 const tileOrNull = (t: number) => (t === NO_TILE ? null : t);
 
 /** A mines round lives in the player's board, opened before their first mines bet. */
-function minesOutcome(b: BoardData | null): Outcome {
+function minesOutcome(b: GameAccounts["mines"]): Outcome {
   if (!b) throw new Error("mines round without a board");
   return {
     game: "mines",
@@ -134,9 +151,72 @@ function minesOutcome(b: BoardData | null): Outcome {
   };
 }
 
-function outcome(r: RoundData, table: TableData | null, board: BoardData | null): Outcome {
-  if ("blackjack" in r.game) return blackjackOutcome(table);
-  if ("mines" in r.game) return minesOutcome(board);
+/** A one-draw round lives in the player's quick table, which must hold this game's round. */
+function quickOutcome(game: Outcome["game"], q: GameAccounts["quick"]): Outcome {
+  const round = q?.round;
+  if (game === "dice" && round?.dice) {
+    const { target, over, roll } = round.dice;
+    return { game, target, over, roll };
+  }
+  if (game === "limbo" && round?.limbo) return { game, target: round.limbo.target, result: round.limbo.result };
+  if (game === "flip" && round?.flip) {
+    const { side, flips, coins } = round.flip;
+    const results = Array.from({ length: flips }, (_, i): FlipSide => flip.SIDES[(coins >> i) & 1]);
+    return { game, side: "heads" in side ? "heads" : "tails", flips, results };
+  }
+  if (game === "keno" && round?.keno) {
+    const { picks, nPicks, drawn } = round.keno;
+    return { game, picks: picks.slice(0, nPicks), drawn };
+  }
+  if (game === "wheel" && round?.wheel) {
+    const { segments, risk, segment } = round.wheel;
+    const name = wheel.RISKS.find((r) => r in risk);
+    if (!name) throw new Error("unknown wheel risk");
+    return { game, segments, risk: name, segment };
+  }
+  throw new Error(`${game} round without its quick table`);
+}
+
+function hiloGuess(code: number) {
+  const guess = hilo.GUESSES[code];
+  if (!guess) throw new Error(`unknown hilo guess ${code}`);
+  return guess;
+}
+
+function hiloOutcome(b: GameAccounts["hilo"]): Outcome {
+  if (!b) throw new Error("hilo round without a board");
+  return {
+    game: "hilo",
+    cards: b.cards.slice(0, b.nCards),
+    guesses: b.guesses.slice(0, Math.max(0, b.nCards - 1)).map(hiloGuess),
+    pending: b.pending === hilo.NO_GUESS ? null : hiloGuess(b.pending),
+    busted: b.busted,
+    maxGain: big(b.maxGain).toString(),
+  };
+}
+
+function towerOutcome(b: GameAccounts["tower"]): Outcome {
+  if (!b) throw new Error("tower round without a board");
+  const difficulty = tower.DIFFICULTY_NAMES.find((d) => d in b.difficulty);
+  if (!difficulty) throw new Error("unknown tower difficulty");
+  return {
+    game: "tower",
+    difficulty,
+    climbed: b.climbed.slice(0, b.level),
+    pending: tileOrNull(b.pending),
+    busted: tileOrNull(b.busted),
+    maxGain: big(b.maxGain).toString(),
+  };
+}
+
+function outcome(r: RoundData, pdas: GameAccounts): Outcome {
+  if ("blackjack" in r.game) return blackjackOutcome(pdas.table);
+  if ("mines" in r.game) return minesOutcome(pdas.mines);
+  if ("hilo" in r.game) return hiloOutcome(pdas.hilo);
+  if ("tower" in r.game) return towerOutcome(pdas.tower);
+  for (const game of ["dice", "limbo", "flip", "keno", "wheel"] as const) {
+    if (game in r.game) return quickOutcome(game, pdas.quick);
+  }
   if ("roulette" in r.game) {
     if (!r.roulette) throw new Error("roulette round without a spin");
     return { game: "roulette", bet: rouletteBet(r.roulette.bet), number: r.roulette.number };
@@ -149,25 +229,25 @@ function outcome(r: RoundData, table: TableData | null, board: BoardData | null)
   return { game: "slots", reels: r.slots.reels as Reels };
 }
 
-export function decodeRound(r: RoundData, table: TableData | null, board: BoardData | null): ChainRound {
+export function decodeRound(r: RoundData, pdas: GameAccounts): ChainRound {
   return {
     status: status(r.status),
     stake: big(r.stake),
     payout: big(r.payout),
     fee: big(r.fee),
     requestId: big(r.requestId),
-    outcome: outcome(r, table, board),
+    outcome: outcome(r, pdas),
   };
 }
 
-export function decodePlayer(a: PlayerAccountData, table: TableData | null, board: BoardData | null): PlayerState {
+export function decodePlayer(a: PlayerAccountData, pdas: GameAccounts): PlayerState {
   return {
     balance: big(a.balance),
     credited: big(a.credited),
     withdrawn: big(a.withdrawn),
     fees: big(a.fees),
     rounds: a.rounds,
-    round: decodeRound(a.round, table, board),
+    round: decodeRound(a.round, pdas),
   };
 }
 
@@ -199,21 +279,26 @@ export class RpcChainReader implements ChainReader {
     this.rollupProgram = new Program(idl, new anchor.AnchorProvider(this.rollup, wallet)) as ProgramT<Tilt>;
   }
 
-  /** The account, the blackjack table and the mines board, read together so the round and its
-   *  cards or tiles match. */
+  /** The account and the player's game PDAs, read together so the round and its cards, tiles
+   *  or draw match. */
   async playerAccount(player: PublicKey): Promise<PlayerState | null> {
-    const [account, table, board] = await this.rollup.getMultipleAccountsInfo([
+    const [account, table, mines, quick, hiloBoard, towerBoard] = await this.rollup.getMultipleAccountsInfo([
       playerAccountAddress(player),
       tableAddress(player),
       minesBoardAddress(player),
+      quickTableAddress(player),
+      hiloBoardAddress(player),
+      towerBoardAddress(player),
     ]);
     if (!account) return null;
     const accounts = this.rollupProgram.coder.accounts;
-    return decodePlayer(
-      accounts.decode<PlayerAccountData>("playerAccount", account.data),
-      table ? accounts.decode<TableData>("blackjackTable", table.data) : null,
-      board ? accounts.decode<BoardData>("minesBoard", board.data) : null,
-    );
+    return decodePlayer(accounts.decode<PlayerAccountData>("playerAccount", account.data), {
+      table: table ? accounts.decode<GameAccounts["table"]>("blackjackTable", table.data) : null,
+      mines: mines ? accounts.decode<GameAccounts["mines"]>("minesBoard", mines.data) : null,
+      quick: quick ? accounts.decode<GameAccounts["quick"]>("quickTable", quick.data) : null,
+      hilo: hiloBoard ? accounts.decode<GameAccounts["hilo"]>("hiloBoard", hiloBoard.data) : null,
+      tower: towerBoard ? accounts.decode<GameAccounts["tower"]>("towerBoard", towerBoard.data) : null,
+    });
   }
 
   async deposited(player: PublicKey): Promise<bigint | null> {

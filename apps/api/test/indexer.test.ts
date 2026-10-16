@@ -55,11 +55,12 @@ const callbackLogs = [
   `Program ${PROGRAM} success`,
 ];
 
-const minesCallbackLogs = [
+const callbackLogsOf = (instruction: string) => [
   `Program ${PROGRAM} invoke [2]`,
-  "Program log: Instruction: ConsumeMinesRandomness",
+  `Program log: Instruction: ${instruction}`,
   `Program ${PROGRAM} success`,
 ];
+const minesCallbackLogs = callbackLogsOf("ConsumeMinesRandomness");
 
 const callbackData = (requestId: number, byte: number, name = "consume_randomness") =>
   coder.instruction.encode(name, {
@@ -167,6 +168,32 @@ describe("decoding", () => {
     expect(r).toMatchObject({ game: "mines", round: 2, requestId: 6n });
     expect(r.randomness).toEqual(Buffer.alloc(32));
   });
+
+  it("finds the quick table, hilo and tower callbacks, the player account second", () => {
+    const account = Keypair.generate().publicKey;
+    const names = ["consume_quick_randomness", "consume_hilo_randomness", "consume_tower_randomness"];
+    const draws = decodeCallbacks(
+      names.map((name, i) => ({
+        programId: PROGRAM_ID,
+        accounts: [Keypair.generate().publicKey, account, Keypair.generate().publicKey],
+        data: callbackData(i + 1, i + 1, name),
+      })),
+    );
+    expect(draws).toEqual(
+      names.map((_, i) => ({
+        account: account.toBase58(),
+        requestId: BigInt(i + 1),
+        randomness: Buffer.alloc(32, i + 1),
+      })),
+    );
+  });
+
+  it("parses RoundSettled of every new game", () => {
+    const player = Keypair.generate().publicKey;
+    const games = ["Dice", "Limbo", "Flip", "Keno", "Wheel", "Hilo", "Tower"];
+    const parsed = games.map((g, i) => parseSettled("sig", settledLogs(player, i + 1, i + 1, 5, g), new Date(0))[0]);
+    expect(parsed.map((r) => r.game)).toEqual(["dice", "limbo", "flip", "keno", "wheel", "hilo", "tower"]);
+  });
 });
 
 describe.skipIf(!db)("indexer", () => {
@@ -263,6 +290,31 @@ describe.skipIf(!db)("indexer", () => {
       { request_id: "3", randomness: "03".repeat(32) },
       { request_id: "4", randomness: "09".repeat(32) },
     ]);
+  });
+
+  it("indexes hilo and tower draws (the hilo bet's first card included), none for their cash-outs", async () => {
+    const draw = (requestId: number) => [
+      { account, requestId: BigInt(requestId), randomness: Buffer.alloc(32, requestId) },
+    ];
+    const hiloLogs = callbackLogsOf("ConsumeHiloRandomness");
+    const towerLogs = callbackLogsOf("ConsumeTowerRandomness");
+    source.add("first", hiloLogs, draw(1));
+    source.add("guess", hiloLogs, draw(2));
+    source.add("hilo", settledLogs(player, 1, 2, 0, "Hilo", "HiloCashout"));
+    source.add("climb", towerLogs, draw(3));
+    source.add("tower", settledLogs(player, 2, 3, 0, "Tower", "TowerCashout"));
+    source.add("dice", settledLogs(player, 3, 4, 4, "Dice", "ConsumeQuickRandomness"));
+    await indexer.backfill();
+    const rounds = await db.query("SELECT signature, game, request_id FROM rounds ORDER BY round");
+    expect(rounds.rows).toEqual([
+      { signature: "hilo", game: "hilo", request_id: "2" },
+      { signature: "tower", game: "tower", request_id: "3" },
+      { signature: "dice", game: "dice", request_id: "4" },
+    ]);
+    const draws = await db.query("SELECT request_id, randomness FROM draws WHERE account = $1 ORDER BY request_id", [
+      account,
+    ]);
+    expect(draws.rows).toEqual([1, 2, 3, 4].map((n) => ({ request_id: String(n), randomness: `0${n}`.repeat(32) })));
   });
 
   it("does not let a cash-out seen before its last reveal hide that reveal's draw", async () => {

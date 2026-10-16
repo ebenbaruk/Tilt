@@ -8,7 +8,11 @@ import {
   formatDuration,
   formatSigned,
   formatUsdc,
-  minesPayout,
+  cashOutPayout,
+  diceMultiplier,
+  flipMultiplier,
+  scaledDecimal,
+  towerMultiplier,
   pocketColor,
   rankLabel,
 } from "../hooks/format";
@@ -38,13 +42,32 @@ describe("money", () => {
     expect(formatSigned("412900000")).toBe("+412.90");
   });
 
-  test("a Mines cash-out is the stake at the multiplier, floored, in integer base units", () => {
-    expect(minesPayout("1000000", "1.2857")).toBe("1285700");
-    expect(minesPayout("500000", "1.0000")).toBe("500000");
-    expect(minesPayout("3", "1.0312")).toBe("3");
-    expect(minesPayout("25000000", "24.7500")).toBe("618750000");
+  test("a cash-out is the stake at the multiplier, floored, in integer base units", () => {
+    expect(cashOutPayout("1000000", "1.2857")).toBe("1285700");
+    expect(cashOutPayout("500000", "1.0000")).toBe("500000");
+    expect(cashOutPayout("3", "1.0312")).toBe("3");
+    expect(cashOutPayout("25000000", "24.7500")).toBe("618750000");
     // Far past what a float holds exactly.
-    expect(minesPayout("123456789012345678", "5200300.0000")).toBe("642012339900901229303400");
+    expect(cashOutPayout("123456789012345678", "5200300.0000")).toBe("642012339900901229303400");
+  });
+
+  test("the new games' multipliers, in integer math, floored to 4 decimals", () => {
+    expect(scaledDecimal(742n, 2)).toBe("7.42");
+    expect(scaledDecimal(5n, 2)).toBe("0.05");
+    expect(scaledDecimal(19_600n, 4)).toBe("1.9600");
+    // 98 % over the winning rolls: 49 % pays ×2, 1 % ×98, 98 % ×1.
+    expect(diceMultiplier(4_900)).toBe("2.0000");
+    expect(diceMultiplier(100)).toBe("98.0000");
+    expect(diceMultiplier(9_800)).toBe("1.0000");
+    expect(diceMultiplier(6_600)).toBe("1.4848");
+    expect(flipMultiplier(1)).toBe("1.9600");
+    expect(flipMultiplier(10)).toBe("1003.5200");
+    // Easy: 0.98 × (4/3)^L.
+    expect(towerMultiplier(4, 3, 1)).toBe("1.3066");
+    expect(towerMultiplier(4, 3, 2)).toBe("1.7422");
+    expect(towerMultiplier(4, 3, 9)).toBe("13.0519");
+    // Master: 0.98 × 4^9.
+    expect(towerMultiplier(4, 1, 9)).toBe("256901.1200");
   });
 });
 
