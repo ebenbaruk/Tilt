@@ -2,26 +2,31 @@ import { describe, expect, test } from "claude-code/testing";
 
 import { isPlayAction, isStateResponse } from "../hooks/guards";
 import {
+  addChip,
   betOptions,
   clampHands,
   clampMines,
   currentBet,
+  cursorBet,
   GAMES,
   heldKeys,
-  nextRouletteBet,
+  MAX_ROULETTE_CHIPS,
+  MAX_ROULETTE_PLACED,
   planKeys,
   randomPicks,
+  ROULETTE_CURSOR_CELLS,
+  stackChips,
   startAction,
   stepBetIndex,
+  stepCursor,
   stepHands,
   stepMines,
-  stepRouletteNumber,
   stepSetting,
   tableKeys,
   toggleKenoPick,
 } from "../hooks/keys";
-import type { Prefs } from "../hooks/model";
-import type { StateResponse } from "../hooks/protocol";
+import { type Prefs, prefsView } from "../hooks/model";
+import type { RouletteBet, RouletteChip, StateResponse } from "../hooks/protocol";
 import { isTablePost, pressFor } from "../hooks/table-input";
 import * as fixtures from "./fixtures";
 
@@ -29,7 +34,8 @@ const PREFS: Prefs = {
   game: "blackjack",
   betIndex: 0,
   hands: 1,
-  roulette: { kind: "red" },
+  rouletteChips: [],
+  rouletteCursor: 0,
   baccarat: "banker",
   slotsSpeed: "normal",
   mines: 3,
@@ -76,7 +82,7 @@ describe("the key plan", () => {
         .join("");
 
     expect(hotkeysOf("blackjack")).toBe(`${PAGE_1}jkvbn`);
-    expect(hotkeysOf("roulette")).toBe(`${PAGE_1}rkoelgzcsdvbn`);
+    expect(hotkeysOf("roulette")).toBe(`${PAGE_1}rkoelgsdavb`);
     expect(hotkeysOf("baccarat")).toBe(`${PAGE_1}pytvbn`);
     expect(hotkeysOf("slots")).toBe(`${PAGE_1}xftvbn`);
     expect(hotkeysOf("mines")).toBe(`${PAGE_1}jkvbn`);
@@ -214,23 +220,84 @@ describe("bets", () => {
     expect(stepBetIndex(limits, 9, -1)).toBe(1);
   });
 
-  test("z and c step through dozens and columns", () => {
-    expect(nextRouletteBet({ kind: "red" }, "dozen")).toEqual({ kind: "dozen", dozen: 1 });
-    expect(nextRouletteBet({ kind: "dozen", dozen: 3 }, "dozen")).toEqual({ kind: "dozen", dozen: 1 });
-    expect(nextRouletteBet({ kind: "dozen", dozen: 1 }, "column")).toEqual({ kind: "column", column: 1 });
-    expect(nextRouletteBet({ kind: "column", column: 1 }, "column")).toEqual({ kind: "column", column: 2 });
+  const LIMITS = { minBet: "500000", maxBet: "25000000" };
+  const RED: RouletteBet = { kind: "red" };
+  const chip = (bet: RouletteBet, amount: string): RouletteChip => ({ bet, amount });
+  const straight = (number: number): RouletteBet => ({ kind: "straight", number });
+
+  test("s and d move the cursor over 0 to 36, the dozens, then the columns, around both ends", () => {
+    expect(ROULETTE_CURSOR_CELLS).toHaveLength(37 + 3 + 3);
+    expect(cursorBet(17)).toEqual(straight(17));
+    expect(cursorBet(37)).toEqual({ kind: "dozen", dozen: 1 });
+    expect(cursorBet(42)).toEqual({ kind: "column", column: 3 });
+    expect(stepCursor(0, -1)).toBe(42);
+    expect(stepCursor(42, 1)).toBe(0);
+    expect(stepCursor(36, 1)).toBe(37);
   });
 
-  test("s and d step a bet on one number around 0 to 36, from 0 when the bet is on no number", () => {
-    expect(stepRouletteNumber({ kind: "red" }, 1)).toEqual({ kind: "straight", number: 0 });
-    expect(stepRouletteNumber({ kind: "dozen", dozen: 2 }, -1)).toEqual({ kind: "straight", number: 0 });
-    expect(stepRouletteNumber({ kind: "straight", number: 17 }, 1)).toEqual({ kind: "straight", number: 18 });
-    expect(stepRouletteNumber({ kind: "straight", number: 36 }, 1)).toEqual({ kind: "straight", number: 0 });
-    expect(stepRouletteNumber({ kind: "straight", number: 0 }, -1)).toEqual({ kind: "straight", number: 36 });
+  test("chips stack per bet in the order each bet got its first one, held to the table maximum", () => {
+    const placed = [chip(RED, "1000000"), chip(straight(17), "500000"), chip(RED, "2000000")];
+
+    expect(stackChips(placed)).toEqual([chip(RED, "3000000"), chip(straight(17), "500000")]);
+    expect(addChip(placed, straight(17), "500000", LIMITS)).toEqual([...placed, chip(straight(17), "500000")]);
+    // 3.00 on red: a 25.00 chip only fills it to the 25.00 maximum, then red takes no more.
+    const full = addChip(placed, RED, "25000000", LIMITS);
+
+    expect(full).toEqual([...placed, chip(RED, "22000000")]);
+    expect(addChip(typeof full === "string" ? [] : full, RED, "500000", LIMITS)).toBe(
+      "The red bet is at the table maximum (25.00).",
+    );
+  });
+
+  test("a spin takes 20 bets and the table 100 chips, no more", () => {
+    const twenty = Array.from({ length: MAX_ROULETTE_CHIPS }, (_, number) => chip(straight(number), "500000"));
+    const hundred = Array.from({ length: MAX_ROULETTE_PLACED }, () => chip(RED, "1"));
+
+    expect(addChip(twenty, straight(30), "500000", LIMITS)).toBe("20 bets at most on one spin.");
+    // One more chip on a bet already played still goes on.
+    expect(addChip(twenty, straight(3), "500000", LIMITS)).toHaveLength(MAX_ROULETTE_CHIPS + 1);
+    expect(addChip(hundred, RED, "1", LIMITS)).toBe("100 chips at most on the table: undo or clear some.");
+  });
+
+  test("roulette: the spin sends every stack as one chip; no spin key without chips", () => {
+    const placed = [chip(RED, "1000000"), chip(straight(17), "500000"), chip(RED, "500000")];
+    const prefs = { ...PREFS, game: "roulette" as const, rouletteChips: placed, rouletteCursor: 17 };
+    const keys = planKeys({ state: fixtures.BASE, prefs, isBusy: false });
+
+    expect(startAction("roulette", "500000", prefs)).toEqual({
+      type: "roulette_chips",
+      chips: [chip(RED, "1500000"), chip(straight(17), "500000")],
+    });
+    // On 17, which has chips: x takes them off; u and q undo and clear.
+    expect(keys.map((key) => key.hotkey).join("")).toBe(`${PAGE_1}rkoelgsdaxuqvbn`);
+    expect(keys.find((key) => key.key === "start")?.label).toBe("spin · 2.00 · 2 chips");
+    expect(keys.find((key) => key.key === "roulette-red")?.isSelected).toBe(true);
+    expect(keys.find((key) => key.key === "roulette-black")?.isSelected).toBe(false);
+    expect(keys.find((key) => key.key === "bet-up")?.label).toBe("chip +");
+    expect(keys.find((key) => key.key === "chip-add")?.command).toEqual({ kind: "roulette-add", bet: null });
+  });
+
+  test("stored chips another plugin broke read as an empty table, a broken cursor as 0", () => {
+    const held = (rouletteChips: unknown, rouletteCursor?: number) =>
+      prefsView({ ...PREFS, rouletteChips, rouletteCursor });
+    const good = [chip(RED, "500000"), chip(straight(36), "1000000")];
+
+    expect(held(good, 42).rouletteChips).toEqual(good);
+    expect(held(good, 42).rouletteCursor).toBe(42);
+    expect(held(good, 43).rouletteCursor).toBe(0);
+    expect(held(good, 1.5).rouletteCursor).toBe(0);
+    expect(held(undefined).rouletteChips).toEqual([]);
+    expect(held([...good, chip(straight(37), "1")]).rouletteChips).toEqual([]);
+    expect(held([...good, chip(RED, "0")]).rouletteChips).toEqual([]);
+    expect(held([...good, { bet: RED, amount: 5 }]).rouletteChips).toEqual([]);
+    expect(held(Array.from({ length: MAX_ROULETTE_PLACED + 1 }, () => chip(RED, "1"))).rouletteChips).toEqual([]);
+    expect(
+      held(Array.from({ length: MAX_ROULETTE_CHIPS + 1 }, (_, number) => chip(straight(number), "1"))).rouletteChips,
+    ).toEqual([]);
   });
 
   test("the roulette layout's numbers, dozens and columns are clicks on the fullscreen table, no letter's", () => {
-    const prefs = { ...PREFS, game: "roulette" as const, roulette: { kind: "straight" as const, number: 17 } };
+    const prefs = { ...PREFS, game: "roulette" as const, rouletteChips: [chip(straight(17), "500000")] };
     const input = { state: fixtures.BASE, prefs, isBusy: false };
     const keys = tableKeys(input);
     const clicks = keys.filter((key) => key.hotkey === "");
@@ -239,7 +306,7 @@ describe("bets", () => {
     expect(new Set(keys.map((key) => key.key)).size).toBe(keys.length);
     expect(clicks.filter((key) => key.isSelected).map((key) => key.key)).toEqual(["roulette-straight-17"]);
     expect(clicks.find((key) => key.key === "roulette-dozen-2")?.command).toEqual({
-      kind: "roulette-bet",
+      kind: "roulette-add",
       bet: { kind: "dozen", dozen: 2 },
     });
     // Not while a spin is in flight.
@@ -369,6 +436,16 @@ describe("response guards", () => {
     expect(isPlayAction({ type: "blackjack_bet", amount: "500000", hands: 1.5 })).toBe(false);
     expect(isPlayAction({ type: "roulette_spin", amount: "500000", bet: { kind: "dozen", dozen: 2 } })).toBe(true);
     expect(isPlayAction({ type: "roulette_spin", amount: "500000", bet: { kind: "dozen", dozen: 4 } })).toBe(false);
+    const chips = (count: number) =>
+      Array.from({ length: count }, (_, number) => ({ bet: { kind: "straight", number }, amount: "500000" }));
+
+    expect(isPlayAction({ type: "roulette_chips", chips: chips(1) })).toBe(true);
+    expect(isPlayAction({ type: "roulette_chips", chips: chips(20) })).toBe(true);
+    expect(isPlayAction({ type: "roulette_chips", chips: chips(0) })).toBe(false);
+    expect(isPlayAction({ type: "roulette_chips", chips: chips(21) })).toBe(false);
+    expect(isPlayAction({ type: "roulette_chips", chips: [...chips(2), ...chips(1)] })).toBe(false);
+    expect(isPlayAction({ type: "roulette_chips", chips: [{ bet: { kind: "red" }, amount: "0" }] })).toBe(false);
+    expect(isPlayAction({ type: "roulette_chips", chips: [{ bet: { kind: "red" }, amount: 500000 }] })).toBe(false);
     expect(isPlayAction({ type: "slots_spin", amount: "0" })).toBe(false);
     expect(isPlayAction({ type: "mines_bet", amount: "500000", mines: 1 })).toBe(true);
     expect(isPlayAction({ type: "mines_bet", amount: "500000", mines: 24 })).toBe(true);
@@ -535,8 +612,11 @@ describe("the twelve games", () => {
       difficulty: "master",
     });
 
+    // Roulette spins the chips on the table: one on red here.
+    const withChip = { ...PREFS, rouletteChips: [{ bet: { kind: "red" } as const, amount: bet }] };
+
     for (const game of GAMES) {
-      expect(isPlayAction(startAction(game, bet, PREFS)), game).toBe(true);
+      expect(isPlayAction(startAction(game, bet, withChip)), game).toBe(true);
     }
   });
 

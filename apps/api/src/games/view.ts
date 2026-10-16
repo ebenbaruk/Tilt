@@ -167,8 +167,16 @@ function detailView(r: RoundViewInput, phase: RoundPhase): RoundView["detail"] {
       return blackjackView(o, r, phase);
     case "baccarat":
       return baccaratView(o, r);
-    case "roulette":
-      return { game: "roulette", bet: o.bet, number: settled ? o.number : null } satisfies RouletteView;
+    case "roulette": {
+      const [first] = o.chips;
+      if (!first) throw new Error("roulette round without chips");
+      return {
+        game: "roulette",
+        bet: first.bet,
+        chips: o.chips,
+        number: settled ? o.number : null,
+      } satisfies RouletteView;
+    }
     case "slots":
       // The program leaves the reels at [0, 0, 0] until the spin lands.
       return { game: "slots", reels: settled ? glyphs(o.reels) : null } satisfies SlotsView;

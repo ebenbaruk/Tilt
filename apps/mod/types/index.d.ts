@@ -36,8 +36,10 @@ export type TiltPrefs = {
   betIndex: number;
   /** Blackjack hands per round, 1 to 6, each at the bet. */
   hands: number;
-  /** A `RouletteBet`. */
-  roulette: unknown;
+  /** Roulette chips placed, in order: `RouletteChip`s (a bet and a stake); absent from prefs stored before the chips. */
+  rouletteChips?: unknown;
+  /** The roulette cursor's cell, an index into the cursor's cells. */
+  rouletteCursor?: number;
   baccarat: "player" | "banker" | "tie";
   /** How fast the slots reels turn: turbo shows the draw at once. */
   slotsSpeed: "normal" | "fast" | "turbo";

@@ -18,6 +18,7 @@ const WAGERS = new Set<PlayAction["type"]>([
   "blackjack_double",
   "blackjack_split",
   "roulette_spin",
+  "roulette_chips",
   "baccarat_deal",
   "slots_spin",
   "mines_bet",

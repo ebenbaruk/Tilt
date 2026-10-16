@@ -13,6 +13,8 @@ pub const QUICK_SEED: &[u8] = b"quick";
 pub const HILO_SEED: &[u8] = b"hilo";
 /// The player's Tower board.
 pub const TOWER_SEED: &[u8] = b"tower";
+/// The player's last multi-chip roulette spin (`roulette_chips`).
+pub const ROULETTE_SEED: &[u8] = b"roulette";
 pub const PROMO_SEED: &[u8] = b"promo";
 pub const PROMO_TOKEN_SEED: &[u8] = b"promo_token";
 pub const PAYOUT_SEED: &[u8] = b"payout";

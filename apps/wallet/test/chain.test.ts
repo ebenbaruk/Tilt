@@ -12,6 +12,7 @@ import {
   minesBoardAddress,
   PROGRAM_ID,
   quickTableAddress,
+  rouletteTableAddress,
   tableAddress,
   towerBoardAddress,
 } from "@tilt/contract";
@@ -50,7 +51,7 @@ function stubbedChain(fakes: Fakes) {
   const blockhash = { blockhash: Keypair.generate().publicKey.toBase58(), lastValidBlockHeight: 100 };
   const delegationProgram = new PublicKey("DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh");
 
-  const gameAccounts = [tableAddress, quickTableAddress, minesBoardAddress, hiloBoardAddress, towerBoardAddress].map((address) => address(player));
+  const gameAccounts = [tableAddress, quickTableAddress, rouletteTableAddress, minesBoardAddress, hiloBoardAddress, towerBoardAddress].map((address) => address(player));
   const isGameAccount = (address: PublicKey) => gameAccounts.some((a) => a.equals(address));
   vi.spyOn(chain.base, "getAccountInfo").mockImplementation(async (address) => {
     if (address.equals(ledgerAddress(player))) return accountInfo(PROGRAM_ID);
@@ -197,6 +198,34 @@ describe("play transactions", () => {
     }
   });
 
+  it("spins every chip on the player's roulette table, the single-bet spin without it", async () => {
+    const { chain, player } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
+    const action: GameAction = {
+      type: "roulette_chips",
+      chips: [
+        { bet: { kind: "straight", number: 17 }, amount: "100000" },
+        { bet: { kind: "red" }, amount: "200000" },
+        { bet: { kind: "dozen", dozen: 2 }, amount: "300000" },
+      ],
+    };
+    const [ix] = (await chain.playTransaction(player, action)).instructions;
+    const decoded = coder.decode(ix.data);
+    expect(decoded?.name).toBe("roulette_chips");
+    const args = decoded?.data;
+    const chips = args && "chips" in args && Array.isArray(args.chips) ? args.chips : [];
+    // The instruction coder decodes enum variants by their Rust names.
+    expect(chips.map((c: { bet: object; amount: { toString(): string } }) => [c.bet, c.amount.toString()])).toEqual([
+      [{ Straight: { 0: 17 } }, "100000"],
+      [{ Red: {} }, "200000"],
+      [{ Dozen: { 0: 2 } }, "300000"],
+    ]);
+    const index = idl.instructions.find((i) => i.name === "roulette_chips")!.accounts.findIndex((a) => a.name === "roulette");
+    expect(ix.keys[index]).toMatchObject({ pubkey: rouletteTableAddress(player), isWritable: true });
+    expect(ix.keys.some((k) => k.pubkey.equals(tableAddress(player)))).toBe(false);
+    const [single] = (await chain.playTransaction(player, { type: "roulette_spin", amount: "1", bet: { kind: "red" } })).instructions;
+    expect(single.keys.some((k) => k.pubkey.equals(rouletteTableAddress(player)))).toBe(false);
+  });
+
   it("retries a stuck draw of a new game with its own expire instruction and account", async () => {
     const { chain, player, sent } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
     const games = [
@@ -207,8 +236,10 @@ describe("play transactions", () => {
       { game: { wheel: {} }, name: "expire_quick_round", address: quickTableAddress },
       { game: { hilo: {} }, name: "expire_hilo_round", address: hiloBoardAddress },
       { game: { tower: {} }, name: "expire_tower_round", address: towerBoardAddress },
+      // A roulette round without its bet in the round: a multi-chip spin, on the roulette table.
+      { game: { roulette: {} }, name: "expire_roulette_round", address: rouletteTableAddress },
     ] as const;
-    for (const { game } of games) await chain.expireRound(player, game);
+    for (const { game } of games) await chain.expireRound(player, { game, roulette: null });
     expect(sent.rollup.map(instructionNames)).toEqual(games.map(({ name }) => [name]));
     sent.rollup.forEach((tx, i) => {
       expect(tx.instructions[0].keys.some((k) => k.pubkey.equals(games[i].address(player))), games[i].name).toBe(true);
@@ -217,14 +248,17 @@ describe("play transactions", () => {
 
   it("retries a stuck Mines reveal with the board, other draws with expire_round", async () => {
     const { chain, player, sent } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
-    await chain.expireRound(player, { mines: {} });
-    await chain.expireRound(player, { blackjack: {} });
-    await chain.expireRound(player, { slots: {} });
-    expect(sent.rollup.map(instructionNames)).toEqual([["expire_mines_round"], ["expire_round"], ["expire_round"]]);
-    const [mines, blackjack, slots] = sent.rollup.map((tx) => tx.instructions[0]);
+    await chain.expireRound(player, { game: { mines: {} }, roulette: null });
+    await chain.expireRound(player, { game: { blackjack: {} }, roulette: null });
+    await chain.expireRound(player, { game: { slots: {} }, roulette: null });
+    await chain.expireRound(player, { game: { roulette: {} }, roulette: { bet: { red: {} }, number: 0 } });
+    expect(sent.rollup.map(instructionNames)).toEqual([["expire_mines_round"], ["expire_round"], ["expire_round"], ["expire_round"]]);
+    const [mines, blackjack, slots, roulette] = sent.rollup.map((tx) => tx.instructions[0]);
     expect(mines.keys.some((k) => k.pubkey.equals(minesBoardAddress(player)))).toBe(true);
     expect(blackjack.keys[TABLE_INDEX].pubkey.equals(tableAddress(player))).toBe(true);
     expect(slots.keys[TABLE_INDEX].pubkey.equals(PROGRAM_ID)).toBe(true);
+    expect(roulette.keys[TABLE_INDEX].pubkey.equals(PROGRAM_ID)).toBe(true);
+    expect(roulette.keys.some((k) => k.pubkey.equals(rouletteTableAddress(player)))).toBe(false);
   });
 });
 
@@ -319,6 +353,12 @@ describe("new games' accounts", () => {
     { action: { type: "keno_play", amount: "1000000", picks: [5] }, opened: ["open_quick_table", "delegate_quick_table"], address: quickTableAddress, label: "one-draw table" },
     { action: { type: "hilo_bet", amount: "1000000" }, opened: ["open_hilo_board", "delegate_hilo_board"], address: hiloBoardAddress, label: "hilo board" },
     { action: { type: "tower_bet", amount: "1000000", difficulty: "easy" }, opened: ["open_tower_board", "delegate_tower_board"], address: towerBoardAddress, label: "tower board" },
+    {
+      action: { type: "roulette_chips", chips: [{ bet: { kind: "odd" }, amount: "1000000" }] },
+      opened: ["open_roulette_table", "delegate_roulette_table"],
+      address: rouletteTableAddress,
+      label: "roulette table",
+    },
   ];
 
   for (const { action, opened, address, label } of cases) {
@@ -346,6 +386,14 @@ describe("new games' accounts", () => {
     await chain.play(player, { type: "dice_roll", amount: "1000000", target: 5_000, over: false }, record);
     await chain.play(player, { type: "wheel_spin", amount: "1000000", segments: 10, risk: "low" }, record);
     expect(sent.solana.map(instructionNames)).toEqual([["open_quick_table", "delegate_quick_table"]]);
+  });
+
+  it("opens no account for a single-bet roulette spin", async () => {
+    const { chain, player, sent } = stubbedChain({ tableOnSolana: false, rollupMisses: Infinity });
+    await chain.play(player, { type: "roulette_spin", amount: "1000000", bet: { kind: "red" } }, record);
+    expect(sent.rollupTableReads).toBe(0);
+    expect(sent.solana).toHaveLength(0);
+    expect(sent.rollup.map(instructionNames)).toEqual([["roulette_spin"]]);
   });
 });
 

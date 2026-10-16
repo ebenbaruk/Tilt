@@ -10,6 +10,7 @@ import {
   minesBoardAddress,
   playerAccountAddress,
   quickTableAddress,
+  rouletteTableAddress,
   tableAddress,
   type Tilt,
   towerBoardAddress,
@@ -20,6 +21,7 @@ import * as flip from "./games/flip";
 import * as hilo from "./games/hilo";
 import { NO_TILE } from "./games/mines";
 import type { ChainRound, Draw, Outcome, RoundStatus } from "./games/round";
+import * as roulette from "./games/roulette";
 import type { Reels } from "./games/slots";
 import * as tower from "./games/tower";
 import * as wheel from "./games/wheel";
@@ -35,6 +37,7 @@ export interface GameAccounts {
   quick: IdlAccounts<Tilt>["quickTable"] | null;
   hilo: IdlAccounts<Tilt>["hiloBoard"] | null;
   tower: IdlAccounts<Tilt>["towerBoard"] | null;
+  roulette: IdlAccounts<Tilt>["rouletteTable"] | null;
 }
 type TableData = NonNullable<GameAccounts["table"]>;
 
@@ -209,6 +212,25 @@ function towerOutcome(b: GameAccounts["tower"]): Outcome {
   };
 }
 
+/** A single-bet spin lives in the round itself (one chip of the whole stake); a spin of chips
+ *  lives in the player's roulette table. */
+function rouletteOutcome(r: RoundData, t: GameAccounts["roulette"]): Outcome {
+  if (r.roulette) {
+    return {
+      game: "roulette",
+      chips: [{ bet: rouletteBet(r.roulette.bet), amount: big(r.stake).toString() }],
+      number: r.roulette.number,
+    };
+  }
+  if (!t || t.nChips === 0) throw new Error("roulette round without a spin");
+  if ("idle" in r.status && t.pocket === roulette.NO_POCKET) throw new Error("settled roulette spin without a pocket");
+  return {
+    game: "roulette",
+    chips: t.chips.slice(0, t.nChips).map((c) => ({ bet: rouletteBet(c.bet), amount: big(c.amount).toString() })),
+    number: t.pocket,
+  };
+}
+
 function outcome(r: RoundData, pdas: GameAccounts): Outcome {
   if ("blackjack" in r.game) return blackjackOutcome(pdas.table);
   if ("mines" in r.game) return minesOutcome(pdas.mines);
@@ -217,10 +239,7 @@ function outcome(r: RoundData, pdas: GameAccounts): Outcome {
   for (const game of ["dice", "limbo", "flip", "keno", "wheel"] as const) {
     if (game in r.game) return quickOutcome(game, pdas.quick);
   }
-  if ("roulette" in r.game) {
-    if (!r.roulette) throw new Error("roulette round without a spin");
-    return { game: "roulette", bet: rouletteBet(r.roulette.bet), number: r.roulette.number };
-  }
+  if ("roulette" in r.game) return rouletteOutcome(r, pdas.roulette);
   if ("baccarat" in r.game) {
     if (!r.baccarat) throw new Error("baccarat round without a coup");
     const c = r.baccarat;
@@ -282,14 +301,16 @@ export class RpcChainReader implements ChainReader {
   /** The account and the player's game PDAs, read together so the round and its cards, tiles
    *  or draw match. */
   async playerAccount(player: PublicKey): Promise<PlayerState | null> {
-    const [account, table, mines, quick, hiloBoard, towerBoard] = await this.rollup.getMultipleAccountsInfo([
-      playerAccountAddress(player),
-      tableAddress(player),
-      minesBoardAddress(player),
-      quickTableAddress(player),
-      hiloBoardAddress(player),
-      towerBoardAddress(player),
-    ]);
+    const [account, table, mines, quick, hiloBoard, towerBoard, rouletteTable] =
+      await this.rollup.getMultipleAccountsInfo([
+        playerAccountAddress(player),
+        tableAddress(player),
+        minesBoardAddress(player),
+        quickTableAddress(player),
+        hiloBoardAddress(player),
+        towerBoardAddress(player),
+        rouletteTableAddress(player),
+      ]);
     if (!account) return null;
     const accounts = this.rollupProgram.coder.accounts;
     return decodePlayer(accounts.decode<PlayerAccountData>("playerAccount", account.data), {
@@ -298,6 +319,7 @@ export class RpcChainReader implements ChainReader {
       quick: quick ? accounts.decode<GameAccounts["quick"]>("quickTable", quick.data) : null,
       hilo: hiloBoard ? accounts.decode<GameAccounts["hilo"]>("hiloBoard", hiloBoard.data) : null,
       tower: towerBoard ? accounts.decode<GameAccounts["tower"]>("towerBoard", towerBoard.data) : null,
+      roulette: rouletteTable ? accounts.decode<GameAccounts["roulette"]>("rouletteTable", rouletteTable.data) : null,
     });
   }
 

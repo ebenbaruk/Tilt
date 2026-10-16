@@ -1610,6 +1610,98 @@ export type Tilt = {
       ]
     },
     {
+      "name": "consumeRouletteRandomness",
+      "discriminator": [
+        117,
+        66,
+        145,
+        192,
+        102,
+        107,
+        238,
+        43
+      ],
+      "accounts": [
+        {
+          "name": "vrfProgramIdentity",
+          "docs": [
+            "Scoped VRF identity PDA, bound to this program. Its presence as a signer proves",
+            "the callback was issued by the VRF program for this program."
+          ],
+          "signer": true
+        },
+        {
+          "name": "account",
+          "docs": [
+            "Must be a player account PDA, like in `consume_randomness`."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "roulette",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  108,
+                  101,
+                  116,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "randomness",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "requestId",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "consumeTowerRandomness",
       "discriminator": [
         44,
@@ -2521,6 +2613,215 @@ export type Tilt = {
                   105,
                   99,
                   107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ownerProgram",
+          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+        },
+        {
+          "name": "delegationProgram",
+          "address": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "delegateRouletteTable",
+      "discriminator": [
+        254,
+        4,
+        230,
+        223,
+        145,
+        226,
+        99,
+        243
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "player"
+        },
+        {
+          "name": "bufferRoulette",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  102,
+                  102,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "roulette"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                24,
+                12,
+                135,
+                51,
+                234,
+                253,
+                132,
+                42,
+                23,
+                91,
+                143,
+                100,
+                117,
+                247,
+                92,
+                216,
+                69,
+                90,
+                227,
+                83,
+                114,
+                248,
+                108,
+                194,
+                137,
+                171,
+                145,
+                243,
+                105,
+                204,
+                132,
+                234
+              ]
+            }
+          }
+        },
+        {
+          "name": "delegationRecordRoulette",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "roulette"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegationProgram"
+            }
+          }
+        },
+        {
+          "name": "delegationMetadataRoulette",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  109,
+                  101,
+                  116,
+                  97,
+                  100,
+                  97,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "roulette"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegationProgram"
+            }
+          }
+        },
+        {
+          "name": "roulette",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  108,
+                  101,
+                  116,
+                  116,
+                  101
                 ]
               },
               {
@@ -3671,6 +3972,173 @@ export type Tilt = {
                   105,
                   99,
                   107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracleQueue",
+          "writable": true
+        },
+        {
+          "name": "programIdentity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrfProgram",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slotHashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "clientSeed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "expireRouletteRound",
+      "discriminator": [
+        237,
+        22,
+        3,
+        152,
+        43,
+        146,
+        109,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "Read-only copy of the Solana vault: relayer key and limits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The Tilt relay, acting on the player's intents."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Read-only copy of the Solana ledger, to credit new deposits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "roulette",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  108,
+                  101,
+                  116,
+                  116,
+                  101
                 ]
               },
               {
@@ -6387,6 +6855,104 @@ export type Tilt = {
       "args": []
     },
     {
+      "name": "openRouletteTable",
+      "discriminator": [
+        49,
+        44,
+        68,
+        140,
+        203,
+        78,
+        16,
+        227
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The relay: pays the rent."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "player"
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Only players with an account get a table."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "roulette",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  108,
+                  101,
+                  116,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "openTable",
       "discriminator": [
         251,
@@ -7177,6 +7743,183 @@ export type Tilt = {
         }
       ],
       "args": []
+    },
+    {
+      "name": "rouletteChips",
+      "discriminator": [
+        249,
+        169,
+        216,
+        6,
+        47,
+        108,
+        68,
+        58
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "Read-only copy of the Solana vault: relayer key and limits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The Tilt relay, acting on the player's intents."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Read-only copy of the Solana ledger, to credit new deposits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "roulette",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  108,
+                  101,
+                  116,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracleQueue",
+          "writable": true
+        },
+        {
+          "name": "programIdentity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrfProgram",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slotHashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "chips",
+          "type": {
+            "vec": {
+              "defined": {
+                "name": "rouletteChip"
+              }
+            }
+          }
+        },
+        {
+          "name": "clientSeed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "rouletteSpin",
@@ -8783,6 +9526,19 @@ export type Tilt = {
       ]
     },
     {
+      "name": "rouletteTable",
+      "discriminator": [
+        176,
+        198,
+        27,
+        37,
+        5,
+        37,
+        240,
+        139
+      ]
+    },
+    {
       "name": "towerBoard",
       "discriminator": [
         168,
@@ -9987,6 +10743,29 @@ export type Tilt = {
       }
     },
     {
+      "name": "rouletteChip",
+      "docs": [
+        "One chip of a `roulette_chips` spin: its own bet and amount."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bet",
+            "type": {
+              "defined": {
+                "name": "rouletteBet"
+              }
+            }
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "rouletteSpin",
       "type": {
         "kind": "struct",
@@ -10003,6 +10782,49 @@ export type Tilt = {
             "name": "number",
             "docs": [
               "0 to 36 once spun."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "rouletteTable",
+      "docs": [
+        "The player's last `roulette_chips` spin: its chips, then the pocket once landed. Lives in",
+        "the rollup next to the player account."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "player",
+            "type": "pubkey"
+          },
+          {
+            "name": "chips",
+            "docs": [
+              "The first `n_chips` count."
+            ],
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "rouletteChip"
+                  }
+                },
+                20
+              ]
+            }
+          },
+          {
+            "name": "nChips",
+            "type": "u8"
+          },
+          {
+            "name": "pocket",
+            "docs": [
+              "0 to 36 once landed, `NO_POCKET` before."
             ],
             "type": "u8"
           }

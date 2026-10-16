@@ -6,6 +6,7 @@ import {
   minesBoardAddress,
   PROGRAM_ID,
   quickTableAddress,
+  rouletteTableAddress,
   tableAddress,
   towerBoardAddress,
 } from "./program";
@@ -79,6 +80,13 @@ describe("IDL", () => {
       address: towerBoardAddress,
       callback: "consume_tower_randomness",
       instructions: ["open_tower_board", "tower_bet", "tower_climb", "tower_cashout", "expire_tower_round"],
+    },
+    {
+      account: "roulette",
+      seed: "roulette",
+      address: rouletteTableAddress,
+      callback: "consume_roulette_randomness",
+      instructions: ["open_roulette_table", "delegate_roulette_table", "roulette_chips", "expire_roulette_round"],
     },
   ];
 

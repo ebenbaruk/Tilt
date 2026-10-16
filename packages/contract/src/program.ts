@@ -37,6 +37,10 @@ export const hiloBoardAddress = (player: PublicKey) => pda(Buffer.from("hilo"), 
  *  last round); lives in the rollup next to the player account. */
 export const towerBoardAddress = (player: PublicKey) => pda(Buffer.from("tower"), player.toBuffer());
 
+/** A player's last multi-chip roulette spin (`roulette_chips`: the chips, then the pocket); lives
+ *  in the rollup next to the player account. Single-bet spins keep their bet in the round. */
+export const rouletteTableAddress = (player: PublicKey) => pda(Buffer.from("roulette"), player.toBuffer());
+
 /** Solana's record of a player's deposits and paid withdrawals. */
 export const ledgerAddress = (player: PublicKey) => pda(Buffer.from("ledger"), player.toBuffer());
 

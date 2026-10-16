@@ -1,7 +1,7 @@
 // Typed views over the mod's `$.state` (types/index.d.ts). The contract holds api-shaped values
 // as `unknown`; these readers check them again with the protocol guards.
 import type { TiltAgent, TiltAuth, TiltIntent, TiltLayout, TiltPrefs, TiltRemote } from "../types";
-import { isKenoPicks, isPlayAction, isRouletteBet, isStateResponse } from "./guards";
+import { isKenoPicks, isPlayAction, isRouletteChip, isStateResponse } from "./guards";
 import {
   clampFlips,
   clampHands,
@@ -14,7 +14,11 @@ import {
   DICE_CHANCES,
   FLIP_SIDES,
   LIMBO_TARGETS,
+  MAX_ROULETTE_CHIPS,
+  MAX_ROULETTE_PLACED,
   optionOr,
+  ROULETTE_CURSOR_CELLS,
+  stackChips,
   TOWER_DIFFICULTIES,
   WHEEL_RISKS,
   WHEEL_SEGMENTS,
@@ -24,7 +28,7 @@ import type {
   FlipSide,
   Game,
   PlayAction,
-  RouletteBet,
+  RouletteChip,
   StateResponse,
   TowerDifficulty,
   WheelRisk,
@@ -48,7 +52,10 @@ export interface Prefs {
   betIndex: number;
   /** Blackjack hands per round, 1 to 6. */
   hands: number;
-  roulette: RouletteBet;
+  /** Roulette chips in the order they were placed (a stack is several on one bet), kept between spins. */
+  rouletteChips: RouletteChip[];
+  /** The roulette cursor's cell, an index into ROULETTE_CURSOR_CELLS. */
+  rouletteCursor: number;
   baccarat: BaccaratBet;
   slotsSpeed: SlotsSpeed;
   /** Mines per board, 1 to 24. */
@@ -72,7 +79,18 @@ export interface IntentView extends Omit<TiltIntent, "action"> {
   action: PlayAction;
 }
 
-export const DEFAULT_ROULETTE_BET: RouletteBet = { kind: "red" };
+/** Placed chips another plugin could have broken read as an empty table: each a bet and a stake,
+ *  at most MAX_ROULETTE_PLACED of them on at most MAX_ROULETTE_CHIPS bets. */
+function placedChips(value: unknown): RouletteChip[] {
+  if (!Array.isArray(value) || value.length > MAX_ROULETTE_PLACED || !value.every(isRouletteChip)) {
+    return [];
+  }
+
+  return stackChips(value).length <= MAX_ROULETTE_CHIPS ? value : [];
+}
+
+const isCursor = (value: unknown): value is number =>
+  Number.isInteger(value) && typeof value === "number" && value >= 0 && value < ROULETTE_CURSOR_CELLS.length;
 
 export const remoteView = (held: TiltRemote): RemoteView => ({
   ...held,
@@ -83,7 +101,8 @@ export const prefsView = (held: TiltPrefs): Prefs => ({
   ...held,
   hands: clampHands(held.hands),
   mines: clampMines(held.mines ?? DEFAULT_MINES),
-  roulette: isRouletteBet(held.roulette) ? held.roulette : DEFAULT_ROULETTE_BET,
+  rouletteChips: placedChips(held.rouletteChips),
+  rouletteCursor: isCursor(held.rouletteCursor) ? held.rouletteCursor : 0,
   diceChance: optionOr(DICE_CHANCES, held.diceChance, DEFAULT_DICE_CHANCE),
   diceOver: held.diceOver === true,
   limboTarget: optionOr(LIMBO_TARGETS, held.limboTarget, DEFAULT_LIMBO_TARGET),

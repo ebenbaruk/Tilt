@@ -49,7 +49,7 @@ export async function sweep(db: Db, chain: TiltChain, intents: Intents, options:
       const lastAction = Number(account.round.lastAction.toString());
       // Only a draw stuck in AwaitingDraw is retried. In PlayerTurn, expire_round would stand for the player.
       if ("awaitingDraw" in account.round.status && nowMs / 1000 - lastAction >= timeoutSecs) {
-        await chain.expireRound(player, account.round.game);
+        await chain.expireRound(player, account.round);
         report.expired++;
         continue;
       }

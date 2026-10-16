@@ -1,5 +1,5 @@
 // Pure formatting: money, durations, cards. No `$`, so it is unit-tested directly.
-import type { Card, RouletteBet } from "./protocol";
+import type { Card, RouletteBet, RouletteChip } from "./protocol";
 
 export const MINUS = "−";
 export const SEPARATOR = " · ";
@@ -28,6 +28,21 @@ export function formatSigned(net: string): string {
   const text = formatUsdc(net);
 
   return BigInt(net) > 0n && text !== "0.00" ? `+${text}` : text;
+}
+
+const THOUSAND = 1_000n;
+
+/** A chip's stake in as few characters as the felt has: "2", "2.5", ".5", "1k". Sub-cent dust is truncated. */
+export function compactUsdc(amount: string): string {
+  const cents = BigInt(amount) / BASE_UNITS_PER_CENT;
+  const whole = cents / CENTS_PER_USDC;
+  const fraction = (cents % CENTS_PER_USDC).toString().padStart(2, "0").replace(/0+$/, "");
+
+  if (fraction !== "") {
+    return `${whole === 0n ? "" : whole.toString()}.${fraction}`;
+  }
+
+  return whole >= THOUSAND && whole % THOUSAND === 0n ? `${whole / THOUSAND}k` : whole.toString();
 }
 
 /** Cash-out multipliers (Mines, Hilo, Tower) come with exactly 4 decimals ("1.0312"). */
@@ -150,6 +165,75 @@ export function rouletteBetLabel(bet: RouletteBet): string {
     default:
       return bet.kind;
   }
+}
+
+/** Whether `bet` wins when the ball lands in `pocket`; 0 loses every bet but a straight on it. */
+export function rouletteWins(bet: RouletteBet, pocket: number): boolean {
+  if (bet.kind === "straight") {
+    return bet.number === pocket;
+  }
+
+  if (pocket === 0) {
+    return false;
+  }
+
+  switch (bet.kind) {
+    case "red":
+      return RED_POCKETS.has(pocket);
+    case "black":
+      return !RED_POCKETS.has(pocket);
+    case "odd":
+      return pocket % 2 === 1;
+    case "even":
+      return pocket % 2 === 0;
+    case "low":
+      return pocket <= 18;
+    case "high":
+      return pocket >= 19;
+    case "dozen":
+      return Math.floor((pocket - 1) / 12) + 1 === bet.dozen;
+    case "column":
+      return ((pocket - 1) % 3) + 1 === bet.column;
+  }
+}
+
+/** What a winning chip returns per unit staked, the stake included: 36 on a number, 3 on a dozen or a column, 2 on the rest. */
+function rouletteReturn(bet: RouletteBet): bigint {
+  switch (bet.kind) {
+    case "straight":
+      return 36n;
+    case "dozen":
+    case "column":
+      return 3n;
+    default:
+      return 2n;
+  }
+}
+
+export const chipsTotal = (chips: readonly RouletteChip[]): bigint =>
+  chips.reduce((total, chip) => total + BigInt(chip.amount), 0n);
+
+/** What the chips return when the ball lands in `pocket`, before Tilt's fee, as the program pays it. */
+export const rouletteGross = (chips: readonly RouletteChip[], pocket: number): bigint =>
+  chips.reduce(
+    (gross, chip) => gross + (rouletteWins(chip.bet, pocket) ? BigInt(chip.amount) * rouletteReturn(chip.bet) : 0n),
+    0n,
+  );
+
+const ROULETTE_POCKETS = 37;
+
+/** The most the chips can win over their stake on one pocket, before Tilt's fee; 0 when no pocket gains. */
+export function rouletteMaxGain(chips: readonly RouletteChip[]): bigint {
+  const total = chipsTotal(chips);
+  let best = 0n;
+
+  for (let pocket = 0; pocket < ROULETTE_POCKETS; pocket++) {
+    const gain = rouletteGross(chips, pocket) - total;
+
+    best = gain > best ? gain : best;
+  }
+
+  return best;
 }
 
 /** Control characters (escape sequences) and format characters (bidi overrides, zero-width joiners). */

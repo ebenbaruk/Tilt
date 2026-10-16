@@ -120,6 +120,12 @@ UPDATE rounds SET detail = jsonb_set(detail, '{hands}', (
     SELECT jsonb_agg(hand || '{"split": false}' ORDER BY i) FROM jsonb_array_elements(detail->'hands') WITH ORDINALITY AS h(hand, i)
   )) || '{"splits": 0}'
 WHERE game = 'blackjack' AND detail ? 'bet' AND NOT detail ? 'splits';
+-- Roulette details from before chips (one bet), in today's shape: one chip of the whole stake.
+UPDATE rounds SET detail = jsonb_build_object(
+  'game', 'roulette',
+  'chips', jsonb_build_array(jsonb_build_object('bet', detail->'bet', 'amount', stake::text)),
+  'number', detail->'number')
+WHERE game = 'roulette' AND detail ? 'bet';
 -- Mines, then dice to tower: widen the game check of tables created before them.
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'rounds_game_check'

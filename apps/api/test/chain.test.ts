@@ -8,6 +8,7 @@ import {
   PROGRAM_ID,
   playerAccountAddress,
   quickTableAddress,
+  rouletteTableAddress,
   tableAddress,
   towerBoardAddress,
 } from "@tilt/contract";
@@ -16,7 +17,7 @@ import { associatedTokenAddress, decodeRound, type GameAccounts, RpcChainReader 
 
 const { BN } = anchor;
 type RoundData = Parameters<typeof decodeRound>[0];
-const none: GameAccounts = { table: null, mines: null, quick: null, hilo: null, tower: null };
+const none: GameAccounts = { table: null, mines: null, quick: null, hilo: null, tower: null, roulette: null };
 
 const MAX_CARDS = 21;
 const MAX_TABLE_HANDS = 10;
@@ -105,6 +106,27 @@ const towerBoard: NonNullable<GameAccounts["tower"]> = {
   busted: 1,
 };
 
+const MAX_ROULETTE_CHIPS = 20;
+const NO_POCKET = 255;
+const emptyChip = { bet: { straight: { 0: 0 } }, amount: new BN(0) };
+/** Three chips: 0.50 on 17, 1 on red, 2.50 on the third column; landed on 17. */
+const rouletteTable: NonNullable<GameAccounts["roulette"]> = {
+  player,
+  chips: [
+    { bet: { straight: { 0: 17 } }, amount: new BN(500_000) },
+    { bet: { red: {} }, amount: new BN(1_000_000) },
+    { bet: { column: { 0: 3 } }, amount: new BN(2_500_000) },
+    ...Array.from({ length: MAX_ROULETTE_CHIPS - 3 }, () => emptyChip),
+  ],
+  nChips: 3,
+  pocket: 17,
+};
+const tableChips = [
+  { bet: { kind: "straight", number: 17 }, amount: "500000" },
+  { bet: { kind: "red" }, amount: "1000000" },
+  { bet: { kind: "column", column: 3 }, amount: "2500000" },
+];
+
 afterEach(() => vi.restoreAllMocks());
 
 describe("chain decoding", () => {
@@ -164,13 +186,14 @@ describe("chain decoding", () => {
       },
     );
     const roulette = { ...base, game: { roulette: {} }, roulette: { bet: { dozen: { 0: 2 } }, number: 14 } };
-    expect(decodeRound(roulette, { ...none, table }).outcome).toEqual({
+    // A single-bet spin is one chip of the whole stake, whatever the roulette table holds.
+    expect(decodeRound(roulette, { ...none, table, roulette: rouletteTable }).outcome).toEqual({
       game: "roulette",
-      bet: { kind: "dozen", dozen: 2 },
+      chips: [{ bet: { kind: "dozen", dozen: 2 }, amount: "4000000" }],
       number: 14,
     });
     const red = { ...roulette, roulette: { bet: { red: {} }, number: 3 } };
-    expect(decodeRound(red, none).outcome).toMatchObject({ bet: { kind: "red" } });
+    expect(decodeRound(red, none).outcome).toMatchObject({ chips: [{ bet: { kind: "red" } }] });
     const baccarat = {
       ...base,
       game: { baccarat: {} },
@@ -267,8 +290,25 @@ describe("chain decoding", () => {
     });
   });
 
+  it("decodes a spin of chips from the roulette table, trimming empty chips", () => {
+    const spin = { ...base, game: { roulette: {} }, stake: new BN(4_000_000) };
+    expect(decodeRound(spin, { ...none, roulette: rouletteTable }).outcome).toEqual({
+      game: "roulette",
+      chips: tableChips,
+      number: 17,
+    });
+    // Before landing, the pocket is meaningless (the view hides it).
+    const drawing = { ...spin, status: { awaitingDraw: { 0: { spin: {} } } } };
+    const waiting = { ...rouletteTable, pocket: NO_POCKET };
+    expect(decodeRound(drawing, { ...none, roulette: waiting }).outcome).toMatchObject({ number: NO_POCKET });
+  });
+
   it("fails loudly on an inconsistent round", () => {
     expect(() => decodeRound({ ...base, game: { roulette: {} } }, none)).toThrow();
+    // A spin of chips needs its table, with chips, landed once the round is settled.
+    const spin = { ...base, game: { roulette: {} } };
+    expect(() => decodeRound(spin, { ...none, roulette: { ...rouletteTable, nChips: 0 } })).toThrow();
+    expect(() => decodeRound(spin, { ...none, roulette: { ...rouletteTable, pocket: NO_POCKET } })).toThrow();
     expect(() => decodeRound({ ...base, game: { mines: {} } }, { ...none, table })).toThrow();
     expect(() => decodeRound({ ...base, game: { hilo: {} } }, none)).toThrow();
     expect(() => decodeRound({ ...base, game: { tower: {} } }, none)).toThrow();
@@ -312,8 +352,9 @@ describe("RpcChainReader.playerAccount", () => {
       quick: await coder.encode("quickTable", quickOf({ wheel: { segments: 10, risk: { high: {} }, segment: 9 } })),
       hilo: await coder.encode("hiloBoard", hiloBoard),
       tower: await coder.encode("towerBoard", towerBoard),
+      roulette: await coder.encode("rouletteTable", rouletteTable),
     };
-    const pdas = (["table", "mines", "quick", "hilo", "tower"] as const).map((k) =>
+    const pdas = (["table", "mines", "quick", "hilo", "tower", "roulette"] as const).map((k) =>
       opened.includes(k) ? info(encoded[k]) : null,
     );
     const fetch = vi
@@ -324,7 +365,7 @@ describe("RpcChainReader.playerAccount", () => {
   }
 
   it("reads the account and every game PDA in one call and decodes them", async () => {
-    const { state, fetch } = await read(["table", "mines", "quick", "hilo", "tower"]);
+    const { state, fetch } = await read(["table", "mines", "quick", "hilo", "tower", "roulette"]);
     expect(fetch).toHaveBeenCalledWith([
       playerAccountAddress(player),
       tableAddress(player),
@@ -332,6 +373,7 @@ describe("RpcChainReader.playerAccount", () => {
       quickTableAddress(player),
       hiloBoardAddress(player),
       towerBoardAddress(player),
+      rouletteTableAddress(player),
     ]);
     expect(state?.balance).toBe(6_000_000n);
     expect(state?.round.status).toEqual({ kind: "player_turn" });
@@ -348,14 +390,16 @@ describe("RpcChainReader.playerAccount", () => {
     expect(state?.round.outcome).toMatchObject({ game: "mines", order: [7, 12], pending: 3 });
   });
 
-  it("decodes one-draw, hilo and tower rounds from their PDAs", async () => {
-    const opened: (keyof GameAccounts)[] = ["quick", "hilo", "tower"];
+  it("decodes one-draw, hilo, tower and roulette chips rounds from their PDAs", async () => {
+    const opened: (keyof GameAccounts)[] = ["quick", "hilo", "tower", "roulette"];
     const wheel = await read(opened, { ...base, game: { wheel: {} } });
     expect(wheel.state?.round.outcome).toEqual({ game: "wheel", segments: 10, risk: "high", segment: 9 });
     const hilo = await read(opened, { ...base, game: { hilo: {} } });
     expect(hilo.state?.round.outcome).toMatchObject({ game: "hilo", cards: [4, 23], pending: "lower" });
     const tower = await read(opened, { ...base, game: { tower: {} } });
     expect(tower.state?.round.outcome).toMatchObject({ game: "tower", difficulty: "hard", climbed: [1, 0] });
+    const roulette = await read(opened, { ...base, game: { roulette: {} } });
+    expect(roulette.state?.round.outcome).toEqual({ game: "roulette", chips: tableChips, number: 17 });
   });
 
   it("is null before the first deposit", async () => {

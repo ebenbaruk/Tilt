@@ -36,6 +36,7 @@ import {
   MINES_TURN,
   NOT_OPEN,
   ROULETTE,
+  ROULETTE_CHIPS,
   SLOTS,
   SLOTS_DRAWING,
   TOWER_BUSTED,
@@ -123,8 +124,9 @@ const cases: [string, StateResponse, string[]][] = [
   [
     "roulette, settled",
     ROULETTE,
-    ["bet red", " 17 BLACK ", "Red loses.", "−1.00", " 17 ", "spin · 0.50", "rtp 97.30%"],
+    ["No chips on the table yet.", " 17 BLACK ", "Red loses.", "−1.00", " 17 ", "chip ●", "rtp 97.30%"],
   ],
+  ["roulette, three chips settled", ROULETTE_CHIPS, [" 17 BLACK ", "2 of 3 chips win.", "+17.91", "BIG WIN"]],
   ["baccarat, settled", BACCARAT, ["bet banker", "PLAYER 5", "BANKER 7", "Player 5 · banker 7.", "+0.94"]],
   ["slots, settled", SLOTS, ["7", "★", "+3.96", "spin · 0.50", "rtp 96.16%"]],
   ["slots, drawing", SLOTS_DRAWING, ["drawing", "PAYS × BET"]],
@@ -569,13 +571,20 @@ describe("the roulette layout", () => {
           round: {
             ...ROULETTE.round,
             phase: "drawing",
-            detail: { game: "roulette", bet: { kind: "red" }, number: null },
+            detail: {
+              game: "roulette",
+              bet: { kind: "red" },
+              chips: [{ bet: { kind: "red" }, amount: "1000000" }],
+              number: null,
+            },
           },
         };
 
-  test("lies under the wheel with the chip on the bet, the landed pocket lit", async ($, on) => {
-    await seat($, on, ROULETTE);
+  test("lies under the wheel, the landed pocket and the winning cells lit", async ($, on) => {
+    await seat($, on, ROULETTE_CHIPS);
     const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+    const cellOf = async (cell: string) =>
+      JSON.stringify(await ui.find({ key: `table-roulette-${cell}`, in: TABLE_KEY }));
 
     await ui.press({ key: "game-roulette" });
     const table = textOf(await ui.drawn({ in: TABLE_KEY }));
@@ -584,39 +593,65 @@ describe("the roulette layout", () => {
       expect(table).toContain(cell);
     }
 
-    expect(table).toMatch(/●\s*RED/);
-    expect(JSON.stringify(await ui.find({ key: "table-roulette-straight-17", in: TABLE_KEY }))).toContain(GOLD);
-    expect(JSON.stringify(await ui.find({ key: "table-roulette-straight-16", in: TABLE_KEY }))).not.toContain(GOLD);
+    // 17 and the second dozen won; red lost, 16 was not played.
+    expect(await cellOf("straight-17")).toContain(GOLD);
+    expect(await cellOf("dozen-2")).toContain(GOLD);
+    expect(await cellOf("red")).not.toContain(GOLD);
+    expect(await cellOf("straight-16")).not.toContain(GOLD);
     // Once the table holds the keys, its prompt says the layout takes clicks.
     await ui.pointer({ type: "down", x: 2, y: 1, button: "left" });
-    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("click the layout to bet");
+    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("click the layout to add a chip");
   });
 
-  test("a click on a number, RED, a dozen or a 2:1 moves the chip there, and the next spin bets it", async ($, on) => {
+  test("clicks stack chips on a number, RED, a dozen and a 2:1; undo, spin and clear are buttons", async ($, on) => {
     const { world, clock } = await seat($, on, ROULETTE, movingTable(ROULETTE, ROULETTE));
     const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
     const table = async () => textOf(await ui.drawn({ in: TABLE_KEY }));
 
     await ui.press({ key: "game-roulette" });
+    expect(await ui.find({ key: "table-start", in: TABLE_KEY })).toBeUndefined();
 
-    for (const cell of ["straight-17", "red", "dozen-1", "column-3"]) {
+    for (const cell of ["straight-17", "straight-17", "red", "dozen-1", "column-3"]) {
       await ui.press({ key: `table-roulette-${cell}` });
-
-      if (cell === "straight-17") {
-        expect(await table()).toContain("●17");
-        expect(await table()).toContain("bet number 17");
-      }
-
-      await ui.press({ key: "start" });
-      await clock.advance(1_000);
     }
 
+    expect(await table()).toContain("●1");
+    expect(await table()).toContain("on the table 2.50 · 4 chips");
+    expect(JSON.stringify(await ui.find({ key: "table-roulette-straight-17", in: TABLE_KEY }))).toContain(GOLD);
+    await ui.press({ key: "table-chip-undo" });
+    expect(await table()).toContain("on the table 2.00 · 3 chips");
+    await ui.press({ key: "table-start" });
+    await clock.advance(1_000);
+    // The chips stay for the next spin, until cleared.
+    expect(await table()).toContain("on the table 2.00 · 3 chips");
+    await ui.press({ key: "table-chip-clear" });
+    expect(await table()).toContain("No chips on the table yet.");
+    expect(await ui.find({ key: "table-start", in: TABLE_KEY })).toBeUndefined();
+
     expect(actionsOf(world.calls("POST /v1/play"))).toEqual([
-      { type: "roulette_spin", amount: "500000", bet: { kind: "straight", number: 17 } },
-      { type: "roulette_spin", amount: "500000", bet: { kind: "red" } },
-      { type: "roulette_spin", amount: "500000", bet: { kind: "dozen", dozen: 1 } },
-      { type: "roulette_spin", amount: "500000", bet: { kind: "column", column: 3 } },
+      {
+        type: "roulette_chips",
+        chips: [
+          { bet: { kind: "straight", number: 17 }, amount: "1000000" },
+          { bet: { kind: "red" }, amount: "500000" },
+          { bet: { kind: "dozen", dozen: 1 }, amount: "500000" },
+        ],
+      },
     ]);
+  });
+
+  test("a 21st bet is refused with a word; the 20 already on stay", async ($, on) => {
+    await seat($, on, ROULETTE);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+
+    await ui.press({ key: "game-roulette" });
+
+    for (let number = 0; number <= 20; number++) {
+      await ui.press({ key: `table-roulette-straight-${number}` });
+    }
+
+    expect(textOf(await ui.drawn())).toContain("20 bets at most on one spin.");
+    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("on the table 10.00 · 20 chips");
   });
 
   test("is inert while the wheel draws: no cell takes a click", async ($, on) => {
@@ -629,21 +664,42 @@ describe("the roulette layout", () => {
     expect(await ui.find({ key: "table-roulette-dozen-1", in: TABLE_KEY })).toBeUndefined();
   });
 
-  test("on the main screen s and d step a bet on one number, around 0 to 36", async ($, on) => {
+  test("on the main screen s and d move the cursor, a puts a chip under it and x takes it off", async ($, on) => {
     await seat($, on, BASE);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+    const text = async () => textOf(await ui.drawn());
+
+    await ui.press({ key: "game-roulette" });
+    expect((await ui.find({ key: "cursor-up" }))?.props.hotkey).toBe("d");
+    expect(await ui.find({ key: "roulette-straight-17" })).toBeUndefined();
+    await ui.press({ key: "cursor-up" });
+    expect(await text()).toContain("on number 1");
+    await ui.press({ key: "cursor-down" });
+    await ui.press({ key: "cursor-down" });
+    expect(await text()).toContain("on column 3");
+
+    for (let press = 0; press < 6; press++) {
+      await ui.press({ key: "cursor-down" });
+    }
+
+    expect(await text()).toContain("on number 36");
+    await ui.press({ key: "chip-add" });
+    expect(await text()).toContain("●.5");
+    expect(await text()).toContain("spin · 0.50 · 1 chip");
+    await ui.press({ key: "chip-remove" });
+    expect(await text()).toContain("No chips on the table yet.");
+    expect(await ui.find({ key: "start" })).toBeUndefined();
+  });
+
+  test("the balance short of the chips is said before n", async ($, on) => {
+    await seat($, on, { ...BASE, balance: "700000" });
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
 
     await ui.press({ key: "game-roulette" });
-    expect((await ui.find({ key: "roulette-number-up" }))?.props.hotkey).toBe("d");
-    expect(await ui.find({ key: "roulette-straight-17" })).toBeUndefined();
-    await ui.press({ key: "roulette-number-up" });
-    expect(textOf(await ui.drawn())).toContain("bet number 0");
-    await ui.press({ key: "roulette-number-up" });
-    expect(textOf(await ui.drawn())).toContain("bet number 1");
-    await ui.press({ key: "roulette-number-down" });
-    await ui.press({ key: "roulette-number-down" });
-    expect(textOf(await ui.drawn())).toContain("bet number 36");
-    expect(textOf(await ui.drawn())).toContain("●36");
+    await ui.press({ key: "roulette-red" });
+    expect(textOf(await ui.drawn())).not.toContain("Balance too low");
+    await ui.press({ key: "roulette-black" });
+    expect(textOf(await ui.drawn())).toContain("Balance too low for these chips");
   });
 });
 

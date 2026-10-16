@@ -1,5 +1,6 @@
 // Shape checks for what the api sends. The mod cannot import zod, so these small guards are the
 // boundary: anything that fails them is shown as a one-line error instead of being drawn.
+import { rouletteBetLabel } from "./format";
 import {
   DICE_ROLLS,
   FLIP_SIDES,
@@ -14,6 +15,7 @@ import {
   MAX_KENO_PICKS,
   MAX_LIMBO_TARGET,
   MAX_MINES,
+  MAX_ROULETTE_CHIPS,
   MAX_TABLE_HANDS,
   MAX_TOWER_TILES,
   MIN_DICE_CHANCE,
@@ -42,6 +44,7 @@ import type {
   LeaderboardEntry,
   PlayAction,
   RouletteBet,
+  RouletteChip,
   RoundView,
   SponsorView,
   StateResponse,
@@ -91,6 +94,9 @@ const isThird = (value: unknown): value is 1 | 2 | 3 => value === 1 || value ===
 
 export const isGame = (value: unknown): value is Game => isOneOf(value, GAMES);
 
+const ROULETTE_POCKETS = 37;
+const isPocket = (value: unknown): value is number => isInt(value) && value >= 0 && value < ROULETTE_POCKETS;
+
 const isCard = (value: unknown): value is Card =>
   isRecord(value) && isInt(value.rank) && value.rank >= 1 && value.rank <= 13 && isOneOf(value.suit, SUITS);
 
@@ -115,6 +121,14 @@ const isBaccaratBet = (value: unknown): value is BaccaratBet => isOneOf(value, B
 
 /** Base units greater than zero: a stake. */
 const isStake = (value: unknown): value is string => isAmount(value) && BigInt(value) > 0n;
+export const isRouletteChip = (value: unknown): value is RouletteChip =>
+  isRecord(value) && isRouletteBet(value.bet) && isStake(value.amount);
+/** 1 to 20 chips, no two on the same bet. */
+export const isRouletteChips = (value: unknown): value is RouletteChip[] =>
+  isArrayOf(value, isRouletteChip) &&
+  value.length >= 1 &&
+  value.length <= MAX_ROULETTE_CHIPS &&
+  new Set(value.map((chip) => rouletteBetLabel(chip.bet))).size === value.length;
 const isHandCount = (value: unknown): value is number => isInt(value) && value >= MIN_HANDS && value <= MAX_HANDS;
 /** Hands on the table: the dealt ones plus the splits. */
 const isTableHandCount = (value: unknown): value is number =>
@@ -169,6 +183,8 @@ export const isPlayAction = (value: unknown): value is PlayAction => {
       return isStake(value.amount);
     case "roulette_spin":
       return isStake(value.amount) && isRouletteBet(value.bet);
+    case "roulette_chips":
+      return isRouletteChips(value.chips);
     case "baccarat_deal":
       return isStake(value.amount) && isBaccaratBet(value.bet);
     case "mines_bet":
@@ -341,7 +357,7 @@ const isDetail = (value: unknown): value is RoundView["detail"] => {
     case "blackjack":
       return isBlackjack(value);
     case "roulette":
-      return isRouletteBet(value.bet) && isNullable(value.number, isInt);
+      return isRouletteBet(value.bet) && isRouletteChips(value.chips) && isNullable(value.number, isPocket);
     case "baccarat":
       return (
         isBaccaratBet(value.bet) &&

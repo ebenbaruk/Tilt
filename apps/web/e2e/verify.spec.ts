@@ -226,6 +226,63 @@ test("draws a tower: the climbed tiles and the busting level", async ({ page }) 
   await expect(page.getByText("medium · fell at level 4, tile 3")).toBeVisible();
 });
 
+test("draws a roulette spin with several chips: their stakes on the felt and the ones it paid", async ({ page }) => {
+  // 17 lands: black, the straight and the second dozen pay; column 1 (1, 4, … 34) loses.
+  const chips: VerifyResponse = {
+    ...RESULT,
+    game: "roulette",
+    replayed: {
+      ...RESULT.replayed,
+      stake: "2300000",
+      payout: "37900000",
+      fee: "356000",
+      net: "35244000",
+      detail: {
+        game: "roulette",
+        bet: { kind: "straight", number: 17 },
+        chips: [
+          { bet: { kind: "straight", number: 17 }, amount: "1000000" },
+          { bet: { kind: "black" }, amount: "500000" },
+          { bet: { kind: "dozen", dozen: 2 }, amount: "300000" },
+          { bet: { kind: "column", column: 1 }, amount: "500000" },
+        ],
+        number: 17,
+      },
+    },
+    onChain: { stake: "2300000", payout: "37900000", fee: "356000" },
+  };
+  await page.route(`**/v1/rounds/${SIGNATURE}/verify`, (route) => json(route, 200, chips));
+  await page.goto(`/verify/${SIGNATURE}`);
+  const felt = page.getByRole("img", { name: "landed on 17, 3 of 4 chips won" });
+  await expect(felt).toBeVisible();
+  for (const cell of ["17●1.00", "BLACK●0.50", "2nd 12●0.30", "2:1●0.50"]) {
+    await expect(felt).toContainText(cell);
+  }
+  await expect(page.getByText("on the table 2.30 · 4 chips · landed on 17, 3 of 4 chips won")).toBeVisible();
+  for (const chip of [
+    "straight 17 · 1.00 · won",
+    "black · 0.50 · won",
+    "dozen 2 · 0.30 · won",
+    "column 1 · 0.50 · lost",
+  ]) {
+    await expect(page.getByText(chip, { exact: true })).toBeVisible();
+  }
+  await expect(page.getByText("Replay matches on-chain.")).toBeVisible();
+});
+
+test("a single-bet roulette round keeps its pocket and bet", async ({ page }) => {
+  const single = replayOf(
+    { game: "roulette", bet: { kind: "black" }, chips: [{ bet: { kind: "black" }, amount: "1000000" }], number: 17 },
+    "2000000",
+    "10000",
+  );
+  await page.route(`**/v1/rounds/${SIGNATURE}/verify`, (route) => json(route, 200, single));
+  await page.goto(`/verify/${SIGNATURE}`);
+  await expect(page.getByText("17", { exact: true })).toBeVisible();
+  await expect(page.getByText("bet black", { exact: true })).toBeVisible();
+  await expect(page.getByRole("img", { name: /chips won/ })).toHaveCount(0);
+});
+
 test("flags a mismatch", async ({ page }) => {
   const mismatch: VerifyResponse = { ...RESULT, onChain: { ...RESULT.onChain, payout: "6500000" }, matches: false };
   await page.route(`**/v1/rounds/${SIGNATURE}/verify`, (route) => json(route, 200, mismatch));

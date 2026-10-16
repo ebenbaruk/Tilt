@@ -266,7 +266,36 @@ export const BLACKJACK_SPLIT_SETTLED: StateResponse = {
 
 export const ROULETTE: StateResponse = {
   ...BASE,
-  round: round({ detail: { game: "roulette", bet: { kind: "red" }, number: 17 } }),
+  round: round({
+    detail: {
+      game: "roulette",
+      bet: { kind: "red" },
+      chips: [{ bet: { kind: "red" }, amount: "1000000" }],
+      number: 17,
+    },
+  }),
+};
+
+/** Three chips, the ball in 17: the number pays 35:1 and the second dozen 2:1, red loses. */
+export const ROULETTE_CHIPS: StateResponse = {
+  ...BASE,
+  round: round({
+    stake: "2300000",
+    payout: "20400000",
+    fee: "181000",
+    net: "17919000",
+    number: 8,
+    detail: {
+      game: "roulette",
+      bet: { kind: "red" },
+      chips: [
+        { bet: { kind: "red" }, amount: "1000000" },
+        { bet: { kind: "straight", number: 17 }, amount: "500000" },
+        { bet: { kind: "dozen", dozen: 2 }, amount: "800000" },
+      ],
+      number: 17,
+    },
+  }),
 };
 
 export const BACCARAT: StateResponse = {

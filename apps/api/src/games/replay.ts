@@ -7,7 +7,9 @@
 //   active hand, or the dealer's turn after the last stand. A stand that leaves a hand to play
 //   takes no draw, so every sequence of moves the draws allow is tried, for every number of
 //   dealt hands (the snapshot, when there is one, fixes them and prunes everything else);
-// - roulette / baccarat: the bet comes from the snapshot; without one, every bet is tried;
+// - roulette: the chips come from the snapshot; without one, every single bet is tried with the
+//   whole stake (a spin of several chips cannot be found without its snapshot);
+// - baccarat: the bet comes from the snapshot; without one, every bet is tried;
 // - mines: each draw is one reveal, in order; whether a tile is a mine depends only on how many
 //   tiles were revealed before it, never on which one. The snapshot (the board) gives the mine
 //   count, the tiles and the round's cap; without one, every mine count is tried with the
@@ -23,7 +25,7 @@
 //   Cash-outs of hilo and tower take no draw either.
 // A round "matches" when a replay reproduces the program's payout and fee (and the snapshot,
 // when there is one).
-import type { BaccaratBet, FlipSide, Game, HiloGuess, RouletteBet, TowerDifficulty } from "@tilt/mod/protocol";
+import type { BaccaratBet, FlipSide, Game, HiloGuess, RouletteChip, TowerDifficulty } from "@tilt/mod/protocol";
 import { isDeepStrictEqual } from "node:util";
 import * as baccarat from "./baccarat";
 import * as blackjack from "./blackjack";
@@ -166,11 +168,14 @@ function blackjackCandidates(draws: Uint8Array[], stake: bigint, snapshot: Outco
 
 function rouletteCandidates(randomness: Uint8Array, stake: bigint, snapshot: Outcome | null): Candidate[] {
   const number = roulette.spin(Rng.fromVrf(randomness));
-  const bets: readonly RouletteBet[] = snapshot?.game === "roulette" ? [snapshot.bet] : roulette.ALL_BETS;
-  return bets.map((bet) => ({
-    outcome: { game: "roulette", bet, number },
-    gross: roulette.gross(bet, number, stake),
-    possible: true,
+  const layouts: readonly RouletteChip[][] =
+    snapshot?.game === "roulette"
+      ? [snapshot.chips]
+      : roulette.ALL_BETS.map((bet) => [{ bet, amount: stake.toString() }]);
+  return layouts.map((chips) => ({
+    outcome: { game: "roulette", chips, number },
+    gross: roulette.chipsGross(chips, number),
+    possible: chips.reduce((sum, chip) => sum + BigInt(chip.amount), 0n) === stake,
   }));
 }
 

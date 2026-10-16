@@ -1,6 +1,6 @@
 // Game rules and replay against the program's own Rust code: test/fixtures/rust-vectors.json was
 // produced by compiling chain/programs/tilt/src/{rng,settlement,games/*}.rs (see rust-vectors.rs).
-import type { FlipSide, HiloGuess, TowerDifficulty, WheelRisk } from "@tilt/mod/protocol";
+import type { FlipSide, HiloGuess, RouletteChip, TowerDifficulty, WheelRisk } from "@tilt/mod/protocol";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import * as baccarat from "../src/games/baccarat";
@@ -20,6 +20,7 @@ import { settle } from "../src/games/settlement";
 import * as slots from "../src/games/slots";
 import * as tower from "../src/games/tower";
 import * as wheel from "../src/games/wheel";
+import { PlayActionSchema } from "../src/schemas";
 import vectors from "./fixtures/rust-vectors.json";
 
 const bytes = (hex: string) => Uint8Array.from(Buffer.from(hex, "hex"));
@@ -37,6 +38,12 @@ const difficultyOf = (s: string) => literal<TowerDifficulty>(tower.DIFFICULTY_NA
 const guessesOf = (codes: number[]): HiloGuess[] => codes.map((c) => literal(hilo.GUESSES, hilo.GUESSES[c] ?? ""));
 /** Flip coins as the program stores them: bit i set when coin i landed tails. */
 const coinsOf = (results: FlipSide[]) => results.reduce((bits, r, i) => bits | ((r === "tails" ? 1 : 0) << i), 0);
+/** A fixture's chips, checked like the mod's: 1 to 20 on distinct valid bets. */
+function chipsOf(chips: unknown): RouletteChip[] {
+  const action = PlayActionSchema.parse({ type: "roulette_chips", chips });
+  if (action.type !== "roulette_chips") throw new Error("not chips");
+  return action.chips;
+}
 
 describe("rng (port of rng.rs)", () => {
   it.each(vectors.rng)("replays the program's draws for seed $seed", (v) => {
@@ -317,6 +324,30 @@ describe("roulette", () => {
     expect(n).toBe(v.number);
     expect(roulette.gross({ kind: "red" }, n, STAKE).toString()).toBe(v.red);
     expect(roulette.gross({ kind: "straight", number: 17 }, n, STAKE).toString()).toBe(v.straight17);
+  });
+
+  it.each(vectors.rouletteChips.map((v, i) => ({ ...v, i })))("pays spin $i of chips like the program", (v) => {
+    const chips = chipsOf(v.chips);
+    const n = roulette.spin(Rng.fromVrf(bytes(v.seed)));
+    expect(n).toBe(v.number);
+    expect(roulette.chipsGross(chips, n).toString()).toBe(v.gross);
+    expect(chips.reduce((sum, c) => sum + BigInt(c.amount), 0n).toString()).toBe(v.stake);
+    const { payout, fee } = settle(BigInt(v.stake), BigInt(v.gross));
+    expect([payout.toString(), fee.toString()]).toEqual([v.payout, v.fee]);
+  });
+
+  it("adds up every winning chip and nothing else", () => {
+    const chips = [
+      { bet: { kind: "straight" as const, number: 17 }, amount: "100" },
+      { bet: { kind: "black" as const }, amount: "200" },
+      { bet: { kind: "dozen" as const, dozen: 2 as const }, amount: "300" },
+      { bet: { kind: "odd" as const }, amount: "400" },
+    ];
+    // 17: black, odd, second dozen.
+    expect(roulette.chipsGross(chips, 17)).toBe(3_600n + 400n + 900n + 800n);
+    // 0: only a straight on zero could win.
+    expect(roulette.chipsGross(chips, 0)).toBe(0n);
+    expect(roulette.chipsGross([{ bet: { kind: "straight", number: 0 }, amount: "5" }], 0)).toBe(180n);
   });
 });
 
@@ -740,10 +771,12 @@ describe("replay (GET /verify)", () => {
     expect(result).toMatchObject({ matches: true, outcome: { game: "slots", reels: v.reels } });
   });
 
-  it("replays roulette with the snapshot's bet, and checks the number", () => {
+  const redChip = { bet: { kind: "red" as const }, amount: STAKE.toString() };
+
+  it("replays roulette with the snapshot's chips, and checks the number", () => {
     const v = vectors.roulette[0];
     const { payout, fee } = settle(STAKE, BigInt(v.red));
-    const red = { game: "roulette" as const, bet: { kind: "red" as const }, number: v.number };
+    const red = { game: "roulette" as const, chips: [redChip], number: v.number };
     const ok = replay({
       game: "roulette",
       stake: STAKE,
@@ -757,10 +790,62 @@ describe("replay (GET /verify)", () => {
     expect(replay({ ...forged, snapshot: wrongNumber }).matches).toBe(false);
   });
 
+  it("replays a spin of several chips from its snapshot, whose chips must add up to the stake", () => {
+    const v = vectors.roulette.find((r) => r.number !== 0 && r.number !== 17);
+    if (!v) throw new Error("fixture needs a spin off 0 and 17");
+    const chips = [
+      { bet: { kind: "straight" as const, number: v.number }, amount: "200000" },
+      { bet: { kind: "red" as const }, amount: "500000" },
+      { bet: { kind: "dozen" as const, dozen: 3 as const }, amount: "300000" },
+      { bet: { kind: "straight" as const, number: 17 }, amount: "1000000" },
+    ];
+    const stake = 2_000_000n;
+    const gross = roulette.chipsGross(chips, v.number);
+    expect(gross).toBe(7_200_000n + (roulette.isRed(v.number) ? 1_000_000n : 0n) + (v.number >= 25 ? 900_000n : 0n));
+    const snapshot = { game: "roulette" as const, chips, number: v.number };
+    const input = { game: "roulette" as const, stake, onChain: settle(stake, gross), draws: [bytes(v.seed)] };
+    expect(replay({ ...input, snapshot })).toMatchObject({ matches: true, gross, outcome: snapshot });
+    // A snapshot whose chips do not add up to the round's stake belongs to another round.
+    expect(replay({ ...input, stake: 2_000_001n, snapshot }).matches).toBe(false);
+    // Without the snapshot, the chips cannot be found.
+    expect(replay({ ...input, snapshot: null }).matches).toBe(false);
+  });
+
+  it.each(vectors.rouletteChips.map((v, i) => ({ ...v, i })))("replays spin $i of chips from its snapshot", (v) => {
+    const snapshot = { game: "roulette" as const, chips: chipsOf(v.chips), number: v.number };
+    const result = replay({
+      game: "roulette",
+      stake: BigInt(v.stake),
+      onChain: { payout: BigInt(v.payout), fee: BigInt(v.fee) },
+      draws: [bytes(v.seed)],
+      snapshot,
+    });
+    expect(result).toMatchObject({ matches: true, gross: BigInt(v.gross), outcome: snapshot });
+  });
+
+  it("searches a single-bet roulette spin without a snapshot", () => {
+    const v = vectors.roulette.find((r) => r.number === 17);
+    if (!v) throw new Error("fixture needs a spin on 17");
+    const { payout, fee } = settle(STAKE, BigInt(v.straight17));
+    const r = replay({
+      game: "roulette",
+      stake: STAKE,
+      onChain: { payout, fee },
+      draws: [bytes(v.seed)],
+      snapshot: null,
+    });
+    expect(r).toMatchObject({
+      matches: true,
+      outcome: { chips: [{ bet: { kind: "straight", number: 17 }, amount: "1000000" }], number: 17 },
+    });
+  });
+
   it("compares snapshots by value, whatever their key order (Postgres jsonb reorders keys)", () => {
     const v = vectors.roulette[0];
     const { payout, fee } = settle(STAKE, BigInt(v.red));
-    const snapshot = JSON.parse(`{"number":${v.number},"bet":{"kind":"red"},"game":"roulette"}`) as Outcome;
+    const snapshot = JSON.parse(
+      `{"number":${v.number},"chips":[{"amount":"1000000","bet":{"kind":"red"}}],"game":"roulette"}`,
+    ) as Outcome;
     const r = replay({ game: "roulette", stake: STAKE, onChain: { payout, fee }, draws: [bytes(v.seed)], snapshot });
     expect(r.matches).toBe(true);
   });

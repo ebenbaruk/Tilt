@@ -104,7 +104,7 @@ Référence visuelle : la maquette d'Eli (image partagée dans la conversation, 
 | Jeu | Version | Règles (implémentées dans `chain/`, détail dans `chain/README.md`) |
 | --- | --- | --- |
 | Blackjack | v1 | Sans carte cachée (2e carte du croupier tirée après le joueur), sabot infini, croupier reste sur 17, blackjack payé 3:2, double sur les 2 premières cartes. Split des deux premières cartes de même valeur (10, V, D, R valent tous 10 ; as seulement avec as) pour une mise de base de plus : la nouvelle main se place juste après, chacune reçoit une carte. Au plus 4 splits par manche (jusqu'à 6 + 4 = 10 mains). Re-split et double après split permis, sauf pour les as : un as splitté reçoit une seule carte et la main est finie. Un 21 en deux cartes né d'un split n'est pas un blackjack (payé 1:1). RTP ≈ 99 % en stratégie de base. |
-| Roulette | v1 | Européenne (un seul zéro), un pari par tour : plein, rouge/noir, pair/impair, manque/passe, douzaine, colonne. RTP 97,30 %. |
+| Roulette | v1 | Européenne (un seul zéro). Jetons sur tout le tapis : de 1 à 20 paris par tour, chacun avec sa mise (plein, rouge/noir, pair/impair, manque/passe, douzaine, colonne), chaque mise entre les limites de la table. RTP 97,30 %. |
 | Baccarat | v1 | Punto Banco, sabot infini : joueur (1:1), banque (1:1, commission 5 %) et égalité (8:1). RTP 98,76 % / 98,94 % / ≈ 85,9 %. |
 | Slots | v1 | 3 rouleaux pondérés, table de gains publique, gain max 250×. RTP 96,16 %. |
 | Mines | v1 | Grille 5×5, 1 à 24 mines. Chaque case cliquée est tirée à l'instant par le VRF (aucune disposition stockée d'avance, lisible on-chain sinon). Multiplicateur 0,99 × C(25, k) / C(25 − mines, k) après k cases sûres, encaissement à tout moment dès une case ; gain plafonné par manche (`max_round_gain`), comme le plafond de profit de Stake. RTP 99,00 %. |
@@ -257,7 +257,8 @@ GET  /users/:userId    -> { userId, solanaAddress, accountOpen }        // 404 U
 POST /intents { intentId, userId, action, consent? } -> { intentId, status, signature?, error? }
 GET  /intents/:intentId -> même réponse
 // action : open_account | deposit {amount} · blackjack_bet {amount (par main), hands 1..6} | blackjack_hit | blackjack_stand | blackjack_double | blackjack_split
-//          roulette_spin {amount, bet} · baccarat_deal {amount, bet} · slots_spin {amount}
+//          roulette_spin {amount, bet} (un pari) · roulette_chips {chips: [{bet, amount}] 1..20, paris distincts}
+//          baccarat_deal {amount, bet} · slots_spin {amount}
 //          mines_bet {amount, mines 1..24} | mines_reveal {tile 0..24} | mines_cashout
 //          dice_roll {amount, target, over} · limbo_play {amount, target ×100} · flip_play {amount, side, flips 1..10}
 //          keno_play {amount, picks 1..10 de 1..40} · wheel_spin {amount, segments, risk}

@@ -26,8 +26,10 @@ import { cleanText, formatDuration, formatUsdc, moveFailure, SEPARATOR } from ".
 import { isPlayAction } from "./guards";
 import {
   activeGame,
+  addChip,
   type Command,
   currentBet,
+  cursorBet,
   cycle,
   DEFAULT_DICE_CHANCE,
   DEFAULT_KENO_PICKS,
@@ -36,15 +38,15 @@ import {
   DEFAULT_WHEEL_SEGMENTS,
   GAME_LABELS,
   isRoundOpen,
-  nextRouletteBet,
   planKeys,
   randomPicks,
   type RandomBelow,
+  sameBet,
   startAction,
   stepBetIndex,
+  stepCursor,
   stepHands,
   stepMines,
-  stepRouletteNumber,
   stepSetting,
   tableKeys,
   toggleKenoPick,
@@ -61,7 +63,7 @@ import {
   remoteView,
   type RemoteView,
 } from "./model";
-import type { IntentResponse, PlayAction, RoundView, StateResponse } from "./protocol";
+import type { IntentResponse, PlayAction, RouletteBet, RoundView, StateResponse } from "./protocol";
 import { type Settings, SETTING_FIELDS, settingsOf } from "./settings";
 import { renderSetup, SETUP_ROWS } from "./setup";
 import { isTablePost, TABLE_KEY, type TableProps } from "./table-input";
@@ -91,7 +93,8 @@ const prefs = atom({ plugin: "tilt", key: "prefs" } as const, {
   game: "blackjack",
   betIndex: 0,
   hands: 1,
-  roulette: { kind: "red" },
+  rouletteChips: [],
+  rouletteCursor: 0,
   baccarat: "banker",
   slotsSpeed: "normal",
   mines: DEFAULT_MINES,
@@ -625,6 +628,31 @@ async function startRound($: EngineInterface, rt: Runtime): Promise<void> {
   await sendMove($, rt, startAction(activeGame(state, chosen), amount, chosen));
 }
 
+/** A chip of the bet's size on `bet`, or on the cursor's cell; a full table or bet says why instead. */
+async function addRouletteChip($: EngineInterface, bet: RouletteBet | null): Promise<void> {
+  const state = (await readRemote($)).state;
+
+  if (state === null) {
+    return;
+  }
+
+  const outcome: { refusal: string | null } = { refusal: null };
+
+  await setPrefs($, (value) => {
+    const placed = addChip(
+      value.rouletteChips,
+      bet ?? cursorBet(value.rouletteCursor),
+      currentBet(state.limits, value.betIndex),
+      state.limits,
+    );
+
+    outcome.refusal = typeof placed === "string" ? placed : null;
+
+    return typeof placed === "string" ? value : { ...value, rouletteChips: placed };
+  });
+  await update($, message, () => outcome.refusal);
+}
+
 async function runCommand($: EngineInterface, rt: Runtime, command: Command): Promise<void> {
   switch (command.kind) {
     case "switch": {
@@ -690,16 +718,28 @@ async function runCommand($: EngineInterface, rt: Runtime, command: Command): Pr
       await setPrefs($, (value) => ({ ...value, kenoPicks: toggleKenoPick(value.kenoPicks, command.number) }));
 
       return;
-    case "roulette-bet":
-      await setPrefs($, (value) => ({ ...value, roulette: command.bet }));
+    case "roulette-add":
+      await addRouletteChip($, command.bet);
 
       return;
-    case "roulette-cycle":
-      await setPrefs($, (value) => ({ ...value, roulette: nextRouletteBet(value.roulette, command.target) }));
+    case "roulette-cursor":
+      await setPrefs($, (value) => ({ ...value, rouletteCursor: stepCursor(value.rouletteCursor, command.step) }));
 
       return;
-    case "roulette-number":
-      await setPrefs($, (value) => ({ ...value, roulette: stepRouletteNumber(value.roulette, command.step) }));
+    case "roulette-remove":
+      await setPrefs($, (value) => {
+        const cell = cursorBet(value.rouletteCursor);
+
+        return { ...value, rouletteChips: value.rouletteChips.filter((chip) => !sameBet(chip.bet, cell)) };
+      });
+
+      return;
+    case "roulette-undo":
+      await setPrefs($, (value) => ({ ...value, rouletteChips: value.rouletteChips.slice(0, -1) }));
+
+      return;
+    case "roulette-clear":
+      await setPrefs($, (value) => ({ ...value, rouletteChips: [] }));
 
       return;
     case "baccarat-bet":

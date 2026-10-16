@@ -1,6 +1,6 @@
 // A round as the program stores it, decoded from `PlayerAccount.round` (and the blackjack
 // table) into plain TS values (see chain.ts). Everything the api shows or replays starts from this shape.
-import type { BaccaratBet, FlipSide, HiloGuess, RouletteBet, TowerDifficulty, WheelRisk } from "@tilt/mod/protocol";
+import type { BaccaratBet, FlipSide, HiloGuess, RouletteChip, TowerDifficulty, WheelRisk } from "@tilt/mod/protocol";
 import type { Table } from "./blackjack";
 import type { Reels } from "./slots";
 
@@ -12,7 +12,9 @@ export type RoundStatus = { kind: "idle" } | { kind: "awaiting"; draw: Draw } | 
 export type Outcome =
   /** `bet`: base bet of every hand, in base units (a string: details are stored as JSON). */
   | ({ game: "blackjack"; bet: string } & Table)
-  | { game: "roulette"; bet: RouletteBet; number: number }
+  /** `chips`: every chip of the spin (a single-bet round is one chip of the round's stake);
+   *  `number`: the pocket, meaningless until settled. */
+  | { game: "roulette"; chips: RouletteChip[]; number: number }
   | { game: "baccarat"; bet: BaccaratBet; player: number[]; banker: number[] }
   | { game: "slots"; reels: Reels }
   /** From the player's board. `order`: tiles revealed safe, in reveal order; `pending`: the tile

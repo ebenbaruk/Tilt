@@ -1,8 +1,10 @@
 import type { RoundView } from "@tilt/api/public";
+import { formatAmount } from "@/lib/amount";
 import {
   describeRouletteBet,
   hundredths,
   pocketColor,
+  rouletteWins,
   type BlackjackHand,
   type Card,
   type DiceDetail,
@@ -11,6 +13,8 @@ import {
   type KenoDetail,
   type LimboDetail,
   type MinesDetail,
+  type RouletteBet,
+  type RouletteDetail,
   type TowerDetail,
   type WheelDetail,
 } from "@/lib/round";
@@ -287,6 +291,106 @@ function TowerLevels({ detail }: { detail: TowerDetail }) {
   );
 }
 
+/** A place on the felt: where it sits on the 14×5 grid and the bet it takes. */
+interface RouletteCell {
+  bet: RouletteBet;
+  label: string;
+  column: string;
+  row: string;
+  pocket?: number;
+}
+
+const ROULETTE_NUMBERS = 36;
+const ROULETTE_THIRDS = [1, 2, 3] as const;
+const ROULETTE_OUTSIDE: { bet: RouletteBet; label: string }[] = [
+  { bet: { kind: "low" }, label: "1–18" },
+  { bet: { kind: "even" }, label: "EVEN" },
+  { bet: { kind: "red" }, label: "RED" },
+  { bet: { kind: "black" }, label: "BLACK" },
+  { bet: { kind: "odd" }, label: "ODD" },
+  { bet: { kind: "high" }, label: "19–36" },
+];
+
+// The European layout: zero on the left, numbers in three rows (3, 6, … 36 on top), the 2:1 columns
+// on the right, dozens then the even-money bets below.
+const ROULETTE_CELLS: RouletteCell[] = [
+  { bet: { kind: "straight", number: 0 }, label: "0", column: "1", row: "1 / span 3", pocket: 0 },
+  ...Array.from({ length: ROULETTE_NUMBERS }, (_, i): RouletteCell => {
+    const n = i + 1;
+    return {
+      bet: { kind: "straight", number: n },
+      label: String(n),
+      column: String(Math.ceil(n / 3) + 1),
+      row: String(3 - ((n - 1) % 3)),
+      pocket: n,
+    };
+  }),
+  ...ROULETTE_THIRDS.map((column): RouletteCell => ({
+    bet: { kind: "column", column },
+    label: "2:1",
+    column: "14",
+    row: String(4 - column),
+  })),
+  ...ROULETTE_THIRDS.map((dozen): RouletteCell => ({
+    bet: { kind: "dozen", dozen },
+    label: `${dozen === 1 ? "1st" : dozen === 2 ? "2nd" : "3rd"} 12`,
+    column: `${2 + (dozen - 1) * 4} / span 4`,
+    row: "4",
+  })),
+  ...ROULETTE_OUTSIDE.map(({ bet, label }, i): RouletteCell => ({
+    bet,
+    label,
+    column: `${2 + i * 2} / span 2`,
+    row: "5",
+  })),
+];
+
+/** The felt with every chip's stake, the landed pocket lit and the chips it paid marked. */
+function RouletteTable({ detail }: { detail: RouletteDetail }) {
+  const { chips, number } = detail;
+  const staked = new Map(chips.map((chip) => [describeRouletteBet(chip.bet), chip.amount]));
+  const won = (bet: RouletteBet) => number !== null && rouletteWins(bet, number);
+  const total = chips.reduce((sum, chip) => sum + BigInt(chip.amount), 0n);
+  const winners = chips.filter((chip) => won(chip.bet)).length;
+  const outcome = number === null ? "no pocket drawn" : `landed on ${number}, ${winners} of ${chips.length} chips won`;
+  return (
+    <div className={styles.stack}>
+      <div className={styles.felt} role="img" aria-label={outcome}>
+        {ROULETTE_CELLS.map((cell) => {
+          const amount = staked.get(describeRouletteBet(cell.bet));
+          const classes = [
+            styles.cell,
+            cell.pocket === undefined ? "" : styles[pocketColor(cell.pocket)],
+            cell.pocket !== undefined && cell.pocket === number ? styles.landed : "",
+            amount !== undefined && won(cell.bet) ? styles.paid : "",
+          ];
+          return (
+            <span
+              key={describeRouletteBet(cell.bet)}
+              className={classes.join(" ")}
+              style={{ gridColumn: cell.column, gridRow: cell.row }}
+            >
+              {cell.label}
+              {amount !== undefined && <span className={styles.stake}>●{formatAmount(amount)}</span>}
+            </span>
+          );
+        })}
+      </div>
+      <p className={styles.muted}>
+        on the table {formatAmount(total)} · {chips.length} chips · {outcome}
+      </p>
+      <ul className={styles.chips}>
+        {chips.map((chip) => (
+          <li key={describeRouletteBet(chip.bet)} className={won(chip.bet) ? styles.win : styles.muted}>
+            {describeRouletteBet(chip.bet)} · {formatAmount(chip.amount)}
+            {number !== null && (won(chip.bet) ? " · won" : " · lost")}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** The cards, pocket, reels or board of one round, drawn the way the panel draws them. */
 export function RoundDetail({ detail }: { detail: RoundView["detail"] }) {
   switch (detail.game) {
@@ -314,7 +418,10 @@ export function RoundDetail({ detail }: { detail: RoundView["detail"] }) {
         </div>
       );
     case "roulette":
-      return (
+      // A single-bet round (every round before chips) keeps its pocket-and-bet line; several chips need the felt.
+      return detail.chips.length > 1 ? (
+        <RouletteTable detail={detail} />
+      ) : (
         <div className={styles.stack}>
           {detail.number === null ? (
             <p className={styles.muted}>no pocket drawn</p>

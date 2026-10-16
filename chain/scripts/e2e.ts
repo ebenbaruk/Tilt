@@ -49,9 +49,11 @@ type MinesBoard = IdlAccounts<Tilt>["minesBoard"];
 type QuickTable = IdlAccounts<Tilt>["quickTable"];
 type HiloBoard = IdlAccounts<Tilt>["hiloBoard"];
 type TowerBoard = IdlAccounts<Tilt>["towerBoard"];
+type RouletteTable = IdlAccounts<Tilt>["rouletteTable"];
 type TableHand = BlackjackTable["hands"][number];
 type Config = IdlTypes<Tilt>["config"];
 type RouletteBet = IdlTypes<Tilt>["rouletteBet"];
+type RouletteChip = IdlTypes<Tilt>["rouletteChip"];
 type BaccaratBet = IdlTypes<Tilt>["baccaratBet"];
 
 const env = (key: string, fallback: string) => process.env[key] ?? fallback;
@@ -111,6 +113,7 @@ const board = pda(Buffer.from("mines"), player.publicKey.toBuffer());
 const quick = pda(Buffer.from("quick"), player.publicKey.toBuffer());
 const hiloBoard = pda(Buffer.from("hilo"), player.publicKey.toBuffer());
 const towerBoard = pda(Buffer.from("tower"), player.publicKey.toBuffer());
+const rouletteTable = pda(Buffer.from("roulette"), player.publicKey.toBuffer());
 const MAX_HANDS = 6;
 const MAX_SPLITS = 4;
 const MINES_TILES = 25;
@@ -167,6 +170,7 @@ const fetchBoard = () => erProgram.account.minesBoard.fetch(board);
 const fetchQuick = () => erProgram.account.quickTable.fetch(quick);
 const fetchHilo = () => erProgram.account.hiloBoard.fetch(hiloBoard);
 const fetchTower = () => erProgram.account.towerBoard.fetch(towerBoard);
+const fetchRouletteTable = () => erProgram.account.rouletteTable.fetch(rouletteTable);
 const fetchLedger = () => program.account.ledger.fetch(ledger);
 const seed = () => Array.from(randomBytes(32));
 const isIdle = (round: Round) => "idle" in round.status;
@@ -192,6 +196,7 @@ const minesAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger,
 const quickAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, quick, oracleQueue: VRF_ER_QUEUE });
 const hiloAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, board: hiloBoard, oracleQueue: VRF_ER_QUEUE });
 const towerAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, board: towerBoard, oracleQueue: VRF_ER_QUEUE });
+const rouletteAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, roulette: rouletteTable, oracleQueue: VRF_ER_QUEUE });
 
 async function act(label: string, tx: Promise<Transaction>, accept: (a: PlayerAccount) => boolean | Promise<boolean>) {
   const transaction = await tx;
@@ -225,6 +230,33 @@ async function round(
     throw new Error(`${label}: payout ${a.round.payout} (attendu ${expectedPayout}), solde ${a.balance}`);
   }
   return a;
+}
+
+/** Whether `bet` wins on `n`: zero loses every bet but a straight on zero. */
+function rouletteWins(bet: RouletteBet, n: number) {
+  if ("straight" in bet) return n === bet.straight[0];
+  if (n === 0) return false;
+  if ("red" in bet) return RED.has(n);
+  if ("black" in bet) return !RED.has(n);
+  if ("odd" in bet) return n % 2 === 1;
+  if ("even" in bet) return n % 2 === 0;
+  if ("low" in bet) return n <= 18;
+  if ("high" in bet) return n >= 19;
+  if ("dozen" in bet) return Math.floor((n - 1) / 12) + 1 === bet.dozen[0];
+  return (n - 1) % 3 + 1 === bet.column![0];
+}
+
+/** Payout of the last multi-chip spin, replayed from the table: the chips are the ones played, the
+ *  round's stake is their total and the round holds no single bet. */
+function chipsGross(t: RouletteTable, chips: RouletteChip[], r: Round) {
+  const played = t.chips.slice(0, t.nChips);
+  if (JSON.stringify(played) !== JSON.stringify(chips)) throw new Error(`roulette à jetons : jetons ${JSON.stringify(played)}, joués ${JSON.stringify(chips)}`);
+  if (t.pocket > 36) throw new Error(`roulette à jetons : case ${t.pocket}`);
+  const stake = chips.reduce((s, c) => s + c.amount.toNumber(), 0);
+  if (r.stake.toNumber() !== stake || r.roulette !== null) throw new Error(`roulette à jetons : mise ${r.stake}, attendu ${stake}`);
+  // A win returns 36 on a number, 3 on a dozen or column, 2 otherwise, stake included.
+  const multiple = (bet: RouletteBet) => ("straight" in bet ? 36 : "dozen" in bet || "column" in bet ? 3 : 2);
+  return chips.reduce((s, c) => s + (rouletteWins(c.bet, t.pocket) ? c.amount.toNumber() * multiple(c.bet) : 0), 0);
 }
 
 // Reference implementations of the game rules, independent of the program.
@@ -739,6 +771,63 @@ async function run(): Promise<number> {
     return erProgram.methods.rouletteSpin(new BN(usdc(10)), { straight: { 0: 1 } }, seed()).accountsPartial(playAccounts()).transaction();
   }, /RoundGainTooHigh|6009/);
   await setConfig();
+
+  console.log("\n--- 3b. Roulette à jetons (plusieurs mises par tour, gains rejoués depuis la case) ---");
+  const chip = (bet: RouletteBet, amount: number): RouletteChip => ({ bet, amount: new BN(amount) });
+  const chipsTx = (chips: RouletteChip[]) => () =>
+    erProgram.methods.rouletteChips(chips, seed()).accountsPartial(rouletteAccounts()).transaction();
+  const expireChipsTx = () => erProgram.methods.expireRouletteRound(seed()).accountsPartial(rouletteAccounts()).transaction();
+  const straights = (n: number, amount: number) => Array.from({ length: n }, (_, i) => chip({ straight: { 0: i } }, amount));
+  await rejectsInRollup("roulette à jetons sans table refusée", chipsTx([chip({ red: {} }, usdc(1))]), /AccountNotInitialized|3012|not.*found|AccountNotFound/i);
+  const rouletteTableAccounts = { vault, payer: relayer.publicKey, player: player.publicKey, ledger, roulette: rouletteTable };
+  await time("table de roulette ouverte et déléguée (Solana)", async () =>
+    relayerProvider.sendAndConfirm(new Transaction().add(
+      await program.methods.openRouletteTable().accountsPartial(rouletteTableAccounts).instruction(),
+      await program.methods.delegateRouletteTable().accountsPartial(rouletteTableAccounts).instruction(),
+    )));
+  await time("table de roulette visible dans le rollup", () => until(() => fetchRouletteTable(), "roulette table in rollup"));
+  const invalidLayouts: [string, RouletteChip[]][] = [
+    ["tour sans jeton refusé", []],
+    ["21 jetons refusés", straights(21, usdc(0.1))],
+    ["deux jetons sur le même pari refusés", [chip({ red: {} }, usdc(1)), chip({ red: {} }, usdc(1))]],
+    ["jeton sur le numéro 37 refusé", [chip({ odd: {} }, usdc(1)), chip({ straight: { 0: 37 } }, usdc(1))]],
+  ];
+  for (const [name, chips] of invalidLayouts) await rejectsInRollup(name, chipsTx(chips), /InvalidBet|6010/);
+  await rejectsInRollup("jeton sous la mise minimale refusé, même avec d'autres jetons", chipsTx([chip({ red: {} }, usdc(1)), chip({ black: {} }, usdc(0.09))]), /AmountOutOfRange|6000/);
+  await rejectsInRollup("jeton au-dessus de la mise maximale refusé", chipsTx([chip({ low: {} }, usdc(10.01))]), /AmountOutOfRange|6000/);
+  // Plein sur 1 à 2,80 (gain 98) + rouge à 3 : sur le 1, rouge, 100,80 + 6 reviennent pour 5,80 misés, 101 de gain.
+  await rejectsInRollup("jetons dont la meilleure case gagne plus que le plafond par manche refusés (chaque jeton seul passerait)", async () => {
+    await setConfig({ maxRoundGain: new BN(usdc(100)) });
+    return chipsTx([chip({ straight: { 0: 1 } }, usdc(2.8)), chip({ red: {} }, usdc(3))])();
+  }, /RoundGainTooHigh|6009/);
+  await setConfig();
+  const layouts: RouletteChip[][] = [
+    [chip({ straight: { 0: 17 } }, usdc(0.5)), chip({ red: {} }, usdc(1)), chip({ dozen: { 0: 2 } }, usdc(1.5))],
+    straights(20, usdc(0.1)),
+    [chip({ column: { 0: 3 } }, usdc(2))],
+    [
+      chip({ low: {} }, usdc(1)),
+      chip({ high: {} }, usdc(1)),
+      chip({ even: {} }, usdc(0.5)),
+      chip({ odd: {} }, usdc(0.5)),
+      chip({ black: {} }, usdc(0.3)),
+      chip({ column: { 0: 1 } }, usdc(0.2)),
+      chip({ dozen: { 0: 3 } }, usdc(0.4)),
+      chip({ straight: { 0: 0 } }, usdc(0.1)),
+    ],
+  ];
+  for (let i = 0; i < 4; i++) {
+    for (const chips of layouts) {
+      await round("roulette à jetons", chipsTx(chips), async (x) => x, async (r) => chipsGross(await fetchRouletteTable(), chips, r));
+    }
+  }
+  check("16 tours de roulette à jetons (1 à 20 jetons) payés jeton par jeton selon la case", true, "(chaque tour vérifié)");
+  await rejectsInRollup("expire_round refusé sur un tour à jetons", () =>
+    erProgram.methods.expireRound(seed()).accountsPartial(playAccounts()).transaction(), /WrongState|6005/);
+  await rejectsInRollup("expire_roulette_round sur un tour à jetons déjà tiré refusé", expireChipsTx, /RoundNotExpired|WrongState|6011|6005/);
+  await round("roulette", () => erProgram.methods.rouletteSpin(new BN(usdc(1)), { red: {} }, seed()).accountsPartial(playAccounts()).transaction(),
+    async (x) => x, (r) => (RED.has(r.roulette!.number) ? usdc(2) : 0));
+  await rejectsInRollup("expire_roulette_round refusé sur un tour à un seul pari", expireChipsTx, /WrongState|6005/);
 
   console.log("\n--- 4. Baccarat ---");
   const points = (c: number[]) => c.reduce((s, x) => s + (x >= 10 ? 0 : x), 0) % 10;

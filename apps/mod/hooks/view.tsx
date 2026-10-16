@@ -8,12 +8,14 @@ import { type CardSize, handCards, handRow, LARGE_CARD_ROWS } from "./cards";
 import {
   cardFace,
   cardsInline,
+  chipsTotal,
   cleanText,
   formatCountdown,
   formatDuration,
   formatSigned,
   formatUsdc,
   rouletteBetLabel,
+  rouletteWins,
   scaledDecimal,
   SEPARATOR,
 } from "./format";
@@ -46,6 +48,7 @@ import {
   clampMines,
   type Command,
   currentBet,
+  cursorBet,
   GAME_LABELS,
   heldKeys,
   type KeyAction,
@@ -53,6 +56,7 @@ import {
   planKeys,
   type PlanInput,
   STEPPER_NAMES,
+  stakeOn,
   tileLetter,
   TOWER_TILE_KEY,
 } from "./keys";
@@ -145,6 +149,8 @@ const LEADERBOARD_TOP = 3;
 /** A win paying at least this many times the stake gets the banner and the share key. */
 const BIG_WIN_MULTIPLE = 2n;
 const HANDS_MAX = 6;
+/** A roulette chip, beside the chip size and the cursor's cell. */
+const CHIP_GLYPH = "●";
 /** The steppers' keys: drawn as `◂ value ▸` rather than as two words on the key line. */
 const STEP_KEYS = new Set(
   ["bet", ...Object.keys(STEPPER_NAMES)].flatMap((address) => [`${address}-down`, `${address}-up`]),
@@ -339,10 +345,19 @@ function outcomeText(round: RoundView): string {
     case "blackjack":
       return blackjackOutcome(round.detail, round.net);
     case "roulette": {
-      // The pocket is on the table already: the sentence says what it did to the bet.
-      const bet = rouletteBetLabel(round.detail.bet);
+      // The pocket is on the table already: the sentence says what it did to the chips.
+      const { chips, number } = round.detail;
+      const [only] = chips;
 
-      return `${bet.charAt(0).toUpperCase()}${bet.slice(1)} ${BigInt(round.net) > 0n ? "wins" : "loses"}.`;
+      if (chips.length === 1 && only !== undefined) {
+        const bet = rouletteBetLabel(only.bet);
+
+        return `${bet.charAt(0).toUpperCase()}${bet.slice(1)} ${BigInt(round.net) > 0n ? "wins" : "loses"}.`;
+      }
+
+      const won = number === null ? 0 : chips.filter((chip) => rouletteWins(chip.bet, number)).length;
+
+      return won === 0 ? "No chip wins." : `${won} of ${chips.length} chips win.`;
     }
     case "baccarat":
       return `Player ${round.detail.playerPoints} · banker ${round.detail.bankerPoints}.`;
@@ -762,11 +777,18 @@ function firstHandGuide(ui: Ui, isFocused: boolean): RenderElement {
   );
 }
 
-/** The bet a press of n stakes in all: the bet per hand, times the hands at blackjack. */
+/** The bet a press of n stakes in all: the bet per hand, times the hands at blackjack; the chips on the table at roulette. */
 function totalStake(state: StateResponse, prefs: Prefs): bigint {
   const bet = BigInt(currentBet(state.limits, prefs.betIndex));
 
-  return activeGame(state, prefs) === "blackjack" ? bet * BigInt(clampHands(prefs.hands)) : bet;
+  switch (activeGame(state, prefs)) {
+    case "blackjack":
+      return bet * BigInt(clampHands(prefs.hands));
+    case "roulette":
+      return chipsTotal(prefs.rouletteChips);
+    default:
+      return bet;
+  }
 }
 
 /** Said before n is pressed: the balance does not cover the bet. Points to a lower bet or a deposit. */
@@ -778,9 +800,14 @@ function lowBalanceLine(ui: Ui, snap: Snapshot, state: StateResponse): RenderEle
     return null;
   }
 
+  const lower =
+    activeGame(state, snap.prefs) === "roulette"
+      ? "Balance too low for these chips · take some off with u or q"
+      : "Balance too low for this bet · lower it with v";
+
   return (
     <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
-      <Text color={RED}>Balance too low for this bet · lower it with v</Text>
+      <Text color={RED}>{lower}</Text>
       {snap.depositUrl !== null && <Text color={FG6}>or</Text>}
       {snap.depositUrl !== null && <Link href={snap.depositUrl} label="deposit on the web" />}
     </Box>
@@ -998,12 +1025,18 @@ function stepperValue(ui: Ui, address: string, state: StateResponse, prefs: Pref
     case "bet":
       return (
         <Text color={FG4}>
-          bet{" "}
+          {activeGame(state, prefs) === "roulette" ? `chip ${CHIP_GLYPH}` : "bet"}{" "}
           <Text color={GOLD} bold>
             {formatUsdc(currentBet(state.limits, prefs.betIndex))}
           </Text>
         </Text>
       );
+    case "cursor": {
+      const cell = cursorBet(prefs.rouletteCursor);
+      const stake = stakeOn(prefs.rouletteChips, cell);
+
+      return chosen(rouletteBetLabel(cell), stake > 0n ? ` ${CHIP_GLYPH}${formatUsdc(stake.toString())}` : "", "on ");
+    }
     case "hands":
       return (
         <Text color={FG4}>
@@ -1411,8 +1444,13 @@ export function handSummary(state: StateResponse, prefs: Prefs): string {
   switch (detail.game) {
     case "blackjack":
       return `${label} · ${blackjackSummary(detail)}${net}`;
-    case "roulette":
-      return `${label} · ${rouletteBetLabel(detail.bet)}${detail.number === null ? "" : ` · ball ${detail.number}`}${net}`;
+    case "roulette": {
+      const [only] = detail.chips;
+      const bets =
+        detail.chips.length === 1 && only !== undefined ? rouletteBetLabel(only.bet) : `${detail.chips.length} chips`;
+
+      return `${label} · ${bets}${detail.number === null ? "" : ` · ball ${detail.number}`}${net}`;
+    }
     case "baccarat":
       return `${label} · ${detail.bet} · ${cardsInline(detail.player)} vs ${cardsInline(detail.banker)}${net}`;
     case "slots":

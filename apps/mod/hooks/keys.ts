@@ -1,6 +1,6 @@
 // Which keys a drawing offers, as data: the panel and the band render the same plan, and the
 // tests check it is conflict-free without drawing anything.
-import { cashOutPayout, formatUsdc, scaledDecimal } from "./format";
+import { cashOutPayout, chipsTotal, formatUsdc, rouletteBetLabel, scaledDecimal } from "./format";
 import type { Prefs, SlotsSpeed } from "./model";
 import type {
   BaccaratBet,
@@ -13,6 +13,7 @@ import type {
   MinesView,
   PlayAction,
   RouletteBet,
+  RouletteChip,
   RoundView,
   StateResponse,
   TowerDifficulty,
@@ -39,10 +40,16 @@ export type Command =
   | { kind: "keno-random" }
   /** Keno: picks or unpicks one number, held between 1 and 10 picks. */
   | { kind: "keno-pick"; number: number }
-  | { kind: "roulette-bet"; bet: RouletteBet }
-  | { kind: "roulette-cycle"; target: "dozen" | "column" }
-  /** Roulette: a bet on one number, the one before (-1) or after (+1) the current one. */
-  | { kind: "roulette-number"; step: -1 | 1 }
+  /** Roulette: a chip of the bet's size on `bet`, or on the cursor's cell when null. */
+  | { kind: "roulette-add"; bet: RouletteBet | null }
+  /** Roulette: the cursor one cell back (-1) or on (+1), around 0 to 36, the dozens, the columns. */
+  | { kind: "roulette-cursor"; step: -1 | 1 }
+  /** Roulette: every chip off the cursor's cell. */
+  | { kind: "roulette-remove" }
+  /** Roulette: the last chip placed off the table. */
+  | { kind: "roulette-undo" }
+  /** Roulette: every chip off the table. */
+  | { kind: "roulette-clear" }
   | { kind: "baccarat-bet"; bet: BaccaratBet }
   | { kind: "slots-speed"; speed: SlotsSpeed }
   /** Starts a round of the active game with the current bet, both read when the key is pressed. */
@@ -170,6 +177,10 @@ export const KENO_NUMBERS = 40;
 export const MIN_KENO_PICKS = 1;
 export const MAX_KENO_PICKS = 10;
 export const KENO_DRAWN = 10;
+/** Chips a roulette spin carries, each on its own bet. */
+export const MAX_ROULETTE_CHIPS = 20;
+/** Chips the table keeps placed one by one (stacks included), for undo; bounds the stored prefs too. */
+export const MAX_ROULETTE_PLACED = 100;
 export const WHEEL_SEGMENTS: readonly number[] = [10, 20, 30, 40, 50];
 export const WHEEL_RISKS: readonly WheelRisk[] = ["low", "medium", "high"];
 export const FLIP_SIDES: readonly FlipSide[] = ["heads", "tails"];
@@ -201,7 +212,7 @@ export const DEFAULT_WHEEL_SEGMENTS = 10;
 /** The choices `step` moves, by the address of their j and k keys (`dice-down`, `dice-up`). */
 export type Setting = "dice" | "limbo" | "flips" | "keno" | "wheel" | "tower";
 
-/** What each pair of j and k keys steps, as the table's prompt names it: `↑/↓ chance`. */
+/** What each pair of stepper keys (j and k; s and d for the roulette cursor) steps, as the table's prompt names it: `↑/↓ chance`. */
 export const STEPPER_NAMES: Record<string, string> = {
   hands: "hands",
   mines: "mines",
@@ -211,6 +222,7 @@ export const STEPPER_NAMES: Record<string, string> = {
   keno: "picks",
   wheel: "segments",
   tower: "difficulty",
+  cursor: "cursor",
 };
 
 /** `value` when it is one of `options`, else `fallback`: a stored pref another plugin could have broken. */
@@ -328,23 +340,73 @@ export function activeGame(state: StateResponse | null, prefs: Prefs): Game {
   return isRoundOpen(state) && state?.round ? state.round.detail.game : prefs.game;
 }
 
-export function nextRouletteBet(current: RouletteBet, kind: "dozen" | "column"): RouletteBet {
-  const step = (third: 1 | 2 | 3): 1 | 2 | 3 => (third === 3 ? 1 : ((third + 1) as 2 | 3));
+const THIRDS = [1, 2, 3] as const;
 
-  if (kind === "dozen") {
-    return { kind: "dozen", dozen: current.kind === "dozen" ? step(current.dozen) : 1 };
-  }
+/** The cells the cursor moves over, in order: 0 to 36, the dozens, then the columns. */
+export const ROULETTE_CURSOR_CELLS: readonly RouletteBet[] = [
+  ...Array.from({ length: ROULETTE_POCKETS }, (_, number): RouletteBet => ({ kind: "straight", number })),
+  ...THIRDS.map((dozen): RouletteBet => ({ kind: "dozen", dozen })),
+  ...THIRDS.map((column): RouletteBet => ({ kind: "column", column })),
+];
 
-  return { kind: "column", column: current.kind === "column" ? step(current.column) : 1 };
+/** The cell under the cursor; 0 for a cursor out of range (a pref another plugin broke). */
+export const cursorBet = (cursor: number): RouletteBet =>
+  ROULETTE_CURSOR_CELLS[cursor] ?? { kind: "straight", number: 0 };
+
+/** The cursor one cell back or on, around every cell. */
+export function stepCursor(cursor: number, step: -1 | 1): number {
+  const cells = ROULETTE_CURSOR_CELLS.length;
+
+  return (((cursor + step) % cells) + cells) % cells;
 }
 
-/** A bet on the number one before or after the current one, around 0 to 36; a bet on no number starts at 0. */
-export function stepRouletteNumber(current: RouletteBet, step: -1 | 1): RouletteBet {
-  if (current.kind !== "straight") {
-    return { kind: "straight", number: 0 };
+export const sameBet = (a: RouletteBet, b: RouletteBet): boolean => rouletteBetLabel(a) === rouletteBetLabel(b);
+
+/** What the chips among `chips` on `bet` add up to; 0 when none is on it. */
+export const stakeOn = (chips: readonly RouletteChip[], bet: RouletteBet): bigint =>
+  chipsTotal(chips.filter((chip) => sameBet(chip.bet, bet)));
+
+/** The chips placed, stacked per bet in the order each bet got its first one: what a spin sends. */
+export function stackChips(placed: readonly RouletteChip[]): RouletteChip[] {
+  const stacks: RouletteChip[] = [];
+
+  for (const chip of placed) {
+    if (!stacks.some((stack) => sameBet(stack.bet, chip.bet))) {
+      stacks.push({ bet: chip.bet, amount: stakeOn(placed, chip.bet).toString() });
+    }
   }
 
-  return { kind: "straight", number: (current.number + step + ROULETTE_POCKETS) % ROULETTE_POCKETS };
+  return stacks;
+}
+
+/**
+ * `placed` with a chip of `amount` on `bet`, cut down to what the bet holds below the table
+ * maximum; a sentence instead when nothing can go on: the table is full or the bet at its maximum.
+ */
+export function addChip(
+  placed: readonly RouletteChip[],
+  bet: RouletteBet,
+  amount: string,
+  limits: Limits,
+): RouletteChip[] | string {
+  const room = BigInt(limits.maxBet) - stakeOn(placed, bet);
+  const stacks = stackChips(placed);
+
+  if (placed.length >= MAX_ROULETTE_PLACED) {
+    return `${MAX_ROULETTE_PLACED} chips at most on the table: undo or clear some.`;
+  }
+
+  if (!stacks.some((stack) => sameBet(stack.bet, bet)) && stacks.length >= MAX_ROULETTE_CHIPS) {
+    return `${MAX_ROULETTE_CHIPS} bets at most on one spin.`;
+  }
+
+  if (room <= 0n) {
+    return `The ${rouletteBetLabel(bet)} bet is at the table maximum (${formatUsdc(limits.maxBet)}).`;
+  }
+
+  const chip = BigInt(amount) < room ? amount : room.toString();
+
+  return [...placed, { bet, amount: chip }];
 }
 
 const ROULETTE_SIMPLE: readonly { hotkey: string; bet: RouletteBet }[] = [
@@ -398,49 +460,64 @@ function switchKeys(state: StateResponse, prefs: Prefs): KeyAction[] {
   ];
 }
 
+/**
+ * `r k o e l g` put a chip on an outside bet; `s` and `d` move the cursor over the numbers, dozens
+ * and columns, `a` puts a chip under it and `x` takes its chips off; `u` takes the last chip back,
+ * `q` clears the table.
+ */
 function rouletteKeys(prefs: Prefs): KeyAction[] {
-  const chosen = prefs.roulette;
-  const simple = ROULETTE_SIMPLE.map(({ hotkey, bet }) => ({
-    key: `roulette-${bet.kind}`,
-    hotkey,
-    label: bet.kind,
-    isSelected: chosen.kind === bet.kind,
-    command: { kind: "roulette-bet", bet } as const,
-  }));
-  const dozen = chosen.kind === "dozen" ? chosen : nextRouletteBet(chosen, "dozen");
-  const column = chosen.kind === "column" ? chosen : nextRouletteBet(chosen, "column");
-
-  return [
-    ...simple,
+  const stacks = stackChips(prefs.rouletteChips);
+  const isOn = (bet: RouletteBet) => stacks.some((stack) => sameBet(stack.bet, bet));
+  const cursor = cursorBet(prefs.rouletteCursor);
+  const keys: KeyAction[] = [
+    ...ROULETTE_SIMPLE.map(({ hotkey, bet }) => ({
+      key: `roulette-${bet.kind}`,
+      hotkey,
+      label: bet.kind,
+      isSelected: isOn(bet),
+      command: { kind: "roulette-add", bet } as const,
+    })),
     {
-      key: "roulette-dozen",
-      hotkey: "z",
-      label: dozen.kind === "dozen" ? `dozen ${dozen.dozen}` : "dozen",
-      isSelected: chosen.kind === "dozen",
-      command: { kind: "roulette-cycle", target: "dozen" },
-    },
-    {
-      key: "roulette-column",
-      hotkey: "c",
-      label: column.kind === "column" ? `column ${column.column}` : "column",
-      isSelected: chosen.kind === "column",
-      command: { kind: "roulette-cycle", target: "column" },
-    },
-    {
-      key: "roulette-number-down",
+      key: "cursor-down",
       hotkey: "s",
-      label: "number −",
+      label: "cursor −",
       isSelected: false,
-      command: { kind: "roulette-number", step: -1 },
+      command: { kind: "roulette-cursor", step: -1 },
     },
     {
-      key: "roulette-number-up",
+      key: "cursor-up",
       hotkey: "d",
-      label: "number +",
+      label: "cursor +",
       isSelected: false,
-      command: { kind: "roulette-number", step: 1 },
+      command: { kind: "roulette-cursor", step: 1 },
+    },
+    {
+      key: "chip-add",
+      hotkey: "a",
+      label: `chip on ${rouletteBetLabel(cursor)}`,
+      isSelected: false,
+      command: { kind: "roulette-add", bet: null },
     },
   ];
+
+  if (isOn(cursor)) {
+    keys.push({
+      key: "chip-remove",
+      hotkey: "x",
+      label: "take off",
+      isSelected: false,
+      command: { kind: "roulette-remove" },
+    });
+  }
+
+  if (stacks.length > 0) {
+    keys.push(
+      { key: "chip-undo", hotkey: "u", label: "undo", isSelected: false, command: { kind: "roulette-undo" } },
+      { key: "chip-clear", hotkey: "q", label: "clear", isSelected: false, command: { kind: "roulette-clear" } },
+    );
+  }
+
+  return keys;
 }
 
 function baccaratKeys(prefs: Prefs): KeyAction[] {
@@ -453,12 +530,13 @@ function baccaratKeys(prefs: Prefs): KeyAction[] {
   }));
 }
 
+/** The round `game` starts with the bet `amount`; at roulette the chips on the table are the stake instead. */
 export function startAction(game: Game, amount: string, prefs: Prefs): PlayAction {
   switch (game) {
     case "blackjack":
       return { type: "blackjack_bet", amount, hands: clampHands(prefs.hands) };
     case "roulette":
-      return { type: "roulette_spin", amount, bet: prefs.roulette };
+      return { type: "roulette_chips", chips: stackChips(prefs.rouletteChips) };
     case "baccarat":
       return { type: "baccarat_deal", amount, bet: prefs.baccarat };
     case "slots":
@@ -502,6 +580,8 @@ function startDetail(game: Game, prefs: Prefs): string {
       return ` · ${clampFlips(prefs.flips)} × ${prefs.flipSide}`;
     case "keno":
       return ` · ${plural(prefs.kenoPicks.length, "pick", "picks")}`;
+    case "roulette":
+      return ` · ${plural(stackChips(prefs.rouletteChips).length, "chip", "chips")}`;
     case "wheel":
       return ` · ${prefs.wheelSegments} segments · ${prefs.wheelRisk}`;
     case "tower":
@@ -511,10 +591,13 @@ function startDetail(game: Game, prefs: Prefs): string {
   }
 }
 
-/** "deal · 0.50", "deal · 3 × 0.50" for three blackjack hands, "play · 0.50 · 3 mines", "roll · 0.50 · under 49.00". */
+/** "deal · 0.50", "deal · 3 × 0.50" for three blackjack hands, "play · 0.50 · 3 mines", "spin · 2.30 · 6 chips". */
 function startLabel(game: Game, amount: string, prefs: Prefs): string {
   const hands = clampHands(prefs.hands);
-  const stake = game === "blackjack" && hands > 1 ? `${hands} × ${formatUsdc(amount)}` : formatUsdc(amount);
+  const stake =
+    game === "blackjack" && hands > 1
+      ? `${hands} × ${formatUsdc(amount)}`
+      : formatUsdc(game === "roulette" ? chipsTotal(prefs.rouletteChips).toString() : amount);
 
   return `${START_VERB[game]} · ${stake}${startDetail(game, prefs)}`;
 }
@@ -742,13 +825,22 @@ function choiceKeys(game: Game, prefs: Prefs): KeyAction[] {
   }
 }
 
+/** The bet stepper and the start key after the game's choices; at roulette the bet is the chip size, and no spin without chips. */
 function idleKeys(game: Game, state: StateResponse, prefs: Prefs): KeyAction[] {
   const amount = currentBet(state.limits, prefs.betIndex);
+  const sized = game === "roulette" ? "chip" : "bet";
+  const keys: KeyAction[] = [
+    ...choiceKeys(game, prefs),
+    { key: "bet-down", hotkey: "v", label: `${sized} −`, isSelected: false, command: { kind: "bet", step: -1 } },
+    { key: "bet-up", hotkey: "b", label: `${sized} +`, isSelected: false, command: { kind: "bet", step: 1 } },
+  ];
+
+  if (game === "roulette" && prefs.rouletteChips.length === 0) {
+    return keys;
+  }
 
   return [
-    ...choiceKeys(game, prefs),
-    { key: "bet-down", hotkey: "v", label: "bet −", isSelected: false, command: { kind: "bet", step: -1 } },
-    { key: "bet-up", hotkey: "b", label: "bet +", isSelected: false, command: { kind: "bet", step: 1 } },
+    ...keys,
     {
       key: "start",
       hotkey: "n",
@@ -787,42 +879,25 @@ const clickKey = (key: string, label: string, isSelected: boolean, command: Comm
   command,
 });
 
-const THIRDS = [1, 2, 3] as const;
+/** The address of a layout cell's click: `roulette-straight-17`, `roulette-dozen-2`, `roulette-column-3`, `roulette-red`. */
+export function rouletteCellKey(bet: RouletteBet): string {
+  switch (bet.kind) {
+    case "straight":
+      return `${ROULETTE_STRAIGHT_KEY}${bet.number}`;
+    case "dozen":
+      return `${ROULETTE_DOZEN_KEY}${bet.dozen}`;
+    case "column":
+      return `${ROULETTE_COLUMN_KEY}${bet.column}`;
+    default:
+      return `roulette-${bet.kind}`;
+  }
+}
 
-/** The roulette layout's cells a click bets on: every number, each dozen and each column. */
-function rouletteLayoutKeys(chosen: RouletteBet): KeyAction[] {
-  const pockets = Array.from({ length: ROULETTE_POCKETS }, (_, number) => number);
-
-  return [
-    ...pockets.map((number) =>
-      clickKey(
-        `${ROULETTE_STRAIGHT_KEY}${number}`,
-        String(number),
-        chosen.kind === "straight" && chosen.number === number,
-        {
-          kind: "roulette-bet",
-          bet: { kind: "straight", number },
-        },
-      ),
-    ),
-    ...THIRDS.map((dozen) =>
-      clickKey(`${ROULETTE_DOZEN_KEY}${dozen}`, `dozen ${dozen}`, chosen.kind === "dozen" && chosen.dozen === dozen, {
-        kind: "roulette-bet",
-        bet: { kind: "dozen", dozen },
-      }),
-    ),
-    ...THIRDS.map((column) =>
-      clickKey(
-        `${ROULETTE_COLUMN_KEY}${column}`,
-        `column ${column}`,
-        chosen.kind === "column" && chosen.column === column,
-        {
-          kind: "roulette-bet",
-          bet: { kind: "column", column },
-        },
-      ),
-    ),
-  ];
+/** The roulette layout's cells a click puts a chip on: every number, each dozen and each column. */
+function rouletteLayoutKeys(placed: readonly RouletteChip[]): KeyAction[] {
+  return ROULETTE_CURSOR_CELLS.map((bet) =>
+    clickKey(rouletteCellKey(bet), rouletteBetLabel(bet), stakeOn(placed, bet) > 0n, { kind: "roulette-add", bet }),
+  );
 }
 
 /**
@@ -833,7 +908,7 @@ export function tableKeys(input: PlanInput): KeyAction[] {
   const keys = planKeys(input);
 
   if (keys.some((key) => key.key === "roulette-red")) {
-    return [...keys, ...rouletteLayoutKeys(input.prefs.roulette)];
+    return [...keys, ...rouletteLayoutKeys(input.prefs.rouletteChips)];
   }
 
   if (!keys.some((key) => key.key === "keno-random")) {

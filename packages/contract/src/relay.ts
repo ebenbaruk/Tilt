@@ -23,6 +23,21 @@ export const RouletteBet = z.discriminatedUnion("kind", [
 ]);
 export type RouletteBet = z.infer<typeof RouletteBet>;
 
+/** Chips one `roulette_chips` spin can carry (`MAX_CHIPS` on-chain). */
+export const MAX_ROULETTE_CHIPS = 20;
+
+/** One chip: its own bet and amount (each within the bet limits, checked by the program). */
+export const RouletteChip = z.object({ bet: RouletteBet, amount: Amount });
+export type RouletteChip = z.infer<typeof RouletteChip>;
+
+/** 1 to 20 chips, at most one per bet (the client merges chips on the same bet). */
+export const RouletteChips = z
+  .array(RouletteChip)
+  .min(1)
+  .max(MAX_ROULETTE_CHIPS)
+  // Parsed bets have their keys in schema order, so equal bets serialize alike.
+  .refine((chips) => new Set(chips.map((chip) => JSON.stringify(chip.bet))).size === chips.length, "distinct bets");
+
 export const BaccaratBet = z.enum(["player", "banker", "tie"]);
 export type BaccaratBet = z.infer<typeof BaccaratBet>;
 
@@ -82,6 +97,8 @@ const ActionShape = z.discriminatedUnion("type", [
   /** Splits the active hand's pair into two hands (one more base bet), at most 4 per round. */
   z.object({ type: z.literal("blackjack_split") }),
   z.object({ type: z.literal("roulette_spin"), amount: Amount, bet: RouletteBet }),
+  /** One spin with several chips; the stake is their total. Plays on the player's roulette table. */
+  z.object({ type: z.literal("roulette_chips"), chips: RouletteChips }),
   z.object({ type: z.literal("baccarat_deal"), amount: Amount, bet: BaccaratBet }),
   z.object({ type: z.literal("slots_spin"), amount: Amount }),
   /** Starts a Mines round of `amount` with `mines` mines (1 to 24); no draw until a reveal. */
@@ -161,7 +178,7 @@ export const ErrorCode = z.enum([
   "CONSENT_REQUIRED",
   "ACCOUNT_NOT_OPEN",
   "ACCOUNT_ALREADY_OPEN",
-  /** The player's game account (blackjack table, one-draw table, Mines, Hilo or Tower board)
+  /** The player's game account (blackjack, one-draw or roulette table, Mines, Hilo or Tower board)
    *  could not be opened in the rollup in time; nothing was played, the same action can be sent again. */
   "TABLE_NOT_READY",
   "PROGRAM_ERROR",

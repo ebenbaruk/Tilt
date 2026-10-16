@@ -19,6 +19,8 @@ import {
   promoPayoutAddress,
   promoTokenAddress,
   quickTableAddress,
+  type RouletteBet,
+  rouletteTableAddress,
   tableAddress,
   type Tilt,
   towerBoardAddress,
@@ -38,24 +40,25 @@ type Vault = IdlAccounts<Tilt>["vault"];
 export type Ledger = IdlAccounts<Tilt>["ledger"];
 type ProgramRouletteBet = IdlTypes<Tilt>["rouletteBet"];
 type ProgramBaccaratBet = IdlTypes<Tilt>["baccaratBet"];
-type Game = IdlTypes<Tilt>["game"];
 type RollupAction = Exclude<Action, { type: "open_account" | "deposit" }>;
 
 const isBlackjack = (action: RollupAction) => action.type.startsWith("blackjack_");
 
 /** Per-player game accounts the rollup must hold before that game's first move: opened and
  *  delegated on Solana by the relayer, never closed. */
-type GameAccount = "table" | "quick" | "mines" | "hilo" | "tower";
+type GameAccount = "table" | "quick" | "roulette" | "mines" | "hilo" | "tower";
 const GAME_ACCOUNTS: Record<GameAccount, { label: string; address: (player: PublicKey) => PublicKey }> = {
   table: { label: "blackjack table", address: tableAddress },
   quick: { label: "one-draw table", address: quickTableAddress },
+  roulette: { label: "roulette table", address: rouletteTableAddress },
   mines: { label: "mines board", address: minesBoardAddress },
   hilo: { label: "hilo board", address: hiloBoardAddress },
   tower: { label: "tower board", address: towerBoardAddress },
 };
 
 /** The account each game plays on, by game name (the program's `Game` variant, and the prefix of
- *  its actions). Roulette, baccarat and slots play on the player account alone. */
+ *  its actions). Baccarat, slots and single-bet roulette spins play on the player account alone;
+ *  multi-chip roulette spins on the roulette table (see `play` and `expireRound`). */
 const GAME_ACCOUNT_OF: Partial<Record<string, GameAccount>> = {
   blackjack: "table",
   dice: "quick",
@@ -119,7 +122,7 @@ export function programErrorName(logs: readonly string[] | null | undefined): st
   return undefined;
 }
 
-function rouletteBet(bet: Extract<Action, { type: "roulette_spin" }>["bet"]): ProgramRouletteBet {
+function rouletteBet(bet: RouletteBet): ProgramRouletteBet {
   switch (bet.kind) {
     case "straight":
       return { straight: { 0: bet.number } };
@@ -282,13 +285,13 @@ export class TiltChain {
   }
 
   /** A round action or a withdrawal, in the rollup. Blackjack needs the player's table and the
-   *  other games but roulette, baccarat and slots their own account (one-draw table, Mines, Hilo
-   *  or Tower board), opened first on the player's first move of that game. A move past the
-   *  player's win cap is sent again once Solana has raised the cap from the free bankroll (the
-   *  rolling win cap). */
+   *  other games but baccarat, slots and single-bet roulette their own account (one-draw or
+   *  roulette table, Mines, Hilo or Tower board), opened first on the player's first move of that
+   *  game. A move past the player's win cap is sent again once Solana has raised the cap from the
+   *  free bankroll (the rolling win cap). */
   async play(player: PublicKey, action: RollupAction, record: RecordSend): Promise<string> {
     if (!(await this.isOpen(player))) throw new IntentError("ACCOUNT_NOT_OPEN", "no account yet: deposit first");
-    const gameAccount = GAME_ACCOUNT_OF[action.type.split("_")[0]];
+    const gameAccount = action.type === "roulette_chips" ? "roulette" : GAME_ACCOUNT_OF[action.type.split("_")[0]];
     if (gameAccount) await this.ensureGameAccount(player, gameAccount);
     try {
       return await this.sendRollup(await this.playTransaction(player, action), record);
@@ -325,12 +328,17 @@ export class TiltChain {
 
   /** Relay cron: requests again the draw of a round stuck waiting for it. A blackjack draw
    *  writes to the table and the games with their own account call back with it, so it is
-   *  passed along. */
-  async expireRound(player: PublicKey, game: Game): Promise<string> {
+   *  passed along. A roulette round without its bet in `roulette` is a multi-chip spin, whose
+   *  chips are on the roulette table. */
+  async expireRound(player: PublicKey, round: Pick<PlayerAccount["round"], "game" | "roulette">): Promise<string> {
     const m = this.rollupProgram.methods;
-    const kind = GAME_ACCOUNT_OF[Object.keys(game)[0]];
+    const game = Object.keys(round.game)[0];
+    const kind = game === "roulette" && !round.roulette ? "roulette" : GAME_ACCOUNT_OF[game];
     let tx: Transaction;
     switch (kind) {
+      case "roulette":
+        tx = await m.expireRouletteRound(seed()).accountsPartial(this.rouletteAccounts(player)).transaction();
+        break;
       case "quick":
         tx = await m.expireQuickRound(seed()).accountsPartial(this.quickAccounts(player)).transaction();
         break;
@@ -448,6 +456,18 @@ export class TiltChain {
     };
   }
 
+  /** Multi-chip roulette spins: the player's roulette table instead of the optional blackjack table. */
+  private rouletteAccounts(player: PublicKey) {
+    return {
+      vault: this.vault,
+      payer: this.relayer.publicKey,
+      account: playerAccountAddress(player),
+      ledger: ledgerAddress(player),
+      roulette: rouletteTableAddress(player),
+      oracleQueue: this.vrfQueue,
+    };
+  }
+
   /** open_table + delegate_table: the relayer pays the table's rent, like the account's. */
   private async tableInstructions(player: PublicKey) {
     const accounts = { vault: this.vault, payer: this.relayer.publicKey, player, ledger: ledgerAddress(player), table: tableAddress(player) };
@@ -468,6 +488,10 @@ export class TiltChain {
       case "quick": {
         const quick = { ...base, quick: quickTableAddress(player) };
         return [await m.openQuickTable().accountsPartial(quick).instruction(), await m.delegateQuickTable().accountsPartial(quick).instruction()];
+      }
+      case "roulette": {
+        const roulette = { ...base, roulette: rouletteTableAddress(player) };
+        return [await m.openRouletteTable().accountsPartial(roulette).instruction(), await m.delegateRouletteTable().accountsPartial(roulette).instruction()];
       }
       case "mines":
         return [await m.openMinesBoard().accountsPartial(board).instruction(), await m.delegateMinesBoard().accountsPartial(board).instruction()];
@@ -508,6 +532,10 @@ export class TiltChain {
         return m.blackjackSplit(seed()).accountsPartial(accounts).transaction();
       case "roulette_spin":
         return m.rouletteSpin(new BN(action.amount), rouletteBet(action.bet), seed()).accountsPartial(accounts).transaction();
+      case "roulette_chips": {
+        const chips = action.chips.map((chip) => ({ bet: rouletteBet(chip.bet), amount: new BN(chip.amount) }));
+        return m.rouletteChips(chips, seed()).accountsPartial(this.rouletteAccounts(player)).transaction();
+      }
       case "baccarat_deal":
         return m.baccaratDeal(new BN(action.amount), baccaratBet(action.bet), seed()).accountsPartial(accounts).transaction();
       case "slots_spin":

@@ -57,3 +57,27 @@ export function pocketColor(n: number): "green" | "red" | "black" {
   if (n === 0) return "green";
   return RED_POCKETS.has(n) ? "red" : "black";
 }
+
+/** Whether `bet` wins when the ball lands on `n`, as the program decides it: zero loses every outside bet. */
+export function rouletteWins(bet: RouletteBet, n: number): boolean {
+  if (bet.kind === "straight") return n === bet.number;
+  if (n === 0) return false;
+  switch (bet.kind) {
+    case "red":
+      return RED_POCKETS.has(n);
+    case "black":
+      return !RED_POCKETS.has(n);
+    case "odd":
+      return n % 2 === 1;
+    case "even":
+      return n % 2 === 0;
+    case "low":
+      return n <= 18;
+    case "high":
+      return n >= 19;
+    case "dozen":
+      return Math.ceil(n / 12) === bet.dozen;
+    case "column":
+      return ((n - 1) % 3) + 1 === bet.column;
+  }
+}

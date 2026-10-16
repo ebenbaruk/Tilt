@@ -15,13 +15,14 @@ import { isCashout, saveDetail, saveDraw, saveRound, type DrawRecord, type Settl
 
 const coder = new anchor.BorshCoder(idl as anchor.Idl);
 /** VRF callbacks: blackjack, roulette, baccarat and slots draws, mines reveals, the one-draw
- *  games' draws (quick table), hilo cards and tower climbs. */
+ *  games' draws (quick table), hilo cards, tower climbs and roulette chips spins. */
 const CALLBACK_LOGS = [
   "Program log: Instruction: ConsumeRandomness",
   "Program log: Instruction: ConsumeMinesRandomness",
   "Program log: Instruction: ConsumeQuickRandomness",
   "Program log: Instruction: ConsumeHiloRandomness",
   "Program log: Instruction: ConsumeTowerRandomness",
+  "Program log: Instruction: ConsumeRouletteRandomness",
 ];
 const CALLBACKS = new Set([
   "consume_randomness",
@@ -29,6 +30,7 @@ const CALLBACKS = new Set([
   "consume_quick_randomness",
   "consume_hilo_randomness",
   "consume_tower_randomness",
+  "consume_roulette_randomness",
 ]);
 const PROGRAM = PROGRAM_ID.toBase58();
 const PROGRAM_DATA = "Program data: ";

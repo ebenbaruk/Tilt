@@ -250,13 +250,19 @@ describe("buildRoundView", () => {
   });
 
   it("hides the roulette number and the slot reels until the round settles", () => {
-    const spin: Outcome = { game: "roulette", bet: { kind: "red" }, number: 0 };
+    const chips = [
+      { bet: { kind: "red" as const }, amount: "1000000" },
+      { bet: { kind: "straight" as const, number: 17 }, amount: "500000" },
+    ];
+    const spin: Outcome = { game: "roulette", chips, number: 0 };
     expect(buildRoundView(input(spin, { kind: "awaiting", draw: "spin" })).detail).toEqual({
       game: "roulette",
       bet: { kind: "red" },
+      chips,
       number: null,
     });
     expect(buildRoundView(input({ ...spin, number: 32 }, idle)).detail).toMatchObject({ number: 32 });
+    expect(() => buildRoundView(input({ ...spin, chips: [] }, idle))).toThrow();
     const reels: Outcome = { game: "slots", reels: [0, 1, 6] };
     expect(buildRoundView(input(reels, { kind: "awaiting", draw: "spin" })).detail).toEqual({
       game: "slots",

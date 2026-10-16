@@ -317,6 +317,13 @@ impl Round {
         };
         Ok(Some(gross))
     }
+
+    /// A `roulette_chips` spin: its chips live on the player's `RouletteTable`, so its draw is
+    /// answered by `consume_roulette_randomness` and retried by `expire_roulette_round`. A
+    /// `roulette_spin` round always holds its bet in `roulette`.
+    pub fn on_roulette_table(&self) -> bool {
+        self.game == Game::Roulette && self.roulette.is_none()
+    }
 }
 
 /// The player's balance and current round. Lives in the rollup permanently.
@@ -380,11 +387,7 @@ impl PlayerAccount {
         config: &Config,
         now: i64,
     ) -> Result<()> {
-        require!(!config.bets_paused, TiltError::Paused);
-        require!(
-            self.round.status == RoundStatus::Idle,
-            TiltError::RoundInProgress
-        );
+        self.check_can_start(config)?;
         require!(
             bet >= config.min_bet && bet <= config.max_bet && bets > 0,
             TiltError::AmountOutOfRange
@@ -392,6 +395,56 @@ impl PlayerAccount {
         let stake = bet
             .checked_mul(bets.into())
             .ok_or(TiltError::AmountOutOfRange)?;
+        self.take_stake(game, stake, max_gain, config, now)
+    }
+
+    /// Like `start_round` for bets of their own sizes (roulette chips): bet limits apply to
+    /// each of `bets`, at least one, and the stake is their total.
+    pub fn start_round_of(
+        &mut self,
+        game: Game,
+        bets: impl IntoIterator<Item = u64>,
+        max_gain: u64,
+        config: &Config,
+        now: i64,
+    ) -> Result<()> {
+        self.check_can_start(config)?;
+        let mut stake: Option<u64> = None;
+        for bet in bets {
+            require!(
+                bet >= config.min_bet && bet <= config.max_bet,
+                TiltError::AmountOutOfRange
+            );
+            stake = Some(
+                stake
+                    .unwrap_or(0)
+                    .checked_add(bet)
+                    .ok_or(TiltError::AmountOutOfRange)?,
+            );
+        }
+        let stake = stake.ok_or(TiltError::AmountOutOfRange)?;
+        self.take_stake(game, stake, max_gain, config, now)
+    }
+
+    fn check_can_start(&self, config: &Config) -> Result<()> {
+        require!(!config.bets_paused, TiltError::Paused);
+        require!(
+            self.round.status == RoundStatus::Idle,
+            TiltError::RoundInProgress
+        );
+        Ok(())
+    }
+
+    /// Debits `stake` for a new round of `game` whose worst case gains `max_gain`, once the
+    /// round limit, the balance and the win cap allow it.
+    fn take_stake(
+        &mut self,
+        game: Game,
+        stake: u64,
+        max_gain: u64,
+        config: &Config,
+        now: i64,
+    ) -> Result<()> {
         require!(
             max_gain <= config.max_round_gain,
             TiltError::RoundGainTooHigh
@@ -877,6 +930,56 @@ mod tests {
         assert!(classic.iter().all(|g| g.draws_in_round() && !g.is_quick()));
         assert!(quick.iter().all(|g| g.is_quick() && !g.draws_in_round()));
         assert!(boards.iter().all(|g| !g.is_quick() && !g.draws_in_round()));
+    }
+
+    #[test]
+    fn only_a_chips_spin_plays_on_the_roulette_table() {
+        let chips = Round {
+            game: Game::Roulette,
+            ..Round::default()
+        };
+        assert!(chips.on_roulette_table());
+        let single = Round {
+            roulette: Some(RouletteSpin {
+                bet: crate::games::roulette::RouletteBet::Red,
+                number: 0,
+            }),
+            ..chips.clone()
+        };
+        assert!(!single.on_roulette_table());
+        for game in [Game::Blackjack, Game::Baccarat, Game::Slots, Game::Dice] {
+            assert!(!Round {
+                game,
+                ..Round::default()
+            }
+            .on_roulette_table());
+        }
+    }
+
+    #[test]
+    fn bets_of_their_own_sizes_are_each_limited_and_staked_together() {
+        let mut a = account(10_000, 10_000);
+        for bets in [vec![], vec![106, 1_001], vec![105]] {
+            assert_eq!(
+                a.start_round_of(Game::Roulette, bets.clone(), 0, &config(), 0),
+                Err(TiltError::AmountOutOfRange.into()),
+                "{bets:?}"
+            );
+        }
+        assert_eq!(
+            a.start_round_of(Game::Roulette, [1_000, 106], 50_001, &config(), 0),
+            Err(TiltError::RoundGainTooHigh.into())
+        );
+        assert_eq!(a.balance, 10_000);
+        a.start_round_of(Game::Roulette, [1_000, 106, 500], 3_000, &config(), 7)
+            .unwrap();
+        assert_eq!((a.balance, a.round.stake), (10_000 - 1_606, 1_606));
+        assert_eq!((a.round.game, a.round.last_action), (Game::Roulette, 7));
+        a.round.status = RoundStatus::AwaitingDraw(Draw::Spin);
+        assert_eq!(
+            a.start_round_of(Game::Roulette, [106], 0, &config(), 8),
+            Err(TiltError::RoundInProgress.into())
+        );
     }
 
     #[test]

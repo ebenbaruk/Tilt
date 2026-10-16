@@ -13,6 +13,7 @@ import {
   MAX_BLACKJACK_HANDS,
   MAX_FLIPS,
   MAX_MINES,
+  MAX_ROULETTE_CHIPS,
   MINES_TILES,
   TOWER_MAX_TILES,
   TowerDifficulty,
@@ -43,6 +44,12 @@ const RouletteBet = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("column"), column: OneToThree }).strict(),
 ]) satisfies z.ZodType<RouletteBet>;
 
+/** 1 to 20 chips; distinct bets are checked below (the mod merges chips on the same bet). */
+const RouletteChips = z
+  .array(z.object({ bet: RouletteBet, amount: Amount }).strict())
+  .min(1)
+  .max(MAX_ROULETTE_CHIPS);
+
 /** Game moves only: deposits and withdrawals are not part of this union, so the mod cannot send them. */
 export const PlayActionSchema = z
   .discriminatedUnion("type", [
@@ -58,6 +65,7 @@ export const PlayActionSchema = z
     z.object({ type: z.literal("blackjack_double") }).strict(),
     z.object({ type: z.literal("blackjack_split") }).strict(),
     z.object({ type: z.literal("roulette_spin"), amount: Amount, bet: RouletteBet }).strict(),
+    z.object({ type: z.literal("roulette_chips"), chips: RouletteChips }).strict(),
     z.object({ type: z.literal("baccarat_deal"), amount: Amount, bet: z.enum(["player", "banker", "tie"]) }).strict(),
     z.object({ type: z.literal("slots_spin"), amount: Amount }).strict(),
     z.object({ type: z.literal("mines_bet"), amount: Amount, mines: z.number().int().min(1).max(MAX_MINES) }).strict(),
@@ -116,6 +124,13 @@ export const PlayActionSchema = z
     z.object({ type: z.literal("tower_cashout") }).strict(),
   ])
   .superRefine((action, ctx) => {
+    if (action.type === "roulette_chips") {
+      // Parsed bets have their keys in the schema's order: equal bets serialize alike.
+      const bets = new Set(action.chips.map((chip) => JSON.stringify(chip.bet)));
+      if (bets.size !== action.chips.length) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["chips"], message: "one chip per bet" });
+      }
+    }
     if (action.type !== "dice_roll") return;
     const winning = diceWinningRolls(action.target, action.over);
     if (winning < DICE_MIN_WINNING || winning > DICE_MAX_WINNING) {

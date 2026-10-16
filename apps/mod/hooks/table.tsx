@@ -304,13 +304,20 @@ function prompt(
     return turn;
   }
 
+  const hasLayout = keys.some((key) => key.key.startsWith(ROULETTE_STRAIGHT_KEY));
+
   // Blocked, no account, a move settling: Space plays nothing, so the table does not invite it.
-  if (start === undefined && !hasKey(keys, "bj-stand")) {
+  // An empty roulette table invites chips instead.
+  if (start === undefined && !hasKey(keys, "bj-stand") && !hasLayout) {
     return null;
   }
 
   if (!view.isFocused) {
-    return (
+    return start === undefined && hasLayout ? (
+      <Text color={GOLD} bold>
+        click the layout to add a chip
+      </Text>
+    ) : (
       <Text color={FG4}>
         <Text color={GOLD} bold>
           click the table
@@ -352,8 +359,8 @@ function prompt(
     parts.push("click a number to pick it");
   }
 
-  if (keys.some((key) => key.key.startsWith(ROULETTE_STRAIGHT_KEY))) {
-    parts.push("click the layout to bet");
+  if (hasLayout) {
+    parts.push("click the layout to add a chip");
   }
 
   if (start === undefined) {
@@ -404,6 +411,36 @@ function turnPrompt(
         <Button key={`table-${move.key}`} plain onPress={() => post(move.key)}>
           <Text color={GOLD} bold>
             {isFocused ? `${move.hotkey} ${move.label}` : move.label}
+          </Text>
+        </Button>
+      ))}
+    </Box>
+  );
+}
+
+const ROULETTE_BUTTONS: readonly string[] = ["chip-undo", "chip-clear", "start"];
+
+/** Roulette's buttons under the layout: the last chip back, the table cleared, the spin; none without chips. */
+function rouletteButtons(
+  ui: Ui,
+  keys: readonly TableKey[],
+  isFocused: boolean,
+  post: (press: string) => void,
+): RenderElement | null {
+  const { Box, Button, Text } = ui;
+
+  if (!keys.some((key) => key.key === "chip-undo")) {
+    return null;
+  }
+
+  const buttons = ROULETTE_BUTTONS.flatMap((address) => keys.filter((key) => key.key === address));
+
+  return (
+    <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+      {buttons.map((button) => (
+        <Button key={`table-${button.key}`} plain onPress={() => post(button.key)}>
+          <Text color={button.key === "start" ? GOLD : FG4} bold={button.key === "start"}>
+            {isFocused ? `${button.hotkey} ${button.label}` : button.label}
           </Text>
         </Button>
       ))}
@@ -494,6 +531,7 @@ export default function Table(props: TableProps, surface: ClientSurface<TableSta
             </Text>
           )}
         </Box>
+        {rouletteButtons(ui, props.keys, state.isFocused && props.isPaneFocused, post)}
       </Box>
     </Box>
   );

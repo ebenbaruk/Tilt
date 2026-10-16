@@ -1,6 +1,7 @@
 import { describe, expect, test } from "claude-code/testing";
 
 import type { PlayAction, PlayRequest } from "../hooks/protocol";
+import { TABLE_KEY } from "../hooks/table-input";
 import { BACCARAT, BASE, BLACKJACK_TURN, BLACKJACK_WIN, HILO_TURN, ROULETTE, TOWER_TURN } from "./fixtures";
 import {
   BAND,
@@ -88,23 +89,52 @@ describe("keys send moves", () => {
     });
   });
 
-  test("roulette: 2, then k for black, z twice for the second dozen, then n", async ($, on) => {
-    const { world, clock } = await seat($, on, BASE, movingTable(BASE, ROULETTE));
-    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
+  // Thirty-odd key presses and two spins, one engine hop each: room for loaded CI runners.
+  test(
+    "roulette: chips stack on black and on 17, n spins them all, n again rebets, u takes the last back",
+    { timeoutMs: 30_000 },
+    async ($, on) => {
+      const { world, clock } = await seat($, on, BASE, movingTable(BASE, ROULETTE));
+      const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
 
-    await ui.press({ key: "game-roulette" });
-    await ui.press({ key: "roulette-black" });
-    await ui.press({ key: "start" });
-    await clock.advance(FIRST_TICK_MS);
-    await ui.press({ key: "roulette-dozen" });
-    await ui.press({ key: "roulette-dozen" });
-    await ui.press({ key: "start" });
+      await ui.press({ key: "game-roulette" });
+      expect(await ui.find({ key: "start" })).toBeUndefined();
+      await ui.press({ key: "roulette-black" });
+      await ui.press({ key: "bet-up" });
+      await ui.press({ key: "roulette-black" });
 
-    expect(world.calls("POST /v1/play").map((call) => (call.body as PlayRequest).action)).toEqual([
-      { type: "roulette_spin", amount: "500000", bet: { kind: "black" } },
-      { type: "roulette_spin", amount: "500000", bet: { kind: "dozen", dozen: 2 } },
-    ]);
-  });
+      for (let press = 0; press < 17; press++) {
+        await ui.press({ key: "cursor-up" });
+      }
+
+      await ui.press({ key: "chip-add" });
+      // 17 is black: 3.00 back on black and 36.00 on 17, over the 2.50 staked.
+      expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("on the table 2.50 · 2 chips · max win 36.50");
+      await ui.press({ key: "start" });
+      await clock.advance(FIRST_TICK_MS);
+      await ui.press({ key: "start" });
+      await clock.advance(FIRST_TICK_MS);
+      await ui.press({ key: "chip-undo" });
+      await ui.press({ key: "start" });
+      await clock.advance(FIRST_TICK_MS);
+      await ui.press({ key: "chip-clear" });
+      expect(await ui.find({ key: "start" })).toBeUndefined();
+
+      const both = {
+        type: "roulette_chips",
+        chips: [
+          { bet: { kind: "black" }, amount: "1500000" },
+          { bet: { kind: "straight", number: 17 }, amount: "1000000" },
+        ],
+      };
+
+      expect(world.calls("POST /v1/play").map((call) => (call.body as PlayRequest).action)).toEqual([
+        both,
+        both,
+        { type: "roulette_chips", chips: [{ bet: { kind: "black" }, amount: "1500000" }] },
+      ]);
+    },
+  );
 
   test("baccarat on a tie, and a slots spin", async ($, on) => {
     const { world, clock } = await seat($, on, BASE, movingTable(BASE, BACCARAT));

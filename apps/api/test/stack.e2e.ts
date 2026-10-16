@@ -25,6 +25,8 @@ import type {
   IntentResponse as PlayResponse,
   MinesView,
   PlayAction,
+  RouletteChip,
+  RouletteView,
   RoundView,
   StateResponse,
   TowerView,
@@ -410,6 +412,23 @@ async function main() {
       afterReplay.balance === s.balance,
     `(${replayed.json.status}, manche ${afterReplay.round?.number})`,
   );
+
+  // Roulette table: several chips on one spin, each its own bet and size; the stake is their sum.
+  balance = BigInt(s.balance);
+  next = (s.round?.number ?? 0) + 1;
+  const chips: RouletteChip[] = [
+    { bet: { kind: "red" }, amount: usdc(1).toString() },
+    { bet: { kind: "straight", number: 17 }, amount: usdc(0.5).toString() },
+    { bet: { kind: "dozen", dozen: 2 }, amount: usdc(0.25).toString() },
+  ];
+  s = await move({ type: "roulette_chips", chips }, (x) => x.round?.number === next && x.round.phase === "idle");
+  const table = s.round?.detail as RouletteView;
+  check(
+    "roulette (jetons) : la manche montre chaque jeton, mise = leur somme",
+    JSON.stringify(table.chips) === JSON.stringify(chips) && s.round?.stake === usdc(1.75).toString(),
+    `(${JSON.stringify(table.chips)}, mise ${s.round?.stake}, numéro ${table.number})`,
+  );
+  checkRound("roulette (jetons)", balance, s);
 
   balance = BigInt(s.balance);
   next = (s.round?.number ?? 0) + 1;

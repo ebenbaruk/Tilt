@@ -225,7 +225,9 @@ describe("intents", () => {
     const players = {
       thinking: { address: PublicKey.unique(), game: { blackjack: {} }, status: { playerTurn: {} } },
       stuckDraw: { address: PublicKey.unique(), game: { blackjack: {} }, status: { awaitingDraw: { 0: { deal: {} } } } },
-      stuckSpin: { address: PublicKey.unique(), game: { roulette: {} }, status: { awaitingDraw: { 0: { spin: {} } } } },
+      stuckSpin: { address: PublicKey.unique(), game: { roulette: {} }, roulette: { bet: { red: {} }, number: 0 }, status: { awaitingDraw: { 0: { spin: {} } } } },
+      // A multi-chip spin: no bet in the round, its chips are on the roulette table.
+      stuckChips: { address: PublicKey.unique(), game: { roulette: {} }, roulette: null, status: { awaitingDraw: { 0: { spin: {} } } } },
       minesThinking: { address: PublicKey.unique(), game: { mines: {} }, status: { playerTurn: {} } },
       stuckReveal: { address: PublicKey.unique(), game: { mines: {} }, status: { awaitingDraw: { 0: { reveal: {} } } } },
       freshDraw: { address: PublicKey.unique(), game: { roulette: {} }, status: { awaitingDraw: { 0: { spin: {} } } }, lastAction: Math.floor(now / 1000) - 5 },
@@ -239,27 +241,29 @@ describe("intents", () => {
         { type: "open_account", amount: "10000000" },
       ]);
     }
-    const expired: [string, string][] = [];
+    const expired: [string, string, unknown][] = [];
     const accounts = new Map(Object.values(players).map((p) => [p.address.toBase58(), p]));
     const chain = {
       fetchVault: async () => ({ config: { roundTimeoutSecs: TIMEOUT_SECS } }),
       fetchPlayerAccount: async (player: PublicKey) => {
         const p = accounts.get(player.toBase58())!;
-        return { round: { game: p.game, status: p.status, lastAction: "lastAction" in p ? p.lastAction : longAgo } };
+        const roulette = "roulette" in p ? p.roulette : null;
+        return { round: { game: p.game, roulette, status: p.status, lastAction: "lastAction" in p ? p.lastAction : longAgo } };
       },
-      expireRound: async (player: PublicKey, game: Record<string, object>) => {
-        expired.push([player.toBase58(), Object.keys(game)[0]]);
+      expireRound: async (player: PublicKey, round: { game: Record<string, object>; roulette: unknown }) => {
+        expired.push([player.toBase58(), Object.keys(round.game)[0], round.roulette]);
         return "sig";
       },
     } as unknown as TiltChain;
     const intents = { reconcile: async () => 0 } as unknown as Intents;
     const report = await sweep(db, chain, intents, { checkpointMinLoss: 1n, checkpointIntervalMs: 1 }, now);
-    expect(Object.fromEntries(expired)).toEqual({
-      [players.stuckDraw.address.toBase58()]: "blackjack",
-      [players.stuckSpin.address.toBase58()]: "roulette",
-      [players.stuckReveal.address.toBase58()]: "mines",
+    expect(Object.fromEntries(expired.map(([address, ...rest]) => [address, rest]))).toEqual({
+      [players.stuckDraw.address.toBase58()]: ["blackjack", null],
+      [players.stuckSpin.address.toBase58()]: ["roulette", players.stuckSpin.roulette],
+      [players.stuckChips.address.toBase58()]: ["roulette", null],
+      [players.stuckReveal.address.toBase58()]: ["mines", null],
     });
-    expect(report).toMatchObject({ expired: 3, failed: 0 });
+    expect(report).toMatchObject({ expired: 4, failed: 0 });
   });
 
   it("lets an execution that saw its transaction land correct a reconciliation failure", async () => {

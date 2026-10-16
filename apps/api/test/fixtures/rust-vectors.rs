@@ -1,8 +1,8 @@
 // Generator of rust-vectors.json: draws computed by the program's own Rust code.
 // Regenerate: copy chain/programs/tilt/src/{rng,settlement}.rs and games/{mod,blackjack,baccarat,roulette,slots,mines,
 // dice,limbo,flip,keno,wheel,hilo,tower}.rs next to this file (src/ and src/games/, keeping in games/mod.rs only the
-// helpers and the `pub mod` lines of those games), strip the anchor derives, `#[account]` and the test
-// modules, replace `use anchor_lang::prelude::*;` with `type Pubkey = [u8; 32];`, then
+// helpers and the `pub mod` lines of those games), strip the anchor derives, `#[account]` and the `#[cfg(test)]`
+// modules and helpers, replace `use anchor_lang::prelude::*;` with `type Pubkey = [u8; 32];`, then
 // `rustc --edition 2021 -O main.rs && ./main > rust-vectors.json` (and prettier the JSON).
 mod rng;
 mod settlement;
@@ -82,6 +82,28 @@ fn main() {
         rou.push(format!("{{\"seed\":\"{}\",\"number\":{},\"red\":\"{}\",\"straight17\":\"{}\"}}", hex(&seed(i)), s.number, red, straight));
     }
     out.push(format!("\"roulette\":[{}]", rou.join(",")));
+    // roulette chips: 1 to 20 chips on distinct bets (every kind), amounts 0.10 to 2.50 USDC,
+    // spun by the table like the program's callback, settled on the total stake.
+    let mut all_bets: Vec<(RouletteBet, String)> = (0..=36u8).map(|n| (RouletteBet::Straight(n), format!("{{\"kind\":\"straight\",\"number\":{}}}", n))).collect();
+    for (b, k) in [(RouletteBet::Red, "red"), (RouletteBet::Black, "black"), (RouletteBet::Odd, "odd"), (RouletteBet::Even, "even"), (RouletteBet::Low, "low"), (RouletteBet::High, "high")] { all_bets.push((b, format!("{{\"kind\":\"{}\"}}", k))); }
+    for d in 1..=3u8 { all_bets.push((RouletteBet::Dozen(d), format!("{{\"kind\":\"dozen\",\"dozen\":{}}}", d))); }
+    for c in 1..=3u8 { all_bets.push((RouletteBet::Column(c), format!("{{\"kind\":\"column\",\"column\":{}}}", c))); }
+    let mut rc = Vec::new();
+    for i in 0..80u64 {
+        let n = 1 + (i * 7 % MAX_CHIPS as u64) as usize;
+        let picks: Vec<usize> = (0..n as u64).map(|k| ((i * 13 + k * 11) % all_bets.len() as u64) as usize).collect();
+        let chips: Vec<RouletteChip> = picks.iter().enumerate().map(|(k, &b)| RouletteChip { bet: all_bets[b].0, amount: 100_000 * (1 + (i + k as u64 * 3) % 25) }).collect();
+        assert!(chips_are_valid(&chips));
+        let mut t = RouletteTable::default();
+        t.start(&chips);
+        let gross = t.spin(&mut Rng::from_vrf(seed(1000 + i)));
+        let stake: u64 = chips.iter().map(|c| c.amount).sum();
+        let st = settlement::settle(stake, gross);
+        let json: Vec<String> = picks.iter().zip(&chips).map(|(&b, c)| format!("{{\"bet\":{},\"amount\":\"{}\"}}", all_bets[b].1, c.amount)).collect();
+        rc.push(format!("{{\"seed\":\"{}\",\"chips\":[{}],\"stake\":\"{}\",\"number\":{},\"gross\":\"{}\",\"payout\":\"{}\",\"fee\":\"{}\"}}",
+            hex(&seed(1000 + i)), json.join(","), stake, t.pocket, gross, st.payout, st.fee));
+    }
+    out.push(format!("\"rouletteChips\":[{}]", rc.join(",")));
     let mut sl = Vec::new();
     for i in 0..200u64 {
         let mut s = SlotsSpin::default();

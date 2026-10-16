@@ -3,6 +3,7 @@ import { describe, expect, test } from "claude-code/testing";
 import { apiBase, trustedVerifyUrl } from "../hooks/api";
 import {
   cleanText,
+  compactUsdc,
   moveFailure,
   formatCountdown,
   formatDuration,
@@ -15,7 +16,11 @@ import {
   towerMultiplier,
   pocketColor,
   rankLabel,
+  rouletteGross,
+  rouletteMaxGain,
+  rouletteWins,
 } from "../hooks/format";
+import type { RouletteBet } from "../hooks/protocol";
 import { finishNotice } from "../hooks/register";
 
 describe("money", () => {
@@ -162,5 +167,66 @@ describe("boundaries", () => {
     );
     expect(trustedVerifyUrl("http://evil.example/connect", "http://127.0.0.1:8080")).toBeNull();
     expect(trustedVerifyUrl("http://localhost:3000/connect", api)).toBeNull();
+  });
+});
+
+describe("roulette chips", () => {
+  const chip = (bet: RouletteBet, amount: string) => ({ bet, amount });
+
+  test("a chip's stake in as few characters as the felt has", () => {
+    expect(compactUsdc("2000000")).toBe("2");
+    expect(compactUsdc("2500000")).toBe("2.5");
+    expect(compactUsdc("500000")).toBe(".5");
+    expect(compactUsdc("250000")).toBe(".25");
+    expect(compactUsdc("2050000")).toBe("2.05");
+    expect(compactUsdc("1000000000")).toBe("1k");
+    expect(compactUsdc("1500000000")).toBe("1500");
+    expect(compactUsdc("2509999")).toBe("2.5");
+  });
+
+  test("which bets a pocket wins, as the program draws it: 0 loses every bet but a straight on it", () => {
+    const bets: RouletteBet[] = [
+      { kind: "red" },
+      { kind: "black" },
+      { kind: "odd" },
+      { kind: "even" },
+      { kind: "low" },
+      { kind: "high" },
+      { kind: "dozen", dozen: 2 },
+      { kind: "column", column: 2 },
+    ];
+    const winning = (pocket: number) =>
+      bets.filter((bet) => rouletteWins(bet, pocket)).map((bet) => JSON.stringify(bet));
+
+    expect(winning(0)).toEqual([]);
+    expect(rouletteWins({ kind: "straight", number: 0 }, 0)).toBe(true);
+    // 17: black, odd, low, second dozen (13–24), second column (2, 5, … 35).
+    expect(winning(17)).toEqual([
+      '{"kind":"black"}',
+      '{"kind":"odd"}',
+      '{"kind":"low"}',
+      '{"kind":"dozen","dozen":2}',
+      '{"kind":"column","column":2}',
+    ]);
+    expect(rouletteWins({ kind: "red" }, 36)).toBe(true);
+    expect(rouletteWins({ kind: "column", column: 3 }, 36)).toBe(true);
+    expect(rouletteWins({ kind: "dozen", dozen: 3 }, 25)).toBe(true);
+    expect(rouletteWins({ kind: "high" }, 18)).toBe(false);
+  });
+
+  test("chips pay as the program pays them: the stake back times 36, 3 or 2 on each winner", () => {
+    const chips = [
+      chip({ kind: "red" }, "1000000"),
+      chip({ kind: "straight", number: 17 }, "500000"),
+      chip({ kind: "dozen", dozen: 2 }, "800000"),
+    ];
+
+    expect(rouletteGross(chips, 17)).toBe(20_400_000n);
+    expect(rouletteGross(chips, 1)).toBe(2_000_000n);
+    expect(rouletteGross(chips, 0)).toBe(0n);
+    // Best pocket: 17, 20.40 back on 2.30.
+    expect(rouletteMaxGain(chips)).toBe(18_100_000n);
+    // Red and black: no pocket wins more than the stake.
+    expect(rouletteMaxGain([chip({ kind: "red" }, "1000000"), chip({ kind: "black" }, "1000000")])).toBe(0n);
   });
 });

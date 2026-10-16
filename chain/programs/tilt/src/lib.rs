@@ -21,8 +21,12 @@ pub mod state;
 pub mod withdrawals;
 
 use games::{
-    baccarat::BaccaratBet, flip::CoinSide, hilo::HiloMove, roulette::RouletteBet,
-    tower::TowerDifficulty, wheel::WheelRisk,
+    baccarat::BaccaratBet,
+    flip::CoinSide,
+    hilo::HiloMove,
+    roulette::{RouletteBet, RouletteChip},
+    tower::TowerDifficulty,
+    wheel::WheelRisk,
 };
 use instructions::*;
 use state::Config;
@@ -113,6 +117,14 @@ pub mod tilt {
 
     pub fn delegate_tower_board(ctx: Context<DelegateTowerBoard>) -> Result<()> {
         instructions::tower::delegate_tower_board(ctx)
+    }
+
+    pub fn open_roulette_table(ctx: Context<OpenRouletteTable>) -> Result<()> {
+        instructions::roulette::open_roulette_table(ctx)
+    }
+
+    pub fn delegate_roulette_table(ctx: Context<DelegateRouletteTable>) -> Result<()> {
+        instructions::roulette::delegate_roulette_table(ctx)
     }
 
     // Rounds, in the rollup.
@@ -276,6 +288,18 @@ pub mod tilt {
         instructions::tower::expire_tower_round(ctx, client_seed)
     }
 
+    pub fn roulette_chips(
+        ctx: Context<RoulettePlay>,
+        chips: Vec<RouletteChip>,
+        client_seed: [u8; 32],
+    ) -> Result<()> {
+        instructions::roulette::roulette_chips(ctx, chips, client_seed)
+    }
+
+    pub fn expire_roulette_round(ctx: Context<RoulettePlay>, client_seed: [u8; 32]) -> Result<()> {
+        instructions::roulette::expire_roulette_round(ctx, client_seed)
+    }
+
     pub fn consume_randomness(
         ctx: Context<ConsumeRandomness>,
         randomness: [u8; 32],
@@ -314,6 +338,14 @@ pub mod tilt {
         request_id: u64,
     ) -> Result<()> {
         instructions::tower::consume_tower_randomness(ctx, randomness, request_id)
+    }
+
+    pub fn consume_roulette_randomness(
+        ctx: Context<ConsumeRouletteRandomness>,
+        randomness: [u8; 32],
+        request_id: u64,
+    ) -> Result<()> {
+        instructions::roulette::consume_roulette_randomness(ctx, randomness, request_id)
     }
 
     // Withdrawals.

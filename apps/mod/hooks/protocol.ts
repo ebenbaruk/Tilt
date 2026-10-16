@@ -30,6 +30,12 @@ export type RouletteBet =
   | { kind: "dozen"; dozen: 1 | 2 | 3 }
   | { kind: "column"; column: 1 | 2 | 3 };
 
+/** One chip on the roulette table: a bet and its stake. */
+export interface RouletteChip {
+  bet: RouletteBet;
+  amount: Amount;
+}
+
 export type BaccaratBet = "player" | "banker" | "tie";
 
 export type FlipSide = "heads" | "tails";
@@ -48,7 +54,10 @@ export type PlayAction =
   | { type: "blackjack_double" }
   /** Splits the active hand's pair into two hands; at most 4 splits per round. */
   | { type: "blackjack_split" }
+  /** Old single-bet spin; the mod sends `roulette_chips` for every spin now. */
   | { type: "roulette_spin"; amount: Amount; bet: RouletteBet }
+  /** 1 to 20 chips on distinct bets, each within the bet limits; the stake is their sum. */
+  | { type: "roulette_chips"; chips: RouletteChip[] }
   | { type: "baccarat_deal"; amount: Amount; bet: BaccaratBet }
   | { type: "slots_spin"; amount: Amount }
   /** Opens a 5×5 Mines board hiding `mines` mines (1 to 24). */
@@ -154,7 +163,10 @@ export interface BlackjackView {
 
 export interface RouletteView {
   game: "roulette";
+  /** The first chip's bet, for older clients. */
   bet: RouletteBet;
+  /** Every chip of the spin, 1 to 20 on distinct bets; a single-bet round is one chip of the round's stake. */
+  chips: RouletteChip[];
   /** Winning pocket once settled. */
   number: number | null;
 }

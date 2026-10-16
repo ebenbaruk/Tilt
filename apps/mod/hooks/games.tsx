@@ -2,17 +2,28 @@
 import type { RenderElement } from "claude-code";
 
 import { type CardSize, faceDownOf, handCards, handRow } from "./cards";
-import { cashOutPayout, cleanText, formatUsdc, pocketColor, rouletteBetLabel } from "./format";
 import {
+  cashOutPayout,
+  chipsTotal,
+  cleanText,
+  compactUsdc,
+  formatUsdc,
+  pocketColor,
+  rouletteMaxGain,
+  rouletteWins,
+} from "./format";
+import {
+  cursorBet,
   MINES_COLUMNS,
   MINES_TILE_KEY,
-  ROULETTE_COLUMN_KEY,
-  ROULETTE_DOZEN_KEY,
-  ROULETTE_STRAIGHT_KEY,
+  rouletteCellKey,
+  sameBet,
+  stackChips,
+  stakeOn,
   tileLetter,
 } from "./keys";
 import type { Prefs } from "./model";
-import type { BaccaratView, RouletteBet, RoundView } from "./protocol";
+import type { BaccaratView, RouletteBet, RouletteChip, RoundView } from "./protocol";
 import {
   FELT,
   FELT_INK,
@@ -134,7 +145,7 @@ function rouletteWheel(
   );
 }
 
-/** What each roulette bet pays, by the kind in its key (`roulette-<kind>`). */
+/** What each outside bet pays, by the kind in its key (`roulette-<kind>`). */
 const BET_PAYS: Record<string, string> = {
   red: "1:1",
   black: "1:1",
@@ -142,14 +153,12 @@ const BET_PAYS: Record<string, string> = {
   even: "1:1",
   low: "1:1",
   high: "1:1",
-  dozen: "2:1",
-  column: "2:1",
 };
 const BET_NAMES: Record<string, string> = { low: "1–18", high: "19–36" };
 
 /**
- * A bet on the layout, as a chip on its felt: red and black on their own colors, the rest on the
- * green of the table; the bet in play marked `●` in gold. "RED 1:1", "DOZEN 2 2:1".
+ * An outside bet's key, as a chip on its felt: red and black on their own colors, the rest on the
+ * green of the table; a bet with chips on it marked `●` in gold. "RED 1:1", "1–18 1:1".
  */
 export function rouletteChip(ui: Ui, kind: string, label: string, isSelected: boolean): RenderElement {
   const { Text } = ui;
@@ -198,48 +207,72 @@ const OUTSIDE_BETS: readonly RouletteBet[] = [
 /** A number's cell; a `2:1` cell is one column wider, for its chip. */
 const NUMBER_CELL: Record<"wide" | "narrow", number> = { wide: 4, narrow: 3 };
 const COLUMN_CELL = 4;
-/** The chip on the cell of the bet in play. */
+/** A chip on a cell: its stake beside it, in gold. */
 const CHIP = "●";
 
 const centered = (text: string, width: number): string =>
   text.padStart(Math.floor((width + text.length) / 2)).padEnd(width);
 
+/** A cell's line, `width` wide: its label, or with chips on it the chip and their stake, beside the
+ *  label where both fit, else alone; where even that is too wide (2.5 on a narrow number), the chip on the label. */
+function cellFace(label: string, stake: bigint, width: number): string {
+  if (stake === 0n) {
+    return ` ${centered(label, width - 1)}`;
+  }
+
+  const amount = compactUsdc(stake.toString());
+  const face = [`${label} ${CHIP}${amount}`, `${CHIP}${amount}`].find((text) => text.length <= width);
+
+  return centered(face ?? `${CHIP}${label}`, width);
+}
+
+interface LayoutMarks {
+  /** The pocket the ball landed in, lit; null while it spins or before any spin. */
+  pocket: number | null;
+  /** The bets the last spin's chips won on, lit with the pocket. */
+  winners: readonly RouletteBet[];
+  /** The cell the cursor is on, drawn inverse; null while a spin is in play. */
+  cursor: RouletteBet | null;
+}
+
 /**
  * The betting layout, as on a casino table: 0 on the left, the numbers in three rows of twelve,
- * each row's `2:1`, then the dozens and the outside bets. The bet in play carries the chip `●` in
- * gold; the pocket the ball landed in is lit gold. A cell the drawing has a Button for (a click on
- * the fullscreen table) bets on it.
+ * each row's `2:1`, then the dozens and the outside bets. A cell with chips shows `●` and their
+ * stake in gold; the pocket the ball landed in and the cells that won are lit gold. A cell the
+ * drawing has a Button for (a click on the fullscreen table) takes a chip.
  */
 function rouletteLayout(
   ui: Ui,
-  bet: RouletteBet,
-  winner: number | null,
+  chips: readonly RouletteChip[],
+  marks: LayoutMarks,
   isWide: boolean,
   cellButton: TileButton,
 ): RenderElement {
   const { Box, Text } = ui;
   const width = NUMBER_CELL[isWide ? "wide" : "narrow"];
-  const betLabel = rouletteBetLabel(bet);
-  const cell = (address: string, cellBet: RouletteBet, lines: readonly string[], felt: string, cellWidth: number) => {
-    const isBet = rouletteBetLabel(cellBet) === betLabel;
-    const isWinner = cellBet.kind === "straight" && cellBet.number === winner;
+  const cell = (cellBet: RouletteBet, lines: readonly string[], felt: string, cellWidth: number) => {
+    const stake = stakeOn(chips, cellBet);
+    const isLit =
+      (cellBet.kind === "straight" && cellBet.number === marks.pocket) ||
+      marks.winners.some((bet) => sameBet(bet, cellBet));
+    const middle = Math.floor(lines.length / 2);
     // One Text, its lines joined: a Button holds only text, and the 0 is three rows tall.
-    const text = lines
-      .map(
-        (line, index) =>
-          `${isBet && index === Math.floor(lines.length / 2) ? CHIP : " "}${centered(line, cellWidth - 1)}`,
-      )
-      .join("\n");
+    const text = lines.map((line, index) => cellFace(line, index === middle ? stake : 0n, cellWidth)).join("\n");
     const face = (
-      <Text backgroundColor={isWinner ? GOLD : felt} color={isWinner ? INK : isBet ? GOLD : FELT_INK} bold>
+      <Text
+        backgroundColor={isLit ? GOLD : felt}
+        color={isLit ? INK : stake > 0n ? GOLD : FELT_INK}
+        inverse={marks.cursor !== null && sameBet(marks.cursor, cellBet)}
+        bold
+      >
         {text}
       </Text>
     );
 
-    return cellButton(address, face) ?? face;
+    return cellButton(rouletteCellKey(cellBet), face) ?? face;
   };
   const numberCell = (number: number, lines: readonly string[]) =>
-    cell(`${ROULETTE_STRAIGHT_KEY}${number}`, { kind: "straight", number }, lines, FELT[pocketColor(number)], width);
+    cell({ kind: "straight", number }, lines, FELT[pocketColor(number)], width);
 
   return (
     <Box flexDirection="column">
@@ -249,20 +282,17 @@ function rouletteLayout(
           {LAYOUT_ROWS.map(({ column, numbers }) => (
             <Box flexDirection="row">
               {numbers.map((number) => numberCell(number, [String(number)]))}
-              {cell(`${ROULETTE_COLUMN_KEY}${column}`, { kind: "column", column }, ["2:1"], FELT.green, COLUMN_CELL)}
+              {cell({ kind: "column", column }, ["2:1"], FELT.green, COLUMN_CELL)}
             </Box>
           ))}
         </Box>
       </Box>
       <Box flexDirection="row" marginLeft={width}>
-        {DOZENS.map(({ dozen, label }) =>
-          cell(`${ROULETTE_DOZEN_KEY}${dozen}`, { kind: "dozen", dozen }, [label], FELT.green, width * 4),
-        )}
+        {DOZENS.map(({ dozen, label }) => cell({ kind: "dozen", dozen }, [label], FELT.green, width * 4))}
       </Box>
       <Box flexDirection="row" marginLeft={width}>
         {OUTSIDE_BETS.map((outside) =>
           cell(
-            `roulette-${outside.kind}`,
             outside,
             [(BET_NAMES[outside.kind] ?? outside.kind).toUpperCase()],
             outside.kind === "red" ? FELT.red : outside.kind === "black" ? FELT.black : FELT.green,
@@ -274,9 +304,33 @@ function rouletteLayout(
   );
 }
 
+/** "on the table 2.30 · 6 chips · max win 31.50": the stake, the bets and the best a pocket pays over it, before the fee. */
+function chipsLine(ui: Ui, chips: readonly RouletteChip[]): RenderElement {
+  const { Text } = ui;
+
+  if (chips.length === 0) {
+    return <Text color={FG6}>No chips on the table yet.</Text>;
+  }
+
+  return (
+    <Text color={FG4}>
+      {"on the table "}
+      <Text color={GOLD} bold>
+        {formatUsdc(chipsTotal(chips).toString())}
+      </Text>
+      {` · ${chips.length} ${chips.length === 1 ? "chip" : "chips"} · max win `}
+      <Text color={FG1} bold>
+        {formatUsdc(rouletteMaxGain(chips).toString())}
+      </Text>
+    </Text>
+  );
+}
+
 /**
  * `spinElapsed`: how far into its spin the round on the table is; null draws it at rest.
- * `cellButton`: the Button a cell of the layout is bet on with, where the drawing has one.
+ * `cellButton`: the Button a cell of the layout takes a chip with, where the drawing has one.
+ * A spin in play shows its own chips; between spins the table shows the chips placed, which stay
+ * for the next spin, and the last spin's pocket and winning cells stay lit.
  */
 export function rouletteTable(
   ui: Ui,
@@ -289,12 +343,16 @@ export function rouletteTable(
   const { Box, Text } = ui;
   const detail = round?.detail.game === "roulette" ? round.detail : null;
   const isOpen = round !== null && round.phase !== "idle";
-  const bet = isOpen && detail !== null ? detail.bet : prefs.roulette;
+  const chips = isOpen && detail !== null ? detail.chips : stackChips(prefs.rouletteChips);
   const pocket = detail?.number ?? null;
   const isDrawing = round?.phase === "drawing";
   const isSpinning = spinElapsed !== null || isDrawing;
   const landed = isSpinning ? null : pocket;
   const position = wheelPosition(pocket, spinElapsed, isDrawing);
+  const winners =
+    landed === null || detail === null
+      ? []
+      : detail.chips.filter((chip) => rouletteWins(chip.bet, landed)).map((chip) => chip.bet);
 
   return (
     <Box flexDirection="column" gap={1}>
@@ -305,14 +363,15 @@ export function rouletteTable(
         ) : (
           <Text color={FG6}>{isSpinning ? "spinning…" : "No spin yet."}</Text>
         )}
-        <Text color={FG4}>
-          bet{" "}
-          <Text color={FG1} bold>
-            {rouletteBetLabel(bet)}
-          </Text>
-        </Text>
+        {chipsLine(ui, chips)}
       </Box>
-      {rouletteLayout(ui, bet, landed, isWide, cellButton)}
+      {rouletteLayout(
+        ui,
+        chips,
+        { pocket: landed, winners, cursor: isOpen ? null : cursorBet(prefs.rouletteCursor) },
+        isWide,
+        cellButton,
+      )}
     </Box>
   );
 }

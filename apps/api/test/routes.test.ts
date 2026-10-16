@@ -117,6 +117,14 @@ describe.skipIf(!db)("api routes", () => {
         { type: "tower_climb", tile: 0 },
         { type: "tower_climb", tile: 3 },
         { type: "tower_cashout" },
+        { type: "roulette_chips", chips: [{ bet: { kind: "red" }, amount }] },
+        {
+          type: "roulette_chips",
+          chips: [
+            ...Array.from({ length: 19 }, (_, number) => ({ bet: { kind: "straight", number }, amount })),
+            { bet: { kind: "column", column: 3 }, amount: "2500000" },
+          ],
+        },
       ];
       for (const action of moves) expect((await play(action)).status, JSON.stringify(action)).toBe(200);
       expect(relay.actions()).toEqual(moves);
@@ -132,6 +140,30 @@ describe.skipIf(!db)("api routes", () => {
         { type: "slots_spin", amount: 1000000 },
         { type: "roulette_spin", amount: "1000000", bet: { kind: "straight", number: 37 } },
         { type: "roulette_spin", amount: "1000000", bet: { kind: "dozen", dozen: 4 } },
+        { type: "roulette_chips", chips: [] },
+        {
+          type: "roulette_chips",
+          chips: Array.from({ length: 21 }, (_, number) => ({ bet: { kind: "straight", number }, amount: "1000000" })),
+        },
+        { type: "roulette_chips", chips: [{ bet: { kind: "red" }, amount: "0" }] },
+        { type: "roulette_chips", chips: [{ bet: { kind: "red" }, amount: 1000000 }] },
+        { type: "roulette_chips", chips: [{ bet: { kind: "straight", number: 37 }, amount: "1000000" }] },
+        { type: "roulette_chips", chips: [{ bet: { kind: "red" }, amount: "1000000", extra: true }] },
+        {
+          type: "roulette_chips",
+          chips: [
+            { bet: { kind: "dozen", dozen: 2 }, amount: "1000000" },
+            { bet: { kind: "dozen", dozen: 2 }, amount: "2000000" },
+          ],
+        },
+        {
+          type: "roulette_chips",
+          chips: [
+            { bet: { kind: "straight", number: 5 }, amount: "1000000" },
+            { bet: { number: 5, kind: "straight" }, amount: "2000000" },
+          ],
+        },
+        { type: "roulette_chips", amount: "1000000", bet: { kind: "red" } },
         { type: "blackjack_hit", extra: true },
         { type: "blackjack_bet", amount: "1000000" },
         { type: "blackjack_bet", amount: "1000000", hands: 0 },
@@ -812,7 +844,7 @@ describe.skipIf(!db)("api routes", () => {
   });
 
   describe("public routes", () => {
-    it("verifies a settled round from its randomness", async () => {
+    it("verifies a settled round from its randomness, a single-bet detail migrated to one chip", async () => {
       const v = must(
         vectors.roulette.find((r) => r.red !== "0"),
         "red win",
@@ -831,6 +863,11 @@ describe.skipIf(!db)("api routes", () => {
         settledAt: new Date(),
       });
       await db.query("UPDATE rounds SET detail = $1", [{ game: "roulette", bet: { kind: "red" }, number: v.number }]);
+      await migrate(db);
+      await migrate(db);
+      const chips = [{ bet: { kind: "red" }, amount: "1000000" }];
+      const { rows } = await db.query("SELECT detail FROM rounds WHERE signature = $1", [SIGNATURE]);
+      expect(rows[0].detail).toEqual({ game: "roulette", chips, number: v.number });
       const body = (await (await app.request(`/v1/rounds/${SIGNATURE}/verify`)).json()) as VerifyResponse;
       expect(body).toMatchObject({
         signature: SIGNATURE,
@@ -840,7 +877,7 @@ describe.skipIf(!db)("api routes", () => {
         randomness: v.seed,
         matches: true,
         onChain: { stake: "1000000", payout: v.red, fee: fee.toString() },
-        replayed: { payout: v.red, detail: { number: v.number, bet: { kind: "red" } } },
+        replayed: { payout: v.red, detail: { number: v.number, bet: { kind: "red" }, chips } },
       });
       await db.query("UPDATE rounds SET payout = payout + 1");
       expect(((await (await app.request(`/v1/rounds/${SIGNATURE}/verify`)).json()) as VerifyResponse).matches).toBe(

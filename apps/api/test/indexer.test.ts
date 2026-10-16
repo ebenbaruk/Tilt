@@ -169,9 +169,14 @@ describe("decoding", () => {
     expect(r.randomness).toEqual(Buffer.alloc(32));
   });
 
-  it("finds the quick table, hilo and tower callbacks, the player account second", () => {
+  it("finds the quick table, hilo, tower and roulette table callbacks, the player account second", () => {
     const account = Keypair.generate().publicKey;
-    const names = ["consume_quick_randomness", "consume_hilo_randomness", "consume_tower_randomness"];
+    const names = [
+      "consume_quick_randomness",
+      "consume_hilo_randomness",
+      "consume_tower_randomness",
+      "consume_roulette_randomness",
+    ];
     const draws = decodeCallbacks(
       names.map((name, i) => ({
         programId: PROGRAM_ID,
