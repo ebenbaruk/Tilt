@@ -6,7 +6,6 @@ import { BASE, BLACKJACK_TURN, BLACKJACK_WIN, ROULETTE, SLOTS } from "./fixtures
 import { BAND, command, later, LOGGED_IN, PANE, PANE_INLINE, PLUGIN, seat, shownText, textOf } from "./world";
 
 const POLL_MS = 5_000;
-const PANE_SYNC_MS = 2_000;
 /** Past the longest spin: the wheel and the reels have landed. */
 const SPIN_OVER_MS = 1_500;
 const LARGE_CARD_TOP = "╭─────╮";
@@ -47,87 +46,36 @@ async function moving($: Engine, on: On, first: StateResponse) {
   return { ...seated, show };
 }
 
-describe("the agent's answer comes first", () => {
-  test("an inline pane folds to the band when the turn ends, and opens again with the next", async ($, on) => {
+describe("the table stays when the agent finishes", () => {
+  test("an inline pane stays open with the whole table and the finish notice", async ($, on) => {
     const { world } = await seat($, on, BLACKJACK_TURN);
-
-    await $.turn.start({ text: "", turnId: "t1" });
-    const pane = await $.ui.mount({
-      plugin: PLUGIN,
-      ...PANE_INLINE,
-      props: { ...PANE_INLINE.props, isFocused: false },
-    });
-
-    await pane.unmount();
-    await $.turn.complete(turnEnd);
-
-    expect(world.closed).toEqual(["tilt"]);
-    const band = textOf(await (await $.ui.mount({ plugin: PLUGIN, ...BAND })).drawn());
-
-    expect(band).toContain("✓ agent finished in 6m 14s · your hand is saved");
-
-    await $.turn.start({ text: "", turnId: "t2" });
-    expect(world.opened.filter((open) => open.id === "tilt")).toHaveLength(2);
-  });
-
-  test("a fold is not taken for the person's close: the syncs after it leave the next turn free to reopen", async ($, on) => {
-    const { world, clock } = await seat($, on, BLACKJACK_TURN);
 
     await $.turn.start({ text: "", turnId: "t1" });
     await (
       await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE, props: { ...PANE_INLINE.props, isFocused: false } })
     ).unmount();
-    await clock.advance(PANE_SYNC_MS);
-    await $.turn.complete(turnEnd);
-    await clock.advance(PANE_SYNC_MS);
-    await clock.advance(PANE_SYNC_MS);
-    await $.turn.start({ text: "", turnId: "t2" });
-
-    expect(world.opened.filter((open) => open.id === "tilt")).toHaveLength(2);
-  });
-
-  test(
-    "a pane the person opened stays when no turn would open it again",
-    { options: { autoOpen: false } },
-    async ($, on) => {
-      const { world } = await seat($, on, BLACKJACK_TURN);
-
-      await $.command.run(command());
-      await (
-        await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE, props: { ...PANE_INLINE.props, isFocused: false } })
-      ).unmount();
-      await $.turn.start({ text: "", turnId: "t1" });
-      await $.turn.complete(turnEnd);
-
-      expect(world.closed).toEqual([]);
-    },
-  );
-
-  test("a docked pane stays: it hides nothing", async ($, on) => {
-    const { world } = await seat($, on, BLACKJACK_TURN);
-
-    await $.turn.start({ text: "", turnId: "t1" });
-    await (await $.ui.mount({ plugin: PLUGIN, ...PANE, props: { ...PANE.props, isFocused: false } })).unmount();
     await $.turn.complete(turnEnd);
 
     expect(world.closed).toEqual([]);
+    const pane = textOf(await (await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE })).drawn());
+
+    expect(pane).toContain("✓ agent finished in 6m 14s · your hand is saved");
+    expect(pane).toContain("DEALER");
   });
 
-  test("bottom: the band folds to two lines when the turn ends", { options: { layout: "bottom" } }, async ($, on) => {
-    await seat($, on, BLACKJACK_TURN);
-    await $.turn.start({ text: "", turnId: "t1" });
+  test(
+    "bottom: the band keeps the whole table when the turn ends",
+    { options: { layout: "bottom" } },
+    async ($, on) => {
+      await seat($, on, BLACKJACK_TURN);
+      await $.turn.start({ text: "", turnId: "t1" });
+      await $.turn.complete(turnEnd);
+      const band = textOf(await (await $.ui.mount({ plugin: PLUGIN, ...BAND_ROOMY })).drawn());
 
-    const open = await $.ui.mount({ plugin: PLUGIN, ...BAND_ROOMY });
-
-    expect(textOf(await open.drawn())).toContain("LEADERBOARD");
-    await open.unmount();
-
-    await $.turn.complete(turnEnd);
-    const folded = textOf(await (await $.ui.mount({ plugin: PLUGIN, ...BAND_ROOMY })).drawn());
-
-    expect(folded).not.toContain("LEADERBOARD");
-    expect(folded).toContain("your hand is saved");
-  });
+      expect(band).toContain("LEADERBOARD");
+      expect(band).toContain("your hand is saved");
+    },
+  );
 });
 
 describe("the first hand", () => {

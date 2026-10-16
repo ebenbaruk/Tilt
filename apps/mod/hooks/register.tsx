@@ -88,7 +88,6 @@ const agent = atom({ plugin: "tilt", key: "agent" } as const, { isWorking: false
 const layout = atom({ plugin: "tilt", key: "layout" } as const, {
   paneShown: false,
   paneDismissed: false,
-  isCollapsed: false,
   isLight: false,
   isOnboarded: false,
 });
@@ -160,9 +159,7 @@ interface Runtime {
   token: string | null | undefined;
   /** A spin or a deal was playing at the last tick: its end draws the table once more. */
   wasMoving: boolean;
-  /** The mod closed its pane to fold it: the next sync that finds it gone must not take that for the person's close. */
-  isFoldingPane: boolean;
-  /** Where the surface last seated the pane: inline, its height hides the agent's answer. */
+  /** Where the surface last seated the pane, which the restore after the agents view goes by. */
   panePlacement: "dock" | "inline" | null;
   /** The table's `Client` failed on this terminal: the pane draws the still table. */
   isTableBroken: boolean;
@@ -795,9 +792,8 @@ async function paneSyncStep($: EngineInterface, rt: Runtime, now: number): Promi
   rt.lastPaneSyncAt = now;
   const pane = (await $.ui.panes()).find((each) => each.id === PANE);
   const isShown = pane !== undefined && pane.isPlaced && pane.isShown;
-  // One that was open and is gone, the person closed, unless the mod folded it. A sync that read the
-  // panes before the fold may still mark it open: the flag stays until a sync sees it gone.
-  const isClosedByPerson = rt.isPaneOpen && pane === undefined && !rt.isFoldingPane;
+  // One that was open and is gone, the person closed.
+  const isClosedByPerson = rt.isPaneOpen && pane === undefined;
   const held = await read($, layout);
 
   if (rt.isPaneOpen !== (pane !== undefined)) {
@@ -810,10 +806,6 @@ async function paneSyncStep($: EngineInterface, rt: Runtime, now: number): Promi
   }
 
   rt.isPaneOpen = pane !== undefined;
-
-  if (pane === undefined) {
-    rt.isFoldingPane = false;
-  }
 
   if (held.paneShown !== isShown || isClosedByPerson) {
     await update($, layout, (value: LayoutView) => ({
@@ -1053,30 +1045,6 @@ async function shareWin($: EngineInterface): Promise<void> {
   await $.ui.toast(copied.isCopied ? "Copied · paste it anywhere." : `Could not copy: ${copied.reason}`);
 }
 
-/** The agent finished: an inline pane folds to the band so the answer can be read, unless the person is playing. */
-async function collapse($: EngineInterface, rt: Runtime): Promise<void> {
-  const pane = (await $.ui.panes()).find((each) => each.id === PANE);
-
-  if (pane?.isFocused === true) {
-    return;
-  }
-
-  // Folded only where the next turn opens it again; otherwise the pane the person opened stays.
-  if (pane !== undefined && rt.panePlacement === "inline" && opensOnTurn(rt)) {
-    rt.isFoldingPane = true;
-    rt.isPaneOpen = false;
-    await $.store.set(STORE_PANE, false);
-    await $.ui.close({ id: PANE });
-    await update($, layout, (value) => ({ ...value, paneShown: false, isCollapsed: true }));
-
-    return;
-  }
-
-  if (rt.settings.layout === "bottom") {
-    await update($, layout, (value) => ({ ...value, isCollapsed: true }));
-  }
-}
-
 /** A turn start opens the pane: the person wants it, placed at the side. */
 const opensOnTurn = (rt: Runtime): boolean => rt.settings.autoOpen && rt.settings.layout === "side";
 
@@ -1102,7 +1070,6 @@ async function readTheme($: EngineInterface): Promise<void> {
 async function openPane($: EngineInterface, rt: Runtime, focus: boolean): Promise<boolean> {
   const rows = PANE_ROWS[rt.settings.cards];
 
-  rt.isFoldingPane = false;
   const opened = await $.ui.open(
     focus ? { id: PANE, title: PANE_TITLE, focus, rows } : { id: PANE, title: PANE_TITLE, rows },
   );
@@ -1237,7 +1204,6 @@ async function onTiltCommand($: EngineInterface, rt: Runtime, args: string): Pro
   }
 
   rt.wakeAt = 0;
-  await update($, layout, (value) => ({ ...value, isCollapsed: false }));
   // Remembered at once (see STORE_PANE): the agents view may be one keypress away.
   rt.lastPaneSyncAt = -Infinity;
 
@@ -1258,7 +1224,6 @@ async function onTiltCommand($: EngineInterface, rt: Runtime, args: string): Pro
 async function onTurnStart($: EngineInterface, rt: Runtime): Promise<void> {
   ensureTicker($, rt);
   await update($, agent, (value) => ({ ...value, isWorking: true, notice: null }));
-  await update($, layout, (value) => ({ ...value, isCollapsed: false }));
   rt.wakeAt = 0;
 
   // The agent comes first: the pane opens without the keyboard, and never again once the person
@@ -1287,7 +1252,6 @@ export const register: Register = (on, options) => {
     sponsorMs: 0,
     sponsorName: null,
     token: undefined,
-    isFoldingPane: false,
     wasMoving: false,
     panePlacement: null,
     isTableBroken: false,
@@ -1327,7 +1291,6 @@ export const register: Register = (on, options) => {
       const notice = finishNotice(e.reason, e.durationMs);
 
       await update($, agent, (value) => ({ ...value, isWorking: false, notice }));
-      await collapse($, rt);
     }
 
     return next(e);
@@ -1402,7 +1365,7 @@ export const register: Register = (on, options) => {
     const ui: Ui = $.ui.resolve(e);
     const snap = await snapshot($, rt);
 
-    if (rt.settings.layout === "bottom" && !look.isCollapsed) {
+    if (rt.settings.layout === "bottom") {
       const band: PaneLayout = {
         bodyColumns: e.props.bodyColumns,
         bodyRows: e.props.scroll.bodyRows,

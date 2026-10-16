@@ -66,8 +66,6 @@ export type TiltLayout = {
   paneShown: boolean;
   /** The person closed the pane: turn starts no longer reopen it until `/tilt`. */
   paneDismissed: boolean;
-  /** The agent finished and Tilt folded to two lines so its answer can be read; the next turn unfolds it. */
-  isCollapsed: boolean;
   /** Claude Code's theme is a light one: the accents switch to their light set. */
   isLight: boolean;
   /** The person has made a first move: the first-hand guide is not shown again. */
