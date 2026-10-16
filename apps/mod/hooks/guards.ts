@@ -1,13 +1,43 @@
 // Shape checks for what the api sends. The mod cannot import zod, so these small guards are the
 // boundary: anything that fails them is shown as a one-line error instead of being drawn.
-import { MAX_HANDS, MAX_TABLE_HANDS, MIN_HANDS } from "./keys";
+import {
+  DICE_ROLLS,
+  FLIP_SIDES,
+  HILO_GUESSES,
+  KENO_DRAWN,
+  KENO_NUMBERS,
+  MAX_DICE_CHANCE,
+  MAX_FLIPS,
+  MAX_HANDS,
+  MAX_HILO_CARDS,
+  MAX_HILO_SKIPS,
+  MAX_KENO_PICKS,
+  MAX_LIMBO_TARGET,
+  MAX_MINES,
+  MAX_TABLE_HANDS,
+  MAX_TOWER_TILES,
+  MIN_DICE_CHANCE,
+  MIN_FLIPS,
+  MIN_HANDS,
+  MIN_KENO_PICKS,
+  MIN_LIMBO_TARGET,
+  MIN_MINES,
+  MINES_TILES,
+  TOWER_DIFFICULTIES,
+  TOWER_LEVELS,
+  TOWER_SHAPES,
+  WHEEL_RISKS,
+  WHEEL_SEGMENTS,
+} from "./keys";
 import type {
   BaccaratBet,
   BlackjackHandView,
   Card,
   DeviceStartResponse,
   DeviceTokenResponse,
+  FlipSide,
   Game,
+  HiloGuess,
   IntentResponse,
   LeaderboardEntry,
   PlayAction,
@@ -15,11 +45,25 @@ import type {
   RoundView,
   SponsorView,
   StateResponse,
+  TowerDifficulty,
 } from "./protocol";
 
 type Json = Record<string, unknown>;
 
-const GAMES: readonly string[] = ["blackjack", "roulette", "baccarat", "slots"];
+const GAMES: readonly string[] = [
+  "blackjack",
+  "roulette",
+  "baccarat",
+  "slots",
+  "mines",
+  "dice",
+  "limbo",
+  "flip",
+  "keno",
+  "wheel",
+  "hilo",
+  "tower",
+];
 const SUITS: readonly string[] = ["♠", "♥", "♦", "♣"];
 const PHASES: readonly string[] = ["idle", "drawing", "player_turn"];
 const BACCARAT_BETS: readonly string[] = ["player", "banker", "tie"];
@@ -75,6 +119,38 @@ const isHandCount = (value: unknown): value is number => isInt(value) && value >
 /** Hands on the table: the dealt ones plus the splits. */
 const isTableHandCount = (value: unknown): value is number =>
   isInt(value) && value >= MIN_HANDS && value <= MAX_TABLE_HANDS;
+const isMineCount = (value: unknown): value is number => isInt(value) && value >= MIN_MINES && value <= MAX_MINES;
+const isTile = (value: unknown): value is number => isInt(value) && value >= 0 && value < MINES_TILES;
+/** "1.0312": the api floors multipliers to 4 decimals. */
+const isMultiplier = (value: unknown): value is string => isString(value) && /^\d{1,12}\.\d{4}$/.test(value);
+/** "2.00": chosen targets and payout tables come with 2 decimals. */
+const isShortMultiplier = (value: unknown): value is string => isString(value) && /^\d{1,12}\.\d{2}$/.test(value);
+
+/** A dice target whose winning count is 1 % to 98 % of the rolls. */
+const isDiceTarget = (target: unknown, over: unknown): target is number => {
+  if (!isInt(target) || !isBool(over)) {
+    return false;
+  }
+
+  const chance = over ? DICE_ROLLS - target : target;
+
+  return chance >= MIN_DICE_CHANCE && chance <= MAX_DICE_CHANCE;
+};
+const isLimboTarget = (value: unknown): value is number =>
+  isInt(value) && value >= MIN_LIMBO_TARGET && value <= MAX_LIMBO_TARGET;
+const isFlipSide = (value: unknown): value is FlipSide => isOneOf(value, FLIP_SIDES);
+const isFlipCount = (value: unknown): value is number => isInt(value) && value >= MIN_FLIPS && value <= MAX_FLIPS;
+const isKenoNumber = (value: unknown): value is number => isInt(value) && value >= 1 && value <= KENO_NUMBERS;
+const isDistinct = (values: readonly number[]): boolean => new Set(values).size === values.length;
+export const isKenoPicks = (value: unknown): value is number[] =>
+  isArrayOf(value, isKenoNumber) &&
+  value.length >= MIN_KENO_PICKS &&
+  value.length <= MAX_KENO_PICKS &&
+  isDistinct(value);
+const isWheelSegments = (value: unknown): value is number => isInt(value) && WHEEL_SEGMENTS.includes(value);
+const isHiloGuess = (value: unknown): value is HiloGuess => isOneOf(value, HILO_GUESSES);
+const isTowerDifficulty = (value: unknown): value is TowerDifficulty => isOneOf(value, TOWER_DIFFICULTIES);
+const isTowerTile = (value: unknown): value is number => isInt(value) && value >= 0 && value < MAX_TOWER_TILES;
 
 export const isPlayAction = (value: unknown): value is PlayAction => {
   if (!isRecord(value)) {
@@ -95,6 +171,32 @@ export const isPlayAction = (value: unknown): value is PlayAction => {
       return isStake(value.amount) && isRouletteBet(value.bet);
     case "baccarat_deal":
       return isStake(value.amount) && isBaccaratBet(value.bet);
+    case "mines_bet":
+      return isStake(value.amount) && isMineCount(value.mines);
+    case "mines_reveal":
+      return isTile(value.tile);
+    case "mines_cashout":
+    case "hilo_cashout":
+    case "tower_cashout":
+      return true;
+    case "dice_roll":
+      return isStake(value.amount) && isDiceTarget(value.target, value.over);
+    case "limbo_play":
+      return isStake(value.amount) && isLimboTarget(value.target);
+    case "flip_play":
+      return isStake(value.amount) && isFlipSide(value.side) && isFlipCount(value.flips);
+    case "keno_play":
+      return isStake(value.amount) && isKenoPicks(value.picks);
+    case "wheel_spin":
+      return isStake(value.amount) && isWheelSegments(value.segments) && isOneOf(value.risk, WHEEL_RISKS);
+    case "hilo_bet":
+      return isStake(value.amount);
+    case "hilo_guess":
+      return isHiloGuess(value.guess);
+    case "tower_bet":
+      return isStake(value.amount) && isTowerDifficulty(value.difficulty);
+    case "tower_climb":
+      return isTowerTile(value.tile);
     default:
       return false;
   }
@@ -124,6 +226,112 @@ const isBlackjack = (value: Json): boolean =>
   isBool(value.canDouble) &&
   isBool(value.canSplit);
 
+/** A board the mod can draw: distinct safe tiles, at most the 25 − mines there are, none of them pending or the mine. */
+const isMines = (value: Json): boolean => {
+  if (!isMineCount(value.mines) || !isArrayOf(value.revealed, isTile)) {
+    return false;
+  }
+
+  const revealed = new Set(value.revealed);
+  const isFreeTile = (tile: unknown) => tile === null || (isTile(tile) && !revealed.has(tile));
+
+  return (
+    revealed.size === value.revealed.length &&
+    revealed.size <= MINES_TILES - value.mines &&
+    isFreeTile(value.pending) &&
+    isFreeTile(value.busted) &&
+    isMultiplier(value.multiplier) &&
+    isNullable(value.nextMultiplier, isMultiplier) &&
+    isBool(value.canCashOut) &&
+    isBool(value.canReveal)
+  );
+};
+
+const isDice = (value: Json): boolean =>
+  isDiceTarget(value.target, value.over) &&
+  isNullable(value.roll, isInt) &&
+  (value.roll === null || (value.roll >= 0 && value.roll < DICE_ROLLS)) &&
+  isMultiplier(value.multiplier);
+
+const isFlip = (value: Json): boolean =>
+  isFlipSide(value.side) &&
+  isFlipCount(value.flips) &&
+  (value.results === null || (isArrayOf(value.results, isFlipSide) && value.results.length === value.flips)) &&
+  isMultiplier(value.multiplier);
+
+/** Ten distinct numbers drawn, and the hits they make with the picks. */
+const isKeno = (value: Json): boolean => {
+  if (!isKenoPicks(value.picks) || !isArrayOf(value.paytable, isShortMultiplier)) {
+    return false;
+  }
+
+  if (value.paytable.length !== value.picks.length + 1) {
+    return false;
+  }
+
+  if (value.drawn === null) {
+    return value.hits === null;
+  }
+
+  if (!isArrayOf(value.drawn, isKenoNumber) || value.drawn.length !== KENO_DRAWN || !isDistinct(value.drawn)) {
+    return false;
+  }
+
+  const drawn = new Set(value.drawn);
+
+  return value.hits === value.picks.filter((pick) => drawn.has(pick)).length;
+};
+
+const isWheel = (value: Json): boolean =>
+  isWheelSegments(value.segments) &&
+  isOneOf(value.risk, WHEEL_RISKS) &&
+  isArrayOf(value.multipliers, isShortMultiplier) &&
+  value.multipliers.length === value.segments &&
+  isNullable(value.segment, isInt) &&
+  (value.segment === null || (value.segment >= 0 && value.segment < value.segments));
+
+/** The first card, then one card per guess; a pending guess waits on a board that has a card. */
+const isHilo = (value: Json): boolean =>
+  isArrayOf(value.cards, isCard) &&
+  value.cards.length <= MAX_HILO_CARDS &&
+  isArrayOf(value.guesses, isHiloGuess) &&
+  value.guesses.length === Math.max(0, value.cards.length - 1) &&
+  isNullable(value.pending, isHiloGuess) &&
+  (value.pending === null || value.cards.length > 0) &&
+  isMultiplier(value.multiplier) &&
+  isNullable(value.higherMultiplier, isMultiplier) &&
+  isNullable(value.lowerMultiplier, isMultiplier) &&
+  isInt(value.skipsLeft) &&
+  value.skipsLeft >= 0 &&
+  value.skipsLeft <= MAX_HILO_SKIPS &&
+  isBool(value.canGuess) &&
+  isBool(value.canCashOut) &&
+  isBool(value.busted);
+
+/** A tower the mod can draw: its shape matches the difficulty, at most nine levels, every tile on the board. */
+const isTower = (value: Json): boolean => {
+  if (!isTowerDifficulty(value.difficulty) || value.tiles !== TOWER_SHAPES[value.difficulty].tiles) {
+    return false;
+  }
+
+  const tiles = value.tiles;
+  const isLevelTile = (tile: unknown): tile is number => isInt(tile) && tile >= 0 && tile < tiles;
+
+  return (
+    value.levels === TOWER_LEVELS &&
+    isArrayOf(value.climbed, isLevelTile) &&
+    value.climbed.length <= TOWER_LEVELS &&
+    isNullable(value.pending, isLevelTile) &&
+    isNullable(value.busted, isLevelTile) &&
+    (value.pending === null || value.busted === null) &&
+    ((value.pending === null && value.busted === null) || value.climbed.length < TOWER_LEVELS) &&
+    isMultiplier(value.multiplier) &&
+    isNullable(value.nextMultiplier, isMultiplier) &&
+    isBool(value.canClimb) &&
+    isBool(value.canCashOut)
+  );
+};
+
 const isDetail = (value: unknown): value is RoundView["detail"] => {
   if (!isRecord(value)) {
     return false;
@@ -144,6 +352,22 @@ const isDetail = (value: unknown): value is RoundView["detail"] => {
       );
     case "slots":
       return isNullable(value.reels, isReels);
+    case "mines":
+      return isMines(value);
+    case "dice":
+      return isDice(value);
+    case "limbo":
+      return isShortMultiplier(value.target) && isNullable(value.result, isShortMultiplier);
+    case "flip":
+      return isFlip(value);
+    case "keno":
+      return isKeno(value);
+    case "wheel":
+      return isWheel(value);
+    case "hilo":
+      return isHilo(value);
+    case "tower":
+      return isTower(value);
     default:
       return false;
   }

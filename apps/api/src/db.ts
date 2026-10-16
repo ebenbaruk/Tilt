@@ -93,7 +93,8 @@ CREATE TABLE IF NOT EXISTS rounds (
   signature  TEXT PRIMARY KEY,
   player     TEXT NOT NULL,
   round      INTEGER NOT NULL,
-  game       TEXT NOT NULL CHECK (game IN ('blackjack', 'roulette', 'baccarat', 'slots')),
+  game       TEXT NOT NULL CHECK (game IN ('blackjack', 'roulette', 'baccarat', 'slots', 'mines', 'dice', 'limbo',
+                                           'flip', 'keno', 'wheel', 'hilo', 'tower')),
   stake      ${U64} NOT NULL,
   payout     ${U64} NOT NULL,
   fee        ${U64} NOT NULL,
@@ -119,6 +120,16 @@ UPDATE rounds SET detail = jsonb_set(detail, '{hands}', (
     SELECT jsonb_agg(hand || '{"split": false}' ORDER BY i) FROM jsonb_array_elements(detail->'hands') WITH ORDINALITY AS h(hand, i)
   )) || '{"splits": 0}'
 WHERE game = 'blackjack' AND detail ? 'bet' AND NOT detail ? 'splits';
+-- Mines, then dice to tower: widen the game check of tables created before them.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'rounds_game_check'
+                 AND pg_get_constraintdef(oid) LIKE '%tower%') THEN
+    ALTER TABLE rounds DROP CONSTRAINT IF EXISTS rounds_game_check;
+    ALTER TABLE rounds ADD CONSTRAINT rounds_game_check
+      CHECK (game IN ('blackjack', 'roulette', 'baccarat', 'slots', 'mines', 'dice', 'limbo', 'flip', 'keno',
+                      'wheel', 'hilo', 'tower'));
+  END IF;
+END $$;
 
 -- Every VRF callback (one per draw), keyed by player account: blackjack rounds take several.
 CREATE TABLE IF NOT EXISTS draws (

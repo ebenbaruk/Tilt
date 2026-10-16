@@ -1,5 +1,6 @@
 // Indexes the program's rollup activity: RoundSettled events (one per settled round) and every
-// VRF callback (blackjack rounds take several draws, and only the last one is in the event).
+// VRF callback (blackjack, mines, hilo and tower rounds take several draws, and only the last one
+// is in the event).
 // Live feed from `onLogs`, plus a periodic backfill from a signature cursor that catches
 // anything the websocket missed. Never crashes the process: errors are logged and retried.
 import anchor from "@coral-xyz/anchor";
@@ -10,10 +11,25 @@ import type { ChainReader } from "./chain";
 import type { Db, Queryable } from "./db";
 import { VRF_BYTES } from "./games/rng";
 import { log } from "./log";
-import { saveDetail, saveDraw, saveRound, type DrawRecord, type SettledRound } from "./rounds";
+import { isCashout, saveDetail, saveDraw, saveRound, type DrawRecord, type SettledRound } from "./rounds";
 
 const coder = new anchor.BorshCoder(idl as anchor.Idl);
-const CALLBACK_LOG = "Program log: Instruction: ConsumeRandomness";
+/** VRF callbacks: blackjack, roulette, baccarat and slots draws, mines reveals, the one-draw
+ *  games' draws (quick table), hilo cards and tower climbs. */
+const CALLBACK_LOGS = [
+  "Program log: Instruction: ConsumeRandomness",
+  "Program log: Instruction: ConsumeMinesRandomness",
+  "Program log: Instruction: ConsumeQuickRandomness",
+  "Program log: Instruction: ConsumeHiloRandomness",
+  "Program log: Instruction: ConsumeTowerRandomness",
+];
+const CALLBACKS = new Set([
+  "consume_randomness",
+  "consume_mines_randomness",
+  "consume_quick_randomness",
+  "consume_hilo_randomness",
+  "consume_tower_randomness",
+]);
 const PROGRAM = PROGRAM_ID.toBase58();
 const PROGRAM_DATA = "Program data: ";
 const INVOKE_LOG = /^Program ([1-9A-HJ-NP-Za-km-z]+) invoke \[\d+\]$/;
@@ -50,6 +66,14 @@ const GAMES: Record<string, Game> = {
   Roulette: "roulette",
   Baccarat: "baccarat",
   Slots: "slots",
+  Mines: "mines",
+  Dice: "dice",
+  Limbo: "limbo",
+  Flip: "flip",
+  Keno: "keno",
+  Wheel: "wheel",
+  Hilo: "hilo",
+  Tower: "tower",
 };
 
 const bigOf = (v: unknown) => BigInt(String(v));
@@ -105,17 +129,17 @@ export interface RawInstruction {
   data: Buffer;
 }
 
-/** `consume_randomness` calls among a transaction's instructions (top level or CPI). */
+/** VRF callbacks (`CALLBACKS`) among a transaction's instructions (top level or CPI). */
 export function decodeCallbacks(instructions: RawInstruction[]): Omit<DrawRecord, "signature">[] {
   const draws: Omit<DrawRecord, "signature">[] = [];
   for (const ix of instructions) {
     if (!ix.programId.equals(PROGRAM_ID)) continue;
     const decoded = coder.instruction.decode(ix.data);
-    if (decoded?.name !== "consume_randomness") continue;
+    if (!decoded || !CALLBACKS.has(decoded.name)) continue;
     const args = decoded.data as Record<string, unknown>;
-    // Accounts: vrf_program_identity, account (the player account).
+    // Accounts: vrf_program_identity, account (the player account), then the game's PDA if any.
     const account = ix.accounts[1];
-    if (!account) throw new Error("consume_randomness without its player account");
+    if (!account) throw new Error(`${decoded.name} without its player account`);
     draws.push({
       account: account.toBase58(),
       requestId: bigOf(args.request_id),
@@ -219,10 +243,12 @@ export class Indexer {
     for (const round of settled) {
       const account = playerAccountAddress(new PublicKey(round.player)).toBase58();
       await saveRound(this.db, round);
-      await saveDraw(this.db, { account, requestId: round.requestId, randomness: round.randomness, signature });
+      if (!isCashout(round)) {
+        await saveDraw(this.db, { account, requestId: round.requestId, randomness: round.randomness, signature });
+      }
       await this.snapshot(round);
     }
-    if (settled.length > 0 || !logs.includes(CALLBACK_LOG)) return;
+    if (settled.length > 0 || !logs.some((l) => CALLBACK_LOGS.includes(l))) return;
     const tx = fetched ?? (await this.source.transaction(signature));
     for (const draw of tx?.draws ?? []) await saveDraw(this.db, { ...draw, signature });
   }

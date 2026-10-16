@@ -1,11 +1,24 @@
 // The relay's transactions, with both RPC connections stubbed: which instruction each action
-// becomes, which table it passes, how a missing blackjack table gets opened first, and how a
-// move past the win cap raises it.
+// becomes, which table or board it passes, how a missing game account (blackjack table,
+// one-draw table, Mines, Hilo or Tower board) gets opened first, and how a move past the win
+// cap raises it.
 import anchor from "@coral-xyz/anchor";
 import { type AccountInfo, Keypair, PublicKey, type Transaction } from "@solana/web3.js";
-import { type Action, idl, ledgerAddress, PROGRAM_ID, tableAddress } from "@tilt/contract";
+import {
+  type Action,
+  hiloBoardAddress,
+  idl,
+  ledgerAddress,
+  minesBoardAddress,
+  PROGRAM_ID,
+  quickTableAddress,
+  tableAddress,
+  towerBoardAddress,
+} from "@tilt/contract";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TiltChain, winCapShortfall } from "../src/chain";
+
+type GameAction = Exclude<Action, { type: "open_account" | "deposit" | "withdraw" }>;
 
 const coder = new anchor.BorshInstructionCoder(idl as anchor.Idl);
 /** Position of the optional `table` account in every play instruction (IDL order). */
@@ -15,11 +28,11 @@ const accountInfo = (owner: PublicKey): AccountInfo<Buffer> => ({ owner, data: B
 const instructionNames = (tx: Transaction) => tx.instructions.map((ix) => coder.decode(ix.data)?.name);
 
 interface Fakes {
-  /** The table as Solana holds it (delegated: owned by the delegation program). */
+  /** The table and the Mines board as Solana holds them (delegated: owned by the delegation program). */
   tableOnSolana: boolean;
-  /** Rollup reads of the table that still miss it, before it shows up (Infinity: never). */
+  /** Rollup reads of the table or board that still miss it, before it shows up (Infinity: never). */
   rollupMisses: number;
-  /** The open_table + delegate_table transaction fails to simulate. */
+  /** The open + delegate transaction fails to simulate. */
   openRefused?: boolean;
 }
 
@@ -37,9 +50,11 @@ function stubbedChain(fakes: Fakes) {
   const blockhash = { blockhash: Keypair.generate().publicKey.toBase58(), lastValidBlockHeight: 100 };
   const delegationProgram = new PublicKey("DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh");
 
+  const gameAccounts = [tableAddress, quickTableAddress, minesBoardAddress, hiloBoardAddress, towerBoardAddress].map((address) => address(player));
+  const isGameAccount = (address: PublicKey) => gameAccounts.some((a) => a.equals(address));
   vi.spyOn(chain.base, "getAccountInfo").mockImplementation(async (address) => {
     if (address.equals(ledgerAddress(player))) return accountInfo(PROGRAM_ID);
-    if (address.equals(tableAddress(player))) return fakes.tableOnSolana ? accountInfo(delegationProgram) : null;
+    if (isGameAccount(address)) return fakes.tableOnSolana ? accountInfo(delegationProgram) : null;
     return null;
   });
   vi.spyOn(chain.base, "getLatestBlockhash").mockResolvedValue(blockhash);
@@ -56,7 +71,7 @@ function stubbedChain(fakes: Fakes) {
   vi.spyOn(chain.base, "confirmTransaction").mockResolvedValue({ context: { slot: 1 }, value: { err: null } });
 
   vi.spyOn(chain.rollup, "getAccountInfo").mockImplementation(async (address) => {
-    if (!address.equals(tableAddress(player))) return null;
+    if (!isGameAccount(address)) return null;
     sent.rollupTableReads++;
     if (fakes.rollupMisses > 0) {
       fakes.rollupMisses--;
@@ -124,6 +139,93 @@ describe("play transactions", () => {
       expect(ix.keys[TABLE_INDEX].pubkey.equals(PROGRAM_ID), other.type).toBe(true);
     }
   });
+
+  it("passes the board, not the table, to every Mines move", async () => {
+    const { chain, player } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
+    const moves = [
+      { type: "mines_bet", amount: "2500000", mines: 3 },
+      { type: "mines_reveal", tile: 24 },
+      { type: "mines_cashout" },
+    ] as const;
+    for (const move of moves) {
+      const [ix] = (await chain.playTransaction(player, move)).instructions;
+      const decoded = coder.decode(ix.data);
+      expect(decoded?.name).toBe(move.type);
+      const instruction = idl.instructions.find((i) => i.name === move.type)!;
+      const boardIndex = instruction.accounts.findIndex((a) => a.name === "board");
+      expect(ix.keys[boardIndex], move.type).toMatchObject({ pubkey: minesBoardAddress(player), isWritable: true });
+      expect(ix.keys.some((k) => k.pubkey.equals(tableAddress(player))), move.type).toBe(false);
+    }
+    const [bet] = (await chain.playTransaction(player, moves[0])).instructions;
+    const args = coder.decode(bet.data)?.data;
+    expect(args).toMatchObject({ mines: 3 });
+    expect(args && "amount" in args ? String(args.amount) : undefined).toBe("2500000");
+    const [reveal] = (await chain.playTransaction(player, moves[1])).instructions;
+    expect(coder.decode(reveal.data)?.data).toMatchObject({ tile: 24 });
+  });
+
+  const ownAccountMoves: { account: "quick" | "board"; address: (player: PublicKey) => PublicKey; action: GameAction; args: object }[] = [
+    { account: "quick", address: quickTableAddress, action: { type: "dice_roll", amount: "2500000", target: 4_950, over: true }, args: { target: 4_950, over: true } },
+    { account: "quick", address: quickTableAddress, action: { type: "limbo_play", amount: "2500000", target: 250 }, args: { target: 250 } },
+    // The instruction coder decodes enum variants by their Rust names.
+    { account: "quick", address: quickTableAddress, action: { type: "flip_play", amount: "2500000", side: "tails", flips: 3 }, args: { side: { Tails: {} }, flips: 3 } },
+    { account: "quick", address: quickTableAddress, action: { type: "keno_play", amount: "2500000", picks: [40, 1, 7] }, args: { picks: Buffer.from([40, 1, 7]) } },
+    { account: "quick", address: quickTableAddress, action: { type: "wheel_spin", amount: "2500000", segments: 30, risk: "medium" }, args: { segments: 30, risk: { Medium: {} } } },
+    { account: "board", address: hiloBoardAddress, action: { type: "hilo_bet", amount: "2500000" }, args: {} },
+    { account: "board", address: hiloBoardAddress, action: { type: "hilo_guess", guess: "lower" }, args: { guess: { Lower: {} } } },
+    { account: "board", address: hiloBoardAddress, action: { type: "hilo_cashout" }, args: {} },
+    { account: "board", address: towerBoardAddress, action: { type: "tower_bet", amount: "2500000", difficulty: "expert" }, args: { difficulty: { Expert: {} } } },
+    { account: "board", address: towerBoardAddress, action: { type: "tower_climb", tile: 2 }, args: { tile: 2 } },
+    { account: "board", address: towerBoardAddress, action: { type: "tower_cashout" }, args: {} },
+  ];
+
+  it("passes each new game's own account, not the table, with the action's arguments", async () => {
+    const { chain, player } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
+    for (const move of ownAccountMoves) {
+      const [ix] = (await chain.playTransaction(player, move.action)).instructions;
+      const decoded = coder.decode(ix.data);
+      expect(decoded?.name).toBe(move.action.type);
+      expect(decoded?.data, move.action.type).toMatchObject(move.args);
+      if ("amount" in move.action) {
+        const args = decoded?.data;
+        expect(args && "amount" in args ? String(args.amount) : undefined, move.action.type).toBe("2500000");
+      }
+      const instruction = idl.instructions.find((i) => i.name === move.action.type)!;
+      const index = instruction.accounts.findIndex((a) => a.name === move.account);
+      expect(ix.keys[index], move.action.type).toMatchObject({ pubkey: move.address(player), isWritable: true });
+      expect(ix.keys.some((k) => k.pubkey.equals(tableAddress(player))), move.action.type).toBe(false);
+    }
+  });
+
+  it("retries a stuck draw of a new game with its own expire instruction and account", async () => {
+    const { chain, player, sent } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
+    const games = [
+      { game: { dice: {} }, name: "expire_quick_round", address: quickTableAddress },
+      { game: { limbo: {} }, name: "expire_quick_round", address: quickTableAddress },
+      { game: { flip: {} }, name: "expire_quick_round", address: quickTableAddress },
+      { game: { keno: {} }, name: "expire_quick_round", address: quickTableAddress },
+      { game: { wheel: {} }, name: "expire_quick_round", address: quickTableAddress },
+      { game: { hilo: {} }, name: "expire_hilo_round", address: hiloBoardAddress },
+      { game: { tower: {} }, name: "expire_tower_round", address: towerBoardAddress },
+    ] as const;
+    for (const { game } of games) await chain.expireRound(player, game);
+    expect(sent.rollup.map(instructionNames)).toEqual(games.map(({ name }) => [name]));
+    sent.rollup.forEach((tx, i) => {
+      expect(tx.instructions[0].keys.some((k) => k.pubkey.equals(games[i].address(player))), games[i].name).toBe(true);
+    });
+  });
+
+  it("retries a stuck Mines reveal with the board, other draws with expire_round", async () => {
+    const { chain, player, sent } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
+    await chain.expireRound(player, { mines: {} });
+    await chain.expireRound(player, { blackjack: {} });
+    await chain.expireRound(player, { slots: {} });
+    expect(sent.rollup.map(instructionNames)).toEqual([["expire_mines_round"], ["expire_round"], ["expire_round"]]);
+    const [mines, blackjack, slots] = sent.rollup.map((tx) => tx.instructions[0]);
+    expect(mines.keys.some((k) => k.pubkey.equals(minesBoardAddress(player)))).toBe(true);
+    expect(blackjack.keys[TABLE_INDEX].pubkey.equals(tableAddress(player))).toBe(true);
+    expect(slots.keys[TABLE_INDEX].pubkey.equals(PROGRAM_ID)).toBe(true);
+  });
 });
 
 describe("blackjack table", () => {
@@ -177,6 +279,73 @@ describe("blackjack table", () => {
     await chain.play(player, { type: "slots_spin", amount: "1000000" }, record);
     expect(sent.rollupTableReads).toBe(0);
     expect(sent.solana).toHaveLength(0);
+  });
+});
+
+describe("mines board", () => {
+  const minesBet: Action = { type: "mines_bet", amount: "1000000", mines: 3 };
+
+  it("opens and delegates a missing board on Solana, waits for the rollup, then plays", async () => {
+    const { chain, player, sent } = stubbedChain({ tableOnSolana: false, rollupMisses: 3 });
+    await chain.play(player, minesBet, record);
+    expect(sent.solana.map(instructionNames)).toEqual([["open_mines_board", "delegate_mines_board"]]);
+    expect(sent.solana[0].instructions[0].keys.some((k) => k.pubkey.equals(minesBoardAddress(player)))).toBe(true);
+    expect(sent.rollup.map(instructionNames)).toEqual([["mines_bet"]]);
+    const reads = sent.rollupTableReads;
+    await chain.play(player, { type: "mines_reveal", tile: 7 }, record);
+    await chain.play(player, { type: "mines_cashout" }, record);
+    expect(sent.rollupTableReads).toBe(reads);
+    expect(sent.solana).toHaveLength(1);
+    expect(sent.rollup.map(instructionNames)).toEqual([["mines_bet"], ["mines_reveal"], ["mines_cashout"]]);
+  });
+
+  it("checks the board separately from the table", async () => {
+    const { chain, player, sent } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
+    await chain.play(player, bet, record);
+    const reads = sent.rollupTableReads;
+    await chain.play(player, minesBet, record);
+    expect(sent.rollupTableReads).toBe(reads + 1);
+  });
+
+  it("refuses the move with TABLE_NOT_READY when opening the board fails", async () => {
+    const { chain, player, sent } = stubbedChain({ tableOnSolana: false, rollupMisses: Infinity, openRefused: true });
+    await expect(chain.play(player, minesBet, record)).rejects.toMatchObject({ code: "TABLE_NOT_READY", message: expect.stringContaining("mines board") });
+    expect(sent.rollup).toHaveLength(0);
+  });
+});
+
+describe("new games' accounts", () => {
+  const cases: { action: GameAction; opened: string[]; address: (player: PublicKey) => PublicKey; label: string }[] = [
+    { action: { type: "keno_play", amount: "1000000", picks: [5] }, opened: ["open_quick_table", "delegate_quick_table"], address: quickTableAddress, label: "one-draw table" },
+    { action: { type: "hilo_bet", amount: "1000000" }, opened: ["open_hilo_board", "delegate_hilo_board"], address: hiloBoardAddress, label: "hilo board" },
+    { action: { type: "tower_bet", amount: "1000000", difficulty: "easy" }, opened: ["open_tower_board", "delegate_tower_board"], address: towerBoardAddress, label: "tower board" },
+  ];
+
+  for (const { action, opened, address, label } of cases) {
+    it(`opens and delegates a missing ${label} before ${action.type}, once`, async () => {
+      const { chain, player, sent } = stubbedChain({ tableOnSolana: false, rollupMisses: 2 });
+      await chain.play(player, action, record);
+      expect(sent.solana.map(instructionNames)).toEqual([opened]);
+      expect(sent.solana[0].instructions[0].keys.some((k) => k.pubkey.equals(address(player)))).toBe(true);
+      const reads = sent.rollupTableReads;
+      await chain.play(player, action, record);
+      expect(sent.rollupTableReads).toBe(reads);
+      expect(sent.solana).toHaveLength(1);
+      expect(sent.rollup.map(instructionNames)).toEqual([[action.type], [action.type]]);
+    });
+
+    it(`refuses ${action.type} with TABLE_NOT_READY when opening the ${label} fails`, async () => {
+      const { chain, player, sent } = stubbedChain({ tableOnSolana: false, rollupMisses: Infinity, openRefused: true });
+      await expect(chain.play(player, action, record)).rejects.toMatchObject({ code: "TABLE_NOT_READY", message: expect.stringContaining(label) });
+      expect(sent.rollup).toHaveLength(0);
+    });
+  }
+
+  it("shares one table between the one-draw games", async () => {
+    const { chain, player, sent } = stubbedChain({ tableOnSolana: false, rollupMisses: 1 });
+    await chain.play(player, { type: "dice_roll", amount: "1000000", target: 5_000, over: false }, record);
+    await chain.play(player, { type: "wheel_spin", amount: "1000000", segments: 10, risk: "low" }, record);
+    expect(sent.solana.map(instructionNames)).toEqual([["open_quick_table", "delegate_quick_table"]]);
   });
 });
 

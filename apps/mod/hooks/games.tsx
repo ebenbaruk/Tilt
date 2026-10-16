@@ -1,8 +1,9 @@
-// Roulette, baccarat and slots tables, drawn still by the pane and the table surface module alike.
+// Roulette, baccarat, slots and Mines tables, drawn still by the pane and the table surface module alike.
 import type { RenderElement } from "claude-code";
 
 import { type CardSize, handCards, handRow } from "./cards";
-import { cleanText, pocketColor, rouletteBetLabel } from "./format";
+import { cashOutPayout, cleanText, formatUsdc, pocketColor, rouletteBetLabel } from "./format";
+import { MINES_COLUMNS, tileLetter } from "./keys";
 import type { Prefs } from "./model";
 import type { RoundView } from "./protocol";
 import { FELT, FELT_INK, FELT_INK_DIM, FG1, FG4, FG6, GOLD, GREEN, LINE3, LINE4, PINK, RED, type Ui } from "./theme";
@@ -328,6 +329,131 @@ export function slotsTable(ui: Ui, round: RoundView | null, size: CardSize, spin
         </Text>
       </Box>
       {payTable(ui, lit)}
+    </Box>
+  );
+}
+
+/** A tile's cell on the Mines board: its glyph at the right of these columns, where a key's `a: ·` ends. */
+const TILE_COLUMNS = 4;
+const SAFE_GLYPH = "◆";
+const MINE_GLYPH = "✸";
+const HIDDEN_GLYPH = "·";
+/** A tile awaiting its draw turns through these, one per spinner frame. */
+const PENDING_GLYPHS = ["◐", "◓", "◑", "◒"];
+
+/** A Mines tile or a tower tile being drawn, at this frame. */
+export const pendingGlyph = (frame: number): string => PENDING_GLYPHS[frame % PENDING_GLYPHS.length] ?? HIDDEN_GLYPH;
+
+/**
+ * The Button a tile (or a Keno number) is pressed with where the drawing has one for it, live or
+ * held; null draws it still. `face` is what the drawing shows there: a Button made for it wraps it.
+ */
+export type TileButton = (tile: number, face: RenderElement) => RenderElement | null;
+
+/**
+ * The 5 × 5 Mines board and its multipliers. In play a hidden tile is its key (or its letter, dim,
+ * while none is live), a safe tile ◆ in gold, the tile being drawn turning; a settled board shows
+ * the safe tiles and the mine that ended it, if one did (no other mine exists: each reveal draws).
+ */
+export function minesTable(
+  ui: Ui,
+  round: RoundView | null,
+  prefs: Prefs,
+  frame: number,
+  size: CardSize,
+  tileButton: TileButton,
+): RenderElement {
+  const { Box, Text } = ui;
+  const detail = round?.detail.game === "mines" ? round.detail : null;
+  const isOpen = round !== null && round.phase !== "idle";
+  const safe = new Set(detail?.revealed ?? []);
+  const glyph = (text: string, color: string) => (
+    <Text color={color} bold>
+      {text.padStart(TILE_COLUMNS)}
+    </Text>
+  );
+  const tileCell = (tile: number): RenderElement => {
+    if (safe.has(tile)) {
+      return glyph(SAFE_GLYPH, GOLD);
+    }
+
+    if (detail?.busted === tile) {
+      return glyph(MINE_GLYPH, RED);
+    }
+
+    if (detail?.pending === tile) {
+      return glyph(pendingGlyph(frame), PINK);
+    }
+
+    const button = isOpen ? tileButton(tile, <Text dimColor>{tileLetter(tile)}</Text>) : null;
+
+    return button === null ? (
+      <Text dimColor>{(isOpen ? tileLetter(tile) : HIDDEN_GLYPH).padStart(TILE_COLUMNS)}</Text>
+    ) : (
+      <Box width={TILE_COLUMNS} justifyContent="flex-end">
+        {button}
+      </Box>
+    );
+  };
+  const isLarge = size === "large";
+  const board = (
+    <Box flexDirection="column" rowGap={isLarge ? 1 : 0}>
+      {Array.from({ length: MINES_COLUMNS }, (_, row) => (
+        <Box flexDirection="row" columnGap={isLarge ? 1 : 0}>
+          {Array.from({ length: MINES_COLUMNS }, (_, column) => tileCell(row * MINES_COLUMNS + column))}
+        </Box>
+      ))}
+    </Box>
+  );
+  // As the roulette bet: the round's own while it plays, else the one the next round is played with.
+  const mines = isOpen && detail !== null ? detail.mines : prefs.mines;
+  const count = (
+    <Text color={FG4}>
+      <Text color={PINK} bold>
+        {String(mines)}
+      </Text>
+      {` ${mines === 1 ? "mine" : "mines"}`}
+    </Text>
+  );
+
+  if (detail === null || round === null) {
+    return (
+      <Box flexDirection="row" flexWrap="wrap" columnGap={3}>
+        {board}
+        <Box flexDirection="column">
+          {count}
+          <Text color={FG6}>Pick the mines with j and k, then play with n.</Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  return (
+    <Box flexDirection="row" flexWrap="wrap" columnGap={3}>
+      {board}
+      <Box flexDirection="column">
+        {count}
+        <Text color={FG4}>
+          multiplier{" "}
+          <Text color={FG1} bold>
+            {`×${detail.multiplier}`}
+          </Text>
+        </Text>
+        {isOpen && detail.nextMultiplier !== null && (
+          <Text color={FG4}>
+            next tile <Text color={FG1}>{`×${detail.nextMultiplier}`}</Text>
+          </Text>
+        )}
+        {isOpen && detail.canCashOut && (
+          <Text color={FG4}>
+            cash out{" "}
+            <Text color={GOLD} bold>
+              {formatUsdc(cashOutPayout(round.stake, detail.multiplier))}
+            </Text>
+          </Text>
+        )}
+        <Text color={FG6}>{`${detail.revealed.length} safe`}</Text>
+      </Box>
     </Box>
   );
 }

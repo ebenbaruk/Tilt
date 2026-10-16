@@ -29,8 +29,48 @@ export type BaccaratBet = z.infer<typeof BaccaratBet>;
 /** Hands one blackjack round can play against a single dealer (`MAX_HANDS` on-chain). */
 export const MAX_BLACKJACK_HANDS = 6;
 
-/** What a player wants to do. The relay turns it into one Solana or rollup transaction. */
-export const Action = z.discriminatedUnion("type", [
+/** Mines board: 25 tiles (0 to 24, row-major on a 5×5 grid), 1 to 24 mines (`MAX_MINES` on-chain). */
+export const MINES_TILES = 25;
+export const MAX_MINES = MINES_TILES - 1;
+
+/** Dice rolls are 0 to 9999 (shown as 00.00 to 99.99); a bet wins on 100 to 9800 of them (1 % to 98 %). */
+export const DICE_ROLLS = 10_000;
+export const DICE_MIN_WINNING = 100;
+export const DICE_MAX_WINNING = 9_800;
+
+/** Rolls winning a dice bet: under wins below `target`, over wins from `target` up. */
+export const diceWinningRolls = (target: number, over: boolean) => (over ? DICE_ROLLS - target : target);
+
+/** Limbo targets are multipliers × 100: 1.01× to 10 000×. */
+export const LIMBO_MIN_TARGET = 101;
+export const LIMBO_MAX_TARGET = 1_000_000;
+
+export const MAX_FLIPS = 10;
+export const FlipSide = z.enum(["heads", "tails"]);
+export type FlipSide = z.infer<typeof FlipSide>;
+
+/** Keno: 1 to 10 distinct numbers out of 1 to 40; ten are drawn. */
+export const KENO_NUMBERS = 40;
+export const MAX_KENO_PICKS = 10;
+export const KenoPicks = z
+  .array(z.number().int().min(1).max(KENO_NUMBERS))
+  .min(1)
+  .max(MAX_KENO_PICKS)
+  .refine((picks) => new Set(picks).size === picks.length, "distinct numbers");
+
+export const WHEEL_SEGMENTS: readonly number[] = [10, 20, 30, 40, 50];
+export const WheelRisk = z.enum(["low", "medium", "high"]);
+export type WheelRisk = z.infer<typeof WheelRisk>;
+
+export const HiloGuess = z.enum(["higher", "lower", "skip"]);
+export type HiloGuess = z.infer<typeof HiloGuess>;
+
+/** Tower: 9 levels; tiles per level by difficulty (easy 4, medium 3, hard 2, expert 3, master 4). */
+export const TowerDifficulty = z.enum(["easy", "medium", "hard", "expert", "master"]);
+export type TowerDifficulty = z.infer<typeof TowerDifficulty>;
+export const TOWER_MAX_TILES = 4;
+
+const ActionShape = z.discriminatedUnion("type", [
   /** First deposit: opens the account and moves it into the rollup (onboarding fee deducted). */
   z.object({ type: z.literal("open_account"), amount: Amount }),
   z.object({ type: z.literal("deposit"), amount: Amount }),
@@ -44,9 +84,49 @@ export const Action = z.discriminatedUnion("type", [
   z.object({ type: z.literal("roulette_spin"), amount: Amount, bet: RouletteBet }),
   z.object({ type: z.literal("baccarat_deal"), amount: Amount, bet: BaccaratBet }),
   z.object({ type: z.literal("slots_spin"), amount: Amount }),
+  /** Starts a Mines round of `amount` with `mines` mines (1 to 24); no draw until a reveal. */
+  z.object({ type: z.literal("mines_bet"), amount: Amount, mines: z.number().int().min(1).max(MAX_MINES) }),
+  /** Reveals one hidden tile (0 to 24); a mine ends the round. */
+  z.object({ type: z.literal("mines_reveal"), tile: z.number().int().min(0).max(MINES_TILES - 1) }),
+  /** Cashes out at the current multiplier, once at least one tile is revealed. */
+  z.object({ type: z.literal("mines_cashout") }),
+  /** Rolls 0 to 9999: under wins iff roll < target, over iff roll ≥ target (1 % to 98 % chance, checked by `Action`). */
+  z.object({ type: z.literal("dice_roll"), amount: Amount, target: z.number().int().min(0).max(DICE_ROLLS), over: z.boolean() }),
+  /** Wins `target` (multiplier × 100) when the drawn multiplier reaches it. */
+  z.object({ type: z.literal("limbo_play"), amount: Amount, target: z.number().int().min(LIMBO_MIN_TARGET).max(LIMBO_MAX_TARGET) }),
+  /** Wins iff every one of `flips` coins lands on `side`. */
+  z.object({ type: z.literal("flip_play"), amount: Amount, side: FlipSide, flips: z.number().int().min(1).max(MAX_FLIPS) }),
+  z.object({ type: z.literal("keno_play"), amount: Amount, picks: KenoPicks }),
+  z.object({
+    type: z.literal("wheel_spin"),
+    amount: Amount,
+    segments: z.number().int().refine((n) => WHEEL_SEGMENTS.includes(n), "10, 20, 30, 40 or 50"),
+    risk: WheelRisk,
+  }),
+  /** Starts a Hilo round and draws its first card. */
+  z.object({ type: z.literal("hilo_bet"), amount: Amount }),
+  /** A certain guess (higher on an ace, lower on a king) and an 11th skip are refused by the program. */
+  z.object({ type: z.literal("hilo_guess"), guess: HiloGuess }),
+  /** Cashes out once at least one guess was right. */
+  z.object({ type: z.literal("hilo_cashout") }),
+  /** Starts a Tower round; no draw until the first climb. */
+  z.object({ type: z.literal("tower_bet"), amount: Amount, difficulty: TowerDifficulty }),
+  /** Picks a tile of the next level; one past the difficulty's tiles is refused by the program. */
+  z.object({ type: z.literal("tower_climb"), tile: z.number().int().min(0).max(TOWER_MAX_TILES - 1) }),
+  /** Cashes out once at least one level is climbed. */
+  z.object({ type: z.literal("tower_cashout") }),
   /** Pays to the player's own wallet; moving funds out of it is signed by the player on the web. */
   z.object({ type: z.literal("withdraw"), amount: Amount }),
 ]);
+
+/** What a player wants to do. The relay turns it into one Solana or rollup transaction. */
+export const Action = ActionShape.superRefine((action, ctx) => {
+  if (action.type !== "dice_roll") return;
+  const winning = diceWinningRolls(action.target, action.over);
+  if (winning < DICE_MIN_WINNING || winning > DICE_MAX_WINNING) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["target"], message: "1 % to 98 % chance" });
+  }
+});
 export type Action = z.infer<typeof Action>;
 
 /** Privy user id, e.g. `did:privy:cm3np4u9j001rc8b73seqmqqk` (a lowercase cuid). Strict, as it
@@ -81,8 +161,8 @@ export const ErrorCode = z.enum([
   "CONSENT_REQUIRED",
   "ACCOUNT_NOT_OPEN",
   "ACCOUNT_ALREADY_OPEN",
-  /** The player's blackjack table could not be opened in the rollup in time; nothing was
-   *  played, the same action can be sent again. */
+  /** The player's game account (blackjack table, one-draw table, Mines, Hilo or Tower board)
+   *  could not be opened in the rollup in time; nothing was played, the same action can be sent again. */
   "TABLE_NOT_READY",
   "PROGRAM_ERROR",
   "NETWORK_ERROR",

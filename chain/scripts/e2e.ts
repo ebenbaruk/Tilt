@@ -1,5 +1,5 @@
 // End-to-end check of the Tilt program against a real Solana + MagicBlock rollup:
-// USDC vault, first deposit, the four games (multi-hand blackjack with splits included; outcomes recomputed here from the drawn
+// USDC vault, first deposit, the twelve games (multi-hand blackjack with splits included; outcomes recomputed here from the drawn
 // cards / numbers), deposits, withdrawals, loss checkpoints and the attack / recovery
 // scenarios. Runs against the local MagicBlock stack by default (README), or devnet with
 // BASE_RPC / ER_RPC / ER_WS / VALIDATOR / VRF_ER_QUEUE.
@@ -45,6 +45,10 @@ type BN = InstanceType<typeof BN>;
 type PlayerAccount = IdlAccounts<Tilt>["playerAccount"];
 type Round = PlayerAccount["round"];
 type BlackjackTable = IdlAccounts<Tilt>["blackjackTable"];
+type MinesBoard = IdlAccounts<Tilt>["minesBoard"];
+type QuickTable = IdlAccounts<Tilt>["quickTable"];
+type HiloBoard = IdlAccounts<Tilt>["hiloBoard"];
+type TowerBoard = IdlAccounts<Tilt>["towerBoard"];
 type TableHand = BlackjackTable["hands"][number];
 type Config = IdlTypes<Tilt>["config"];
 type RouletteBet = IdlTypes<Tilt>["rouletteBet"];
@@ -103,8 +107,15 @@ const player = Keypair.generate();
 const account = pda(Buffer.from("account"), player.publicKey.toBuffer());
 const ledger = pda(Buffer.from("ledger"), player.publicKey.toBuffer());
 const table = pda(Buffer.from("bjtable"), player.publicKey.toBuffer());
+const board = pda(Buffer.from("mines"), player.publicKey.toBuffer());
+const quick = pda(Buffer.from("quick"), player.publicKey.toBuffer());
+const hiloBoard = pda(Buffer.from("hilo"), player.publicKey.toBuffer());
+const towerBoard = pda(Buffer.from("tower"), player.publicKey.toBuffer());
 const MAX_HANDS = 6;
 const MAX_SPLITS = 4;
+const MINES_TILES = 25;
+/** `pending` / `busted` when there is no such tile. */
+const NO_TILE = 255;
 
 let relayer: Keypair;
 let relayerProvider: anchor.AnchorProvider;
@@ -152,6 +163,10 @@ async function until<T>(f: () => Promise<T | undefined>, what: string, timeoutMs
 
 const fetchAccount = () => erProgram.account.playerAccount.fetch(account);
 const fetchTable = () => erProgram.account.blackjackTable.fetch(table);
+const fetchBoard = () => erProgram.account.minesBoard.fetch(board);
+const fetchQuick = () => erProgram.account.quickTable.fetch(quick);
+const fetchHilo = () => erProgram.account.hiloBoard.fetch(hiloBoard);
+const fetchTower = () => erProgram.account.towerBoard.fetch(towerBoard);
 const fetchLedger = () => program.account.ledger.fetch(ledger);
 const seed = () => Array.from(randomBytes(32));
 const isIdle = (round: Round) => "idle" in round.status;
@@ -173,6 +188,10 @@ async function erSend(tx: Transaction, signer = relayer, simulateFirst = false, 
 // Blackjack needs the player's table; the other games pass none (Anchor sends the program id).
 const playAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, table: null, oracleQueue: VRF_ER_QUEUE });
 const blackjackAccounts = () => ({ ...playAccounts(), table });
+const minesAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, board, oracleQueue: VRF_ER_QUEUE });
+const quickAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, quick, oracleQueue: VRF_ER_QUEUE });
+const hiloAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, board: hiloBoard, oracleQueue: VRF_ER_QUEUE });
+const towerAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, board: towerBoard, oracleQueue: VRF_ER_QUEUE });
 
 async function act(label: string, tx: Promise<Transaction>, accept: (a: PlayerAccount) => boolean | Promise<boolean>) {
   const transaction = await tx;
@@ -281,6 +300,244 @@ async function playBlackjack(bet: number, hands: number, extraBets: boolean) {
     async (r) => blackjackGross(await fetchTable(), r.stake.toNumber()),
   );
   return { account: a, table: await fetchTable() };
+}
+
+/** C(n, k), exact. */
+function choose(n: number, k: number) {
+  let c = 1n;
+  for (let i = 0; i < k; i++) c = (c * BigInt(n - i)) / BigInt(i + 1);
+  return c;
+}
+
+/** 0.99 × C(25, k) / C(25 − mines, k) of the stake, rounded down. */
+const minesUncapped = (stake: bigint, mines: number, k: number) =>
+  (stake * 99n * choose(MINES_TILES, k)) / (100n * choose(MINES_TILES - mines, k));
+
+/** Mines payout from the board: 0 on a mine, else the multiplier, capped at stake + max gain;
+ *  also checks the max gain is the full board's gain within the round limit. */
+function minesGross(b: MinesBoard, maxRoundGain: bigint) {
+  const stake = BigInt(b.bet.toString());
+  const full = minesUncapped(stake, b.mines, MINES_TILES - b.mines) - stake;
+  const maxGain = full < maxRoundGain ? full : maxRoundGain;
+  if (BigInt(b.maxGain.toString()) !== maxGain) throw new Error(`mines: gain max ${b.maxGain}, attendu ${maxGain}`);
+  if (b.busted !== NO_TILE) return 0;
+  const raw = minesUncapped(stake, b.mines, b.nRevealed);
+  const cap = stake + maxGain;
+  return Number(raw < cap ? raw : cap);
+}
+
+/** One Mines round of `bet` on `mines` mines: reveals tiles 0, 1, 2… and cashes out after `target`
+ *  safe tiles, unless a mine or the cap ends the round first. */
+async function playMines(bet: number, mines: number, target: number, maxRoundGain: number) {
+  const clicked: number[] = [];
+  await round(
+    "mines",
+    () => erProgram.methods.minesBet(new BN(bet), mines).accountsPartial(minesAccounts()).transaction(),
+    async (a) => {
+      while (isPlayerTurn(a.round)) {
+        const b = await fetchBoard();
+        const prev = a;
+        if (b.nRevealed >= target) {
+          a = await act("mines encaissement", erProgram.methods.minesCashout().accountsPartial(minesAccounts()).transaction(), (x) => x.rounds > prev.rounds);
+        } else {
+          const tile = clicked.length;
+          clicked.push(tile);
+          a = await act("mines case", erProgram.methods.minesReveal(tile, seed()).accountsPartial(minesAccounts()).transaction(),
+            (x) => !isAwaiting(x.round) && (x.round.requestId.gt(prev.round.requestId) || x.rounds > prev.rounds));
+        }
+      }
+      return a;
+    },
+    async () => minesGross(await fetchBoard(), BigInt(maxRoundGain)),
+  );
+  const b = await fetchBoard();
+  const safe = b.busted === NO_TILE ? clicked : clicked.slice(0, -1);
+  if (JSON.stringify(b.order.slice(0, b.nRevealed)) !== JSON.stringify(safe)) throw new Error(`mines: cases ${b.order.slice(0, b.nRevealed)}, jouées ${safe}`);
+  if (b.busted !== NO_TILE && b.busted !== clicked.at(-1)) throw new Error(`mines: mine ${b.busted}, dernière case ${clicked.at(-1)}`);
+  return b;
+}
+
+/** Keno payouts (× 100) by hits, for 1 to 10 picks. */
+const KENO_PAYTABLES = [
+  [0, 380],
+  [0, 160, 580],
+  [0, 80, 200, 2_670],
+  [0, 70, 160, 460, 5_000],
+  [0, 25, 135, 380, 1_370, 10_000],
+  [0, 0, 95, 340, 700, 1_810, 20_000],
+  [0, 0, 50, 280, 425, 1_315, 3_100, 30_000],
+  [0, 0, 0, 205, 405, 1_155, 2_800, 8_050, 50_000],
+  [0, 0, 0, 145, 290, 780, 1_480, 5_650, 14_600, 75_000],
+  [0, 0, 0, 135, 215, 425, 765, 1_940, 5_250, 24_000, 100_000],
+];
+/** Wheel multipliers (× 100): low repeats this block of 10, medium pays these on odd segments. */
+const WHEEL_LOW = [140, 120, 120, 120, 0, 120, 120, 120, 120, 0];
+const WHEEL_MEDIUM: Record<number, number[]> = {
+  10: [190, 150, 200, 140, 300],
+  20: [150, 200, 150, 200, 150, 200, 150, 200, 160, 400],
+  30: [150, 200, 150, 200, 150, 200, 150, 200, 150, 200, 150, 200, 150, 190, 500],
+  40: [150, 200, 150, 200, 150, 200, 150, 200, 150, 200, 150, 200, 150, 200, 150, 200, 150, 200, 170, 600],
+  50: [150, 200, 150, 200, 150, 200, 150, 200, 150, 200, 150, 200, 150, 200, 150, 200, 150, 200, 150, 200, 150, 200, 150, 200, 700],
+};
+
+function wheelMultiplier(risk: "low" | "medium" | "high", segments: number, segment: number) {
+  if (risk === "low") return WHEEL_LOW[segment % 10];
+  if (risk === "medium") return segment % 2 === 0 ? 0 : WHEEL_MEDIUM[segments][(segment - 1) / 2];
+  return segment === segments - 1 ? 98 * segments : 0;
+}
+
+/** Payout of the last one-draw round, recomputed from its outcome; also checks the outcome is in range. */
+function quickGross(t: QuickTable): number {
+  const stake = BigInt(t.bet.toString());
+  const r = t.round;
+  if (!t.drawn) throw new Error("table rapide : pas de tirage");
+  if ("dice" in r) {
+    const { target, over, roll } = r.dice;
+    if (roll >= 10_000) throw new Error(`dice : jet ${roll}`);
+    const wins = over ? roll >= target : roll < target;
+    return wins ? Number((stake * 9_800n) / BigInt(over ? 10_000 - target : target)) : 0;
+  }
+  if ("limbo" in r) {
+    const { target, result } = r.limbo;
+    if (result < 100 || result > 100_000_000) throw new Error(`limbo : résultat ${result}`);
+    return result >= target ? Number((stake * BigInt(target)) / 100n) : 0;
+  }
+  if ("flip" in r) {
+    const { side, flips, coins } = r.flip;
+    if (coins >= 1 << flips) throw new Error(`flip : pièces ${coins}`);
+    const wins = coins === ("heads" in side ? 0 : (1 << flips) - 1);
+    return wins ? Number((stake * 98n * (1n << BigInt(flips))) / 100n) : 0;
+  }
+  if ("keno" in r) {
+    const { picks, nPicks, drawn } = r.keno;
+    if (new Set(drawn).size !== 10 || drawn.some((n: number) => n < 1 || n > 40)) throw new Error(`keno : tirage ${drawn}`);
+    const hits = picks.slice(0, nPicks).filter((n: number) => drawn.includes(n)).length;
+    return Number((stake * BigInt(KENO_PAYTABLES[nPicks - 1][hits])) / 100n);
+  }
+  if ("wheel" in r) {
+    const { segments, risk, segment } = r.wheel;
+    if (segment >= segments) throw new Error(`wheel : segment ${segment}`);
+    const name = "low" in risk ? "low" : "medium" in risk ? "medium" : "high";
+    return Number((stake * BigInt(wheelMultiplier(name, segments, segment))) / 100n);
+  }
+  throw new Error("table rapide vide");
+}
+
+const playQuick = (label: string, tx: () => Promise<Transaction>) =>
+  round(label, tx, async (x) => x, async () => quickGross(await fetchQuick()));
+
+const HILO_HIGHER = 0;
+const HILO_LOWER = 1;
+const HILO_SKIP = 2;
+const rank = (card: number) => (card % 13) + 1;
+/** The likelier side from `current`, never the certain one (higher on an ace, lower on a king). */
+const likelierGuess = (current: number) => (current === 13 || (current <= 7 && current !== 1) ? HILO_HIGHER : HILO_LOWER);
+
+/** Hilo payout replayed from the cards and guesses: 0 on a wrong guess, else 0.98 × the fair
+ *  multiplier (× 13 / winning ranks per right guess, rounded down), capped at stake + max gain. */
+function hiloGross(b: HiloBoard, roundGain: bigint) {
+  const stake = BigInt(b.bet.toString());
+  if (BigInt(b.maxGain.toString()) !== roundGain) throw new Error(`hilo : gain max ${b.maxGain}, attendu ${roundGain}`);
+  let fair = 1_000_000n;
+  for (let i = 1; i < b.nCards; i++) {
+    const guess = b.guesses[i - 1];
+    if (guess === HILO_SKIP) continue;
+    const [current, next] = [rank(b.cards[i - 1]), rank(b.cards[i])];
+    const right = guess === HILO_HIGHER ? next >= current : next <= current;
+    if (!right) {
+      if (!b.busted || i !== b.nCards - 1) throw new Error(`hilo : mauvaise carte ${i} sans fin de manche`);
+      return 0;
+    }
+    fair = (fair * 13n) / BigInt(guess === HILO_HIGHER ? 14 - current : current);
+  }
+  if (b.busted) throw new Error("hilo : perdu sans mauvaise carte");
+  if (fair !== BigInt(b.fair.toString())) throw new Error(`hilo : multiplicateur ${b.fair}, attendu ${fair}`);
+  const raw = (stake * 98n * fair) / 100_000_000n;
+  const cap = stake + roundGain;
+  return Number(raw < cap ? raw : cap);
+}
+
+/** One Hilo round of `bet`: skips aces, kings and sevens while it can, else guesses the likelier
+ *  side, and cashes out after `target` right guesses unless a wrong card or the cap ends it first. */
+async function playHilo(bet: number, target: number, roundGain: number) {
+  const sent: number[] = [];
+  await round(
+    "hilo",
+    () => erProgram.methods.hiloBet(new BN(bet), seed()).accountsPartial(hiloAccounts()).transaction(),
+    async (a) => {
+      while (isPlayerTurn(a.round)) {
+        const b = await fetchHilo();
+        const prev = a;
+        if (b.nRight >= target) {
+          a = await act("hilo encaissement", erProgram.methods.hiloCashout().accountsPartial(hiloAccounts()).transaction(), (x) => x.rounds > prev.rounds);
+          continue;
+        }
+        const current = rank(b.cards[b.nCards - 1]);
+        const code = [1, 7, 13].includes(current) && b.skips < 10 ? HILO_SKIP : likelierGuess(current);
+        const guess = code === HILO_SKIP ? { skip: {} } : code === HILO_LOWER ? { lower: {} } : { higher: {} };
+        sent.push(code);
+        a = await act("hilo carte", erProgram.methods.hiloGuess(guess, seed()).accountsPartial(hiloAccounts()).transaction(),
+          (x) => !isAwaiting(x.round) && (x.round.requestId.gt(prev.round.requestId) || x.rounds > prev.rounds));
+      }
+      return a;
+    },
+    async () => hiloGross(await fetchHilo(), BigInt(roundGain)),
+  );
+  const b = await fetchHilo();
+  if (JSON.stringify(b.guesses.slice(0, b.nCards - 1)) !== JSON.stringify(sent)) throw new Error(`hilo : choix ${b.guesses.slice(0, b.nCards - 1)}, joués ${sent}`);
+  return b;
+}
+
+const TOWER_LEVELS = 9;
+/** Tiles per level and safe tiles among them, by difficulty. */
+const TOWER: Record<string, [number, number]> = { easy: [4, 3], medium: [3, 2], hard: [2, 1], expert: [3, 1], master: [4, 1] };
+const towerUncapped = (stake: bigint, tiles: number, safe: number, levels: number) =>
+  (stake * 98n * BigInt(tiles) ** BigInt(levels)) / (100n * BigInt(safe) ** BigInt(levels));
+
+/** Tower payout from the board: 0 on a bad tile, else 0.98 × (tiles / safe)^levels, capped at
+ *  stake + max gain; also checks the max gain is the top's gain within the round limit. */
+function towerGross(b: TowerBoard, roundGain: bigint) {
+  const stake = BigInt(b.bet.toString());
+  const [tiles, safe] = TOWER[Object.keys(b.difficulty)[0]];
+  const full = towerUncapped(stake, tiles, safe, TOWER_LEVELS) - stake;
+  const maxGain = full < roundGain ? full : roundGain;
+  if (BigInt(b.maxGain.toString()) !== maxGain) throw new Error(`tower : gain max ${b.maxGain}, attendu ${maxGain}`);
+  if (b.busted !== NO_TILE) return 0;
+  const raw = towerUncapped(stake, tiles, safe, b.level);
+  const cap = stake + maxGain;
+  return Number(raw < cap ? raw : cap);
+}
+
+/** One Tower round of `bet` at `difficulty`: picks tile `level % tiles` on each level and cashes
+ *  out after `target` levels, unless a bad tile, the top or the cap ends the round first. */
+async function playTower(bet: number, difficulty: string, target: number, roundGain: number) {
+  const [tiles] = TOWER[difficulty];
+  const clicked: number[] = [];
+  await round(
+    "tower",
+    () => erProgram.methods.towerBet(new BN(bet), { [difficulty]: {} } as TowerBoard["difficulty"]).accountsPartial(towerAccounts()).transaction(),
+    async (a) => {
+      while (isPlayerTurn(a.round)) {
+        const b = await fetchTower();
+        const prev = a;
+        if (b.level >= target) {
+          a = await act("tower encaissement", erProgram.methods.towerCashout().accountsPartial(towerAccounts()).transaction(), (x) => x.rounds > prev.rounds);
+          continue;
+        }
+        const tile = b.level % tiles;
+        clicked.push(tile);
+        a = await act("tower case", erProgram.methods.towerClimb(tile, seed()).accountsPartial(towerAccounts()).transaction(),
+          (x) => !isAwaiting(x.round) && (x.round.requestId.gt(prev.round.requestId) || x.rounds > prev.rounds));
+      }
+      return a;
+    },
+    async () => towerGross(await fetchTower(), BigInt(roundGain)),
+  );
+  const b = await fetchTower();
+  const safe = b.busted === NO_TILE ? clicked : clicked.slice(0, -1);
+  if (JSON.stringify(b.climbed.slice(0, b.level)) !== JSON.stringify(safe)) throw new Error(`tower : cases ${b.climbed.slice(0, b.level)}, jouées ${safe}`);
+  if (b.busted !== NO_TILE && b.busted !== clicked.at(-1)) throw new Error(`tower : case perdante ${b.busted}, dernière case ${clicked.at(-1)}`);
+  return b;
 }
 
 const withdrawTx = (amount: number, signer = relayer) =>
@@ -516,6 +773,236 @@ async function run(): Promise<number> {
   await setConfig({ betsPaused: true });
   await rejectsInRollup("mises refusées pendant la pause des mises", () =>
     erProgram.methods.slotsSpin(new BN(usdc(1)), seed()).accountsPartial(playAccounts()).transaction(), /Paused|6013/);
+  await setConfig();
+
+  console.log("\n--- 5b. Mines (gains recalculés depuis le plateau) ---");
+  await rejectsInRollup("mines sans plateau refusé", () =>
+    erProgram.methods.minesBet(new BN(usdc(1)), 3).accountsPartial(minesAccounts()).transaction(), /AccountNotInitialized|3012|not.*found|AccountNotFound/i);
+  const boardAccounts = { vault, payer: relayer.publicKey, player: player.publicKey, ledger, board };
+  await time("plateau mines ouvert et délégué (Solana)", async () =>
+    relayerProvider.sendAndConfirm(new Transaction().add(
+      await program.methods.openMinesBoard().accountsPartial(boardAccounts).instruction(),
+      await program.methods.delegateMinesBoard().accountsPartial(boardAccounts).instruction(),
+    )));
+  await time("plateau visible dans le rollup", () => until(() => fetchBoard(), "board in rollup"));
+  for (const mines of [0, MINES_TILES]) {
+    await rejectsInRollup(`${mines} mines refusé`, () =>
+      erProgram.methods.minesBet(new BN(usdc(1)), mines).accountsPartial(minesAccounts()).transaction(), /InvalidBet|6010/);
+  }
+  await rejectsInRollup("encaissement sans manche refusé", () =>
+    erProgram.methods.minesCashout().accountsPartial(minesAccounts()).transaction(), /WrongState|6005/);
+  const roundGain = CONFIG.maxRoundGain.toNumber();
+  let busts = 0;
+  let cashOuts = 0;
+  for (let i = 0; i < 12 || busts === 0 || cashOuts === 0; i++) {
+    if (i >= 40) throw new Error("mines: pas de mine ou pas d'encaissement en 40 manches");
+    const b = await playMines(usdc(1), [1, 3, 5, 12][i % 4], 1 + (i % 3), roundGain);
+    if (b.busted !== NO_TILE) busts++;
+    else cashOuts++;
+  }
+  check("manches de mines payées selon les cases (mine, encaissement, plafond)", true, `(${busts} mines, ${cashOuts} encaissements)`);
+
+  let m = await act("mise mines", erProgram.methods.minesBet(new BN(usdc(1)), 3).accountsPartial(minesAccounts()).transaction(), (x) => isPlayerTurn(x.round));
+  check("mise mines sans tirage : le plateau attend le joueur", (await fetchBoard()).nRevealed === 0);
+  await rejectsInRollup("encaissement sans case révélée refusé", () =>
+    erProgram.methods.minesCashout().accountsPartial(minesAccounts()).transaction(), /WrongState|6005/);
+  await rejectsInRollup("case hors du plateau refusée", () =>
+    erProgram.methods.minesReveal(MINES_TILES, seed()).accountsPartial(minesAccounts()).transaction(), /InvalidTile|6021/);
+  await rejectsInRollup("coup de blackjack sur une manche de mines refusé", () =>
+    erProgram.methods.blackjackHit(seed()).accountsPartial(blackjackAccounts()).transaction(), /WrongState|6005/);
+  await rejectsInRollup("nouvelle manche refusée tant que le plateau est ouvert", () =>
+    erProgram.methods.slotsSpin(new BN(usdc(1)), seed()).accountsPartial(playAccounts()).transaction(), /RoundInProgress|6004/);
+  await sleep((ROUND_TIMEOUT_SECS + 1) * 1_000);
+  await rejectsInRollup("plateau en attente du joueur jamais clôturé à sa place, même après le délai", () =>
+    erProgram.methods.expireMinesRound(seed()).accountsPartial(minesAccounts()).transaction(), /WrongState|6005/);
+  await rejectsInRollup("expire_round sans plateau refusé sur une manche de mines", () =>
+    erProgram.methods.expireRound(seed()).accountsPartial(playAccounts()).transaction(), /WrongState|6005/);
+  const beforeReveal = m;
+  m = await act("mines case après le délai", erProgram.methods.minesReveal(0, seed()).accountsPartial(minesAccounts()).transaction(),
+    (x) => !isAwaiting(x.round) && x.round.requestId.gt(beforeReveal.round.requestId));
+  if (isPlayerTurn(m.round)) {
+    await rejectsInRollup("case déjà révélée refusée", () =>
+      erProgram.methods.minesReveal(0, seed()).accountsPartial(minesAccounts()).transaction(), /InvalidTile|6021/);
+    const roundsBefore = m.rounds;
+    m = await act("mines encaissement", erProgram.methods.minesCashout().accountsPartial(minesAccounts()).transaction(), (x) => x.rounds === roundsBefore + 1);
+  }
+  check("le joueur reprend son plateau quand il veut", isIdle(m.round));
+
+  // 12 mines with a 2 USDC round limit: 3 USDC gross at most, reached from the 2nd safe tile (3.8x).
+  const capGain = usdc(2);
+  await setConfig({ maxRoundGain: new BN(capGain) });
+  let capped = false;
+  for (let i = 0; i < 20 && !capped; i++) {
+    const b = await playMines(usdc(1), 12, MINES_TILES, capGain);
+    capped = b.busted === NO_TILE;
+    if (capped) check("plafond atteint : encaissement automatique à mise + gain max", b.nRevealed === 2 && (await fetchAccount()).round.payout.eq(new BN(usdc(3) - feeOn(usdc(1), usdc(3)))));
+  }
+  if (!capped) check("plafond atteint en 20 manches", false);
+  await setConfig();
+
+  console.log("\n--- 5c. Dice, Limbo, Flip, Keno, Wheel (gains recalculés depuis le tirage) ---");
+  const diceTx = (amount: number, target: number, over: boolean) => () =>
+    erProgram.methods.diceRoll(new BN(amount), target, over, seed()).accountsPartial(quickAccounts()).transaction();
+  const limboTx = (target: number) => () => erProgram.methods.limboPlay(new BN(usdc(1)), target, seed()).accountsPartial(quickAccounts()).transaction();
+  const flipTx = (heads: boolean, flips: number) => () =>
+    erProgram.methods.flipPlay(new BN(usdc(1)), heads ? { heads: {} } : { tails: {} }, flips, seed()).accountsPartial(quickAccounts()).transaction();
+  const kenoTx = (picks: number[]) => () => erProgram.methods.kenoPlay(new BN(usdc(1)), Buffer.from(picks), seed()).accountsPartial(quickAccounts()).transaction();
+  const wheelTx = (segments: number, risk: "low" | "medium" | "high") => () =>
+    erProgram.methods.wheelSpin(new BN(usdc(1)), segments, { [risk]: {} } as IdlTypes<Tilt>["wheelRisk"], seed()).accountsPartial(quickAccounts()).transaction();
+  await rejectsInRollup("dice sans table rapide refusé", diceTx(usdc(1), 5_000, false), /AccountNotInitialized|3012|not.*found|AccountNotFound/i);
+  const quickTableAccounts = { vault, payer: relayer.publicKey, player: player.publicKey, ledger, quick };
+  await time("table rapide ouverte et déléguée (Solana)", async () =>
+    relayerProvider.sendAndConfirm(new Transaction().add(
+      await program.methods.openQuickTable().accountsPartial(quickTableAccounts).instruction(),
+      await program.methods.delegateQuickTable().accountsPartial(quickTableAccounts).instruction(),
+    )));
+  await time("table rapide visible dans le rollup", () => until(() => fetchQuick(), "quick table in rollup"));
+  const invalidChoices: [string, () => Promise<Transaction>][] = [
+    ["dice à 0,99 % refusé", diceTx(usdc(1), 99, false)],
+    ["dice à 98,01 % refusé", diceTx(usdc(1), 199, true)],
+    ["limbo sous 1,01x refusé", limboTx(100)],
+    ["limbo au-dessus de 10 000x refusé", limboTx(1_000_001)],
+    ["flip à 11 pièces refusé", flipTx(true, 11)],
+    ["keno avec un numéro en double refusé", kenoTx([3, 3])],
+    ["keno avec 11 numéros refusé", kenoTx([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])],
+    ["keno hors de 1 à 40 refusé", kenoTx([41])],
+    ["roue à 15 segments refusée", wheelTx(15, "low")],
+  ];
+  for (const [name, tx] of invalidChoices) await rejectsInRollup(name, tx, /InvalidChoice|6022/);
+  await rejectsInRollup("dice à 98x sur 10 USDC refusé (gain possible > plafond par manche), jamais plafonné", async () => {
+    await setConfig({ maxRoundGain: new BN(usdc(300)) });
+    return diceTx(usdc(10), 9_900, true)();
+  }, /RoundGainTooHigh|6009/);
+  await setConfig();
+  for (const [target, over] of [[5_000, false], [5_000, true], [9_800, false], [200, true], [2_500, false], [7_500, true]] as const) {
+    await playQuick("dice", diceTx(usdc(1), target, over));
+  }
+  check("6 jets de dice payés selon le jet", true, "(chaque jet vérifié)");
+  for (const target of [101, 150, 200, 500, 1_000, 10_000]) await playQuick("limbo", limboTx(target));
+  check("6 parties de limbo payées selon le multiplicateur tiré", true, "(chaque partie vérifiée)");
+  for (const [heads, flips] of [[true, 1], [false, 1], [true, 2], [false, 3], [true, 10], [false, 1]] as const) await playQuick("flip", flipTx(heads, flips));
+  check("6 lancers de pièces payés selon les pièces", true, "(chaque lancer vérifié)");
+  for (let n = 1; n <= 10; n++) {
+    const picks = Array.from({ length: n }, (_, i) => 40 - 3 * i);
+    await playQuick("keno", kenoTx(picks));
+    const t = await fetchQuick();
+    if (!("keno" in t.round) || JSON.stringify(t.round.keno.picks.slice(0, t.round.keno.nPicks)) !== JSON.stringify(picks)) {
+      throw new Error(`keno : numéros enregistrés ${JSON.stringify(t.round)}, joués ${picks}`);
+    }
+  }
+  check("10 tirages de keno (1 à 10 numéros) payés selon les numéros sortis", true, "(chaque tirage vérifié)");
+  for (const segments of [10, 20, 30, 40, 50]) {
+    for (const risk of ["low", "medium", "high"] as const) await playQuick("wheel", wheelTx(segments, risk));
+  }
+  check("15 tours de roue (5 tailles × 3 risques) payés selon le segment", true, "(chaque tour vérifié)");
+
+  console.log("\n--- 5d. Hilo (gains rejoués depuis les cartes) ---");
+  const hiloGuessTx = (guess: "higher" | "lower" | "skip") => () =>
+    erProgram.methods.hiloGuess({ [guess]: {} } as IdlTypes<Tilt>["hiloMove"], seed()).accountsPartial(hiloAccounts()).transaction();
+  const hiloCashoutTx = () => erProgram.methods.hiloCashout().accountsPartial(hiloAccounts()).transaction();
+  const hiloBoardAccounts = { vault, payer: relayer.publicKey, player: player.publicKey, ledger, board: hiloBoard };
+  await time("plateau hilo ouvert et délégué (Solana)", async () =>
+    relayerProvider.sendAndConfirm(new Transaction().add(
+      await program.methods.openHiloBoard().accountsPartial(hiloBoardAccounts).instruction(),
+      await program.methods.delegateHiloBoard().accountsPartial(hiloBoardAccounts).instruction(),
+    )));
+  await time("plateau hilo visible dans le rollup", () => until(() => fetchHilo(), "hilo board in rollup"));
+  await rejectsInRollup("encaissement hilo sans manche refusé", hiloCashoutTx, /WrongState|6005/);
+  let hiloBusts = 0;
+  let hiloCashOuts = 0;
+  for (let i = 0; i < 8 || hiloBusts === 0 || hiloCashOuts === 0; i++) {
+    if (i >= 40) throw new Error("hilo : pas de perte ou pas d'encaissement en 40 manches");
+    const b = await playHilo(usdc(1), 1 + (i % 3), roundGain);
+    if (b.busted) hiloBusts++;
+    else hiloCashOuts++;
+  }
+  check("manches de hilo payées selon les cartes (mauvaise carte, encaissement)", true, `(${hiloBusts} pertes, ${hiloCashOuts} encaissements)`);
+
+  let h = await act("mise hilo", erProgram.methods.hiloBet(new BN(usdc(1)), seed()).accountsPartial(hiloAccounts()).transaction(), (x) => isPlayerTurn(x.round));
+  check("mise hilo : première carte tirée, le plateau attend le joueur", (await fetchHilo()).nCards === 1);
+  await rejectsInRollup("encaissement sans bonne réponse refusé", hiloCashoutTx, /WrongState|6005/);
+  // Skips until an ace or a king (whose certain side is refused) or the 10 skips are used.
+  let current = rank((await fetchHilo()).cards[0]);
+  while (current !== 1 && current !== 13 && (await fetchHilo()).skips < 10) {
+    const prev = h;
+    h = await act("hilo passe", hiloGuessTx("skip")(), (x) => !isAwaiting(x.round) && x.round.requestId.gt(prev.round.requestId));
+    const b = await fetchHilo();
+    current = rank(b.cards[b.nCards - 1]);
+  }
+  if (current === 1 || current === 13) {
+    await rejectsInRollup("choix certain refusé (plus haut sur un as, plus bas sur un roi)", hiloGuessTx(current === 1 ? "higher" : "lower"), /InvalidChoice|6022/);
+  } else {
+    await rejectsInRollup("11e passe refusée", hiloGuessTx("skip"), /InvalidChoice|6022/);
+  }
+  await rejectsInRollup("nouvelle manche refusée tant que le plateau hilo est ouvert", () =>
+    erProgram.methods.slotsSpin(new BN(usdc(1)), seed()).accountsPartial(playAccounts()).transaction(), /RoundInProgress|6004/);
+  await sleep((ROUND_TIMEOUT_SECS + 1) * 1_000);
+  await rejectsInRollup("plateau hilo en attente du joueur jamais clôturé à sa place, même après le délai", () =>
+    erProgram.methods.expireHiloRound(seed()).accountsPartial(hiloAccounts()).transaction(), /WrongState|6005/);
+  await rejectsInRollup("expire_round refusé sur une manche de hilo", () =>
+    erProgram.methods.expireRound(seed()).accountsPartial(playAccounts()).transaction(), /WrongState|6005/);
+  while (isPlayerTurn(h.round)) {
+    const prev = h;
+    const b = await fetchHilo();
+    if (b.nRight >= 1) {
+      h = await act("hilo encaissement", hiloCashoutTx(), (x) => x.rounds > prev.rounds);
+      break;
+    }
+    const guess = likelierGuess(rank(b.cards[b.nCards - 1])) === HILO_HIGHER ? "higher" : "lower";
+    h = await act("hilo carte après le délai", hiloGuessTx(guess)(),
+      (x) => !isAwaiting(x.round) && (x.round.requestId.gt(prev.round.requestId) || x.rounds > prev.rounds));
+  }
+  check("le joueur reprend son plateau hilo quand il veut", isIdle(h.round));
+
+  console.log("\n--- 5e. Tower (gains recalculés depuis les étages) ---");
+  const towerClimbTx = (tile: number) => () => erProgram.methods.towerClimb(tile, seed()).accountsPartial(towerAccounts()).transaction();
+  const towerCashoutTx = () => erProgram.methods.towerCashout().accountsPartial(towerAccounts()).transaction();
+  const towerBoardAccounts = { vault, payer: relayer.publicKey, player: player.publicKey, ledger, board: towerBoard };
+  await time("plateau tower ouvert et délégué (Solana)", async () =>
+    relayerProvider.sendAndConfirm(new Transaction().add(
+      await program.methods.openTowerBoard().accountsPartial(towerBoardAccounts).instruction(),
+      await program.methods.delegateTowerBoard().accountsPartial(towerBoardAccounts).instruction(),
+    )));
+  await time("plateau tower visible dans le rollup", () => until(() => fetchTower(), "tower board in rollup"));
+  await rejectsInRollup("ascension sans manche refusée", towerClimbTx(0), /WrongState|6005/);
+  let towerBusts = 0;
+  let towerCashOuts = 0;
+  const difficulties = Object.keys(TOWER);
+  for (let i = 0; i < 10 || towerBusts === 0 || towerCashOuts === 0; i++) {
+    if (i >= 40) throw new Error("tower : pas de perte ou pas d'encaissement en 40 manches");
+    const b = await playTower(usdc(1), difficulties[i % difficulties.length], 1 + (i % 3), roundGain);
+    if (b.busted !== NO_TILE) towerBusts++;
+    else towerCashOuts++;
+  }
+  check("manches de tower payées selon les étages (mauvaise case, encaissement)", true, `(${towerBusts} pertes, ${towerCashOuts} encaissements)`);
+
+  let t = await act("mise tower", erProgram.methods.towerBet(new BN(usdc(1)), { hard: {} }).accountsPartial(towerAccounts()).transaction(), (x) => isPlayerTurn(x.round));
+  check("mise tower sans tirage : le plateau attend le joueur", (await fetchTower()).level === 0);
+  await rejectsInRollup("encaissement sans étage refusé", towerCashoutTx, /WrongState|6005/);
+  await rejectsInRollup("case hors de l'étage refusée (difficile : 2 cases)", towerClimbTx(2), /InvalidChoice|6022/);
+  await rejectsInRollup("coup de mines sur une manche de tower refusé", () =>
+    erProgram.methods.minesReveal(0, seed()).accountsPartial(minesAccounts()).transaction(), /WrongState|6005/);
+  await rejectsInRollup("expire_round refusé sur une manche de tower", () =>
+    erProgram.methods.expireRound(seed()).accountsPartial(playAccounts()).transaction(), /WrongState|RoundNotExpired|6005|6011/);
+  while (isPlayerTurn(t.round)) {
+    const prev = t;
+    if ((await fetchTower()).level >= 1) {
+      t = await act("tower encaissement", towerCashoutTx(), (x) => x.rounds > prev.rounds);
+      break;
+    }
+    t = await act("tower case", towerClimbTx(1)(), (x) => !isAwaiting(x.round) && (x.round.requestId.gt(prev.round.requestId) || x.rounds > prev.rounds));
+  }
+  check("manche de tower finie par le joueur", isIdle(t.round));
+
+  // Hard with a 2 USDC round limit: 3 USDC gross at most, reached on the 2nd level (3.92x).
+  await setConfig({ maxRoundGain: new BN(capGain) });
+  let towerCapped = false;
+  for (let i = 0; i < 30 && !towerCapped; i++) {
+    const b = await playTower(usdc(1), "hard", TOWER_LEVELS, capGain);
+    towerCapped = b.busted === NO_TILE;
+    if (towerCapped) check("tower : plafond atteint, encaissement automatique à mise + gain max", b.level === 2 && (await fetchAccount()).round.payout.eq(new BN(usdc(3) - feeOn(usdc(1), usdc(3)))));
+  }
+  if (!towerCapped) check("tower : plafond atteint en 30 manches", false);
   await setConfig();
 
   console.log("\n--- 6. Dépôt pendant que le compte est dans le rollup ---");

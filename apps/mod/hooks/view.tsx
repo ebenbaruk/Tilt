@@ -6,6 +6,7 @@ import { blackjackOutcome, blackjackSummary, blackjackTable, handColumns, STILL,
 import { type Card } from "./protocol";
 import { type CardSize, handCards, handRow, LARGE_CARD_ROWS } from "./cards";
 import {
+  cardFace,
   cardsInline,
   cleanText,
   formatCountdown,
@@ -13,23 +14,51 @@ import {
   formatSigned,
   formatUsdc,
   rouletteBetLabel,
+  scaledDecimal,
   SEPARATOR,
 } from "./format";
-import { baccaratTable, rouletteChip, ROULETTE_SPIN_MS, rouletteTable, SLOTS_SPIN_MS, slotsTable } from "./games";
+import { hiloRight, hiloTable, towerTable } from "./climb";
+import { diceTable, flipTable, kenoTable, limboTable, rollText, wheelTable } from "./quick";
+import {
+  baccaratTable,
+  minesTable,
+  rouletteChip,
+  ROULETTE_SPIN_MS,
+  rouletteTable,
+  SLOTS_SPIN_MS,
+  slotsTable,
+  type TileButton,
+} from "./games";
 import {
   activeGame,
   clampHands,
+  clampMines,
   type Command,
   currentBet,
   GAME_LABELS,
   heldKeys,
   type KeyAction,
+  MINES_TILE_KEY,
   planKeys,
   type PlanInput,
+  STEPPER_NAMES,
+  tileLetter,
+  TOWER_TILE_KEY,
 } from "./keys";
 import type { TiltKey, TiltSession } from "../types";
 import type { AgentView, AuthView, IntentView, Prefs, RemoteView, SlotsSpeed } from "./model";
-import type { Game, RoundView, SponsorView, StateResponse } from "./protocol";
+import type {
+  DiceView,
+  FlipView,
+  Game,
+  HiloView,
+  KenoView,
+  MinesView,
+  RoundView,
+  SponsorView,
+  StateResponse,
+  TowerView,
+} from "./protocol";
 import { FG1, FG4, FG6, GOLD, GREEN, INK, LINE3, LINE4, PINK, PINK_RULE, RED, toneOf, type Ui } from "./theme";
 
 export interface Snapshot {
@@ -96,7 +125,11 @@ const LEADERBOARD_TOP = 3;
 const BIG_WIN_MULTIPLE = 2n;
 const HANDS_MAX = 6;
 /** The steppers' keys: drawn as `◂ value ▸` rather than as two words on the key line. */
-const STEP_KEYS = new Set(["bet-down", "bet-up", "hands-down", "hands-up"]);
+const STEP_KEYS = new Set(
+  ["bet", ...Object.keys(STEPPER_NAMES)].flatMap((address) => [`${address}-down`, `${address}-up`]),
+);
+/** Where playButtons draws the echo of a settled move's key. */
+const ECHO_PREFIX = "echo-";
 
 export const spinnerGlyph = (frame: number): string => SPINNER[frame % SPINNER.length] ?? "⠋";
 
@@ -141,8 +174,17 @@ interface PlayButton {
   isMove: boolean;
 }
 
-/** Moves: the round's own keys (deal or spin, hit, stand, double, split); the rest set up the next one. */
-const isMoveKey = (key: string): boolean => key === "start" || key.startsWith("bj-");
+/** Moves: the round's own keys (deal or spin, hit, stand, double, split, guess, cash out); the rest set up the next one. */
+const isMoveKey = (key: string): boolean =>
+  key === "start" || key.startsWith("bj-") || key.startsWith("hilo-") || key.endsWith("-cashout");
+
+/** The Mines or tower tile a play key presses, live, held or echoed; null for any other key. */
+function tileOf(key: string): number | null {
+  const address = key.startsWith(ECHO_PREFIX) ? key.slice(ECHO_PREFIX.length) : key;
+  const prefix = [MINES_TILE_KEY, TOWER_TILE_KEY].find((start) => address.startsWith(start));
+
+  return prefix === undefined ? null : Number(address.slice(prefix.length));
+}
 
 /**
  * The play keys (no game switches) to draw: the live ones, or else the ones a move in flight
@@ -171,7 +213,7 @@ function playButtons(
     ...inertButtons(ui, faded, "echo").map((element, index) => {
       const key = faded[index]?.key ?? "";
 
-      return { key: `echo-${key}`, element, isMove: isMoveKey(key) };
+      return { key: `${ECHO_PREFIX}${key}`, element, isMove: isMoveKey(key) };
     }),
   ];
 }
@@ -285,7 +327,98 @@ function outcomeText(round: RoundView): string {
       return `Player ${round.detail.playerPoints} · banker ${round.detail.bankerPoints}.`;
     case "slots":
       return "";
+    case "mines":
+      return minesOutcome(round.detail);
+    case "dice":
+      return diceOutcome(round.detail, round.net);
+    case "limbo": {
+      const { result, target } = round.detail;
+
+      return result === null ? "" : `×${result} ${BigInt(round.net) > 0n ? "reaches" : "falls short of"} ×${target}.`;
+    }
+    case "flip":
+      return flipOutcome(round.detail);
+    case "keno":
+      return kenoOutcome(round.detail);
+    case "wheel": {
+      const { segment, multipliers } = round.detail;
+
+      return segment === null ? "" : `Landed on ×${multipliers[segment] ?? "0.00"}.`;
+    }
+    case "hilo":
+      return hiloOutcome(round.detail);
+    case "tower":
+      return towerOutcome(round.detail);
   }
+}
+
+/** "Mine on c after 2 safe tiles.", or "Cashed out at ×1.2375 after 2 safe tiles." */
+function minesOutcome(detail: MinesView): string {
+  const safe = detail.revealed.length;
+  const after = safe === 0 ? "" : ` after ${safe} safe ${safe === 1 ? "tile" : "tiles"}`;
+
+  return detail.busted === null
+    ? `Cashed out at ×${detail.multiplier}${after}.`
+    : `Mine on ${tileLetter(detail.busted)}${after}.`;
+}
+
+/** "Rolled 37.42: under 49.00 wins." */
+function diceOutcome(detail: DiceView, net: string): string {
+  if (detail.roll === null) {
+    return "";
+  }
+
+  const bet = `${detail.over ? "over" : "under"} ${rollText(detail.target)}`;
+
+  return `Rolled ${rollText(detail.roll)}: ${bet} ${BigInt(net) > 0n ? "wins" : "loses"}.`;
+}
+
+/** "3 heads in a row.", or "Tails on coin 2 of 3." */
+function flipOutcome(detail: FlipView): string {
+  const results = detail.results ?? [];
+  const miss = results.findIndex((side) => side !== detail.side);
+  const side = (name: string) => `${name.charAt(0).toUpperCase()}${name.slice(1)}`;
+
+  if (results.length === 0) {
+    return "";
+  }
+
+  if (miss >= 0) {
+    return `${side(results[miss] ?? "")} on coin ${miss + 1} of ${results.length}.`;
+  }
+
+  return results.length === 1 ? `${side(detail.side)}.` : `${results.length} ${detail.side} in a row.`;
+}
+
+/** "4 hits of 5 picks." */
+function kenoOutcome(detail: KenoView): string {
+  const picks = detail.picks.length;
+
+  return detail.hits === null
+    ? ""
+    : `${detail.hits} ${detail.hits === 1 ? "hit" : "hits"} of ${picks} ${picks === 1 ? "pick" : "picks"}.`;
+}
+
+/** "Wrong guess after 3 right.", or "Cashed out at ×2.1123 after 3 right guesses." */
+function hiloOutcome(detail: HiloView): string {
+  const right = hiloRight(detail);
+
+  return detail.busted
+    ? `Wrong guess after ${right} right.`
+    : `Cashed out at ×${detail.multiplier} after ${right} right ${right === 1 ? "guess" : "guesses"}.`;
+}
+
+/** "Fell on level 4.", "Cashed out at ×1.7422 on level 2.", or "Reached the top at ×12.9933." */
+function towerOutcome(detail: TowerView): string {
+  const level = detail.climbed.length;
+
+  if (detail.busted !== null) {
+    return `Fell on level ${level + 1}.`;
+  }
+
+  return level === detail.levels
+    ? `Reached the top at ×${detail.multiplier}.`
+    : `Cashed out at ×${detail.multiplier} on level ${level}.`;
 }
 
 /** A settled round's sentence and net; `shownNet` is what a count-up has reached so far. */
@@ -309,7 +442,11 @@ export function outcomeLine(ui: Ui, round: RoundView | null, shownNet?: string):
   );
 }
 
-/** The active game's table; `fx` moves the blackjack cards and hands, `STILL` draws them at rest. */
+/**
+ * The active game's table; `fx` moves the blackjack cards and hands, `STILL` draws them at rest.
+ * `tileButton` is the Button a Mines or tower tile (or, on the fullscreen table, a Keno number) is
+ * pressed with, where this drawing has one.
+ */
 export function gameTable(
   ui: Ui,
   state: StateResponse,
@@ -317,6 +454,7 @@ export function gameTable(
   isWide: boolean,
   fx: TableFx,
   size: CardSize,
+  tileButton: TileButton,
 ): RenderElement {
   const game = activeGame(state, prefs);
   const round = roundOf(state, game);
@@ -330,6 +468,22 @@ export function gameTable(
       return baccaratTable(ui, round, prefs, size);
     case "slots":
       return slotsTable(ui, round, size, fx.spinElapsed);
+    case "mines":
+      return minesTable(ui, round, prefs, fx.frame, size, tileButton);
+    case "dice":
+      return diceTable(ui, round, prefs);
+    case "limbo":
+      return limboTable(ui, round, prefs);
+    case "flip":
+      return flipTable(ui, round, prefs);
+    case "keno":
+      return kenoTable(ui, round, prefs, tileButton);
+    case "wheel":
+      return wheelTable(ui, round, prefs);
+    case "hilo":
+      return hiloTable(ui, round, size);
+    case "tower":
+      return towerTable(ui, round, prefs, fx.frame, tileButton);
   }
 }
 
@@ -801,40 +955,69 @@ function stepper(ui: Ui, down: KeyAction, up: KeyAction, value: RenderElement, o
   );
 }
 
-/** The bet and, at blackjack, the hands, as steppers; null when their keys are not live. */
-function steppers(ui: Ui, state: StateResponse, prefs: Prefs, keys: readonly KeyAction[], onCommand: OnCommand) {
+/** What each stepper shows between its arrows, by its keys' address; the game's choices read from `prefs`. */
+function stepperValue(ui: Ui, address: string, state: StateResponse, prefs: Prefs): RenderElement | null {
   const { Text } = ui;
-  const find = (key: string) => keys.find((action) => action.key === key);
-  const [betDown, betUp, handsDown, handsUp] = ["bet-down", "bet-up", "hands-down", "hands-up"].map(find);
+  const chosen = (value: string, after = "", before = "") => (
+    <Text color={FG4}>
+      {before}
+      <Text color={PINK} bold>
+        {value}
+      </Text>
+      {after}
+    </Text>
+  );
   const hands = clampHands(prefs.hands);
-  const drawn: RenderElement[] = [];
+  const mines = clampMines(prefs.mines);
 
-  if (betDown !== undefined && betUp !== undefined) {
-    const bet = (
-      <Text color={FG4}>
-        bet{" "}
-        <Text color={GOLD} bold>
-          {formatUsdc(currentBet(state.limits, prefs.betIndex))}
+  switch (address) {
+    case "bet":
+      return (
+        <Text color={FG4}>
+          bet{" "}
+          <Text color={GOLD} bold>
+            {formatUsdc(currentBet(state.limits, prefs.betIndex))}
+          </Text>
         </Text>
-      </Text>
-    );
-
-    drawn.push(stepper(ui, betDown, betUp, bet, onCommand));
+      );
+    case "hands":
+      return (
+        <Text color={FG4}>
+          <Text color={PINK}>{"●".repeat(hands)}</Text>
+          <Text color={LINE4}>{"○".repeat(HANDS_MAX - hands)}</Text>
+          {` ${hands} ${hands === 1 ? "hand" : "hands"}`}
+        </Text>
+      );
+    case "mines":
+      return chosen(String(mines), ` ${mines === 1 ? "mine" : "mines"}`);
+    case "dice":
+      return chosen(`${scaledDecimal(BigInt(prefs.diceChance), 2)}%`, "", "win chance ");
+    case "limbo":
+      return chosen(`×${scaledDecimal(BigInt(prefs.limboTarget), 2)}`, "", "target ");
+    case "flips":
+      return chosen(String(prefs.flips), ` ${prefs.flips === 1 ? "coin" : "coins"}`);
+    case "keno":
+      return chosen(String(prefs.kenoPicks.length), ` ${prefs.kenoPicks.length === 1 ? "pick" : "picks"}`);
+    case "wheel":
+      return chosen(String(prefs.wheelSegments), " segments");
+    case "tower":
+      return chosen(prefs.towerDifficulty);
+    default:
+      return null;
   }
+}
 
-  if (handsDown !== undefined && handsUp !== undefined) {
-    const pips = (
-      <Text color={FG4}>
-        <Text color={PINK}>{"●".repeat(hands)}</Text>
-        <Text color={LINE4}>{"○".repeat(HANDS_MAX - hands)}</Text>
-        {` ${hands} ${hands === 1 ? "hand" : "hands"}`}
-      </Text>
-    );
+/** The bet and the game's own choice (hands, mines, dice chance…) as steppers; none when their keys are not live. */
+function steppers(ui: Ui, state: StateResponse, prefs: Prefs, keys: readonly KeyAction[], onCommand: OnCommand) {
+  const find = (key: string) => keys.find((action) => action.key === key);
 
-    drawn.push(stepper(ui, handsDown, handsUp, pips, onCommand));
-  }
+  return ["bet", ...Object.keys(STEPPER_NAMES)].flatMap((address) => {
+    const down = find(`${address}-down`);
+    const up = find(`${address}-up`);
+    const value = stepperValue(ui, address, state, prefs);
 
-  return drawn;
+    return down === undefined || up === undefined || value === null ? [] : [stepper(ui, down, up, value, onCommand)];
+  });
 }
 
 /** The play keys: the moves as keycaps, the steppers, then the rest (roulette and baccarat picks) on a line. */
@@ -977,6 +1160,25 @@ function tableRows(
       return 5;
     case "slots":
       return size === "large" ? 5 : 3;
+    case "mines":
+      // Five rows of tiles, a blank row between them with large cards.
+      return size === "large" ? 9 : 5;
+    case "dice":
+      return 4;
+    case "limbo":
+      return 3;
+    case "flip":
+      return 3;
+    case "keno":
+      // Five rows of numbers, a line of what each hit count pays.
+      return 7;
+    case "wheel":
+      return 5;
+    case "hilo":
+      // The cards and their trail beside the multipliers, skips and cash-out.
+      return Math.max((size === "large" ? cardRows : 1) + 1, 6);
+    case "tower":
+      return 9;
     default:
       return 0;
   }
@@ -1054,9 +1256,32 @@ export function renderPane(
   // first, so the ones to press are always in view and the table scrolls instead.
   const isKeysFirst = paneRows(snap, state, layout, size) > layout.bodyRows;
   const plays = playButtons(ui, { state, prefs: snap.prefs, isBusy: snap.intent !== null }, keys, snap.echo, onCommand);
+  const dealing = dealingHands(snap);
+  // Drawn here, the Mines board and the tower are their own keys: each hidden tile is the Button of
+  // its key, live or held, and the key line leaves those out. A key of a tile shown since stays on the line.
+  const board = roundOf(state, game)?.detail;
+  const shownTiles = new Set(
+    board?.game === "mines"
+      ? [...board.revealed, board.pending, board.busted]
+      : board?.game === "tower"
+        ? [board.pending, board.busted]
+        : [],
+  );
+  const tileElements = new Map<number, RenderElement>();
+  const hasBoard = game === "mines" || game === "tower";
+  const linePlays = plays.filter((button) => {
+    const tile = tileOf(button.key);
+
+    if (table !== null || dealing !== null || !hasBoard || tile === null || shownTiles.has(tile)) {
+      return true;
+    }
+
+    tileElements.set(tile, button.element);
+
+    return false;
+  });
   const steps = steppers(ui, state, snap.prefs, keys, onCommand);
   const side = state.sponsor !== null || state.leaderboard.length > 0;
-  const dealing = dealingHands(snap);
   const canPlay = state.accountOpen && state.blocked === null;
   const shownTable =
     dealing !== null
@@ -1067,15 +1292,16 @@ export function renderPane(
             state,
             snap.prefs,
             isWide,
-            { ...STILL, spinElapsed: snap.spinElapsed, revealed: snap.revealed },
+            { ...STILL, spinElapsed: snap.spinElapsed, revealed: snap.revealed, frame: snap.agent.frame },
             size,
+            (tile) => tileElements.get(tile) ?? null,
           )
         : table(size, gameColumns(layout));
   const gameColumn = (
     <Box flexDirection="column" flexGrow={1} marginTop={snap.agent.notice !== null || snap.agent.isWorking ? 1 : 0}>
       {!snap.isOnboarded && canPlay && firstHandGuide(ui, layout.isFocused)}
       {state.blocked !== null && <Text color={RED}>{`Play paused · ${cleanText(state.blocked)}`}</Text>}
-      {isKeysFirst && plays.length > 0 && <Box marginBottom={1}>{keyArea(ui, plays, false, steps)}</Box>}
+      {isKeysFirst && linePlays.length > 0 && <Box marginBottom={1}>{keyArea(ui, linePlays, false, steps)}</Box>}
       {shownTable}
       {table === null && celebration(ui, roundOf(state, game), snap.celebrating, gameColumns(layout) - 1)}
       {/* The result waits for the wheel, the reels or the last card: the text must not tell it first. */}
@@ -1087,7 +1313,7 @@ export function renderPane(
       {dealing === null && snap.spinElapsed === null && snap.revealed === null && winBanner(ui, state, onCommand)}
       {statusLine(ui, snap, state)}
       {lowBalanceLine(ui, snap, state)}
-      {!isKeysFirst && plays.length > 0 && keyArea(ui, plays, size === "large", steps)}
+      {!isKeysFirst && linePlays.length > 0 && keyArea(ui, linePlays, size === "large", steps)}
     </Box>
   );
   const foot = (
@@ -1149,6 +1375,35 @@ export function handSummary(state: StateResponse, prefs: Prefs): string {
       return `${label} · ${detail.bet} · ${cardsInline(detail.player)} vs ${cardsInline(detail.banker)}${net}`;
     case "slots":
       return `${label}${detail.reels === null ? "" : ` · ${detail.reels.map(cleanText).join(" ")}`}${net}`;
+    case "mines":
+      return `${label} · ${detail.mines} ${detail.mines === 1 ? "mine" : "mines"} · ${detail.revealed.length} safe · ×${detail.multiplier}${net}`;
+    case "dice": {
+      const roll = detail.roll === null ? "" : ` · roll ${rollText(detail.roll)}`;
+
+      return `${label} · ${detail.over ? "over" : "under"} ${rollText(detail.target)}${roll}${net}`;
+    }
+    case "limbo":
+      return `${label} · target ×${detail.target}${detail.result === null ? "" : ` · ×${detail.result}`}${net}`;
+    case "flip": {
+      const coins =
+        detail.results === null ? "" : ` · ${detail.results.map((side) => (side === "heads" ? "H" : "T")).join(" ")}`;
+
+      return `${label} · ${detail.flips} × ${detail.side}${coins}${net}`;
+    }
+    case "keno":
+      return `${label} · ${detail.picks.length} picks${detail.hits === null ? "" : ` · ${detail.hits} hits`}${net}`;
+    case "wheel": {
+      const landed = detail.segment === null ? "" : ` · ×${detail.multipliers[detail.segment] ?? "0.00"}`;
+
+      return `${label} · ${detail.segments} ${detail.risk}${landed}${net}`;
+    }
+    case "hilo": {
+      const current = detail.cards[detail.cards.length - 1];
+
+      return `${label}${current === undefined ? "" : ` · ${cardFace(current)}`} · ×${detail.multiplier}${net}`;
+    }
+    case "tower":
+      return `${label} · ${detail.difficulty} · level ${detail.climbed.length} · ×${detail.multiplier}${net}`;
   }
 }
 

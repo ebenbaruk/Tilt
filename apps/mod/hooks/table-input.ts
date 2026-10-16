@@ -61,15 +61,21 @@ export function isTablePost(data: unknown): data is TablePost {
 const ARROWS: Record<string, string> = {
   left: "bet-down",
   right: "bet-up",
-  up: "hands-up",
-  down: "hands-down",
 };
+
+/** The game's own stepper among the keys (`hands`, `mines`, `dice`…): what ↑ and ↓ step; null when none. */
+export function stepperOf(keys: readonly TableKey[]): string | null {
+  const up = keys.find((key) => key.key.endsWith("-up") && key.key !== "bet-up");
+
+  return up === undefined ? null : up.key.slice(0, -"-up".length);
+}
 
 /**
  * The plan key a raw key presses at the table, or null. Space and Enter play: a new round with the
- * same bet and hands, or in a blackjack turn Space hits and Enter stands. The arrows step the bet
- * and the hands; any other character is the plan's own hotkey (`d` doubles, `p` splits, `1`–`4`
- * switch game).
+ * same bet and choices, or in a blackjack turn Space hits and Enter stands. The arrows step the bet
+ * and the game's choice (hands, mines, dice chance…); any other character is the plan's own hotkey
+ * (`d` doubles, `p` splits, `a`–`y` reveal a Mines tile, `0`–`9` switch game). Click-only keys
+ * (no hotkey) are never pressed by a key.
  */
 export function pressFor(event: ClientKeyEvent, keys: readonly TableKey[]): string | null {
   if (event.ctrl === true || event.meta === true) {
@@ -78,13 +84,17 @@ export function pressFor(event: ClientKeyEvent, keys: readonly TableKey[]): stri
 
   const has = (address: string) => keys.some((key) => key.key === address);
   const isTurn = has("bj-stand");
+  const stepper = stepperOf(keys);
+  const typed = event.key.toLowerCase();
   const named: Record<string, string | undefined> = {
     ...ARROWS,
+    up: stepper === null ? undefined : `${stepper}-up`,
+    down: stepper === null ? undefined : `${stepper}-down`,
     space: isTurn ? "bj-hit" : "start",
     " ": isTurn ? "bj-hit" : "start",
     return: isTurn ? "bj-stand" : "start",
   };
-  const address = named[event.key] ?? keys.find((key) => key.hotkey === event.key.toLowerCase())?.key ?? null;
+  const address = named[event.key] ?? keys.find((key) => key.hotkey !== "" && key.hotkey === typed)?.key ?? null;
 
   return address !== null && has(address) ? address : null;
 }

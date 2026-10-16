@@ -1,7 +1,7 @@
 import { CardBuddy } from "./Illustrations";
 import styles from "./Badge.module.css";
 
-const RING = "FOR CLAUDE CODE  ·  BLACKJACK  ·  ROULETTE  ·  BACCARAT  ·  SLOTS  ·  ";
+const RING = "FOR CLAUDE CODE  ·  TWELVE GAMES  ·  USDC ON SOLANA  ·  PROVABLY FAIR  ·  ";
 
 /** Round sticker: the mascot inside a slowly turning ring of text. Decorative. */
 export function Badge({ className }: { className?: string }) {

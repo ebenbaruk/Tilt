@@ -5,6 +5,14 @@ pub const LEDGER_SEED: &[u8] = b"ledger";
 /// The blackjack table. `b"table"` held the 6-hand layout; delegated accounts cannot be
 /// resized, so the 10-hand table lives under a new seed and the old ones are abandoned.
 pub const TABLE_SEED: &[u8] = b"bjtable";
+/// The player's Mines board.
+pub const MINES_SEED: &[u8] = b"mines";
+/// The player's last one-draw round (Dice, Limbo, Flip, Keno, Wheel).
+pub const QUICK_SEED: &[u8] = b"quick";
+/// The player's Hilo board.
+pub const HILO_SEED: &[u8] = b"hilo";
+/// The player's Tower board.
+pub const TOWER_SEED: &[u8] = b"tower";
 pub const PROMO_SEED: &[u8] = b"promo";
 pub const PROMO_TOKEN_SEED: &[u8] = b"promo_token";
 pub const PAYOUT_SEED: &[u8] = b"payout";

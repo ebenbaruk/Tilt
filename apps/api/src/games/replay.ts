@@ -7,18 +7,39 @@
 //   active hand, or the dealer's turn after the last stand. A stand that leaves a hand to play
 //   takes no draw, so every sequence of moves the draws allow is tried, for every number of
 //   dealt hands (the snapshot, when there is one, fixes them and prunes everything else);
-// - roulette / baccarat: the bet comes from the snapshot; without one, every bet is tried.
+// - roulette / baccarat: the bet comes from the snapshot; without one, every bet is tried;
+// - mines: each draw is one reveal, in order; whether a tile is a mine depends only on how many
+//   tiles were revealed before it, never on which one. The snapshot (the board) gives the mine
+//   count, the tiles and the round's cap; without one, every mine count is tried with the
+//   board's own cap (the vault's max_round_gain is unknown here), on tiles 0, 1, 2… A cash-out
+//   takes no draw: the last draw is then the last safe reveal;
+// - dice / limbo / flip / keno / wheel: one draw; the choice comes from the snapshot. Without
+//   one, every choice that can reproduce the payout is tried (keno: the picks are unknown, only
+//   how many and how many hit matter, so drawn numbers stand for the hits and others for the misses);
+// - hilo: the first draw is the first card, then one per guess, in order. The snapshot (the
+//   board) gives the guesses and the cap; without one, every sequence of guesses the cards allow
+//   is tried, uncapped (the vault's max_round_gain is unknown here);
+// - tower: like mines, one draw per climb; the snapshot gives the difficulty, tiles and cap.
+//   Cash-outs of hilo and tower take no draw either.
 // A round "matches" when a replay reproduces the program's payout and fee (and the snapshot,
 // when there is one).
-import type { BaccaratBet, Game, RouletteBet } from "@tilt/mod/protocol";
+import type { BaccaratBet, FlipSide, Game, HiloGuess, RouletteBet, TowerDifficulty } from "@tilt/mod/protocol";
 import { isDeepStrictEqual } from "node:util";
 import * as baccarat from "./baccarat";
 import * as blackjack from "./blackjack";
+import * as dice from "./dice";
+import * as flip from "./flip";
+import * as hilo from "./hilo";
+import * as keno from "./keno";
+import * as limbo from "./limbo";
+import * as mines from "./mines";
 import * as roulette from "./roulette";
 import type { Outcome } from "./round";
 import { Rng } from "./rng";
 import { settle, type Settlement } from "./settlement";
 import * as slots from "./slots";
+import * as tower from "./tower";
+import * as wheel from "./wheel";
 
 export interface ReplayInput {
   game: Game;
@@ -168,6 +189,212 @@ function slotsCandidates(randomness: Uint8Array, stake: bigint): Candidate[] {
   return [{ outcome: { game: "slots", reels }, gross: slots.gross(reels, stake), possible: true }];
 }
 
+type MinesOutcome = Extract<Outcome, { game: "mines" }>;
+
+/** Plays the reveals of a board with `count` mines; impossible when a draw comes after the
+ *  round ended (bust, cleared board or cap reached). */
+function minesCandidate(draws: Uint8Array[], stake: bigint, count: number, snapshot: MinesOutcome | null): Candidate {
+  const gain = snapshot ? BigInt(snapshot.maxGain) : mines.boardGain(stake, count);
+  let revealed = 0;
+  let busted = false;
+  let possible = true;
+  for (const randomness of draws) {
+    if (busted || !mines.canRevealMore(stake, count, revealed, gain)) possible = false;
+    if (mines.isMine(Rng.fromVrf(randomness), count, revealed)) busted = true;
+    else revealed++;
+  }
+  // Tiles never change the outcome: the snapshot's when it has as many, else 0, 1, 2…
+  const tiles = snapshot?.order.length === revealed ? snapshot.order : Array.from({ length: revealed }, (_, i) => i);
+  const outcome: MinesOutcome = {
+    game: "mines",
+    mines: count,
+    order: tiles,
+    pending: null,
+    busted: busted ? (snapshot?.busted ?? revealed) : null,
+    maxGain: gain.toString(),
+  };
+  return { outcome, gross: busted ? 0n : mines.gross(stake, count, revealed, gain), possible };
+}
+
+function minesCandidates(draws: Uint8Array[], stake: bigint, snapshot: Outcome | null): Candidate[] {
+  const snap = snapshot?.game === "mines" ? snapshot : null;
+  if (snap) return [minesCandidate(draws, stake, snap.mines, snap)];
+  return Array.from({ length: mines.MAX_MINES }, (_, i) => minesCandidate(draws, stake, i + mines.MIN_MINES, null));
+}
+
+function diceCandidates(randomness: Uint8Array, stake: bigint, snapshot: Outcome | null): Candidate[] {
+  const roll = dice.roll(Rng.fromVrf(randomness));
+  const choices =
+    snapshot?.game === "dice"
+      ? [{ target: snapshot.target, over: snapshot.over }]
+      : [false, true].flatMap((over) =>
+          Array.from({ length: dice.ROLLS }, (_, target) => ({ target, over })).filter((c) =>
+            dice.isValidTarget(c.target, c.over),
+          ),
+        );
+  return choices.map(({ target, over }) => {
+    const possible = dice.isValidTarget(target, over);
+    return {
+      outcome: { game: "dice", target, over, roll },
+      gross: possible ? dice.gross(stake, target, over, roll) : 0n,
+      possible,
+    };
+  });
+}
+
+/** Without a snapshot: a target just above the result (a loss), or the one whose payout is the
+ *  program's (a win). */
+function limboCandidates(randomness: Uint8Array, input: ReplayInput): Candidate[] {
+  const result = limbo.result(Rng.fromVrf(randomness));
+  const { stake, snapshot } = input;
+  const gross = input.onChain.payout + input.onChain.fee;
+  // The smallest target whose win pays `gross`.
+  const won = stake > 0n ? Number((gross * 100n + stake - 1n) / stake) : limbo.MIN_TARGET;
+  const targets = snapshot?.game === "limbo" ? [snapshot.target] : [result + 1, won, limbo.MIN_TARGET];
+  return targets.map((target) => {
+    const possible = limbo.isValidTarget(target);
+    return {
+      outcome: { game: "limbo", target, result },
+      gross: possible ? limbo.gross(stake, target, result) : 0n,
+      possible,
+    };
+  });
+}
+
+function flipCandidates(randomness: Uint8Array, stake: bigint, snapshot: Outcome | null): Candidate[] {
+  const choices =
+    snapshot?.game === "flip"
+      ? [{ side: snapshot.side, flips: snapshot.flips }]
+      : flip.SIDES.flatMap((side: FlipSide) =>
+          Array.from({ length: flip.MAX_FLIPS }, (_, i) => ({ side, flips: i + flip.MIN_FLIPS })),
+        );
+  return choices.map(({ side, flips }) => {
+    const possible = Number.isInteger(flips) && flips >= flip.MIN_FLIPS && flips <= flip.MAX_FLIPS;
+    const results = possible ? flip.toss(Rng.fromVrf(randomness), flips) : [];
+    return { outcome: { game: "flip", side, flips, results }, gross: flip.gross(stake, side, results), possible };
+  });
+}
+
+function kenoCandidates(randomness: Uint8Array, stake: bigint, snapshot: Outcome | null): Candidate[] {
+  const drawn = keno.draw(Rng.fromVrf(randomness));
+  if (snapshot?.game === "keno") {
+    const { picks } = snapshot;
+    const possible = keno.isValid(picks);
+    const gross = possible ? keno.gross(stake, picks.length, keno.hits(picks, drawn)) : 0n;
+    return [{ outcome: { game: "keno", picks, drawn }, gross, possible }];
+  }
+  const missed = Array.from({ length: keno.NUMBERS }, (_, i) => i + 1).filter((n) => !drawn.includes(n));
+  return Array.from({ length: keno.MAX_PICKS }, (_, i) => i + 1).flatMap((n) =>
+    Array.from({ length: n + 1 }, (_, hits) => {
+      const picks = [...drawn.slice(0, hits), ...missed.slice(0, n - hits)];
+      return { outcome: { game: "keno", picks, drawn }, gross: keno.gross(stake, n, hits), possible: true };
+    }),
+  );
+}
+
+function wheelCandidates(randomness: Uint8Array, stake: bigint, snapshot: Outcome | null): Candidate[] {
+  const choices =
+    snapshot?.game === "wheel"
+      ? [{ risk: snapshot.risk, segments: snapshot.segments }]
+      : wheel.RISKS.flatMap((risk) => wheel.SEGMENTS.map((segments) => ({ risk, segments })));
+  return choices.map(({ risk, segments }) => {
+    const possible = wheel.isValid(segments);
+    const segment = possible ? wheel.spin(Rng.fromVrf(randomness), segments) : 0;
+    return {
+      outcome: { game: "wheel", segments, risk, segment },
+      gross: possible ? wheel.gross(stake, risk, segments, segment) : 0n,
+      possible,
+    };
+  });
+}
+
+type HiloOutcome = Extract<Outcome, { game: "hilo" }>;
+
+/** Bounds the search of a hilo round without snapshot. */
+const MAX_HILO_STATES = 100_000;
+/** No cap known without a snapshot: the largest gain a u64 can hold. */
+const UNCAPPED = (1n << 64n) - 1n;
+
+/** Plays `guesses` on the cards the draws give. A cash-out (the round did not end by itself)
+ *  needs a right guess. */
+function hiloCandidate(cards: number[], guesses: HiloGuess[], stake: bigint, gain: bigint): Candidate {
+  const played = guesses.length === cards.length - 1 ? hilo.play(stake, gain, cards, guesses) : null;
+  const gross = played ? (played.ended ?? hilo.gross(stake, played.fair, gain)) : 0n;
+  const outcome: HiloOutcome = {
+    game: "hilo",
+    cards,
+    guesses,
+    pending: null,
+    busted: played?.busted ?? false,
+    maxGain: gain.toString(),
+  };
+  return { outcome, gross, possible: played !== null && (played.ended !== null || played.right >= 1) };
+}
+
+function hiloCandidates(draws: Uint8Array[], stake: bigint, snapshot: Outcome | null): Candidate[] {
+  const cards = draws.map((d) => hilo.drawCard(Rng.fromVrf(d)));
+  if (snapshot?.game === "hilo") return [hiloCandidate(cards, snapshot.guesses, stake, BigInt(snapshot.maxGain))];
+  const candidates: Candidate[] = [];
+  const seen = new Set<string>();
+  /** Extends `guesses` (all leading to the round still in play) by one guess per remaining card. */
+  const explore = (guesses: HiloGuess[]): void => {
+    if (seen.size > MAX_HILO_STATES) return;
+    const played = hilo.play(stake, UNCAPPED, cards.slice(0, guesses.length + 1), guesses);
+    if (!played) return;
+    if (guesses.length === cards.length - 1) {
+      candidates.push(hiloCandidate(cards, guesses, stake, UNCAPPED));
+      return;
+    }
+    if (played.ended !== null) return;
+    // Guesses leading to the same fair multiplier and skips play on alike: try one of them.
+    const key = `${guesses.length}:${played.fair}:${played.skips}:${played.right > 0}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    for (const guess of hilo.GUESSES) explore([...guesses, guess]);
+  };
+  explore([]);
+  return candidates.length > 0 ? candidates : [hiloCandidate(cards, [], stake, UNCAPPED)];
+}
+
+type TowerOutcome = Extract<Outcome, { game: "tower" }>;
+
+/** Plays the climbs of a `difficulty` tower; impossible when a draw comes after the round
+ *  ended (bust, top or cap reached) or a cash-out comes before any level. */
+function towerCandidate(
+  draws: Uint8Array[],
+  stake: bigint,
+  difficulty: TowerDifficulty,
+  snapshot: TowerOutcome | null,
+): Candidate {
+  const gain = snapshot ? BigInt(snapshot.maxGain) : tower.maxGain(stake, difficulty, UNCAPPED);
+  let levels = 0;
+  let busted = false;
+  let possible = true;
+  for (const randomness of draws) {
+    if (busted || !tower.canClimbMore(stake, difficulty, levels, gain)) possible = false;
+    if (tower.isSafe(Rng.fromVrf(randomness), difficulty)) levels++;
+    else busted = true;
+  }
+  const ended = busted || !tower.canClimbMore(stake, difficulty, levels, gain);
+  if (!ended && levels === 0) possible = false;
+  // Tiles never change the outcome: the snapshot's when it has as many, else tile 0.
+  const climbed = snapshot?.climbed.length === levels ? snapshot.climbed : Array<number>(levels).fill(0);
+  const outcome: TowerOutcome = {
+    game: "tower",
+    difficulty,
+    climbed,
+    pending: null,
+    busted: busted ? (snapshot?.busted ?? 0) : null,
+    maxGain: gain.toString(),
+  };
+  return { outcome, gross: busted ? 0n : tower.gross(stake, difficulty, levels, gain), possible };
+}
+
+function towerCandidates(draws: Uint8Array[], stake: bigint, snapshot: Outcome | null): Candidate[] {
+  if (snapshot?.game === "tower") return [towerCandidate(draws, stake, snapshot.difficulty, snapshot)];
+  return tower.DIFFICULTY_NAMES.map((difficulty) => towerCandidate(draws, stake, difficulty, null));
+}
+
 export function replay(input: ReplayInput): ReplayResult {
   const last = input.draws.at(-1);
   if (!last) throw new Error("a settled round has at least one draw");
@@ -180,5 +407,21 @@ export function replay(input: ReplayInput): ReplayResult {
       return choose(baccaratCandidates(last, input.stake, input.snapshot), input);
     case "slots":
       return choose(slotsCandidates(last, input.stake), input);
+    case "mines":
+      return choose(minesCandidates(input.draws, input.stake, input.snapshot), input);
+    case "dice":
+      return choose(diceCandidates(last, input.stake, input.snapshot), input);
+    case "limbo":
+      return choose(limboCandidates(last, input), input);
+    case "flip":
+      return choose(flipCandidates(last, input.stake, input.snapshot), input);
+    case "keno":
+      return choose(kenoCandidates(last, input.stake, input.snapshot), input);
+    case "wheel":
+      return choose(wheelCandidates(last, input.stake, input.snapshot), input);
+    case "hilo":
+      return choose(hiloCandidates(input.draws, input.stake, input.snapshot), input);
+    case "tower":
+      return choose(towerCandidates(input.draws, input.stake, input.snapshot), input);
   }
 }

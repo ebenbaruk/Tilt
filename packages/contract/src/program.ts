@@ -21,6 +21,22 @@ export const playerAccountAddress = (player: PublicKey) => pda(Buffer.from("acco
  *  `table` accounts, which delegated accounts could not grow into. */
 export const tableAddress = (player: PublicKey) => pda(Buffer.from("bjtable"), player.toBuffer());
 
+/** A player's Mines board (bet, mines, tiles revealed in order, pending and busting tile of the
+ *  current or last round); lives in the rollup next to the player account. */
+export const minesBoardAddress = (player: PublicKey) => pda(Buffer.from("mines"), player.toBuffer());
+
+/** A player's last one-draw round (Dice, Limbo, Flip, Keno or Wheel: the choice, then its
+ *  outcome); lives in the rollup next to the player account. */
+export const quickTableAddress = (player: PublicKey) => pda(Buffer.from("quick"), player.toBuffer());
+
+/** A player's Hilo board (cards, guesses and multiplier of the current or last round); lives in
+ *  the rollup next to the player account. */
+export const hiloBoardAddress = (player: PublicKey) => pda(Buffer.from("hilo"), player.toBuffer());
+
+/** A player's Tower board (difficulty, tiles climbed, pending and busting tile of the current or
+ *  last round); lives in the rollup next to the player account. */
+export const towerBoardAddress = (player: PublicKey) => pda(Buffer.from("tower"), player.toBuffer());
+
 /** Solana's record of a player's deposits and paid withdrawals. */
 export const ledgerAddress = (player: PublicKey) => pda(Buffer.from("ledger"), player.toBuffer());
 

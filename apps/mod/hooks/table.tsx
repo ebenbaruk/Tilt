@@ -7,9 +7,9 @@ import type { ClientSurface, RenderElement } from "claude-code";
 
 import { cardCount, DEAL_STEP_MS } from "./blackjack";
 import { formatUsdc, SEPARATOR } from "./format";
-import { activeGame } from "./keys";
+import { activeGame, KENO_PICK_KEY, MINES_TILE_KEY, STEPPER_NAMES, TOWER_TILE_KEY } from "./keys";
 import type { RoundView } from "./protocol";
-import { pressFor, type TableKey, type TableProps } from "./table-input";
+import { pressFor, stepperOf, type TableKey, type TableProps } from "./table-input";
 import { applyTheme, FG4, FG6, GOLD, PINK, type Ui } from "./theme";
 import { celebration, celebrationMs, gameTable, outcomeLine, roundOf, spinMs, spinProgress } from "./view";
 
@@ -27,6 +27,8 @@ const WIN_FLASH = "#4a3b12";
 const LOSS_FLASH = "#4a1c1c";
 const PROGRESS_STEPS = 1000n;
 const STREAK_SHOWN_FROM = 2;
+/** A Mines tile awaiting its draw turns one step this often. */
+const PENDING_FRAME_MS = 120;
 
 type Outcome = "win" | "loss" | "push";
 
@@ -172,8 +174,11 @@ function spinElapsed(state: TableState, props: TableProps): number | null {
 }
 
 function isAnimating(state: TableState, props: TableProps): boolean {
-  const isDealing = state.revealed < state.cards || spinElapsed(state, props) !== null;
   const round = props.state.round;
+  // A Mines or tower tile being drawn turns until its draw lands.
+  const detail = round?.detail;
+  const isTileDrawing = (detail?.game === "mines" || detail?.game === "tower") && detail.pending !== null;
+  const isDealing = state.revealed < state.cards || spinElapsed(state, props) !== null || isTileDrawing;
   const effectMs = Math.max(COUNT_UP_MS + BALANCE_MS, round === null ? 0 : celebrationMs(round));
   const hasEffect = state.effect !== null && state.now < state.effect.at + effectMs;
   const canPulse = hasKey(props.keys, "bj-stand") || hasKey(props.keys, "start");
@@ -280,10 +285,20 @@ interface PromptView {
   isPulseOn: boolean;
 }
 
-function prompt(ui: Ui, keys: readonly TableKey[], view: PromptView): RenderElement | null {
+function prompt(
+  ui: Ui,
+  keys: readonly TableKey[],
+  view: PromptView,
+  post: (press: string) => void,
+): RenderElement | null {
   const { Text } = ui;
   const start = keys.find((key) => key.key === "start");
   const again = start !== undefined && view.isSettled ? "play again (same bet)" : "play";
+  const turn = turnPrompt(ui, keys, view.isFocused, post);
+
+  if (turn !== null) {
+    return turn;
+  }
 
   // Blocked, no account, a move settling: Space plays nothing, so the table does not invite it.
   if (start === undefined && !hasKey(keys, "bj-stand")) {
@@ -323,8 +338,14 @@ function prompt(ui: Ui, keys: readonly TableKey[], view: PromptView): RenderElem
     parts.push("←/→ bet");
   }
 
-  if (hasKey(keys, "hands-up")) {
-    parts.push("↑/↓ hands");
+  const stepper = stepperOf(keys);
+
+  if (stepper !== null) {
+    parts.push(`↑/↓ ${STEPPER_NAMES[stepper] ?? stepper}`);
+  }
+
+  if (keys.some((key) => key.key.startsWith(KENO_PICK_KEY))) {
+    parts.push("click a number to pick it");
   }
 
   if (start === undefined) {
@@ -339,6 +360,67 @@ function prompt(ui: Ui, keys: readonly TableKey[], view: PromptView): RenderElem
       {`${SEPARATOR}${start.label}`}
       {parts.length > 0 && `${SEPARATOR}${parts.join(SEPARATOR)}`}
     </Text>
+  );
+}
+
+/**
+ * A board waiting for the player (Mines, Tower, Hilo): a click on a tile reveals it or climbs onto
+ * it, a click on a guess or the cash-out plays it; once the table holds the keys, the letters do
+ * the same. Null when no such move is offered.
+ */
+function turnPrompt(
+  ui: Ui,
+  keys: readonly TableKey[],
+  isFocused: boolean,
+  post: (press: string) => void,
+): RenderElement | null {
+  const { Box, Button, Text } = ui;
+  const tiles = keys.filter((key) => key.key.startsWith(MINES_TILE_KEY) || key.key.startsWith(TOWER_TILE_KEY));
+  const moves = keys.filter((key) => key.key.startsWith("hilo-") || key.key.endsWith("-cashout"));
+
+  if (tiles.length === 0 && moves.length === 0) {
+    return null;
+  }
+
+  const verb = tiles.some((key) => key.key.startsWith(TOWER_TILE_KEY)) ? "climb" : "reveal";
+  const letters = `${tiles[0]?.hotkey ?? ""}–${tiles[tiles.length - 1]?.hotkey ?? ""}`;
+
+  return (
+    <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+      {tiles.length > 0 && (
+        <Text color={GOLD} bold>
+          {isFocused ? `${letters} ${verb}` : verb === "climb" ? "click a tile to climb" : "click a tile to reveal it"}
+        </Text>
+      )}
+      {moves.map((move) => (
+        <Button key={`table-${move.key}`} plain onPress={() => post(move.key)}>
+          <Text color={GOLD} bold>
+            {isFocused ? `${move.hotkey} ${move.label}` : move.label}
+          </Text>
+        </Button>
+      ))}
+    </Box>
+  );
+}
+
+const BOARD_KEYS = [MINES_TILE_KEY, TOWER_TILE_KEY, KENO_PICK_KEY];
+
+/** A tile the plan can play right now (or a Keno number it can pick), as a Button around its face: a click posts its key. */
+function tileButton(
+  ui: Ui,
+  keys: readonly TableKey[],
+  tile: number,
+  face: RenderElement,
+  post: (press: string) => void,
+) {
+  const { Button } = ui;
+  const addresses = BOARD_KEYS.map((prefix) => `${prefix}${tile}`);
+  const key = keys.find((action) => addresses.includes(action.key));
+
+  return key === undefined ? null : (
+    <Button key={`table-${key.key}`} plain onPress={() => post(key.key)}>
+      {face}
+    </Button>
   );
 }
 
@@ -375,20 +457,33 @@ export default function Table(props: TableProps, surface: ClientSurface<TableSta
     effect?.kind === "loss" && sinceEffect >= 0 ? (SHAKE_OFFSETS[Math.floor(sinceEffect / SHAKE_STEP_MS)] ?? 0) : 0;
   const round = roundOf(props.state, activeGame(props.state, props.prefs));
   const spinning = spinElapsed(state, props);
-  const fx = { revealed: state.revealed < state.cards ? state.revealed : null, isPulseOn, spinElapsed: spinning };
+  const fx = {
+    revealed: state.revealed < state.cards ? state.revealed : null,
+    isPulseOn,
+    spinElapsed: spinning,
+    frame: Math.floor(state.now / PENDING_FRAME_MS),
+  };
+  const post = (press: string) => surface.post({ press });
 
   return (
     <Box flexDirection="column" paddingLeft={shake}>
-      {gameTable(ui, props.state, props.prefs, props.isWide, fx, props.cards)}
+      {gameTable(ui, props.state, props.prefs, props.isWide, fx, props.cards, (tile, face) =>
+        tileButton(ui, props.keys, tile, face, post),
+      )}
       {celebration(ui, round, effect?.kind === "win" ? sinceEffect : null, props.columns - 1)}
       <Box flexDirection="column" marginTop={1}>
         {summary(ui, state, round, spinning !== null)}
         <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-          {prompt(ui, props.keys, {
-            isFocused: state.isFocused && props.isPaneFocused,
-            isSettled: round?.phase === "idle",
-            isPulseOn,
-          })}
+          {prompt(
+            ui,
+            props.keys,
+            {
+              isFocused: state.isFocused && props.isPaneFocused,
+              isSettled: round?.phase === "idle",
+              isPulseOn,
+            },
+            post,
+          )}
           {state.streak >= STREAK_SHOWN_FROM && (
             <Text color={GOLD} bold>
               {`${state.streak} wins in a row`}

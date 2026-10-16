@@ -4,6 +4,7 @@
 use anchor_lang::prelude::*;
 use ephemeral_rollups_sdk::anchor::{vrf, vrf_callback};
 use ephemeral_rollups_sdk::vrf::{
+    compat::Instruction,
     instructions::{create_request_scoped_randomness_ix, RequestRandomnessParams},
     types::SerializableAccountMeta,
 };
@@ -18,7 +19,7 @@ use crate::games::{
 };
 use crate::rng::Rng;
 use crate::settlement::settle;
-use crate::state::{Draw, Game, Ledger, PlayerAccount, RoundStatus, Vault};
+use crate::state::{Draw, Game, Ledger, PlayerAccount, Round, RoundStatus, Vault};
 
 #[vrf]
 #[derive(Accounts)]
@@ -69,20 +70,51 @@ pub struct RoundSettled {
     pub randomness: [u8; 32],
 }
 
-fn now() -> Result<i64> {
+pub(crate) fn now() -> Result<i64> {
     Ok(Clock::get()?.unix_timestamp)
 }
 
-/// Marks the round as waiting for `draw` under a new request id and asks the VRF oracle
+/// An account the VRF callback writes.
+pub(crate) fn callback_account(pubkey: Pubkey) -> SerializableAccountMeta {
+    SerializableAccountMeta {
+        pubkey,
+        is_signer: false,
+        is_writable: true,
+    }
+}
+
+/// Marks `round` as waiting for `draw` under a new request id and builds the VRF request
 /// for it. The id travels with the request, so only its own answer can play the draw.
-/// The callback gets the player account and, for blackjack, the table.
+pub(crate) fn draw_request(
+    round: &mut Round,
+    draw: Draw,
+    payer: Pubkey,
+    oracle_queue: Pubkey,
+    callback_discriminator: &[u8],
+    accounts_metas: Vec<SerializableAccountMeta>,
+    client_seed: [u8; 32],
+) -> Result<Instruction> {
+    round.request_id += 1;
+    round.status = RoundStatus::AwaitingDraw(draw);
+    round.last_action = now()?;
+    Ok(create_request_scoped_randomness_ix(
+        RequestRandomnessParams {
+            payer,
+            oracle_queue,
+            callback_program_id: crate::ID,
+            callback_discriminator: callback_discriminator.to_vec(),
+            caller_seed: client_seed,
+            accounts_metas: Some(accounts_metas),
+            callback_args: Some(round.request_id.to_le_bytes().to_vec()),
+        },
+    ))
+}
+
+/// Asks for `draw` with `consume_randomness` as the callback, which gets the player account
+/// and, for blackjack, the table.
 fn request_draw(ctx: &mut Context<Play>, draw: Draw, client_seed: [u8; 32]) -> Result<()> {
     let table_meta = match &ctx.accounts.table {
-        Some(table) => SerializableAccountMeta {
-            pubkey: table.key(),
-            is_signer: false,
-            is_writable: true,
-        },
+        Some(table) => callback_account(table.key()),
         // Anchor reads the program id in an optional account's place as "none".
         None => SerializableAccountMeta {
             pubkey: crate::ID,
@@ -90,31 +122,20 @@ fn request_draw(ctx: &mut Context<Play>, draw: Draw, client_seed: [u8; 32]) -> R
             is_writable: false,
         },
     };
-    let round = &mut ctx.accounts.account.round;
     require!(
-        round.game != Game::Blackjack || ctx.accounts.table.is_some(),
+        ctx.accounts.account.round.game != Game::Blackjack || ctx.accounts.table.is_some(),
         TiltError::MissingTable
     );
-    round.request_id += 1;
-    round.status = RoundStatus::AwaitingDraw(draw);
-    round.last_action = now()?;
-    let request_id = round.request_id;
-    let ix = create_request_scoped_randomness_ix(RequestRandomnessParams {
-        payer: ctx.accounts.payer.key(),
-        oracle_queue: ctx.accounts.oracle_queue.key(),
-        callback_program_id: crate::ID,
-        callback_discriminator: crate::instruction::ConsumeRandomness::DISCRIMINATOR.to_vec(),
-        caller_seed: client_seed,
-        accounts_metas: Some(vec![
-            SerializableAccountMeta {
-                pubkey: ctx.accounts.account.key(),
-                is_signer: false,
-                is_writable: true,
-            },
-            table_meta,
-        ]),
-        callback_args: Some(request_id.to_le_bytes().to_vec()),
-    });
+    let accounts = vec![callback_account(ctx.accounts.account.key()), table_meta];
+    let ix = draw_request(
+        &mut ctx.accounts.account.round,
+        draw,
+        ctx.accounts.payer.key(),
+        ctx.accounts.oracle_queue.key(),
+        crate::instruction::ConsumeRandomness::DISCRIMINATOR,
+        accounts,
+        client_seed,
+    )?;
     ctx.accounts
         .invoke_signed_vrf(&ctx.accounts.payer.to_account_info(), &ix)?;
     Ok(())
@@ -252,16 +273,23 @@ pub fn slots_spin(mut ctx: Context<Play>, amount: u64, client_seed: [u8; 32]) ->
 /// Relay cron. A draw that never arrived within `round_timeout_secs` is requested again
 /// under a new id (the late answer to the old one, if it ever comes, is refused). A hand
 /// waiting for the player is never closed for them: they come back to it whenever they want.
-/// Blackjack retries must pass the table, like the original request.
+/// Blackjack retries must pass the table, like the original request; the games playing on
+/// their own account (Mines, the one-draw games, Hilo, Tower) retry through their own
+/// `expire_*_round`, which calls back with that account.
 pub fn expire_round(mut ctx: Context<Play>, client_seed: [u8; 32]) -> Result<()> {
     let round = &ctx.accounts.account.round;
-    let timeout = ctx.accounts.vault.config.round_timeout_secs;
+    require!(round.game.draws_in_round(), TiltError::WrongState);
+    let draw = expired_draw(round, ctx.accounts.vault.config.round_timeout_secs)?;
+    request_draw(&mut ctx, draw, client_seed)
+}
+
+/// The draw to request again once the round has been untouched for `timeout` seconds.
+pub(crate) fn expired_draw(round: &Round, timeout: i64) -> Result<Draw> {
     require!(
         now()? - round.last_action >= timeout,
         TiltError::RoundNotExpired
     );
-    let draw = draw_to_retry(round.status)?;
-    request_draw(&mut ctx, draw, client_seed)
+    draw_to_retry(round.status)
 }
 
 /// The draw `expire_round` requests again: only one that is still awaited.
@@ -272,27 +300,23 @@ fn draw_to_retry(status: RoundStatus) -> Result<Draw> {
     }
 }
 
-/// VRF callback (only the VRF program can call it): plays the pending draw if this is the
-/// answer to the pending request, and settles the round when it is over.
-pub fn consume_randomness(
-    ctx: Context<ConsumeRandomness>,
-    randomness: [u8; 32],
-    request_id: u64,
-) -> Result<()> {
-    let account = &mut ctx.accounts.account;
-    let RoundStatus::AwaitingDraw(draw) = account.round.status else {
+/// The draw a VRF answer to `request_id` plays: only the pending request's.
+pub(crate) fn pending_draw(round: &Round, request_id: u64) -> Result<Draw> {
+    let RoundStatus::AwaitingDraw(draw) = round.status else {
         return err!(TiltError::StaleRandomness);
     };
-    require!(
-        request_id == account.round.request_id,
-        TiltError::StaleRandomness
-    );
-    let mut rng = Rng::from_vrf(randomness);
-    let table = ctx.accounts.table.as_deref_mut();
-    let Some(gross) = account.round.apply_draw(draw, &mut rng, table)? else {
-        account.round.last_action = now()?;
-        return Ok(());
-    };
+    require!(request_id == round.request_id, TiltError::StaleRandomness);
+    Ok(draw)
+}
+
+/// Ends the round with `gross` returned before Tilt's fee and emits `RoundSettled`, with the
+/// randomness of the draw that ended it (zeros when a move ended it without a draw).
+pub(crate) fn settle_round(
+    account: &mut PlayerAccount,
+    gross: u64,
+    request_id: u64,
+    randomness: [u8; 32],
+) {
     let stake = account.round.stake;
     account.finish_round(settle(stake, gross));
     emit!(RoundSettled {
@@ -305,6 +329,24 @@ pub fn consume_randomness(
         request_id,
         randomness,
     });
+}
+
+/// VRF callback (only the VRF program can call it): plays the pending draw if this is the
+/// answer to the pending request, and settles the round when it is over.
+pub fn consume_randomness(
+    ctx: Context<ConsumeRandomness>,
+    randomness: [u8; 32],
+    request_id: u64,
+) -> Result<()> {
+    let account = &mut ctx.accounts.account;
+    let draw = pending_draw(&account.round, request_id)?;
+    let mut rng = Rng::from_vrf(randomness);
+    let table = ctx.accounts.table.as_deref_mut();
+    let Some(gross) = account.round.apply_draw(draw, &mut rng, table)? else {
+        account.round.last_action = now()?;
+        return Ok(());
+    };
+    settle_round(account, gross, request_id, randomness);
     Ok(())
 }
 
@@ -321,6 +363,9 @@ mod tests {
             Draw::Dealer,
             Draw::Spin,
             Draw::Split,
+            Draw::Reveal,
+            Draw::Card,
+            Draw::Climb,
         ] {
             assert_eq!(
                 draw_to_retry(RoundStatus::AwaitingDraw(draw)).unwrap(),
@@ -335,5 +380,26 @@ mod tests {
             draw_to_retry(RoundStatus::Idle).unwrap_err(),
             TiltError::WrongState.into()
         );
+    }
+
+    #[test]
+    fn only_the_pending_request_is_answered() {
+        let mut round = Round {
+            request_id: 7,
+            status: RoundStatus::AwaitingDraw(Draw::Reveal),
+            ..Round::default()
+        };
+        assert_eq!(pending_draw(&round, 7).unwrap(), Draw::Reveal);
+        assert_eq!(
+            pending_draw(&round, 6).unwrap_err(),
+            TiltError::StaleRandomness.into()
+        );
+        for status in [RoundStatus::PlayerTurn, RoundStatus::Idle] {
+            round.status = status;
+            assert_eq!(
+                pending_draw(&round, 7).unwrap_err(),
+                TiltError::StaleRandomness.into()
+            );
+        }
     }
 }

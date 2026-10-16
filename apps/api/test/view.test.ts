@@ -270,6 +270,315 @@ describe("buildRoundView", () => {
     expect(view.detail).toMatchObject({ game: "baccarat", bet: "tie", playerPoints: 4, bankerPoints: 7 });
   });
 
+  describe("mines", () => {
+    const board = (
+      mines: number,
+      order: number[],
+      more: Partial<Extract<Outcome, { game: "mines" }>> = {},
+    ): Outcome => ({
+      game: "mines",
+      mines,
+      order,
+      pending: null,
+      busted: null,
+      maxGain: "1000000000",
+      ...more,
+    });
+    const turn: RoundStatus = { kind: "player_turn" };
+
+    it("opens a board at 1x, revealable but not cashable yet", () => {
+      expect(buildRoundView(input(board(1, []), turn)).detail).toEqual({
+        game: "mines",
+        mines: 1,
+        revealed: [],
+        pending: null,
+        busted: null,
+        multiplier: "1.0000",
+        nextMultiplier: "1.0312",
+        canCashOut: false,
+        canReveal: true,
+      });
+    });
+
+    it("shows the multipliers after safe tiles, rounded down to 4 decimals", () => {
+      expect(buildRoundView(input(board(3, [7, 12]), turn)).detail).toMatchObject({
+        revealed: [7, 12],
+        multiplier: "1.2857",
+        nextMultiplier: "1.4785",
+        canCashOut: true,
+        canReveal: true,
+      });
+    });
+
+    it("shows the pending tile and allows nothing while its draw is awaited", () => {
+      const view = buildRoundView(input(board(3, [7], { pending: 8 }), { kind: "awaiting", draw: "reveal" }));
+      expect(view.phase).toBe("drawing");
+      expect(view.detail).toMatchObject({ pending: 8, canCashOut: false, canReveal: false, nextMultiplier: "1.2857" });
+    });
+
+    it("offers no next tile once the round cap or the cleared board is reached", () => {
+      // 1 USDC with a 2 USDC gain limit: 3x at most.
+      const capped = board(12, [0, 1, 2, 3, 4], { maxGain: "2000000" });
+      expect(buildRoundView(input(capped, turn)).detail).toMatchObject({
+        multiplier: "3.0000",
+        nextMultiplier: null,
+        canReveal: false,
+        canCashOut: true,
+      });
+      const cleared = board(24, [5], { maxGain: "23750000" });
+      expect(buildRoundView(input(cleared, idle, { payout: 24_512_500n, fee: 237_500n })).detail).toMatchObject({
+        multiplier: "24.7500",
+        nextMultiplier: null,
+        canReveal: false,
+        canCashOut: false,
+      });
+    });
+
+    it("shows the busting mine of a settled round, with no move left", () => {
+      const view = buildRoundView(input(board(5, [1, 2], { busted: 3 }), idle));
+      expect(view).toMatchObject({ phase: "idle", payout: "0", net: "-1000000" });
+      expect(view.detail).toMatchObject({
+        revealed: [1, 2],
+        busted: 3,
+        nextMultiplier: null,
+        canCashOut: false,
+        canReveal: false,
+      });
+    });
+  });
+
+  describe("one-draw games", () => {
+    const spin: RoundStatus = { kind: "awaiting", draw: "spin" };
+
+    it("hides the dice roll until it lands, and shows the payout multiplier", () => {
+      const dice: Outcome = { game: "dice", target: 5_000, over: true, roll: 0 };
+      expect(buildRoundView(input(dice, spin)).detail).toEqual({
+        game: "dice",
+        target: 5_000,
+        over: true,
+        roll: null,
+        multiplier: "1.9600",
+      });
+      const settled = buildRoundView(input({ ...dice, roll: 7_342 }, idle, { payout: 1_950_400n, fee: 9_600n }));
+      expect(settled).toMatchObject({ phase: "idle", payout: "1960000", net: "950400" });
+      expect(settled.detail).toMatchObject({ roll: 7_342 });
+    });
+
+    it("shows limbo multipliers with 2 decimals", () => {
+      const limbo: Outcome = { game: "limbo", target: 200, result: 153 };
+      expect(buildRoundView(input(limbo, spin)).detail).toEqual({ game: "limbo", target: "2.00", result: null });
+      expect(buildRoundView(input(limbo, idle)).detail).toEqual({ game: "limbo", target: "2.00", result: "1.53" });
+      const huge: Outcome = { game: "limbo", target: 1_000_000, result: 100_000_000 };
+      expect(buildRoundView(input(huge, idle)).detail).toMatchObject({ target: "10000.00", result: "1000000.00" });
+    });
+
+    it("shows every coin once flipped", () => {
+      const flip: Outcome = { game: "flip", side: "tails", flips: 3, results: ["tails", "heads", "tails"] };
+      expect(buildRoundView(input(flip, spin)).detail).toEqual({
+        game: "flip",
+        side: "tails",
+        flips: 3,
+        results: null,
+        multiplier: "7.8400",
+      });
+      expect(buildRoundView(input(flip, idle)).detail).toMatchObject({ results: ["tails", "heads", "tails"] });
+    });
+
+    it("shows the keno pay table for the picks, then the draw and the hits", () => {
+      const keno: Outcome = { game: "keno", picks: [3, 17, 40], drawn: [40, 1, 2, 4, 5, 6, 7, 8, 9, 3] };
+      expect(buildRoundView(input(keno, spin)).detail).toEqual({
+        game: "keno",
+        picks: [3, 17, 40],
+        drawn: null,
+        hits: null,
+        paytable: ["0.00", "0.80", "2.00", "26.70"],
+      });
+      expect(buildRoundView(input(keno, idle)).detail).toMatchObject({ drawn: keno.drawn, hits: 2 });
+    });
+
+    it("shows every wheel segment's multiplier, then the landed one", () => {
+      const wheel: Outcome = { game: "wheel", segments: 10, risk: "high", segment: 9 };
+      expect(buildRoundView(input(wheel, spin)).detail).toEqual({
+        game: "wheel",
+        segments: 10,
+        risk: "high",
+        multipliers: [...Array<string>(9).fill("0.00"), "9.80"],
+        segment: null,
+      });
+      const low: Outcome = { game: "wheel", segments: 20, risk: "low", segment: 4 };
+      const view = buildRoundView(input(low, idle));
+      expect(view.detail).toMatchObject({ segment: 4 });
+      expect(view.detail.game === "wheel" && view.detail.multipliers.slice(0, 5)).toEqual([
+        "1.40",
+        "1.20",
+        "1.20",
+        "1.20",
+        "0.00",
+      ]);
+    });
+  });
+
+  describe("hilo", () => {
+    // Cards: 6 = 7♠, 22 = 10♥, 0 = A♠, 12 = K♠.
+    const board = (cards: number[], guesses: Extract<Outcome, { game: "hilo" }>["guesses"], more = {}): Outcome => ({
+      game: "hilo",
+      cards,
+      guesses,
+      pending: null,
+      busted: false,
+      maxGain: "1000000000",
+      ...more,
+    });
+    const turn: RoundStatus = { kind: "player_turn" };
+
+    it("shows no card and allows nothing while the first card is drawn", () => {
+      expect(buildRoundView(input(board([], []), { kind: "awaiting", draw: "card" })).detail).toEqual({
+        game: "hilo",
+        cards: [],
+        guesses: [],
+        pending: null,
+        multiplier: "0.9800",
+        higherMultiplier: null,
+        lowerMultiplier: null,
+        skipsLeft: 10,
+        canGuess: false,
+        canCashOut: false,
+        busted: false,
+      });
+    });
+
+    it("offers both guesses on the first card, no cash-out yet", () => {
+      expect(buildRoundView(input(board([6], []), turn)).detail).toMatchObject({
+        cards: [{ rank: 7, suit: "♠" }],
+        multiplier: "0.9800",
+        higherMultiplier: "1.8199",
+        lowerMultiplier: "1.8199",
+        canGuess: true,
+        canCashOut: false,
+      });
+    });
+
+    it("multiplies after a right guess and counts skips", () => {
+      expect(buildRoundView(input(board([6, 22], ["higher"]), turn)).detail).toMatchObject({
+        cards: [
+          { rank: 7, suit: "♠" },
+          { rank: 10, suit: "♥" },
+        ],
+        multiplier: "1.8199",
+        higherMultiplier: "5.9149",
+        lowerMultiplier: "2.3659",
+        canCashOut: true,
+      });
+      expect(buildRoundView(input(board([6, 22, 22], ["skip", "skip"]), turn)).detail).toMatchObject({
+        multiplier: "0.9800",
+        skipsLeft: 8,
+        canCashOut: false,
+      });
+    });
+
+    it("refuses the certain guess on an ace or a king", () => {
+      expect(buildRoundView(input(board([0], []), turn)).detail).toMatchObject({
+        higherMultiplier: null,
+        lowerMultiplier: "12.7400",
+      });
+      expect(buildRoundView(input(board([12], []), turn)).detail).toMatchObject({
+        higherMultiplier: "12.7400",
+        lowerMultiplier: null,
+      });
+    });
+
+    it("shows the pending guess and allows nothing while its card is drawn", () => {
+      const pending = board([6, 22], ["higher"], { pending: "lower" });
+      expect(buildRoundView(input(pending, { kind: "awaiting", draw: "card" })).detail).toMatchObject({
+        pending: "lower",
+        higherMultiplier: null,
+        lowerMultiplier: null,
+        canGuess: false,
+        canCashOut: false,
+      });
+    });
+
+    it("shows a bust and the round cap", () => {
+      const busted = buildRoundView(input(board([6, 22, 0], ["higher", "higher"], { busted: true }), idle));
+      expect(busted).toMatchObject({ payout: "0", net: "-1000000" });
+      expect(busted.detail).toMatchObject({ busted: true, canGuess: false, canCashOut: false, multiplier: "1.8199" });
+      // 1 USDC with a 2 USDC gain limit: 3x at most.
+      const capped = board([6, 22, 25], ["higher", "higher"], { maxGain: "2000000" });
+      expect(buildRoundView(input(capped, idle)).detail).toMatchObject({ multiplier: "3.0000" });
+    });
+
+    it("fails loudly on guesses the program would refuse", () => {
+      expect(() => buildRoundView(input(board([0, 5], ["higher"]), turn))).toThrow();
+    });
+  });
+
+  describe("tower", () => {
+    const board = (
+      difficulty: Extract<Outcome, { game: "tower" }>["difficulty"],
+      climbed: number[],
+      more: Partial<Extract<Outcome, { game: "tower" }>> = {},
+    ): Outcome => ({
+      game: "tower",
+      difficulty,
+      climbed,
+      pending: null,
+      busted: null,
+      maxGain: "1000000000",
+      ...more,
+    });
+    const turn: RoundStatus = { kind: "player_turn" };
+
+    it("opens a tower at 1x, climbable but not cashable yet", () => {
+      expect(buildRoundView(input(board("easy", []), turn)).detail).toEqual({
+        game: "tower",
+        difficulty: "easy",
+        tiles: 4,
+        levels: 9,
+        climbed: [],
+        pending: null,
+        busted: null,
+        multiplier: "1.0000",
+        nextMultiplier: "1.3066",
+        canClimb: true,
+        canCashOut: false,
+      });
+    });
+
+    it("shows the multipliers after safe levels, and the pending climb", () => {
+      expect(buildRoundView(input(board("medium", [0, 2]), turn)).detail).toMatchObject({
+        tiles: 3,
+        multiplier: "2.2050",
+        nextMultiplier: "3.3075",
+        canClimb: true,
+        canCashOut: true,
+      });
+      const pending = board("medium", [0, 2], { pending: 1 });
+      expect(buildRoundView(input(pending, { kind: "awaiting", draw: "climb" })).detail).toMatchObject({
+        pending: 1,
+        canClimb: false,
+        canCashOut: false,
+      });
+    });
+
+    it("offers nothing past the top, the cap or a bust", () => {
+      const top = board("hard", Array<number>(9).fill(0), { maxGain: "500760000" });
+      expect(buildRoundView(input(top, idle)).detail).toMatchObject({
+        multiplier: "501.7600",
+        nextMultiplier: null,
+        canClimb: false,
+      });
+      const capped = board("master", [0, 1], { maxGain: "2000000" });
+      expect(buildRoundView(input(capped, turn)).detail).toMatchObject({ multiplier: "3.0000", nextMultiplier: null });
+      const busted = board("expert", [2], { busted: 0 });
+      expect(buildRoundView(input(busted, idle)).detail).toMatchObject({
+        busted: 0,
+        nextMultiplier: null,
+        canClimb: false,
+        canCashOut: false,
+      });
+    });
+  });
+
   it("drops the settled signature while a round is in progress", () => {
     const view = buildRoundView(
       input({ game: "slots", reels: [0, 0, 0] }, { kind: "awaiting", draw: "spin" }, { settledSignature: "old" }),

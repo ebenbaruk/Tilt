@@ -51,11 +51,14 @@ Colors follow Claude Code's theme: a light theme gets darker pink and gold.
 Letter keys work everywhere (the pane and the band, inline or fullscreen):
 
 - `ctrl+x tab` gives the pane (or the band) the keyboard; `Esc` hands it back.
-- `1`–`4` switch game (not mid-round: a blackjack hand still to play, `▶`, or a draw in progress keeps its game, and the key says so), `v` / `b` lower / raise the bet per hand (held at the table's limits), `n` deals or spins.
+- `1`–`9` switch to a game of the page shown in the header, `0` flips to the next page of games (12 games on two pages); not mid-round: a blackjack hand still to play, `▶`, a Mines, Hilo or Tower board in play, or a draw in progress keeps its game, and the key says so. `v` / `b` lower / raise the bet per hand (held at the table's limits), `n` deals, spins or plays.
 - Blackjack: `j` / `k` one hand fewer / more (1 to 6), `h` hit, `s` stand, `d` double, `p` split (first two cards of the same value), all on the hand marked `▶`. Split aces take one card each and are finished, as in a casino: their hands say `· 1 card`.
 - Roulette: `r` red, `k` black, `o` odd, `e` even, `l` low, `g` high, `z` dozen, `c` column.
 - Baccarat: `p` player, `y` banker, `t` tie.
 - Slots: `x` normal, `f` fast (the reels land three times sooner), `t` turbo (no spin: the draw shows as soon as the chain has it).
+- Mines: `j` / `k` one mine fewer / more (1 to 24, 3 by default); in play, `a`–`y` reveal the tile with that letter (5×5, row by row) and `z` cashes out, from the first safe tile. In fullscreen, a click on a tile reveals it.
+- Dice: `j` / `k` win chance down / up, `o` over or under. Limbo: `j` / `k` target multiplier. Flip: `h` heads, `t` tails, `j` / `k` coins (1 to 10). Keno: `j` / `k` how many numbers (1 to 10), `r` new random numbers; in fullscreen, click a number to pick it. Wheel: `j` / `k` segments, `r` risk.
+- Hilo: `n` deals the first card; then `h` higher or same, `l` lower or same, `s` skip (10 per round), `z` cash out. Tower: `j` / `k` difficulty; in play, `a`–`d` pick a tile of the current level, `z` cashes out. In fullscreen, `↑` / `↓` step the game's own setting.
 - A move is sent once: until the table shows it, the keys are dimmed and do nothing, and for 1.5 s after, the keys of the move's screen stay dimmed on letters the new screen does not use, so the rest of a mashed `n` or `s` is caught. Past that, a letter the pane has no key for goes to the prompt (Claude Code's own behavior), so a mashed `Enter` after it would send it to the agent.
 
 In the fullscreen layout (`claude --settings '{"tui":"fullscreen"}'`), click the table to give it the keys. Only a click does: `ctrl+x tab` gives the pane the letters, not Space, Enter or the arrows, and once the keyboard leaves the pane the table needs a click again (the table says so). Without it, `←` is Claude Code's own (the agents view).

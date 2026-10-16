@@ -2,7 +2,21 @@ import type { ConfigRow, On, TurnCompleteInput } from "claude-code";
 import { describe, type Engine, expect, test } from "claude-code/testing";
 
 import type { StateResponse } from "../hooks/protocol";
-import { BASE, BLACKJACK_TURN, BLACKJACK_WIN, ROULETTE, SLOTS } from "./fixtures";
+import {
+  BASE,
+  BLACKJACK_TURN,
+  BLACKJACK_WIN,
+  DICE,
+  DICE_LOSS,
+  MINES_BUSTED,
+  MINES_CASHED,
+  MINES_TURN,
+  ROULETTE,
+  SLOTS,
+  TOWER_BUSTED,
+  TOWER_CASHED,
+  TOWER_TURN,
+} from "./fixtures";
 import { BAND, command, later, LOGGED_IN, PANE, PANE_INLINE, PLUGIN, seat, shownText, textOf } from "./world";
 
 const POLL_MS = 5_000;
@@ -383,6 +397,50 @@ describe("a win celebrates", () => {
     await show(lost);
     await clock.advance(SPIN_OVER_MS);
 
+    expect(hasSparkles(textOf(await ui.drawn()))).toBe(false);
+  });
+
+  test("a Mines cash-out sparkles, a mine does not", async ($, on) => {
+    const { show, clock } = await moving($, on, BASE);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+
+    await ui.press({ key: "game-mines" });
+    await show(MINES_TURN);
+    expect(hasSparkles(textOf(await ui.drawn()))).toBe(false);
+    await show(MINES_CASHED);
+    expect(hasSparkles(textOf(await ui.drawn()))).toBe(true);
+    await clock.advance(CELEBRATION_OVER_MS);
+    expect(hasSparkles(textOf(await ui.drawn()))).toBe(false);
+
+    const next = (state: StateResponse): StateResponse =>
+      state.round === null ? state : { ...state, round: { ...state.round, number: 8 } };
+
+    await show(next(MINES_TURN));
+    await show(next(MINES_BUSTED));
+    expect(hasSparkles(textOf(await ui.drawn()))).toBe(false);
+  });
+
+  test("the new games celebrate their wins as soon as they show: a dice roll, a tower cash-out", async ($, on) => {
+    // Each show is one poll later: a small win's sparkles are over by the next one.
+    const { show } = await moving($, on, BASE);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+    const renumbered = (state: StateResponse, number: number): StateResponse =>
+      state.round === null ? state : { ...state, round: { ...state.round, number } };
+
+    await ui.press({ key: "game-dice" });
+    await show(DICE);
+    expect(hasSparkles(textOf(await ui.drawn()))).toBe(true);
+    await show(renumbered(DICE_LOSS, 8));
+    expect(hasSparkles(textOf(await ui.drawn()))).toBe(false);
+
+    await ui.press({ key: "game-page" });
+    await ui.press({ key: "game-tower" });
+    await show(renumbered(TOWER_TURN, 9));
+    expect(hasSparkles(textOf(await ui.drawn()))).toBe(false);
+    await show(renumbered(TOWER_CASHED, 9));
+    expect(hasSparkles(textOf(await ui.drawn()))).toBe(true);
+    await show(renumbered(TOWER_TURN, 10));
+    await show(renumbered(TOWER_BUSTED, 10));
     expect(hasSparkles(textOf(await ui.drawn()))).toBe(false);
   });
 });

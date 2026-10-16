@@ -91,6 +91,141 @@ test("shows the replay, the VRF randomness and the on-chain comparison", async (
   );
 });
 
+test("draws a mines board: safe tiles in reveal order and the busting mine", async ({ page }) => {
+  const mines: VerifyResponse = {
+    ...RESULT,
+    game: "mines",
+    replayed: {
+      ...RESULT.replayed,
+      stake: "1000000",
+      payout: "0",
+      fee: "0",
+      net: "-1000000",
+      detail: {
+        game: "mines",
+        mines: 3,
+        revealed: [7, 0],
+        pending: null,
+        busted: 12,
+        multiplier: "1.2857",
+        nextMultiplier: null,
+        canCashOut: false,
+        canReveal: false,
+      },
+    },
+    onChain: { stake: "1000000", payout: "0", fee: "0" },
+  };
+  await page.route(`**/v1/rounds/${SIGNATURE}/verify`, (route) => json(route, 200, mines));
+  await page.goto(`/verify/${SIGNATURE}`);
+  const board = page.getByRole("img", { name: "2 safe tiles revealed, hit a mine at row 3 column 3" });
+  await expect(board).toBeVisible();
+  await expect(board).toHaveText(`2······1····✸${"·".repeat(12)}`);
+  await expect(page.getByText("3 mines · hit a mine at row 3 column 3")).toBeVisible();
+});
+
+/** RESULT replayed as a 1 USDC round of another game. */
+function replayOf(detail: VerifyResponse["replayed"]["detail"], payout: string, fee: string): VerifyResponse {
+  const net = (BigInt(payout) - BigInt(fee) - 1_000_000n).toString();
+  return {
+    ...RESULT,
+    game: detail.game,
+    replayed: { ...RESULT.replayed, stake: "1000000", payout, fee, net, detail },
+    onChain: { stake: "1000000", payout, fee },
+  };
+}
+
+test("draws a dice roll against its target", async ({ page }) => {
+  const dice = replayOf(
+    { game: "dice", target: 5000, over: false, roll: 4832, multiplier: "1.9600" },
+    "1960000",
+    "9600",
+  );
+  await page.route(`**/v1/rounds/${SIGNATURE}/verify`, (route) => json(route, 200, dice));
+  await page.goto(`/verify/${SIGNATURE}`);
+  await expect(page.getByText("48.32", { exact: true })).toBeVisible();
+  await expect(page.getByRole("img", { name: "rolled 48.32, under 50.00: win" })).toBeVisible();
+  await expect(page.getByText("under 50.00 · 50.00% chance · ×1.9600")).toBeVisible();
+});
+
+test("draws a keno board: picks, drawn numbers and hits", async ({ page }) => {
+  const keno = replayOf(
+    {
+      game: "keno",
+      picks: [3, 7, 12, 25, 40],
+      drawn: [7, 12, 1, 2, 5, 9, 18, 30, 33, 39],
+      hits: 2,
+      paytable: ["0.00", "0.00", "1.50", "4.00", "12.00", "50.00"],
+    },
+    "1500000",
+    "5000",
+  );
+  await page.route(`**/v1/rounds/${SIGNATURE}/verify`, (route) => json(route, 200, keno));
+  await page.goto(`/verify/${SIGNATURE}`);
+  const board = page.getByRole("img", { name: "5 picks, 2 hits" });
+  await expect(board).toHaveText(Array.from({ length: 40 }, (_, i) => i + 1).join(""));
+  await expect(page.getByText("5 picks, 2 hits · pays ×1.50")).toBeVisible();
+});
+
+test("draws a hilo round: the cards under the guesses that drew them", async ({ page }) => {
+  const hilo = replayOf(
+    {
+      game: "hilo",
+      cards: [
+        { rank: 7, suit: "♠" },
+        { rank: 10, suit: "♥" },
+        { rank: 4, suit: "♦" },
+        { rank: 4, suit: "♣" },
+        { rank: 9, suit: "♠" },
+      ],
+      guesses: ["higher", "lower", "skip", "lower"],
+      pending: null,
+      multiplier: "3.0120",
+      higherMultiplier: null,
+      lowerMultiplier: null,
+      skipsLeft: 9,
+      canGuess: false,
+      canCashOut: false,
+      busted: true,
+    },
+    "0",
+    "0",
+  );
+  await page.route(`**/v1/rounds/${SIGNATURE}/verify`, (route) => json(route, 200, hilo));
+  await page.goto(`/verify/${SIGNATURE}`);
+  await expect(page.getByRole("img", { name: "7 of spades" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "9 of spades" })).toBeVisible();
+  for (const label of ["start", "↑ higher", "↷ skip", "wrong guess"]) {
+    await expect(page.getByText(label, { exact: true })).toBeVisible();
+  }
+  await expect(page.getByText("↓ lower", { exact: true })).toHaveCount(2);
+});
+
+test("draws a tower: the climbed tiles and the busting level", async ({ page }) => {
+  const tower = replayOf(
+    {
+      game: "tower",
+      difficulty: "medium",
+      tiles: 3,
+      levels: 9,
+      climbed: [0, 2, 1],
+      pending: null,
+      busted: 2,
+      multiplier: "3.3075",
+      nextMultiplier: null,
+      canClimb: false,
+      canCashOut: false,
+    },
+    "0",
+    "0",
+  );
+  await page.route(`**/v1/rounds/${SIGNATURE}/verify`, (route) => json(route, 200, tower));
+  await page.goto(`/verify/${SIGNATURE}`);
+  const board = page.getByRole("img", { name: "3 levels climbed, fell at level 4, tile 3" });
+  // Top level first: five untouched levels, the bust, then the climbed levels down to the first.
+  await expect(board).toHaveText(`${"·".repeat(15)}··✸·◆···◆◆··`);
+  await expect(page.getByText("medium · fell at level 4, tile 3")).toBeVisible();
+});
+
 test("flags a mismatch", async ({ page }) => {
   const mismatch: VerifyResponse = { ...RESULT, onChain: { ...RESULT.onChain, payout: "6500000" }, matches: false };
   await page.route(`**/v1/rounds/${SIGNATURE}/verify`, (route) => json(route, 200, mismatch));

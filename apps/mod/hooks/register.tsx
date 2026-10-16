@@ -29,13 +29,26 @@ import {
   activeGame,
   type Command,
   currentBet,
+  cycle,
+  DEFAULT_DICE_CHANCE,
+  DEFAULT_KENO_PICKS,
+  DEFAULT_LIMBO_TARGET,
+  DEFAULT_MINES,
+  DEFAULT_WHEEL_SEGMENTS,
   GAME_LABELS,
   isRoundOpen,
   nextRouletteBet,
   planKeys,
+  randomPicks,
+  type RandomBelow,
   startAction,
   stepBetIndex,
   stepHands,
+  stepMines,
+  stepSetting,
+  tableKeys,
+  toggleKenoPick,
+  WHEEL_RISKS,
 } from "./keys";
 import {
   type AgentView,
@@ -81,6 +94,16 @@ const prefs = atom({ plugin: "tilt", key: "prefs" } as const, {
   roulette: { kind: "red" },
   baccarat: "banker",
   slotsSpeed: "normal",
+  mines: DEFAULT_MINES,
+  diceChance: DEFAULT_DICE_CHANCE,
+  diceOver: false,
+  limboTarget: DEFAULT_LIMBO_TARGET,
+  flipSide: "heads",
+  flips: 1,
+  kenoPicks: [...DEFAULT_KENO_PICKS],
+  wheelSegments: DEFAULT_WHEEL_SEGMENTS,
+  wheelRisk: "low",
+  towerDifficulty: "easy",
 });
 const intent = atom({ plugin: "tilt", key: "intent" } as const, null);
 const NO_ECHO = { keys: [], until: null };
@@ -586,6 +609,9 @@ async function setPrefs($: EngineInterface, change: (value: Prefs) => Prefs): Pr
   await update($, prefs, (held) => change(prefsView(held)));
 }
 
+/** Keno's random picks: the player's own choice of numbers, not an outcome, so Math.random does. */
+const randomBelow: RandomBelow = (bound) => Math.floor(Math.random() * bound);
+
 async function startRound($: EngineInterface, rt: Runtime): Promise<void> {
   const state = (await readRemote($)).state;
 
@@ -634,6 +660,34 @@ async function runCommand($: EngineInterface, rt: Runtime, command: Command): Pr
     }
     case "hands":
       await setPrefs($, (value) => ({ ...value, hands: stepHands(value.hands, command.step) }));
+
+      return;
+    case "mines":
+      await setPrefs($, (value) => ({ ...value, mines: stepMines(value.mines, command.step) }));
+
+      return;
+    case "step":
+      await setPrefs($, (value) => stepSetting(value, command.setting, command.step, randomBelow));
+
+      return;
+    case "dice-over":
+      await setPrefs($, (value) => ({ ...value, diceOver: !value.diceOver }));
+
+      return;
+    case "flip-side":
+      await setPrefs($, (value) => ({ ...value, flipSide: command.side }));
+
+      return;
+    case "wheel-risk":
+      await setPrefs($, (value) => ({ ...value, wheelRisk: cycle(WHEEL_RISKS, value.wheelRisk) }));
+
+      return;
+    case "keno-random":
+      await setPrefs($, (value) => ({ ...value, kenoPicks: randomPicks(value.kenoPicks.length, randomBelow) }));
+
+      return;
+    case "keno-pick":
+      await setPrefs($, (value) => ({ ...value, kenoPicks: toggleKenoPick(value.kenoPicks, command.number) }));
 
       return;
     case "roulette-bet":
@@ -685,7 +739,7 @@ async function onTablePost($: EngineInterface, rt: Runtime, data: unknown): Prom
   const action =
     state === null
       ? undefined
-      : planKeys({ state, prefs: snap.prefs, isBusy: snap.intent !== null }).find((key) => key.key === data.press);
+      : tableKeys({ state, prefs: snap.prefs, isBusy: snap.intent !== null }).find((key) => key.key === data.press);
 
   if (action !== undefined) {
     commandRunner($, rt)(action.command);
@@ -1372,7 +1426,7 @@ export const register: Register = (on, options) => {
     // main screen never does, so there the table is drawn still and played with the letters.
     if (e.surface === "terminal" && e.viewport?.isFullscreen === true && state !== null && !rt.isTableBroken) {
       const { Client } = $.ui.resolve(e);
-      const keys = planKeys({ state, prefs: snap.prefs, isBusy: snap.intent !== null });
+      const keys = tableKeys({ state, prefs: snap.prefs, isBusy: snap.intent !== null });
       const props = (cards: CardSize, columns: number): TableProps => ({
         state,
         prefs: snap.prefs,

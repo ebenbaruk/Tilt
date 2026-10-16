@@ -3,7 +3,23 @@ import Link from "next/link";
 import { AgentCliPreview } from "@/components/landing/AgentCliPreview";
 import { Badge } from "@/components/landing/Badge";
 import { CopyPill } from "@/components/landing/CopyPill";
-import { Burst, CardBuddy, Chip, Die, Fan, Reels, Terminal, Wheel } from "@/components/landing/Illustrations";
+import {
+  Burst,
+  CardBuddy,
+  Chip,
+  Coin,
+  Die,
+  Fan,
+  HiloCard,
+  KenoCard,
+  LimboCurve,
+  Minefield,
+  PrizeWheel,
+  Reels,
+  Terminal,
+  Tower,
+  Wheel,
+} from "@/components/landing/Illustrations";
 import { INSTALL_COMMANDS } from "@/components/landing/InstallSnippet";
 import { WavyWordmark } from "@/components/landing/WavyWordmark";
 import styles from "./landing.module.css";
@@ -63,6 +79,63 @@ const GAMES = [
     rules: "Three weighted reels, a public paytable and a top win of 250× your stake.",
     tone: styles.toneGreen,
     art: <Reels />,
+  },
+  {
+    name: "Mines",
+    rtp: "99.00%",
+    rules: "Pick 1 to 24 mines on a 5×5 board, reveal tiles one by one and cash out before you hit a mine.",
+    tone: styles.tonePaper,
+    art: <Minefield />,
+  },
+  {
+    name: "Dice",
+    rtp: "98.00%",
+    rules: "Roll 00.00 to 99.99, over or under your target. Win chance 1% to 98%; a 50% chance pays 1.96×.",
+    tone: styles.toneOrange,
+    art: <Die />,
+  },
+  {
+    name: "Limbo",
+    rtp: "98.00%",
+    rules: "Set a target from 1.01× to 10,000×. If the drawn multiplier reaches it, you win your target.",
+    tone: styles.toneSky,
+    art: <LimboCurve />,
+  },
+  {
+    name: "Flip",
+    rtp: "98.00%",
+    rules: "Call heads or tails on 1 to 10 coins; every coin must land your side. 1.96× for one, doubling per coin.",
+    tone: styles.tonePink,
+    art: <Coin />,
+  },
+  {
+    name: "Keno",
+    rtp: "95.00%",
+    rules: "Pick 1 to 10 numbers out of 40, then 10 are drawn. More hits pay more, up to 1,000× for 10 of 10.",
+    tone: styles.toneGreen,
+    art: <KenoCard />,
+  },
+  {
+    name: "Wheel",
+    rtp: "98.00%",
+    rules: "10 to 50 segments and three risks: low pays often and small, high puts everything on one segment.",
+    tone: styles.tonePaper,
+    art: <PrizeWheel />,
+  },
+  {
+    name: "Hilo",
+    rtp: "98.00%",
+    rules: "Guess if the next card is higher or lower, skip up to 10 cards, and cash out after any right guess.",
+    tone: styles.toneOrange,
+    art: <HiloCard />,
+  },
+  {
+    name: "Tower",
+    rtp: "98.00%",
+    rules:
+      "Climb 9 levels, one tile each, and cash out on the way. Five difficulties, from 3 safe tiles of 4 to 1 of 4.",
+    tone: styles.toneSky,
+    art: <Tower />,
   },
 ];
 
@@ -156,8 +229,8 @@ export default function Landing() {
               The most fun way to wait on your agent.
             </h2>
             <p className={styles.lede}>
-              Blackjack, roulette, baccarat and slots in a panel inside Claude Code. Real USDC on Solana, every draw
-              provably fair, and the panel steps aside the second your agent needs you.
+              Twelve casino games, from blackjack and roulette to mines, keno and hilo, in a panel inside Claude Code.
+              Real USDC on Solana, every draw provably fair, and the panel steps aside the second your agent needs you.
             </p>
             <div className={styles.row}>
               <a href="#install" className={styles.pill}>

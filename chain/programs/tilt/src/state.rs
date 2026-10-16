@@ -154,6 +154,38 @@ pub enum Game {
     Roulette,
     Baccarat,
     Slots,
+    /// Appended last, like `Draw::Split`. Mines rounds play on `MinesBoard`, outside `apply_draw`.
+    Mines,
+    /// The one-draw games, appended after Mines. They play on `QuickTable`
+    /// (`consume_quick_randomness`), outside `apply_draw`.
+    Dice,
+    Limbo,
+    Flip,
+    Keno,
+    Wheel,
+    /// Play on `HiloBoard` (`consume_hilo_randomness`).
+    Hilo,
+    /// Plays on `TowerBoard` (`consume_tower_randomness`).
+    Tower,
+}
+
+impl Game {
+    /// Games whose draws `consume_randomness` plays (and `expire_round` retries); the others
+    /// call back with their own account.
+    pub fn draws_in_round(self) -> bool {
+        matches!(
+            self,
+            Self::Blackjack | Self::Roulette | Self::Baccarat | Self::Slots
+        )
+    }
+
+    /// The one-draw games kept on `QuickTable`.
+    pub fn is_quick(self) -> bool {
+        matches!(
+            self,
+            Self::Dice | Self::Limbo | Self::Flip | Self::Keno | Self::Wheel
+        )
+    }
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, InitSpace, PartialEq, Eq, Debug)]
@@ -165,14 +197,23 @@ pub enum Draw {
     Spin,
     /// Appended last: `RoundStatus` lives in `PlayerAccount`, earlier bytes keep their meaning.
     Split,
+    /// Mines: the pending tile is safe or a mine. Appended last.
+    Reveal,
+    /// Hilo: the round's first card, or the card a guess waits for. Appended last. (The
+    /// one-draw games use `Spin`.)
+    Card,
+    /// Tower: the picked tile is safe or not. Appended last.
+    Climb,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, InitSpace, PartialEq, Eq, Debug)]
 pub enum RoundStatus {
     Idle,
-    /// A VRF draw was requested; `consume_randomness` will continue the round.
+    /// A VRF draw was requested; its callback (`consume_randomness`, or the game's own for
+    /// Mines, the one-draw games, Hilo and Tower) will continue the round.
     AwaitingDraw(Draw),
-    /// Blackjack only: waiting for hit, stand, double or split.
+    /// Blackjack: waiting for hit, stand, double or split. Mines, Hilo, Tower: waiting for the
+    /// next move or a cash-out.
     PlayerTurn,
 }
 
@@ -829,6 +870,16 @@ mod tests {
     }
 
     #[test]
+    fn each_game_plays_its_draws_on_exactly_one_callback() {
+        let classic = [Game::Blackjack, Game::Roulette, Game::Baccarat, Game::Slots];
+        let quick = [Game::Dice, Game::Limbo, Game::Flip, Game::Keno, Game::Wheel];
+        let boards = [Game::Mines, Game::Hilo, Game::Tower];
+        assert!(classic.iter().all(|g| g.draws_in_round() && !g.is_quick()));
+        assert!(quick.iter().all(|g| g.is_quick() && !g.draws_in_round()));
+        assert!(boards.iter().all(|g| !g.is_quick() && !g.draws_in_round()));
+    }
+
+    #[test]
     fn draws_that_do_not_belong_to_the_game_are_refused() {
         let mut rng = Rng::from_vrf([1; 32]);
         for (game, draw) in [
@@ -837,6 +888,21 @@ mod tests {
             (Game::Baccarat, Draw::Hit),
             (Game::Slots, Draw::Double),
             (Game::Roulette, Draw::Split),
+            (Game::Slots, Draw::Reveal),
+            (Game::Blackjack, Draw::Reveal),
+            (Game::Slots, Draw::Card),
+            (Game::Blackjack, Draw::Climb),
+            // The one-draw games, Hilo and Tower play on their own accounts too.
+            (Game::Dice, Draw::Spin),
+            (Game::Limbo, Draw::Spin),
+            (Game::Flip, Draw::Spin),
+            (Game::Keno, Draw::Spin),
+            (Game::Wheel, Draw::Spin),
+            (Game::Hilo, Draw::Card),
+            (Game::Tower, Draw::Climb),
+            // Mines draws play on the board (`consume_mines_randomness`), never here.
+            (Game::Mines, Draw::Reveal),
+            (Game::Mines, Draw::Spin),
         ] {
             let mut round = Round {
                 game,
