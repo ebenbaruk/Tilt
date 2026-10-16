@@ -3,5 +3,6 @@
 
 pub mod baccarat;
 pub mod blackjack;
+pub mod mines;
 pub mod roulette;
 pub mod slots;

@@ -1,8 +1,8 @@
 // Which keys a drawing offers, as data: the panel and the band render the same plan, and the
 // tests check it is conflict-free without drawing anything.
-import { formatUsdc } from "./format";
+import { formatUsdc, minesPayout } from "./format";
 import type { Prefs, SlotsSpeed } from "./model";
-import type { BaccaratBet, Game, Limits, PlayAction, RouletteBet, StateResponse } from "./protocol";
+import type { BaccaratBet, Game, Limits, MinesView, PlayAction, RouletteBet, StateResponse } from "./protocol";
 
 export type Command =
   | { kind: "switch"; game: Game }
@@ -10,6 +10,8 @@ export type Command =
   | { kind: "bet"; step: -1 | 1 }
   /** One blackjack hand fewer (-1) or more (+1), held between one and six. */
   | { kind: "hands"; step: -1 | 1 }
+  /** One Mines mine fewer (-1) or more (+1), held between 1 and 24. */
+  | { kind: "mines"; step: -1 | 1 }
   | { kind: "roulette-bet"; bet: RouletteBet }
   | { kind: "roulette-cycle"; target: "dozen" | "column" }
   | { kind: "baccarat-bet"; bet: BaccaratBet }
@@ -29,13 +31,14 @@ export interface KeyAction {
   command: Command;
 }
 
-export const GAMES: readonly Game[] = ["blackjack", "roulette", "baccarat", "slots"];
+export const GAMES: readonly Game[] = ["blackjack", "roulette", "baccarat", "slots", "mines"];
 
 export const GAME_LABELS: Record<Game, string> = {
   blackjack: "Blackjack",
   roulette: "Roulette",
   baccarat: "Baccarat",
   slots: "Slots",
+  mines: "Mines",
 };
 
 const BASE_UNITS_PER_USDC = 1_000_000n;
@@ -78,6 +81,34 @@ export function clampHands(hands: number): number {
 /** One blackjack hand fewer (-1) or more (+1), held between one and six. */
 export function stepHands(hands: number, step: -1 | 1): number {
   return clampHands(clampHands(hands) + step);
+}
+
+/** A Mines board: 5 × 5 tiles, numbered row × 5 + column. */
+export const MINES_COLUMNS = 5;
+export const MINES_TILES = MINES_COLUMNS * MINES_COLUMNS;
+export const MIN_MINES = 1;
+export const MAX_MINES = MINES_TILES - 1;
+export const DEFAULT_MINES = 3;
+
+/** A mine count the board takes: whole, from 1 to 24. */
+export function clampMines(mines: number): number {
+  return Number.isInteger(mines) ? Math.max(MIN_MINES, Math.min(mines, MAX_MINES)) : DEFAULT_MINES;
+}
+
+/** One mine fewer (-1) or more (+1), held between 1 and 24. */
+export function stepMines(mines: number, step: -1 | 1): number {
+  return clampMines(clampMines(mines) + step);
+}
+
+/** The address of the key revealing a tile: `mines-tile-0` to `mines-tile-24`. */
+export const MINES_TILE_KEY = "mines-tile-";
+const LETTER_A = "a".charCodeAt(0);
+/** A hidden tile's key drawn on its own: a tile of the board, its letter beside it. */
+const TILE_LABEL = "·";
+
+/** A tile's hotkey: tile 0 is `a`, tile 24 is `y` (`z` cashes out). */
+export function tileLetter(tile: number): string {
+  return String.fromCharCode(LETTER_A + tile);
 }
 
 /** A round in flight pins the game it was started in. */
@@ -185,21 +216,63 @@ export function startAction(game: Game, amount: string, prefs: Prefs): PlayActio
       return { type: "baccarat_deal", amount, bet: prefs.baccarat };
     case "slots":
       return { type: "slots_spin", amount };
+    case "mines":
+      return { type: "mines_bet", amount, mines: clampMines(prefs.mines) };
   }
 }
 
-/** "deal · 0.50", or "deal · 3 × 0.50" for three blackjack hands. */
+/** "deal · 0.50", "deal · 3 × 0.50" for three blackjack hands, "play · 0.50 · 3 mines". */
 function startLabel(game: Game, amount: string, prefs: Prefs): string {
   const hands = clampHands(prefs.hands);
   const stake = game === "blackjack" && hands > 1 ? `${hands} × ${formatUsdc(amount)}` : formatUsdc(amount);
+  const mines = clampMines(prefs.mines);
+  const board = game === "mines" ? ` · ${mines} ${mines === 1 ? "mine" : "mines"}` : "";
 
-  return `${START_VERB[game]} · ${stake}`;
+  return `${START_VERB[game]} · ${stake}${board}`;
 }
 
-const START_VERB: Record<Game, string> = { blackjack: "deal", roulette: "spin", baccarat: "deal", slots: "spin" };
+const START_VERB: Record<Game, string> = {
+  blackjack: "deal",
+  roulette: "spin",
+  baccarat: "deal",
+  slots: "spin",
+  mines: "play",
+};
+
+/** A tile key for every tile still hidden while the board takes a reveal, then `z` to cash out. */
+function minesTurnKeys(detail: MinesView, stake: string): KeyAction[] {
+  const shown = new Set<number | null>([...detail.revealed, detail.pending, detail.busted]);
+  const tiles = detail.canReveal ? Array.from({ length: MINES_TILES }, (_, tile) => tile) : [];
+  const keys: KeyAction[] = tiles
+    .filter((tile) => !shown.has(tile))
+    .map((tile) => ({
+      key: `${MINES_TILE_KEY}${tile}`,
+      hotkey: tileLetter(tile),
+      label: TILE_LABEL,
+      isSelected: false,
+      command: { kind: "play", action: { type: "mines_reveal", tile } },
+    }));
+
+  if (detail.canCashOut) {
+    keys.push({
+      key: "mines-cashout",
+      hotkey: "z",
+      label: `cash out · ${formatUsdc(minesPayout(stake, detail.multiplier))}`,
+      isSelected: false,
+      command: { kind: "play", action: { type: "mines_cashout" } },
+    });
+  }
+
+  return keys;
+}
 
 function playerTurnKeys(state: StateResponse): KeyAction[] {
-  const detail = state.round?.detail;
+  const round = state.round;
+  const detail = round?.detail;
+
+  if (round && detail?.game === "mines") {
+    return minesTurnKeys(detail, round.stake);
+  }
 
   if (detail?.game !== "blackjack") {
     return [];
@@ -251,6 +324,11 @@ function choiceKeys(game: Game, prefs: Prefs): KeyAction[] {
         isSelected: prefs.slotsSpeed === speed,
         command: { kind: "slots-speed", speed },
       }));
+    case "mines":
+      return [
+        { key: "mines-down", hotkey: "j", label: "mines −", isSelected: false, command: { kind: "mines", step: -1 } },
+        { key: "mines-up", hotkey: "k", label: "mines +", isSelected: false, command: { kind: "mines", step: 1 } },
+      ];
   }
 }
 
@@ -303,7 +381,25 @@ export function heldKeys({ state, prefs, isBusy }: PlanInput): KeyAction[] {
     return [];
   }
 
-  const settled = round?.phase === "drawing" ? { ...state, round: { ...round, phase: "idle" as const } } : state;
+  // A Mines reveal being drawn holds the board's keys, the tiles mashed meanwhile included: the
+  // keys the board offers once the draw lands, unless the tile was a mine.
+  const settled =
+    round?.phase !== "drawing"
+      ? state
+      : round.detail.game === "mines"
+        ? {
+            ...state,
+            round: {
+              ...round,
+              phase: "player_turn" as const,
+              detail: {
+                ...round.detail,
+                canReveal: round.detail.nextMultiplier !== null,
+                canCashOut: round.detail.revealed.length > 0,
+              },
+            },
+          }
+        : { ...state, round: { ...round, phase: "idle" as const } };
 
   return planKeys({ state: { ...settled, pendingIntentId: null }, prefs, isBusy: false }).filter(
     (key) => key.command.kind !== "switch",

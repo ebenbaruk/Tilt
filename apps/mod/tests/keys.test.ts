@@ -4,13 +4,16 @@ import { isPlayAction, isStateResponse } from "../hooks/guards";
 import {
   betOptions,
   clampHands,
+  clampMines,
   currentBet,
   GAMES,
+  heldKeys,
   nextRouletteBet,
   planKeys,
   startAction,
   stepBetIndex,
   stepHands,
+  stepMines,
 } from "../hooks/keys";
 import type { Prefs } from "../hooks/model";
 import type { StateResponse } from "../hooks/protocol";
@@ -24,6 +27,7 @@ const PREFS: Prefs = {
   roulette: { kind: "red" },
   baccarat: "banker",
   slotsSpeed: "normal",
+  mines: 3,
 };
 const STATES: [string, StateResponse][] = Object.entries(fixtures);
 const HOTKEY = /^[0-9a-z]$/;
@@ -54,24 +58,25 @@ describe("the key plan", () => {
         .map((key) => key.hotkey)
         .join("");
 
-    expect(hotkeysOf("blackjack")).toBe("1234jkvbn");
-    expect(hotkeysOf("roulette")).toBe("1234rkoelgzcvbn");
-    expect(hotkeysOf("baccarat")).toBe("1234pytvbn");
-    expect(hotkeysOf("slots")).toBe("1234xftvbn");
+    expect(hotkeysOf("blackjack")).toBe("12345jkvbn");
+    expect(hotkeysOf("roulette")).toBe("12345rkoelgzcvbn");
+    expect(hotkeysOf("baccarat")).toBe("12345pytvbn");
+    expect(hotkeysOf("slots")).toBe("12345xftvbn");
+    expect(hotkeysOf("mines")).toBe("12345jkvbn");
   });
 
   test("blackjack in turn: hit, stand and double for the active hand, whatever the hand count", () => {
     for (const state of [fixtures.BLACKJACK_TURN, fixtures.BLACKJACK_SIX_TURN, fixtures.BLACKJACK_TEN_TURN]) {
       const keys = planKeys({ state, prefs: { ...PREFS, hands: 6 }, isBusy: false });
 
-      expect(keys.map((key) => key.hotkey)).toEqual(["1", "2", "3", "4", "h", "s", "d"]);
+      expect(keys.map((key) => key.hotkey)).toEqual(["1", "2", "3", "4", "5", "h", "s", "d"]);
     }
   });
 
   test("blackjack in turn: p splits a pair, offered only when the active hand can split", () => {
     const keys = planKeys({ state: fixtures.BLACKJACK_PAIR, prefs: PREFS, isBusy: false });
 
-    expect(keys.map((key) => key.hotkey)).toEqual(["1", "2", "3", "4", "h", "s", "d", "p"]);
+    expect(keys.map((key) => key.hotkey)).toEqual(["1", "2", "3", "4", "5", "h", "s", "d", "p"]);
     expect(keys.find((key) => key.hotkey === "p")?.command).toEqual({
       kind: "play",
       action: { type: "blackjack_split" },
@@ -85,6 +90,66 @@ describe("the key plan", () => {
 
     expect(label(1)).toBe("deal · 0.50");
     expect(label(3)).toBe("deal · 3 × 0.50");
+  });
+
+  test("mines in turn: a letter for each hidden tile, a to y, and z cashes out at the current multiplier", () => {
+    const keys = planKeys({ state: fixtures.MINES_TURN, prefs: PREFS, isBusy: false });
+    const plays = keys.filter((key) => key.command.kind !== "switch");
+
+    // g (6) and m (12) are revealed: no key for them.
+    expect(plays.map((key) => key.hotkey).join("")).toBe("abcdefhijklnopqrstuvwxyz");
+    expect(keys.find((key) => key.hotkey === "a")?.command).toEqual({
+      kind: "play",
+      action: { type: "mines_reveal", tile: 0 },
+    });
+    expect(keys.find((key) => key.hotkey === "y")?.command).toEqual({
+      kind: "play",
+      action: { type: "mines_reveal", tile: 24 },
+    });
+    // 1.00 at ×1.2857.
+    expect(keys.find((key) => key.hotkey === "z")).toMatchObject({
+      key: "mines-cashout",
+      label: "cash out · 1.28",
+      command: { kind: "play", action: { type: "mines_cashout" } },
+    });
+  });
+
+  test("mines: no cash-out before a safe tile, no tile once none is left to reveal", () => {
+    const turn = fixtures.MINES_TURN;
+    const detail = turn.round?.detail;
+    const withBoard = (fields: Record<string, unknown>): StateResponse =>
+      turn.round === null || detail?.game !== "mines"
+        ? turn
+        : { ...turn, round: { ...turn.round, detail: { ...detail, ...fields } } };
+    const hotkeys = (state: StateResponse) =>
+      planKeys({ state, prefs: PREFS, isBusy: false })
+        .filter((key) => key.command.kind !== "switch")
+        .map((key) => key.hotkey)
+        .join("");
+
+    expect(hotkeys(withBoard({ revealed: [], canCashOut: false }))).toBe("abcdefghijklmnopqrstuvwxy");
+    expect(hotkeys(withBoard({ canReveal: false }))).toBe("z");
+  });
+
+  test("mines: a reveal being drawn holds the board's keys, the tile drawn and the safe ones left out", () => {
+    const input = { state: fixtures.MINES_DRAWING, prefs: PREFS, isBusy: false };
+
+    expect(planKeys(input).filter((key) => key.command.kind !== "switch")).toEqual([]);
+    // g (6) is safe, m (12) is being drawn.
+    expect(
+      heldKeys(input)
+        .map((key) => key.hotkey)
+        .join(""),
+    ).toBe("abcdefhijklnopqrstuvwxyz");
+  });
+
+  test("a settled mines board offers the next one: mines, bet and play", () => {
+    for (const state of [fixtures.MINES_BUSTED, fixtures.MINES_CASHED]) {
+      const keys = planKeys({ state, prefs: { ...PREFS, game: "mines" }, isBusy: false });
+
+      expect(keys.map((key) => key.hotkey).join("")).toBe("12345jkvbn");
+      expect(keys.find((key) => key.key === "start")?.label).toBe("play · 0.50 · 3 mines");
+    }
   });
 
   test("nothing to play while blocked, without an account, drawing or with a move in flight", () => {
@@ -147,6 +212,22 @@ describe("bets", () => {
       hands: 4,
     });
   });
+
+  test("j and k step the mines from 1 to 24, held at both ends; the bet carries them", () => {
+    expect(stepMines(1, -1)).toBe(1);
+    expect(stepMines(3, 1)).toBe(4);
+    expect(stepMines(24, 1)).toBe(24);
+    expect(stepMines(24, -1)).toBe(23);
+    expect(clampMines(30)).toBe(24);
+    expect(clampMines(0)).toBe(1);
+    // A broken stored count reads as the default, not as an extreme.
+    expect(clampMines(Number.NaN)).toBe(3);
+    expect(startAction("mines", "500000", { ...PREFS, mines: 7 })).toEqual({
+      type: "mines_bet",
+      amount: "500000",
+      mines: 7,
+    });
+  });
 });
 
 describe("response guards", () => {
@@ -170,6 +251,8 @@ describe("response guards", () => {
       { ...base, balance: "-1" },
       { ...base, limits: { minBet: "1" } },
       { ...base, rtp: { blackjack: "99.00" } },
+      // An api from before Mines: no Mines RTP.
+      { ...base, rtp: { blackjack: "99.00", roulette: "97.30", baccarat: "98.94", slots: "96.16" } },
       { ...base, round: { ...base.round, phase: "won" } },
       withDetail({ hands: [{ ...hands[0], cards: [{ rank: 14, suit: "♠" }] }] }),
       withDetail({ hands: [] }),
@@ -191,6 +274,42 @@ describe("response guards", () => {
     }
   });
 
+  test("a Mines board of the wrong shape is refused", () => {
+    const base = fixtures.MINES_TURN;
+    const withBoard = (fields: Record<string, unknown>) => ({
+      ...base,
+      round: { ...base.round, detail: { ...base.round?.detail, ...fields } },
+    });
+    const broken: unknown[] = [
+      withBoard({ mines: 0 }),
+      withBoard({ mines: 25 }),
+      withBoard({ mines: 2.5 }),
+      withBoard({ revealed: [6, 6] }),
+      withBoard({ revealed: [25] }),
+      withBoard({ revealed: [-1] }),
+      withBoard({ revealed: "6,12" }),
+      // 24 mines leave one safe tile: two cannot be revealed.
+      withBoard({ mines: 24, revealed: [0, 1] }),
+      withBoard({ pending: 6 }),
+      withBoard({ pending: 25 }),
+      withBoard({ busted: 12 }),
+      withBoard({ busted: undefined }),
+      withBoard({ multiplier: 1.2857 }),
+      withBoard({ multiplier: "1.29" }),
+      withBoard({ multiplier: "-1.2857" }),
+      withBoard({ nextMultiplier: "x1.4785" }),
+      withBoard({ canCashOut: "yes" }),
+      withBoard({ canReveal: undefined }),
+    ];
+
+    for (const value of broken) {
+      expect(isStateResponse(value), JSON.stringify(value)?.slice(-160)).toBe(false);
+    }
+
+    expect(isStateResponse(withBoard({ mines: 24, revealed: [0], pending: 1 }))).toBe(true);
+    expect(isStateResponse(withBoard({ nextMultiplier: null, canReveal: false }))).toBe(true);
+  });
+
   test("play actions", () => {
     expect(isPlayAction({ type: "blackjack_hit" })).toBe(true);
     expect(isPlayAction({ type: "blackjack_split" })).toBe(true);
@@ -202,6 +321,18 @@ describe("response guards", () => {
     expect(isPlayAction({ type: "roulette_spin", amount: "500000", bet: { kind: "dozen", dozen: 2 } })).toBe(true);
     expect(isPlayAction({ type: "roulette_spin", amount: "500000", bet: { kind: "dozen", dozen: 4 } })).toBe(false);
     expect(isPlayAction({ type: "slots_spin", amount: "0" })).toBe(false);
+    expect(isPlayAction({ type: "mines_bet", amount: "500000", mines: 1 })).toBe(true);
+    expect(isPlayAction({ type: "mines_bet", amount: "500000", mines: 24 })).toBe(true);
+    expect(isPlayAction({ type: "mines_bet", amount: "500000", mines: 0 })).toBe(false);
+    expect(isPlayAction({ type: "mines_bet", amount: "500000", mines: 25 })).toBe(false);
+    expect(isPlayAction({ type: "mines_bet", amount: "500000" })).toBe(false);
+    expect(isPlayAction({ type: "mines_bet", amount: "0", mines: 3 })).toBe(false);
+    expect(isPlayAction({ type: "mines_reveal", tile: 0 })).toBe(true);
+    expect(isPlayAction({ type: "mines_reveal", tile: 24 })).toBe(true);
+    expect(isPlayAction({ type: "mines_reveal", tile: 25 })).toBe(false);
+    expect(isPlayAction({ type: "mines_reveal", tile: 1.5 })).toBe(false);
+    expect(isPlayAction({ type: "mines_reveal" })).toBe(false);
+    expect(isPlayAction({ type: "mines_cashout" })).toBe(true);
     expect(isPlayAction({ type: "withdraw", amount: "1" })).toBe(false);
   });
 });
@@ -247,6 +378,22 @@ describe("the table surface's input", () => {
     // No hands outside blackjack, nothing at all while a move is in flight.
     expect(pressFor({ key: "up" }, keysOf(fixtures.BASE, { ...PREFS, game: "slots" }))).toBeNull();
     expect(pressFor({ key: "space" }, planKeys({ state: fixtures.BASE, prefs: PREFS, isBusy: true }))).toBeNull();
+  });
+
+  test("at Mines the arrows step the mines, the letters reveal, z cashes out, Space plays nothing mid-board", () => {
+    const idle = planKeys({ state: fixtures.MINES_CASHED, prefs: { ...PREFS, game: "mines" }, isBusy: false });
+    const turn = planKeys({ state: fixtures.MINES_TURN, prefs: PREFS, isBusy: false });
+
+    expect(pressFor({ key: "up" }, idle)).toBe("mines-up");
+    expect(pressFor({ key: "down" }, idle)).toBe("mines-down");
+    expect(pressFor({ key: "space" }, idle)).toBe("start");
+    expect(pressFor({ key: "a" }, turn)).toBe("mines-tile-0");
+    expect(pressFor({ key: "Y" }, turn)).toBe("mines-tile-24");
+    // g is revealed already.
+    expect(pressFor({ key: "g" }, turn)).toBeNull();
+    expect(pressFor({ key: "z" }, turn)).toBe("mines-cashout");
+    expect(pressFor({ key: "space" }, turn)).toBeNull();
+    expect(pressFor({ key: "return" }, turn)).toBeNull();
   });
 
   test("whatever the state, a raw key presses a key the plan has, and each hotkey its own key", () => {

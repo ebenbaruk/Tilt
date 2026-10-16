@@ -51,11 +51,12 @@ Colors follow Claude Code's theme: a light theme gets darker pink and gold.
 Letter keys work everywhere (the pane and the band, inline or fullscreen):
 
 - `ctrl+x tab` gives the pane (or the band) the keyboard; `Esc` hands it back.
-- `1`–`4` switch game (not mid-round: a blackjack hand still to play, `▶`, or a draw in progress keeps its game, and the key says so), `v` / `b` lower / raise the bet per hand (held at the table's limits), `n` deals or spins.
+- `1`–`5` switch game (not mid-round: a blackjack hand still to play, `▶`, a Mines board in play or a draw in progress keeps its game, and the key says so), `v` / `b` lower / raise the bet per hand (held at the table's limits), `n` deals, spins or plays.
 - Blackjack: `j` / `k` one hand fewer / more (1 to 6), `h` hit, `s` stand, `d` double, `p` split (first two cards of the same value), all on the hand marked `▶`. Split aces take one card each and are finished, as in a casino: their hands say `· 1 card`.
 - Roulette: `r` red, `k` black, `o` odd, `e` even, `l` low, `g` high, `z` dozen, `c` column.
 - Baccarat: `p` player, `y` banker, `t` tie.
 - Slots: `x` normal, `f` fast (the reels land three times sooner), `t` turbo (no spin: the draw shows as soon as the chain has it).
+- Mines: `j` / `k` one mine fewer / more (1 to 24, 3 by default); in play, `a`–`y` reveal the tile with that letter (5×5, row by row) and `z` cashes out, from the first safe tile. In fullscreen, a click on a tile reveals it.
 - A move is sent once: until the table shows it, the keys are dimmed and do nothing, and for 1.5 s after, the keys of the move's screen stay dimmed on letters the new screen does not use, so the rest of a mashed `n` or `s` is caught. Past that, a letter the pane has no key for goes to the prompt (Claude Code's own behavior), so a mashed `Enter` after it would send it to the agent.
 
 In the fullscreen layout (`claude --settings '{"tui":"fullscreen"}'`), click the table to give it the keys. Only a click does: `ctrl+x tab` gives the pane the letters, not Space, Enter or the arrows, and once the keyboard leaves the pane the table needs a click again (the table says so). Without it, `←` is Claude Code's own (the agents view).

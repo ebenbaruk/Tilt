@@ -15,21 +15,33 @@ import {
   rouletteBetLabel,
   SEPARATOR,
 } from "./format";
-import { baccaratTable, rouletteChip, ROULETTE_SPIN_MS, rouletteTable, SLOTS_SPIN_MS, slotsTable } from "./games";
+import {
+  baccaratTable,
+  minesTable,
+  rouletteChip,
+  ROULETTE_SPIN_MS,
+  rouletteTable,
+  SLOTS_SPIN_MS,
+  slotsTable,
+  type TileButton,
+} from "./games";
 import {
   activeGame,
   clampHands,
+  clampMines,
   type Command,
   currentBet,
   GAME_LABELS,
   heldKeys,
   type KeyAction,
+  MINES_TILE_KEY,
   planKeys,
   type PlanInput,
+  tileLetter,
 } from "./keys";
 import type { TiltKey, TiltSession } from "../types";
 import type { AgentView, AuthView, IntentView, Prefs, RemoteView, SlotsSpeed } from "./model";
-import type { Game, RoundView, SponsorView, StateResponse } from "./protocol";
+import type { Game, MinesView, RoundView, SponsorView, StateResponse } from "./protocol";
 import { FG1, FG4, FG6, GOLD, GREEN, INK, LINE3, LINE4, PINK, PINK_RULE, RED, toneOf, type Ui } from "./theme";
 
 export interface Snapshot {
@@ -96,7 +108,9 @@ const LEADERBOARD_TOP = 3;
 const BIG_WIN_MULTIPLE = 2n;
 const HANDS_MAX = 6;
 /** The steppers' keys: drawn as `◂ value ▸` rather than as two words on the key line. */
-const STEP_KEYS = new Set(["bet-down", "bet-up", "hands-down", "hands-up"]);
+const STEP_KEYS = new Set(["bet-down", "bet-up", "hands-down", "hands-up", "mines-down", "mines-up"]);
+/** Where playButtons draws the echo of a settled move's key. */
+const ECHO_PREFIX = "echo-";
 
 export const spinnerGlyph = (frame: number): string => SPINNER[frame % SPINNER.length] ?? "⠋";
 
@@ -141,8 +155,15 @@ interface PlayButton {
   isMove: boolean;
 }
 
-/** Moves: the round's own keys (deal or spin, hit, stand, double, split); the rest set up the next one. */
-const isMoveKey = (key: string): boolean => key === "start" || key.startsWith("bj-");
+/** Moves: the round's own keys (deal or spin, hit, stand, double, split, cash out); the rest set up the next one. */
+const isMoveKey = (key: string): boolean => key === "start" || key.startsWith("bj-") || key === "mines-cashout";
+
+/** The Mines tile a play key reveals, live, held or echoed; null for any other key. */
+function tileOf(key: string): number | null {
+  const address = key.startsWith(ECHO_PREFIX) ? key.slice(ECHO_PREFIX.length) : key;
+
+  return address.startsWith(MINES_TILE_KEY) ? Number(address.slice(MINES_TILE_KEY.length)) : null;
+}
 
 /**
  * The play keys (no game switches) to draw: the live ones, or else the ones a move in flight
@@ -171,7 +192,7 @@ function playButtons(
     ...inertButtons(ui, faded, "echo").map((element, index) => {
       const key = faded[index]?.key ?? "";
 
-      return { key: `echo-${key}`, element, isMove: isMoveKey(key) };
+      return { key: `${ECHO_PREFIX}${key}`, element, isMove: isMoveKey(key) };
     }),
   ];
 }
@@ -285,7 +306,19 @@ function outcomeText(round: RoundView): string {
       return `Player ${round.detail.playerPoints} · banker ${round.detail.bankerPoints}.`;
     case "slots":
       return "";
+    case "mines":
+      return minesOutcome(round.detail);
   }
+}
+
+/** "Mine on c after 2 safe tiles.", or "Cashed out at ×1.2375 after 2 safe tiles." */
+function minesOutcome(detail: MinesView): string {
+  const safe = detail.revealed.length;
+  const after = safe === 0 ? "" : ` after ${safe} safe ${safe === 1 ? "tile" : "tiles"}`;
+
+  return detail.busted === null
+    ? `Cashed out at ×${detail.multiplier}${after}.`
+    : `Mine on ${tileLetter(detail.busted)}${after}.`;
 }
 
 /** A settled round's sentence and net; `shownNet` is what a count-up has reached so far. */
@@ -309,7 +342,10 @@ export function outcomeLine(ui: Ui, round: RoundView | null, shownNet?: string):
   );
 }
 
-/** The active game's table; `fx` moves the blackjack cards and hands, `STILL` draws them at rest. */
+/**
+ * The active game's table; `fx` moves the blackjack cards and hands, `STILL` draws them at rest.
+ * `tileButton` is the Button a Mines tile is pressed with, where this drawing has one.
+ */
 export function gameTable(
   ui: Ui,
   state: StateResponse,
@@ -317,6 +353,7 @@ export function gameTable(
   isWide: boolean,
   fx: TableFx,
   size: CardSize,
+  tileButton: TileButton,
 ): RenderElement {
   const game = activeGame(state, prefs);
   const round = roundOf(state, game);
@@ -330,6 +367,8 @@ export function gameTable(
       return baccaratTable(ui, round, prefs, size);
     case "slots":
       return slotsTable(ui, round, size, fx.spinElapsed);
+    case "mines":
+      return minesTable(ui, round, prefs, fx.frame, size, tileButton);
   }
 }
 
@@ -801,12 +840,20 @@ function stepper(ui: Ui, down: KeyAction, up: KeyAction, value: RenderElement, o
   );
 }
 
-/** The bet and, at blackjack, the hands, as steppers; null when their keys are not live. */
+/** The bet and, at blackjack the hands, at Mines the mines, as steppers; null when their keys are not live. */
 function steppers(ui: Ui, state: StateResponse, prefs: Prefs, keys: readonly KeyAction[], onCommand: OnCommand) {
   const { Text } = ui;
   const find = (key: string) => keys.find((action) => action.key === key);
-  const [betDown, betUp, handsDown, handsUp] = ["bet-down", "bet-up", "hands-down", "hands-up"].map(find);
+  const [betDown, betUp, handsDown, handsUp, minesDown, minesUp] = [
+    "bet-down",
+    "bet-up",
+    "hands-down",
+    "hands-up",
+    "mines-down",
+    "mines-up",
+  ].map(find);
   const hands = clampHands(prefs.hands);
+  const mines = clampMines(prefs.mines);
   const drawn: RenderElement[] = [];
 
   if (betDown !== undefined && betUp !== undefined) {
@@ -832,6 +879,19 @@ function steppers(ui: Ui, state: StateResponse, prefs: Prefs, keys: readonly Key
     );
 
     drawn.push(stepper(ui, handsDown, handsUp, pips, onCommand));
+  }
+
+  if (minesDown !== undefined && minesUp !== undefined) {
+    const count = (
+      <Text color={FG4}>
+        <Text color={PINK} bold>
+          {String(mines)}
+        </Text>
+        {` ${mines === 1 ? "mine" : "mines"}`}
+      </Text>
+    );
+
+    drawn.push(stepper(ui, minesDown, minesUp, count, onCommand));
   }
 
   return drawn;
@@ -977,6 +1037,9 @@ function tableRows(
       return 5;
     case "slots":
       return size === "large" ? 5 : 3;
+    case "mines":
+      // Five rows of tiles, a blank row between them with large cards.
+      return size === "large" ? 9 : 5;
     default:
       return 0;
   }
@@ -1054,9 +1117,25 @@ export function renderPane(
   // first, so the ones to press are always in view and the table scrolls instead.
   const isKeysFirst = paneRows(snap, state, layout, size) > layout.bodyRows;
   const plays = playButtons(ui, { state, prefs: snap.prefs, isBusy: snap.intent !== null }, keys, snap.echo, onCommand);
+  const dealing = dealingHands(snap);
+  // Drawn here, the Mines board is its own keys: each hidden tile is the Button of its key, live
+  // or held, and the key line leaves those out. A key of a tile shown since stays on the line.
+  const board = roundOf(state, game)?.detail;
+  const shownTiles = new Set(board?.game === "mines" ? [...board.revealed, board.pending, board.busted] : []);
+  const tileElements = new Map<number, RenderElement>();
+  const linePlays = plays.filter((button) => {
+    const tile = tileOf(button.key);
+
+    if (table !== null || dealing !== null || game !== "mines" || tile === null || shownTiles.has(tile)) {
+      return true;
+    }
+
+    tileElements.set(tile, button.element);
+
+    return false;
+  });
   const steps = steppers(ui, state, snap.prefs, keys, onCommand);
   const side = state.sponsor !== null || state.leaderboard.length > 0;
-  const dealing = dealingHands(snap);
   const canPlay = state.accountOpen && state.blocked === null;
   const shownTable =
     dealing !== null
@@ -1067,15 +1146,16 @@ export function renderPane(
             state,
             snap.prefs,
             isWide,
-            { ...STILL, spinElapsed: snap.spinElapsed, revealed: snap.revealed },
+            { ...STILL, spinElapsed: snap.spinElapsed, revealed: snap.revealed, frame: snap.agent.frame },
             size,
+            (tile) => tileElements.get(tile) ?? null,
           )
         : table(size, gameColumns(layout));
   const gameColumn = (
     <Box flexDirection="column" flexGrow={1} marginTop={snap.agent.notice !== null || snap.agent.isWorking ? 1 : 0}>
       {!snap.isOnboarded && canPlay && firstHandGuide(ui, layout.isFocused)}
       {state.blocked !== null && <Text color={RED}>{`Play paused · ${cleanText(state.blocked)}`}</Text>}
-      {isKeysFirst && plays.length > 0 && <Box marginBottom={1}>{keyArea(ui, plays, false, steps)}</Box>}
+      {isKeysFirst && linePlays.length > 0 && <Box marginBottom={1}>{keyArea(ui, linePlays, false, steps)}</Box>}
       {shownTable}
       {table === null && celebration(ui, roundOf(state, game), snap.celebrating, gameColumns(layout) - 1)}
       {/* The result waits for the wheel, the reels or the last card: the text must not tell it first. */}
@@ -1087,7 +1167,7 @@ export function renderPane(
       {dealing === null && snap.spinElapsed === null && snap.revealed === null && winBanner(ui, state, onCommand)}
       {statusLine(ui, snap, state)}
       {lowBalanceLine(ui, snap, state)}
-      {!isKeysFirst && plays.length > 0 && keyArea(ui, plays, size === "large", steps)}
+      {!isKeysFirst && linePlays.length > 0 && keyArea(ui, linePlays, size === "large", steps)}
     </Box>
   );
   const foot = (
@@ -1149,6 +1229,8 @@ export function handSummary(state: StateResponse, prefs: Prefs): string {
       return `${label} · ${detail.bet} · ${cardsInline(detail.player)} vs ${cardsInline(detail.banker)}${net}`;
     case "slots":
       return `${label}${detail.reels === null ? "" : ` · ${detail.reels.map(cleanText).join(" ")}`}${net}`;
+    case "mines":
+      return `${label} · ${detail.mines} ${detail.mines === 1 ? "mine" : "mines"} · ${detail.revealed.length} safe · ×${detail.multiplier}${net}`;
   }
 }
 

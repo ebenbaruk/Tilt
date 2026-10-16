@@ -112,6 +112,31 @@ export function Reels(props: Props) {
   );
 }
 
+/** A mines board: hidden tiles, one gem found, one mine. */
+export function Minefield(props: Props) {
+  const cells = [0, 1, 2].flatMap((row) => [0, 1, 2].map((col) => ({ x: 36 + col * 32, y: 16 + row * 32 })));
+  return (
+    <svg viewBox="0 0 160 120" aria-hidden="true" focusable="false" {...props}>
+      <rect x="28" y="8" width="104" height="104" rx="16" fill="var(--sky)" {...STROKE} />
+      {cells.map(({ x, y }, i) => (
+        <rect
+          key={i}
+          x={x}
+          y={y}
+          width="24"
+          height="24"
+          rx="6"
+          fill={i === 4 ? "var(--yellow)" : "var(--paper)"}
+          {...STROKE}
+          strokeWidth={3}
+        />
+      ))}
+      <path d="M112 52 l8 8 l-8 8 l-8 -8 z" fill="var(--green)" {...STROKE} strokeWidth={2.5} />
+      <circle cx="80" cy="60" r="7" fill="var(--orange)" {...STROKE} strokeWidth={2.5} />
+    </svg>
+  );
+}
+
 /** Two baccarat cards, fanned. */
 export function Fan(props: Props) {
   return (

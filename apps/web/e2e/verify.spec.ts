@@ -91,6 +91,38 @@ test("shows the replay, the VRF randomness and the on-chain comparison", async (
   );
 });
 
+test("draws a mines board: safe tiles in reveal order and the busting mine", async ({ page }) => {
+  const mines: VerifyResponse = {
+    ...RESULT,
+    game: "mines",
+    replayed: {
+      ...RESULT.replayed,
+      stake: "1000000",
+      payout: "0",
+      fee: "0",
+      net: "-1000000",
+      detail: {
+        game: "mines",
+        mines: 3,
+        revealed: [7, 0],
+        pending: null,
+        busted: 12,
+        multiplier: "1.2857",
+        nextMultiplier: null,
+        canCashOut: false,
+        canReveal: false,
+      },
+    },
+    onChain: { stake: "1000000", payout: "0", fee: "0" },
+  };
+  await page.route(`**/v1/rounds/${SIGNATURE}/verify`, (route) => json(route, 200, mines));
+  await page.goto(`/verify/${SIGNATURE}`);
+  const board = page.getByRole("img", { name: "2 safe tiles revealed, hit a mine at row 3 column 3" });
+  await expect(board).toBeVisible();
+  await expect(board).toHaveText(`2······1····✸${"·".repeat(12)}`);
+  await expect(page.getByText("3 mines · hit a mine at row 3 column 3")).toBeVisible();
+});
+
 test("flags a mismatch", async ({ page }) => {
   const mismatch: VerifyResponse = { ...RESULT, onChain: { ...RESULT.onChain, payout: "6500000" }, matches: false };
   await page.route(`**/v1/rounds/${SIGNATURE}/verify`, (route) => json(route, 200, mismatch));

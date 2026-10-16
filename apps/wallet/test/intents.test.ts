@@ -218,7 +218,7 @@ describe("intents", () => {
     expect(await sweep(db, chain, intents, { checkpointMinLoss: 1n, checkpointIntervalMs: 1 })).toEqual({ reconciled: 0, expired: 0, checkpointed: 0, failed: 1 });
   });
 
-  it("never closes a hand waiting for the player, only retries a draw that never arrived (with the blackjack table)", async () => {
+  it("never closes a hand or board waiting for the player, only retries a draw that never arrived (with the game it plays on)", async () => {
     const TIMEOUT_SECS = 60;
     const now = Date.now();
     const longAgo = Math.floor(now / 1000) - 3_600;
@@ -226,6 +226,8 @@ describe("intents", () => {
       thinking: { address: PublicKey.unique(), game: { blackjack: {} }, status: { playerTurn: {} } },
       stuckDraw: { address: PublicKey.unique(), game: { blackjack: {} }, status: { awaitingDraw: { 0: { deal: {} } } } },
       stuckSpin: { address: PublicKey.unique(), game: { roulette: {} }, status: { awaitingDraw: { 0: { spin: {} } } } },
+      minesThinking: { address: PublicKey.unique(), game: { mines: {} }, status: { playerTurn: {} } },
+      stuckReveal: { address: PublicKey.unique(), game: { mines: {} }, status: { awaitingDraw: { 0: { reveal: {} } } } },
       freshDraw: { address: PublicKey.unique(), game: { roulette: {} }, status: { awaitingDraw: { 0: { spin: {} } } }, lastAction: Math.floor(now / 1000) - 5 },
     };
     for (const [name, p] of Object.entries(players)) {
@@ -237,7 +239,7 @@ describe("intents", () => {
         { type: "open_account", amount: "10000000" },
       ]);
     }
-    const expired: [string, boolean][] = [];
+    const expired: [string, string][] = [];
     const accounts = new Map(Object.values(players).map((p) => [p.address.toBase58(), p]));
     const chain = {
       fetchVault: async () => ({ config: { roundTimeoutSecs: TIMEOUT_SECS } }),
@@ -245,15 +247,19 @@ describe("intents", () => {
         const p = accounts.get(player.toBase58())!;
         return { round: { game: p.game, status: p.status, lastAction: "lastAction" in p ? p.lastAction : longAgo } };
       },
-      expireRound: async (player: PublicKey, blackjack: boolean) => {
-        expired.push([player.toBase58(), blackjack]);
+      expireRound: async (player: PublicKey, game: Record<string, object>) => {
+        expired.push([player.toBase58(), Object.keys(game)[0]]);
         return "sig";
       },
     } as unknown as TiltChain;
     const intents = { reconcile: async () => 0 } as unknown as Intents;
     const report = await sweep(db, chain, intents, { checkpointMinLoss: 1n, checkpointIntervalMs: 1 }, now);
-    expect(Object.fromEntries(expired)).toEqual({ [players.stuckDraw.address.toBase58()]: true, [players.stuckSpin.address.toBase58()]: false });
-    expect(report).toMatchObject({ expired: 2, failed: 0 });
+    expect(Object.fromEntries(expired)).toEqual({
+      [players.stuckDraw.address.toBase58()]: "blackjack",
+      [players.stuckSpin.address.toBase58()]: "roulette",
+      [players.stuckReveal.address.toBase58()]: "mines",
+    });
+    expect(report).toMatchObject({ expired: 3, failed: 0 });
   });
 
   it("lets an execution that saw its transaction land correct a reconciliation failure", async () => {

@@ -22,6 +22,7 @@ import type {
   DeviceStartResponse,
   DeviceTokenResponse,
   IntentResponse as PlayResponse,
+  MinesView,
   PlayAction,
   RoundView,
   StateResponse,
@@ -423,6 +424,26 @@ async function main() {
     (x) => x.round?.number === next && x.round.phase === "idle",
   );
   checkRound("slots", balance, s);
+
+  // Mines, 1 mine: reveal tiles 0, 1, 2 (one draw each), then cash out (no draw) unless a mine
+  // ended the round first.
+  balance = BigInt(s.balance);
+  next = (s.round?.number ?? 0) + 1;
+  s = await move({ type: "mines_bet", amount: usdc(1).toString(), mines: 1 }, (x) => x.round?.number === next);
+  const safeTiles = (x: StateResponse) => (x.round?.detail as MinesView).revealed.length;
+  while (s.round?.phase === "player_turn" && safeTiles(s) < 3) {
+    const before = safeTiles(s);
+    s = await move({ type: "mines_reveal", tile: before }, (x) => x.round?.phase === "idle" || safeTiles(x) > before);
+  }
+  const minesEnd = s.round?.phase === "idle" ? "mine" : "encaissement";
+  if (s.round?.phase === "player_turn") s = await move({ type: "mines_cashout" }, (x) => x.round?.phase === "idle");
+  const minesBoard = s.round?.detail as MinesView;
+  check(
+    "mines : manche terminée",
+    s.round?.phase === "idle" && (minesBoard.busted !== null || safeTiles(s) === 3),
+    `(${minesEnd}, cases ${minesBoard.revealed.join(",")}, mine ${minesBoard.busted}, ×${minesBoard.multiplier})`,
+  );
+  checkRound("mines", balance, s);
 
   const money = await call("POST", "/v1/play", mod, {
     intentId: randomUUID(),

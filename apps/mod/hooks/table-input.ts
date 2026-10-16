@@ -68,8 +68,8 @@ const ARROWS: Record<string, string> = {
 /**
  * The plan key a raw key presses at the table, or null. Space and Enter play: a new round with the
  * same bet and hands, or in a blackjack turn Space hits and Enter stands. The arrows step the bet
- * and the hands; any other character is the plan's own hotkey (`d` doubles, `p` splits, `1`–`4`
- * switch game).
+ * and the hands (the mines at Mines); any other character is the plan's own hotkey (`d` doubles,
+ * `p` splits, `a`–`y` reveal a Mines tile, `1`–`5` switch game).
  */
 export function pressFor(event: ClientKeyEvent, keys: readonly TableKey[]): string | null {
   if (event.ctrl === true || event.meta === true) {
@@ -78,8 +78,11 @@ export function pressFor(event: ClientKeyEvent, keys: readonly TableKey[]): stri
 
   const has = (address: string) => keys.some((key) => key.key === address);
   const isTurn = has("bj-stand");
+  const isMines = has("mines-up");
   const named: Record<string, string | undefined> = {
     ...ARROWS,
+    up: isMines ? "mines-up" : ARROWS.up,
+    down: isMines ? "mines-down" : ARROWS.down,
     space: isTurn ? "bj-hit" : "start",
     " ": isTurn ? "bj-hit" : "start",
     return: isTurn ? "bj-stand" : "start",

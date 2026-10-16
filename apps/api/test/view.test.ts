@@ -270,6 +270,83 @@ describe("buildRoundView", () => {
     expect(view.detail).toMatchObject({ game: "baccarat", bet: "tie", playerPoints: 4, bankerPoints: 7 });
   });
 
+  describe("mines", () => {
+    const board = (
+      mines: number,
+      order: number[],
+      more: Partial<Extract<Outcome, { game: "mines" }>> = {},
+    ): Outcome => ({
+      game: "mines",
+      mines,
+      order,
+      pending: null,
+      busted: null,
+      maxGain: "1000000000",
+      ...more,
+    });
+    const turn: RoundStatus = { kind: "player_turn" };
+
+    it("opens a board at 1x, revealable but not cashable yet", () => {
+      expect(buildRoundView(input(board(1, []), turn)).detail).toEqual({
+        game: "mines",
+        mines: 1,
+        revealed: [],
+        pending: null,
+        busted: null,
+        multiplier: "1.0000",
+        nextMultiplier: "1.0312",
+        canCashOut: false,
+        canReveal: true,
+      });
+    });
+
+    it("shows the multipliers after safe tiles, rounded down to 4 decimals", () => {
+      expect(buildRoundView(input(board(3, [7, 12]), turn)).detail).toMatchObject({
+        revealed: [7, 12],
+        multiplier: "1.2857",
+        nextMultiplier: "1.4785",
+        canCashOut: true,
+        canReveal: true,
+      });
+    });
+
+    it("shows the pending tile and allows nothing while its draw is awaited", () => {
+      const view = buildRoundView(input(board(3, [7], { pending: 8 }), { kind: "awaiting", draw: "reveal" }));
+      expect(view.phase).toBe("drawing");
+      expect(view.detail).toMatchObject({ pending: 8, canCashOut: false, canReveal: false, nextMultiplier: "1.2857" });
+    });
+
+    it("offers no next tile once the round cap or the cleared board is reached", () => {
+      // 1 USDC with a 2 USDC gain limit: 3x at most.
+      const capped = board(12, [0, 1, 2, 3, 4], { maxGain: "2000000" });
+      expect(buildRoundView(input(capped, turn)).detail).toMatchObject({
+        multiplier: "3.0000",
+        nextMultiplier: null,
+        canReveal: false,
+        canCashOut: true,
+      });
+      const cleared = board(24, [5], { maxGain: "23750000" });
+      expect(buildRoundView(input(cleared, idle, { payout: 24_512_500n, fee: 237_500n })).detail).toMatchObject({
+        multiplier: "24.7500",
+        nextMultiplier: null,
+        canReveal: false,
+        canCashOut: false,
+      });
+    });
+
+    it("shows the busting mine of a settled round, with no move left", () => {
+      const view = buildRoundView(input(board(5, [1, 2], { busted: 3 }), idle));
+      expect(view).toMatchObject({ phase: "idle", payout: "0", net: "-1000000" });
+      expect(view.detail).toMatchObject({
+        revealed: [1, 2],
+        busted: 3,
+        nextMultiplier: null,
+        canCashOut: false,
+        canReveal: false,
+      });
+    });
+  });
+
   it("drops the settled signature while a round is in progress", () => {
     const view = buildRoundView(
       input({ game: "slots", reels: [0, 0, 0] }, { kind: "awaiting", draw: "spin" }, { settledSignature: "old" }),

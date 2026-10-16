@@ -154,6 +154,8 @@ pub enum Game {
     Roulette,
     Baccarat,
     Slots,
+    /// Appended last, like `Draw::Split`. Mines rounds play on `MinesBoard`, outside `apply_draw`.
+    Mines,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, InitSpace, PartialEq, Eq, Debug)]
@@ -165,14 +167,18 @@ pub enum Draw {
     Spin,
     /// Appended last: `RoundStatus` lives in `PlayerAccount`, earlier bytes keep their meaning.
     Split,
+    /// Mines: the pending tile is safe or a mine. Appended last.
+    Reveal,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, InitSpace, PartialEq, Eq, Debug)]
 pub enum RoundStatus {
     Idle,
-    /// A VRF draw was requested; `consume_randomness` will continue the round.
+    /// A VRF draw was requested; its callback (`consume_randomness`, or
+    /// `consume_mines_randomness` for Mines) will continue the round.
     AwaitingDraw(Draw),
-    /// Blackjack only: waiting for hit, stand, double or split.
+    /// Blackjack: waiting for hit, stand, double or split. Mines: waiting for a reveal or a
+    /// cash-out.
     PlayerTurn,
 }
 
@@ -837,6 +843,11 @@ mod tests {
             (Game::Baccarat, Draw::Hit),
             (Game::Slots, Draw::Double),
             (Game::Roulette, Draw::Split),
+            (Game::Slots, Draw::Reveal),
+            (Game::Blackjack, Draw::Reveal),
+            // Mines draws play on the board (`consume_mines_randomness`), never here.
+            (Game::Mines, Draw::Reveal),
+            (Game::Mines, Draw::Spin),
         ] {
             let mut round = Round {
                 game,

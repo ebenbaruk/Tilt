@@ -29,6 +29,7 @@ import {
   activeGame,
   type Command,
   currentBet,
+  DEFAULT_MINES,
   GAME_LABELS,
   isRoundOpen,
   nextRouletteBet,
@@ -36,6 +37,7 @@ import {
   startAction,
   stepBetIndex,
   stepHands,
+  stepMines,
 } from "./keys";
 import {
   type AgentView,
@@ -81,6 +83,7 @@ const prefs = atom({ plugin: "tilt", key: "prefs" } as const, {
   roulette: { kind: "red" },
   baccarat: "banker",
   slotsSpeed: "normal",
+  mines: DEFAULT_MINES,
 });
 const intent = atom({ plugin: "tilt", key: "intent" } as const, null);
 const NO_ECHO = { keys: [], until: null };
@@ -634,6 +637,10 @@ async function runCommand($: EngineInterface, rt: Runtime, command: Command): Pr
     }
     case "hands":
       await setPrefs($, (value) => ({ ...value, hands: stepHands(value.hands, command.step) }));
+
+      return;
+    case "mines":
+      await setPrefs($, (value) => ({ ...value, mines: stepMines(value.mines, command.step) }));
 
       return;
     case "roulette-bet":

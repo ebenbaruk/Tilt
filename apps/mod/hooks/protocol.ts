@@ -4,7 +4,7 @@
 // Amounts are integer USDC base units (6 decimals) as decimal strings, never floats.
 
 export type Amount = string;
-export type Game = "blackjack" | "roulette" | "baccarat" | "slots";
+export type Game = "blackjack" | "roulette" | "baccarat" | "slots" | "mines";
 
 /** Same shape as `RouletteBet` in `@tilt/contract` (relay schema). */
 export type RouletteBet =
@@ -31,7 +31,13 @@ export type PlayAction =
   | { type: "blackjack_split" }
   | { type: "roulette_spin"; amount: Amount; bet: RouletteBet }
   | { type: "baccarat_deal"; amount: Amount; bet: BaccaratBet }
-  | { type: "slots_spin"; amount: Amount };
+  | { type: "slots_spin"; amount: Amount }
+  /** Opens a 5×5 Mines board hiding `mines` mines (1 to 24). */
+  | { type: "mines_bet"; amount: Amount; mines: number }
+  /** Reveals tile 0 to 24 (row × 5 + column), one not revealed yet. */
+  | { type: "mines_reveal"; tile: number }
+  /** Takes the current multiplier; needs at least one safe tile. */
+  | { type: "mines_cashout" };
 
 // ---- Auth: device-code login (`/tilt login`) ----
 
@@ -69,7 +75,7 @@ export type RoundPhase =
   | "idle"
   /** Waiting for the VRF draw; poll again shortly. */
   | "drawing"
-  /** Blackjack: waiting for hit, stand, double or split. */
+  /** Blackjack: waiting for hit, stand, double or split. Mines: waiting for a reveal or a cash-out. */
   | "player_turn";
 
 /** How a blackjack hand ended against the dealer; null until the round is settled. */
@@ -124,6 +130,24 @@ export interface SlotsView {
   reels: [string, string, string] | null;
 }
 
+export interface MinesView {
+  game: "mines";
+  /** 1 to 24. */
+  mines: number;
+  /** Tiles revealed safe, in reveal order (0 to 24). */
+  revealed: number[];
+  /** Tile awaiting its draw, null when none. */
+  pending: number | null;
+  /** The mine that ended the round, null otherwise. */
+  busted: number | null;
+  /** Current multiplier as a decimal string with 4 decimals ("1.0312", floor); "1.0000" before any reveal. */
+  multiplier: string;
+  /** Multiplier the next safe tile would bring, null when no reveal is left (cap or board cleared). */
+  nextMultiplier: string | null;
+  canCashOut: boolean;
+  canReveal: boolean;
+}
+
 export interface RoundView {
   phase: RoundPhase;
   stake: Amount;
@@ -137,7 +161,7 @@ export interface RoundView {
   number: number;
   /** Signature of the settling transaction, once indexed. */
   settledSignature: string | null;
-  detail: BlackjackView | RouletteView | BaccaratView | SlotsView;
+  detail: BlackjackView | RouletteView | BaccaratView | SlotsView | MinesView;
 }
 
 export interface SponsorView {

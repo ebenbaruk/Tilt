@@ -25,9 +25,11 @@ export interface TableFx {
   isPulseOn: boolean;
   /** How far into its spin a roulette or slots round is; null when it has landed. */
   spinElapsed: number | null;
+  /** The spinner's frame: a Mines tile awaiting its draw turns with it. */
+  frame: number;
 }
 
-export const STILL: TableFx = { revealed: null, isPulseOn: true, spinElapsed: null };
+export const STILL: TableFx = { revealed: null, isPulseOn: true, spinElapsed: null, frame: 0 };
 
 /** One card turned over every step, on the fullscreen table and on the main screen alike. */
 export const DEAL_STEP_MS = 150;

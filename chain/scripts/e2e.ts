@@ -1,5 +1,5 @@
 // End-to-end check of the Tilt program against a real Solana + MagicBlock rollup:
-// USDC vault, first deposit, the four games (multi-hand blackjack with splits included; outcomes recomputed here from the drawn
+// USDC vault, first deposit, the five games (multi-hand blackjack with splits included; outcomes recomputed here from the drawn
 // cards / numbers), deposits, withdrawals, loss checkpoints and the attack / recovery
 // scenarios. Runs against the local MagicBlock stack by default (README), or devnet with
 // BASE_RPC / ER_RPC / ER_WS / VALIDATOR / VRF_ER_QUEUE.
@@ -45,6 +45,7 @@ type BN = InstanceType<typeof BN>;
 type PlayerAccount = IdlAccounts<Tilt>["playerAccount"];
 type Round = PlayerAccount["round"];
 type BlackjackTable = IdlAccounts<Tilt>["blackjackTable"];
+type MinesBoard = IdlAccounts<Tilt>["minesBoard"];
 type TableHand = BlackjackTable["hands"][number];
 type Config = IdlTypes<Tilt>["config"];
 type RouletteBet = IdlTypes<Tilt>["rouletteBet"];
@@ -103,8 +104,12 @@ const player = Keypair.generate();
 const account = pda(Buffer.from("account"), player.publicKey.toBuffer());
 const ledger = pda(Buffer.from("ledger"), player.publicKey.toBuffer());
 const table = pda(Buffer.from("bjtable"), player.publicKey.toBuffer());
+const board = pda(Buffer.from("mines"), player.publicKey.toBuffer());
 const MAX_HANDS = 6;
 const MAX_SPLITS = 4;
+const MINES_TILES = 25;
+/** `pending` / `busted` when there is no such tile. */
+const NO_TILE = 255;
 
 let relayer: Keypair;
 let relayerProvider: anchor.AnchorProvider;
@@ -152,6 +157,7 @@ async function until<T>(f: () => Promise<T | undefined>, what: string, timeoutMs
 
 const fetchAccount = () => erProgram.account.playerAccount.fetch(account);
 const fetchTable = () => erProgram.account.blackjackTable.fetch(table);
+const fetchBoard = () => erProgram.account.minesBoard.fetch(board);
 const fetchLedger = () => program.account.ledger.fetch(ledger);
 const seed = () => Array.from(randomBytes(32));
 const isIdle = (round: Round) => "idle" in round.status;
@@ -173,6 +179,7 @@ async function erSend(tx: Transaction, signer = relayer, simulateFirst = false, 
 // Blackjack needs the player's table; the other games pass none (Anchor sends the program id).
 const playAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, table: null, oracleQueue: VRF_ER_QUEUE });
 const blackjackAccounts = () => ({ ...playAccounts(), table });
+const minesAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, board, oracleQueue: VRF_ER_QUEUE });
 
 async function act(label: string, tx: Promise<Transaction>, accept: (a: PlayerAccount) => boolean | Promise<boolean>) {
   const transaction = await tx;
@@ -281,6 +288,61 @@ async function playBlackjack(bet: number, hands: number, extraBets: boolean) {
     async (r) => blackjackGross(await fetchTable(), r.stake.toNumber()),
   );
   return { account: a, table: await fetchTable() };
+}
+
+/** C(n, k), exact. */
+function choose(n: number, k: number) {
+  let c = 1n;
+  for (let i = 0; i < k; i++) c = (c * BigInt(n - i)) / BigInt(i + 1);
+  return c;
+}
+
+/** 0.99 × C(25, k) / C(25 − mines, k) of the stake, rounded down. */
+const minesUncapped = (stake: bigint, mines: number, k: number) =>
+  (stake * 99n * choose(MINES_TILES, k)) / (100n * choose(MINES_TILES - mines, k));
+
+/** Mines payout from the board: 0 on a mine, else the multiplier, capped at stake + max gain;
+ *  also checks the max gain is the full board's gain within the round limit. */
+function minesGross(b: MinesBoard, maxRoundGain: bigint) {
+  const stake = BigInt(b.bet.toString());
+  const full = minesUncapped(stake, b.mines, MINES_TILES - b.mines) - stake;
+  const maxGain = full < maxRoundGain ? full : maxRoundGain;
+  if (BigInt(b.maxGain.toString()) !== maxGain) throw new Error(`mines: gain max ${b.maxGain}, attendu ${maxGain}`);
+  if (b.busted !== NO_TILE) return 0;
+  const raw = minesUncapped(stake, b.mines, b.nRevealed);
+  const cap = stake + maxGain;
+  return Number(raw < cap ? raw : cap);
+}
+
+/** One Mines round of `bet` on `mines` mines: reveals tiles 0, 1, 2… and cashes out after `target`
+ *  safe tiles, unless a mine or the cap ends the round first. */
+async function playMines(bet: number, mines: number, target: number, maxRoundGain: number) {
+  const clicked: number[] = [];
+  await round(
+    "mines",
+    () => erProgram.methods.minesBet(new BN(bet), mines).accountsPartial(minesAccounts()).transaction(),
+    async (a) => {
+      while (isPlayerTurn(a.round)) {
+        const b = await fetchBoard();
+        const prev = a;
+        if (b.nRevealed >= target) {
+          a = await act("mines encaissement", erProgram.methods.minesCashout().accountsPartial(minesAccounts()).transaction(), (x) => x.rounds > prev.rounds);
+        } else {
+          const tile = clicked.length;
+          clicked.push(tile);
+          a = await act("mines case", erProgram.methods.minesReveal(tile, seed()).accountsPartial(minesAccounts()).transaction(),
+            (x) => !isAwaiting(x.round) && (x.round.requestId.gt(prev.round.requestId) || x.rounds > prev.rounds));
+        }
+      }
+      return a;
+    },
+    async () => minesGross(await fetchBoard(), BigInt(maxRoundGain)),
+  );
+  const b = await fetchBoard();
+  const safe = b.busted === NO_TILE ? clicked : clicked.slice(0, -1);
+  if (JSON.stringify(b.order.slice(0, b.nRevealed)) !== JSON.stringify(safe)) throw new Error(`mines: cases ${b.order.slice(0, b.nRevealed)}, jouées ${safe}`);
+  if (b.busted !== NO_TILE && b.busted !== clicked.at(-1)) throw new Error(`mines: mine ${b.busted}, dernière case ${clicked.at(-1)}`);
+  return b;
 }
 
 const withdrawTx = (amount: number, signer = relayer) =>
@@ -516,6 +578,71 @@ async function run(): Promise<number> {
   await setConfig({ betsPaused: true });
   await rejectsInRollup("mises refusées pendant la pause des mises", () =>
     erProgram.methods.slotsSpin(new BN(usdc(1)), seed()).accountsPartial(playAccounts()).transaction(), /Paused|6013/);
+  await setConfig();
+
+  console.log("\n--- 5b. Mines (gains recalculés depuis le plateau) ---");
+  await rejectsInRollup("mines sans plateau refusé", () =>
+    erProgram.methods.minesBet(new BN(usdc(1)), 3).accountsPartial(minesAccounts()).transaction(), /AccountNotInitialized|3012|not.*found|AccountNotFound/i);
+  const boardAccounts = { vault, payer: relayer.publicKey, player: player.publicKey, ledger, board };
+  await time("plateau mines ouvert et délégué (Solana)", async () =>
+    relayerProvider.sendAndConfirm(new Transaction().add(
+      await program.methods.openMinesBoard().accountsPartial(boardAccounts).instruction(),
+      await program.methods.delegateMinesBoard().accountsPartial(boardAccounts).instruction(),
+    )));
+  await time("plateau visible dans le rollup", () => until(() => fetchBoard(), "board in rollup"));
+  for (const mines of [0, MINES_TILES]) {
+    await rejectsInRollup(`${mines} mines refusé`, () =>
+      erProgram.methods.minesBet(new BN(usdc(1)), mines).accountsPartial(minesAccounts()).transaction(), /InvalidBet|6010/);
+  }
+  await rejectsInRollup("encaissement sans manche refusé", () =>
+    erProgram.methods.minesCashout().accountsPartial(minesAccounts()).transaction(), /WrongState|6005/);
+  const roundGain = CONFIG.maxRoundGain.toNumber();
+  let busts = 0;
+  let cashOuts = 0;
+  for (let i = 0; i < 12 || busts === 0 || cashOuts === 0; i++) {
+    if (i >= 40) throw new Error("mines: pas de mine ou pas d'encaissement en 40 manches");
+    const b = await playMines(usdc(1), [1, 3, 5, 12][i % 4], 1 + (i % 3), roundGain);
+    if (b.busted !== NO_TILE) busts++;
+    else cashOuts++;
+  }
+  check("manches de mines payées selon les cases (mine, encaissement, plafond)", true, `(${busts} mines, ${cashOuts} encaissements)`);
+
+  let m = await act("mise mines", erProgram.methods.minesBet(new BN(usdc(1)), 3).accountsPartial(minesAccounts()).transaction(), (x) => isPlayerTurn(x.round));
+  check("mise mines sans tirage : le plateau attend le joueur", (await fetchBoard()).nRevealed === 0);
+  await rejectsInRollup("encaissement sans case révélée refusé", () =>
+    erProgram.methods.minesCashout().accountsPartial(minesAccounts()).transaction(), /WrongState|6005/);
+  await rejectsInRollup("case hors du plateau refusée", () =>
+    erProgram.methods.minesReveal(MINES_TILES, seed()).accountsPartial(minesAccounts()).transaction(), /InvalidTile|6021/);
+  await rejectsInRollup("coup de blackjack sur une manche de mines refusé", () =>
+    erProgram.methods.blackjackHit(seed()).accountsPartial(blackjackAccounts()).transaction(), /WrongState|6005/);
+  await rejectsInRollup("nouvelle manche refusée tant que le plateau est ouvert", () =>
+    erProgram.methods.slotsSpin(new BN(usdc(1)), seed()).accountsPartial(playAccounts()).transaction(), /RoundInProgress|6004/);
+  await sleep((ROUND_TIMEOUT_SECS + 1) * 1_000);
+  await rejectsInRollup("plateau en attente du joueur jamais clôturé à sa place, même après le délai", () =>
+    erProgram.methods.expireMinesRound(seed()).accountsPartial(minesAccounts()).transaction(), /WrongState|6005/);
+  await rejectsInRollup("expire_round sans plateau refusé sur une manche de mines", () =>
+    erProgram.methods.expireRound(seed()).accountsPartial(playAccounts()).transaction(), /WrongState|6005/);
+  const beforeReveal = m;
+  m = await act("mines case après le délai", erProgram.methods.minesReveal(0, seed()).accountsPartial(minesAccounts()).transaction(),
+    (x) => !isAwaiting(x.round) && x.round.requestId.gt(beforeReveal.round.requestId));
+  if (isPlayerTurn(m.round)) {
+    await rejectsInRollup("case déjà révélée refusée", () =>
+      erProgram.methods.minesReveal(0, seed()).accountsPartial(minesAccounts()).transaction(), /InvalidTile|6021/);
+    const roundsBefore = m.rounds;
+    m = await act("mines encaissement", erProgram.methods.minesCashout().accountsPartial(minesAccounts()).transaction(), (x) => x.rounds === roundsBefore + 1);
+  }
+  check("le joueur reprend son plateau quand il veut", isIdle(m.round));
+
+  // 12 mines with a 2 USDC round limit: 3 USDC gross at most, reached from the 2nd safe tile (3.8x).
+  const capGain = usdc(2);
+  await setConfig({ maxRoundGain: new BN(capGain) });
+  let capped = false;
+  for (let i = 0; i < 20 && !capped; i++) {
+    const b = await playMines(usdc(1), 12, MINES_TILES, capGain);
+    capped = b.busted === NO_TILE;
+    if (capped) check("plafond atteint : encaissement automatique à mise + gain max", b.nRevealed === 2 && (await fetchAccount()).round.payout.eq(new BN(usdc(3) - feeOn(usdc(1), usdc(3)))));
+  }
+  if (!capped) check("plafond atteint en 20 manches", false);
   await setConfig();
 
   console.log("\n--- 6. Dépôt pendant que le compte est dans le rollup ---");

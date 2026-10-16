@@ -31,6 +31,11 @@ describe("IntentRequest", () => {
       { type: "roulette_spin", amount: "1000000", bet: { kind: "column", column: 3 } },
       { type: "baccarat_deal", amount: "1000000", bet: "tie" },
       { type: "slots_spin", amount: "1000000" },
+      { type: "mines_bet", amount: "1000000", mines: 1 },
+      { type: "mines_bet", amount: "1000000", mines: 24 },
+      { type: "mines_reveal", tile: 0 },
+      { type: "mines_reveal", tile: 24 },
+      { type: "mines_cashout" },
       { type: "withdraw", amount: "5000000" },
     ];
     for (const action of actions) {
@@ -49,6 +54,15 @@ describe("IntentRequest", () => {
       { type: "blackjack_bet", amount: "1", hands: 2.5 },
       { type: "blackjack_bet", amount: "1", hands: "2" },
       { type: "slots_spin" },
+      { type: "mines_bet", amount: "1" },
+      { type: "mines_bet", amount: "1", mines: 0 },
+      { type: "mines_bet", amount: "1", mines: 25 },
+      { type: "mines_bet", amount: "1", mines: 2.5 },
+      { type: "mines_bet", amount: "1", mines: "3" },
+      { type: "mines_reveal" },
+      { type: "mines_reveal", tile: -1 },
+      { type: "mines_reveal", tile: 25 },
+      { type: "mines_reveal", tile: 1.5 },
       { type: "transfer", amount: "1" },
     ];
     for (const action of bad) {

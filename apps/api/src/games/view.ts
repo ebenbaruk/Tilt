@@ -1,9 +1,18 @@
 // Builds the mod's RoundView from a decoded on-chain round. Display only: the program has
 // already decided everything; totals and allowed moves mirror its rules for the UI.
-import type { BaccaratView, BlackjackView, RoundPhase, RoundView, RouletteView, SlotsView } from "@tilt/mod/protocol";
+import type {
+  BaccaratView,
+  BlackjackView,
+  MinesView,
+  RoundPhase,
+  RoundView,
+  RouletteView,
+  SlotsView,
+} from "@tilt/mod/protocol";
 import * as baccarat from "./baccarat";
 import * as blackjack from "./blackjack";
 import { toCards } from "./cards";
+import * as mines from "./mines";
 import type { Outcome, RoundStatus } from "./round";
 import { glyphs } from "./slots";
 
@@ -65,6 +74,25 @@ function baccaratView(o: Extract<Outcome, { game: "baccarat" }>, r: RoundViewInp
   };
 }
 
+/** Multipliers mirror the program's integer math (round cap included), as 4-decimal strings. */
+function minesView(o: Extract<Outcome, { game: "mines" }>, r: RoundViewInput, phase: RoundPhase): MinesView {
+  const gain = BigInt(o.maxGain);
+  const revealed = o.order.length;
+  const more = phase !== "idle" && mines.canRevealMore(r.stake, o.mines, revealed, gain);
+  const turn = phase === "player_turn";
+  return {
+    game: "mines",
+    mines: o.mines,
+    revealed: o.order,
+    pending: o.pending,
+    busted: o.busted,
+    multiplier: mines.formatMultiplier(mines.scaledMultiplier(r.stake, o.mines, revealed, gain)),
+    nextMultiplier: more ? mines.formatMultiplier(mines.scaledMultiplier(r.stake, o.mines, revealed + 1, gain)) : null,
+    canCashOut: turn && revealed >= 1,
+    canReveal: turn && more,
+  };
+}
+
 function detailView(r: RoundViewInput, phase: RoundPhase): RoundView["detail"] {
   const settled = phase === "idle";
   const o = r.outcome;
@@ -78,6 +106,8 @@ function detailView(r: RoundViewInput, phase: RoundPhase): RoundView["detail"] {
     case "slots":
       // The program leaves the reels at [0, 0, 0] until the spin lands.
       return { game: "slots", reels: settled ? glyphs(o.reels) : null } satisfies SlotsView;
+    case "mines":
+      return minesView(o, r, phase);
   }
 }
 

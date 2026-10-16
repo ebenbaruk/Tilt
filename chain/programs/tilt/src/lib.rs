@@ -80,6 +80,14 @@ pub mod tilt {
         instructions::table::delegate_table(ctx)
     }
 
+    pub fn open_mines_board(ctx: Context<OpenMinesBoard>) -> Result<()> {
+        instructions::mines::open_mines_board(ctx)
+    }
+
+    pub fn delegate_mines_board(ctx: Context<DelegateMinesBoard>) -> Result<()> {
+        instructions::mines::delegate_mines_board(ctx)
+    }
+
     // Rounds, in the rollup.
 
     pub fn blackjack_bet(
@@ -133,12 +141,36 @@ pub mod tilt {
         instructions::play::expire_round(ctx, client_seed)
     }
 
+    pub fn mines_bet(ctx: Context<MinesPlay>, amount: u64, mines: u8) -> Result<()> {
+        instructions::mines::mines_bet(ctx, amount, mines)
+    }
+
+    pub fn mines_reveal(ctx: Context<MinesPlay>, tile: u8, client_seed: [u8; 32]) -> Result<()> {
+        instructions::mines::mines_reveal(ctx, tile, client_seed)
+    }
+
+    pub fn mines_cashout(ctx: Context<MinesPlay>) -> Result<()> {
+        instructions::mines::mines_cashout(ctx)
+    }
+
+    pub fn expire_mines_round(ctx: Context<MinesPlay>, client_seed: [u8; 32]) -> Result<()> {
+        instructions::mines::expire_mines_round(ctx, client_seed)
+    }
+
     pub fn consume_randomness(
         ctx: Context<ConsumeRandomness>,
         randomness: [u8; 32],
         request_id: u64,
     ) -> Result<()> {
         instructions::play::consume_randomness(ctx, randomness, request_id)
+    }
+
+    pub fn consume_mines_randomness(
+        ctx: Context<ConsumeMinesRandomness>,
+        randomness: [u8; 32],
+        request_id: u64,
+    ) -> Result<()> {
+        instructions::mines::consume_mines_randomness(ctx, randomness, request_id)
     }
 
     // Withdrawals.

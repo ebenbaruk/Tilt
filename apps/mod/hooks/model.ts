@@ -2,7 +2,7 @@
 // as `unknown`; these readers check them again with the protocol guards.
 import type { TiltAgent, TiltAuth, TiltIntent, TiltLayout, TiltPrefs, TiltRemote } from "../types";
 import { isPlayAction, isRouletteBet, isStateResponse } from "./guards";
-import { clampHands } from "./keys";
+import { clampHands, clampMines, DEFAULT_MINES } from "./keys";
 import type { BaccaratBet, Game, PlayAction, RouletteBet, StateResponse } from "./protocol";
 
 export type AuthView = TiltAuth;
@@ -26,6 +26,8 @@ export interface Prefs {
   roulette: RouletteBet;
   baccarat: BaccaratBet;
   slotsSpeed: SlotsSpeed;
+  /** Mines per board, 1 to 24. */
+  mines: number;
 }
 
 export interface IntentView extends Omit<TiltIntent, "action"> {
@@ -42,6 +44,7 @@ export const remoteView = (held: TiltRemote): RemoteView => ({
 export const prefsView = (held: TiltPrefs): Prefs => ({
   ...held,
   hands: clampHands(held.hands),
+  mines: clampMines(held.mines ?? DEFAULT_MINES),
   roulette: isRouletteBet(held.roulette) ? held.roulette : DEFAULT_ROULETTE_BET,
 });
 

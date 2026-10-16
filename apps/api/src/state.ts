@@ -10,7 +10,13 @@ import { saveDetail, settledSignature } from "./rounds";
 import { walletOf } from "./wallets";
 
 /** RTP before Tilt's 1% (spec §4.3). Baccarat shows the player bet (banker 98.94, tie ≈ 85.9). */
-export const RTP: Record<Game, string> = { blackjack: "99.00", roulette: "97.30", baccarat: "98.76", slots: "96.16" };
+export const RTP: Record<Game, string> = {
+  blackjack: "99.00",
+  roulette: "97.30",
+  baccarat: "98.76",
+  slots: "96.16",
+  mines: "99.00",
+};
 export const LEADERBOARD_SIZE = 10;
 
 /** Balance plus deposits Solana recorded but the rollup has not credited yet (it will at the next move). */

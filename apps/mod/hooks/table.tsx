@@ -7,7 +7,7 @@ import type { ClientSurface, RenderElement } from "claude-code";
 
 import { cardCount, DEAL_STEP_MS } from "./blackjack";
 import { formatUsdc, SEPARATOR } from "./format";
-import { activeGame } from "./keys";
+import { activeGame, MINES_TILE_KEY, tileLetter } from "./keys";
 import type { RoundView } from "./protocol";
 import { pressFor, type TableKey, type TableProps } from "./table-input";
 import { applyTheme, FG4, FG6, GOLD, PINK, type Ui } from "./theme";
@@ -27,6 +27,8 @@ const WIN_FLASH = "#4a3b12";
 const LOSS_FLASH = "#4a1c1c";
 const PROGRESS_STEPS = 1000n;
 const STREAK_SHOWN_FROM = 2;
+/** A Mines tile awaiting its draw turns one step this often. */
+const PENDING_FRAME_MS = 120;
 
 type Outcome = "win" | "loss" | "push";
 
@@ -172,8 +174,10 @@ function spinElapsed(state: TableState, props: TableProps): number | null {
 }
 
 function isAnimating(state: TableState, props: TableProps): boolean {
-  const isDealing = state.revealed < state.cards || spinElapsed(state, props) !== null;
   const round = props.state.round;
+  // A Mines tile being drawn turns until its draw lands.
+  const isTileDrawing = round?.detail.game === "mines" && round.detail.pending !== null;
+  const isDealing = state.revealed < state.cards || spinElapsed(state, props) !== null || isTileDrawing;
   const effectMs = Math.max(COUNT_UP_MS + BALANCE_MS, round === null ? 0 : celebrationMs(round));
   const hasEffect = state.effect !== null && state.now < state.effect.at + effectMs;
   const canPulse = hasKey(props.keys, "bj-stand") || hasKey(props.keys, "start");
@@ -280,10 +284,21 @@ interface PromptView {
   isPulseOn: boolean;
 }
 
-function prompt(ui: Ui, keys: readonly TableKey[], view: PromptView): RenderElement | null {
+function prompt(
+  ui: Ui,
+  keys: readonly TableKey[],
+  view: PromptView,
+  post: (press: string) => void,
+): RenderElement | null {
   const { Text } = ui;
   const start = keys.find((key) => key.key === "start");
   const again = start !== undefined && view.isSettled ? "play again (same bet)" : "play";
+  const canReveal = keys.some((key) => key.key.startsWith(MINES_TILE_KEY));
+  const cashOut = keys.find((key) => key.key === "mines-cashout");
+
+  if (canReveal || cashOut !== undefined) {
+    return minesPrompt(ui, { canReveal, cashOut, isFocused: view.isFocused }, post);
+  }
 
   // Blocked, no account, a move settling: Space plays nothing, so the table does not invite it.
   if (start === undefined && !hasKey(keys, "bj-stand")) {
@@ -327,6 +342,10 @@ function prompt(ui: Ui, keys: readonly TableKey[], view: PromptView): RenderElem
     parts.push("↑/↓ hands");
   }
 
+  if (hasKey(keys, "mines-up")) {
+    parts.push("↑/↓ mines");
+  }
+
   if (start === undefined) {
     return parts.length === 0 ? null : <Text color={FG6}>{parts.join(SEPARATOR)}</Text>;
   }
@@ -339,6 +358,48 @@ function prompt(ui: Ui, keys: readonly TableKey[], view: PromptView): RenderElem
       {`${SEPARATOR}${start.label}`}
       {parts.length > 0 && `${SEPARATOR}${parts.join(SEPARATOR)}`}
     </Text>
+  );
+}
+
+/**
+ * A Mines board waiting for the player: a click on a tile reveals it, a click on the cash-out takes
+ * the multiplier; once the table holds the keys, the letters and z do the same.
+ */
+function minesPrompt(
+  ui: Ui,
+  turn: { canReveal: boolean; cashOut: TableKey | undefined; isFocused: boolean },
+  post: (press: string) => void,
+): RenderElement {
+  const { Box, Button, Text } = ui;
+  const { canReveal, cashOut, isFocused } = turn;
+
+  return (
+    <Box flexDirection="row" columnGap={2}>
+      {canReveal && (
+        <Text color={GOLD} bold>
+          {isFocused ? "a–y reveal" : "click a tile to reveal it"}
+        </Text>
+      )}
+      {cashOut !== undefined && (
+        <Button key={`table-${cashOut.key}`} plain onPress={() => post(cashOut.key)}>
+          <Text color={GOLD} bold>
+            {isFocused ? `z ${cashOut.label}` : cashOut.label}
+          </Text>
+        </Button>
+      )}
+    </Box>
+  );
+}
+
+/** A hidden tile the plan can reveal right now, as a Button: a click posts its key, as its letter does. */
+function tileButton(ui: Ui, keys: readonly TableKey[], tile: number, post: (press: string) => void) {
+  const { Button, Text } = ui;
+  const key = keys.find((action) => action.key === `${MINES_TILE_KEY}${tile}`);
+
+  return key === undefined ? null : (
+    <Button key={`table-${key.key}`} plain onPress={() => post(key.key)}>
+      <Text dimColor>{tileLetter(tile)}</Text>
+    </Button>
   );
 }
 
@@ -375,20 +436,33 @@ export default function Table(props: TableProps, surface: ClientSurface<TableSta
     effect?.kind === "loss" && sinceEffect >= 0 ? (SHAKE_OFFSETS[Math.floor(sinceEffect / SHAKE_STEP_MS)] ?? 0) : 0;
   const round = roundOf(props.state, activeGame(props.state, props.prefs));
   const spinning = spinElapsed(state, props);
-  const fx = { revealed: state.revealed < state.cards ? state.revealed : null, isPulseOn, spinElapsed: spinning };
+  const fx = {
+    revealed: state.revealed < state.cards ? state.revealed : null,
+    isPulseOn,
+    spinElapsed: spinning,
+    frame: Math.floor(state.now / PENDING_FRAME_MS),
+  };
+  const post = (press: string) => surface.post({ press });
 
   return (
     <Box flexDirection="column" paddingLeft={shake}>
-      {gameTable(ui, props.state, props.prefs, props.isWide, fx, props.cards)}
+      {gameTable(ui, props.state, props.prefs, props.isWide, fx, props.cards, (tile) =>
+        tileButton(ui, props.keys, tile, post),
+      )}
       {celebration(ui, round, effect?.kind === "win" ? sinceEffect : null, props.columns - 1)}
       <Box flexDirection="column" marginTop={1}>
         {summary(ui, state, round, spinning !== null)}
         <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-          {prompt(ui, props.keys, {
-            isFocused: state.isFocused && props.isPaneFocused,
-            isSettled: round?.phase === "idle",
-            isPulseOn,
-          })}
+          {prompt(
+            ui,
+            props.keys,
+            {
+              isFocused: state.isFocused && props.isPaneFocused,
+              isSettled: round?.phase === "idle",
+              isPulseOn,
+            },
+            post,
+          )}
           {state.streak >= STREAK_SHOWN_FROM && (
             <Text color={GOLD} bold>
               {`${state.streak} wins in a row`}

@@ -23,11 +23,18 @@ const EVENT_DISCRIMINATOR = Buffer.from(
 );
 const PROGRAM = PROGRAM_ID.toBase58();
 
-function settledLogs(player: PublicKey, round: number, requestId: number, randomness: number): string[] {
+function settledLogs(
+  player: PublicKey,
+  round: number,
+  requestId: number,
+  randomness: number,
+  game = "Slots",
+  instruction = "ConsumeRandomness",
+): string[] {
   const data = coder.types.encode("RoundSettled", {
     player,
     round,
-    game: { Slots: {} },
+    game: { [game]: {} },
     stake: new anchor.BN(1_000_000),
     payout: new anchor.BN(0),
     fee: new anchor.BN(0),
@@ -36,7 +43,7 @@ function settledLogs(player: PublicKey, round: number, requestId: number, random
   });
   return [
     `Program ${PROGRAM} invoke [1]`,
-    "Program log: Instruction: ConsumeRandomness",
+    `Program log: Instruction: ${instruction}`,
     `Program data: ${Buffer.concat([EVENT_DISCRIMINATOR, data]).toString("base64")}`,
     `Program ${PROGRAM} success`,
   ];
@@ -48,8 +55,14 @@ const callbackLogs = [
   `Program ${PROGRAM} success`,
 ];
 
-const callbackData = (requestId: number, byte: number) =>
-  coder.instruction.encode("consume_randomness", {
+const minesCallbackLogs = [
+  `Program ${PROGRAM} invoke [2]`,
+  "Program log: Instruction: ConsumeMinesRandomness",
+  `Program ${PROGRAM} success`,
+];
+
+const callbackData = (requestId: number, byte: number, name = "consume_randomness") =>
+  coder.instruction.encode(name, {
     randomness: Array(32).fill(byte),
     request_id: new anchor.BN(requestId),
   });
@@ -134,6 +147,26 @@ describe("decoding", () => {
     ]);
     expect(draws).toEqual([{ account: account.toBase58(), requestId: 5n, randomness: Buffer.alloc(32, 9) }]);
   });
+
+  it("finds consume_mines_randomness calls too, the player account second", () => {
+    const account = Keypair.generate().publicKey;
+    const board = Keypair.generate().publicKey;
+    const draws = decodeCallbacks([
+      {
+        programId: PROGRAM_ID,
+        accounts: [Keypair.generate().publicKey, account, board],
+        data: callbackData(3, 4, "consume_mines_randomness"),
+      },
+    ]);
+    expect(draws).toEqual([{ account: account.toBase58(), requestId: 3n, randomness: Buffer.alloc(32, 4) }]);
+  });
+
+  it("parses a mines RoundSettled, a cash-out's included (zero randomness)", () => {
+    const player = Keypair.generate().publicKey;
+    const [r] = parseSettled("sig", settledLogs(player, 2, 6, 0, "Mines", "MinesCashout"), new Date(0));
+    expect(r).toMatchObject({ game: "mines", round: 2, requestId: 6n });
+    expect(r.randomness).toEqual(Buffer.alloc(32));
+  });
 });
 
 describe.skipIf(!db)("indexer", () => {
@@ -204,6 +237,43 @@ describe.skipIf(!db)("indexer", () => {
     chain.accounts.set(player.toBase58(), idleAccount({ rounds: 2 }));
     await indexer.process("x", settledLogs(player, 1, 2, 5), new Date());
     expect((await db.query("SELECT detail FROM rounds")).rows).toEqual([{ detail: null }]);
+  });
+
+  it("indexes every mines reveal draw, but no draw for a cash-out (it reuses the last reveal's request)", async () => {
+    const reveal = (requestId: number, byte: number) => [
+      { account, requestId: BigInt(requestId), randomness: Buffer.alloc(32, byte) },
+    ];
+    source.add("r1", minesCallbackLogs, reveal(1, 1));
+    source.add("r2", minesCallbackLogs, reveal(2, 2));
+    source.add("cash", settledLogs(player, 1, 2, 0, "Mines", "MinesCashout"));
+    source.add("r3", minesCallbackLogs, reveal(3, 3));
+    source.add("bust", settledLogs(player, 2, 4, 9, "Mines", "ConsumeMinesRandomness"));
+    await indexer.backfill();
+    const rounds = await db.query("SELECT signature, game, request_id FROM rounds ORDER BY round");
+    expect(rounds.rows).toEqual([
+      { signature: "cash", game: "mines", request_id: "2" },
+      { signature: "bust", game: "mines", request_id: "4" },
+    ]);
+    const draws = await db.query("SELECT request_id, randomness FROM draws WHERE account = $1 ORDER BY request_id", [
+      account,
+    ]);
+    expect(draws.rows).toEqual([
+      { request_id: "1", randomness: "01".repeat(32) },
+      { request_id: "2", randomness: "02".repeat(32) },
+      { request_id: "3", randomness: "03".repeat(32) },
+      { request_id: "4", randomness: "09".repeat(32) },
+    ]);
+  });
+
+  it("does not let a cash-out seen before its last reveal hide that reveal's draw", async () => {
+    await indexer.process("cash", settledLogs(player, 1, 2, 0, "Mines", "MinesCashout"), new Date());
+    await indexer.process("r2", minesCallbackLogs, new Date(), {
+      logs: minesCallbackLogs,
+      blockTime: null,
+      draws: [{ account, requestId: 2n, randomness: Buffer.alloc(32, 2) }],
+    });
+    const { rows } = await db.query("SELECT randomness FROM draws WHERE account = $1", [account]);
+    expect(rows).toEqual([{ randomness: "02".repeat(32) }]);
   });
 
   it("skips undecodable events and keeps going", async () => {

@@ -1,9 +1,9 @@
 // The relay's transactions, with both RPC connections stubbed: which instruction each action
-// becomes, which table it passes, how a missing blackjack table gets opened first, and how a
-// move past the win cap raises it.
+// becomes, which table or board it passes, how a missing blackjack table or Mines board gets
+// opened first, and how a move past the win cap raises it.
 import anchor from "@coral-xyz/anchor";
 import { type AccountInfo, Keypair, PublicKey, type Transaction } from "@solana/web3.js";
-import { type Action, idl, ledgerAddress, PROGRAM_ID, tableAddress } from "@tilt/contract";
+import { type Action, idl, ledgerAddress, minesBoardAddress, PROGRAM_ID, tableAddress } from "@tilt/contract";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TiltChain, winCapShortfall } from "../src/chain";
 
@@ -15,11 +15,11 @@ const accountInfo = (owner: PublicKey): AccountInfo<Buffer> => ({ owner, data: B
 const instructionNames = (tx: Transaction) => tx.instructions.map((ix) => coder.decode(ix.data)?.name);
 
 interface Fakes {
-  /** The table as Solana holds it (delegated: owned by the delegation program). */
+  /** The table and the Mines board as Solana holds them (delegated: owned by the delegation program). */
   tableOnSolana: boolean;
-  /** Rollup reads of the table that still miss it, before it shows up (Infinity: never). */
+  /** Rollup reads of the table or board that still miss it, before it shows up (Infinity: never). */
   rollupMisses: number;
-  /** The open_table + delegate_table transaction fails to simulate. */
+  /** The open + delegate transaction fails to simulate. */
   openRefused?: boolean;
 }
 
@@ -37,9 +37,10 @@ function stubbedChain(fakes: Fakes) {
   const blockhash = { blockhash: Keypair.generate().publicKey.toBase58(), lastValidBlockHeight: 100 };
   const delegationProgram = new PublicKey("DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh");
 
+  const isGameAccount = (address: PublicKey) => address.equals(tableAddress(player)) || address.equals(minesBoardAddress(player));
   vi.spyOn(chain.base, "getAccountInfo").mockImplementation(async (address) => {
     if (address.equals(ledgerAddress(player))) return accountInfo(PROGRAM_ID);
-    if (address.equals(tableAddress(player))) return fakes.tableOnSolana ? accountInfo(delegationProgram) : null;
+    if (isGameAccount(address)) return fakes.tableOnSolana ? accountInfo(delegationProgram) : null;
     return null;
   });
   vi.spyOn(chain.base, "getLatestBlockhash").mockResolvedValue(blockhash);
@@ -56,7 +57,7 @@ function stubbedChain(fakes: Fakes) {
   vi.spyOn(chain.base, "confirmTransaction").mockResolvedValue({ context: { slot: 1 }, value: { err: null } });
 
   vi.spyOn(chain.rollup, "getAccountInfo").mockImplementation(async (address) => {
-    if (!address.equals(tableAddress(player))) return null;
+    if (!isGameAccount(address)) return null;
     sent.rollupTableReads++;
     if (fakes.rollupMisses > 0) {
       fakes.rollupMisses--;
@@ -124,6 +125,42 @@ describe("play transactions", () => {
       expect(ix.keys[TABLE_INDEX].pubkey.equals(PROGRAM_ID), other.type).toBe(true);
     }
   });
+
+  it("passes the board, not the table, to every Mines move", async () => {
+    const { chain, player } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
+    const moves = [
+      { type: "mines_bet", amount: "2500000", mines: 3 },
+      { type: "mines_reveal", tile: 24 },
+      { type: "mines_cashout" },
+    ] as const;
+    for (const move of moves) {
+      const [ix] = (await chain.playTransaction(player, move)).instructions;
+      const decoded = coder.decode(ix.data);
+      expect(decoded?.name).toBe(move.type);
+      const instruction = idl.instructions.find((i) => i.name === move.type)!;
+      const boardIndex = instruction.accounts.findIndex((a) => a.name === "board");
+      expect(ix.keys[boardIndex], move.type).toMatchObject({ pubkey: minesBoardAddress(player), isWritable: true });
+      expect(ix.keys.some((k) => k.pubkey.equals(tableAddress(player))), move.type).toBe(false);
+    }
+    const [bet] = (await chain.playTransaction(player, moves[0])).instructions;
+    const args = coder.decode(bet.data)?.data;
+    expect(args).toMatchObject({ mines: 3 });
+    expect(args && "amount" in args ? String(args.amount) : undefined).toBe("2500000");
+    const [reveal] = (await chain.playTransaction(player, moves[1])).instructions;
+    expect(coder.decode(reveal.data)?.data).toMatchObject({ tile: 24 });
+  });
+
+  it("retries a stuck Mines reveal with the board, other draws with expire_round", async () => {
+    const { chain, player, sent } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
+    await chain.expireRound(player, { mines: {} });
+    await chain.expireRound(player, { blackjack: {} });
+    await chain.expireRound(player, { slots: {} });
+    expect(sent.rollup.map(instructionNames)).toEqual([["expire_mines_round"], ["expire_round"], ["expire_round"]]);
+    const [mines, blackjack, slots] = sent.rollup.map((tx) => tx.instructions[0]);
+    expect(mines.keys.some((k) => k.pubkey.equals(minesBoardAddress(player)))).toBe(true);
+    expect(blackjack.keys[TABLE_INDEX].pubkey.equals(tableAddress(player))).toBe(true);
+    expect(slots.keys[TABLE_INDEX].pubkey.equals(PROGRAM_ID)).toBe(true);
+  });
 });
 
 describe("blackjack table", () => {
@@ -177,6 +214,38 @@ describe("blackjack table", () => {
     await chain.play(player, { type: "slots_spin", amount: "1000000" }, record);
     expect(sent.rollupTableReads).toBe(0);
     expect(sent.solana).toHaveLength(0);
+  });
+});
+
+describe("mines board", () => {
+  const minesBet: Action = { type: "mines_bet", amount: "1000000", mines: 3 };
+
+  it("opens and delegates a missing board on Solana, waits for the rollup, then plays", async () => {
+    const { chain, player, sent } = stubbedChain({ tableOnSolana: false, rollupMisses: 3 });
+    await chain.play(player, minesBet, record);
+    expect(sent.solana.map(instructionNames)).toEqual([["open_mines_board", "delegate_mines_board"]]);
+    expect(sent.solana[0].instructions[0].keys.some((k) => k.pubkey.equals(minesBoardAddress(player)))).toBe(true);
+    expect(sent.rollup.map(instructionNames)).toEqual([["mines_bet"]]);
+    const reads = sent.rollupTableReads;
+    await chain.play(player, { type: "mines_reveal", tile: 7 }, record);
+    await chain.play(player, { type: "mines_cashout" }, record);
+    expect(sent.rollupTableReads).toBe(reads);
+    expect(sent.solana).toHaveLength(1);
+    expect(sent.rollup.map(instructionNames)).toEqual([["mines_bet"], ["mines_reveal"], ["mines_cashout"]]);
+  });
+
+  it("checks the board separately from the table", async () => {
+    const { chain, player, sent } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
+    await chain.play(player, bet, record);
+    const reads = sent.rollupTableReads;
+    await chain.play(player, minesBet, record);
+    expect(sent.rollupTableReads).toBe(reads + 1);
+  });
+
+  it("refuses the move with TABLE_NOT_READY when opening the board fails", async () => {
+    const { chain, player, sent } = stubbedChain({ tableOnSolana: false, rollupMisses: Infinity, openRefused: true });
+    await expect(chain.play(player, minesBet, record)).rejects.toMatchObject({ code: "TABLE_NOT_READY", message: expect.stringContaining("mines board") });
+    expect(sent.rollup).toHaveLength(0);
   });
 });
 

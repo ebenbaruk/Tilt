@@ -1,5 +1,7 @@
 // HTTP behaviour of the mod, web and public routes against Postgres, a fake relay (HTTP, on the
 // contract schemas), a fake chain and a fake Privy.
+import { PublicKey } from "@solana/web3.js";
+import { playerAccountAddress } from "@tilt/contract";
 import type { IntentResponse, StateResponse } from "@tilt/mod/protocol";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -9,7 +11,7 @@ import { migrate } from "../src/db";
 import { settle } from "../src/games/settlement";
 import type { AccountResponse, MoneyIntentResponse, ResponsibleLimits, VerifyResponse } from "../src/public";
 import { RateLimiter } from "../src/ratelimit";
-import { saveDetail, saveRound } from "../src/rounds";
+import { saveDetail, saveDraw, saveRound } from "../src/rounds";
 import { ensureUser } from "../src/users";
 import vectors from "./fixtures/rust-vectors.json";
 import {
@@ -75,6 +77,18 @@ describe.skipIf(!db)("api routes", () => {
       expect(relay.actions()).toEqual([slots]);
     });
 
+    it("forwards the mines moves", async () => {
+      const moves = [
+        { type: "mines_bet", amount: "1000000", mines: 1 },
+        { type: "mines_bet", amount: "1000000", mines: 24 },
+        { type: "mines_reveal", tile: 0 },
+        { type: "mines_reveal", tile: 24 },
+        { type: "mines_cashout" },
+      ];
+      for (const action of moves) expect((await play(action)).status, JSON.stringify(action)).toBe(200);
+      expect(relay.actions()).toEqual(moves);
+    });
+
     it("refuses money actions and malformed moves without calling the relay", async () => {
       for (const action of [
         { type: "deposit", amount: "1000000" },
@@ -90,6 +104,17 @@ describe.skipIf(!db)("api routes", () => {
         { type: "blackjack_bet", amount: "1000000", hands: 0 },
         { type: "blackjack_bet", amount: "1000000", hands: 7 },
         { type: "blackjack_bet", amount: "1000000", hands: 1.5 },
+        { type: "mines_bet", amount: "1000000", mines: 0 },
+        { type: "mines_bet", amount: "1000000", mines: 25 },
+        { type: "mines_bet", amount: "1000000", mines: 2.5 },
+        { type: "mines_bet", amount: "1000000" },
+        { type: "mines_bet", mines: 3 },
+        { type: "mines_reveal", tile: 25 },
+        { type: "mines_reveal", tile: -1 },
+        { type: "mines_reveal", tile: 1.5 },
+        { type: "mines_reveal", tile: "3" },
+        { type: "mines_reveal" },
+        { type: "mines_cashout", tile: 3 },
       ]) {
         const res = await play(action);
         expect(res.status, JSON.stringify(action)).toBe(400);
@@ -245,7 +270,10 @@ describe.skipIf(!db)("api routes", () => {
       });
       expect((await play(slots)).status).toBe(403);
       expect((await play({ type: "blackjack_double" })).status).toBe(403);
+      expect((await play({ type: "mines_bet", amount: "1000000", mines: 3 })).status).toBe(403);
       expect((await play({ type: "blackjack_stand" })).status).toBe(200);
+      expect((await play({ type: "mines_reveal", tile: 4 })).status).toBe(200);
+      expect((await play({ type: "mines_cashout" })).status).toBe(200);
     });
 
     it("the daily deposit limit counts deposits sent in the last 24 h", async () => {
@@ -538,7 +566,13 @@ describe.skipIf(!db)("api routes", () => {
         webUrl: "https://tilt.test",
       });
       expect(state.limits).toEqual({ minBet: "100000", maxBet: "100000000" });
-      expect(state.rtp).toEqual({ blackjack: "99.00", roulette: "97.30", baccarat: "98.76", slots: "96.16" });
+      expect(state.rtp).toEqual({
+        blackjack: "99.00",
+        roulette: "97.30",
+        baccarat: "98.76",
+        slots: "96.16",
+        mines: "99.00",
+      });
     });
 
     it("shows the hand in play, the pending intent, the sponsor and the leaderboard", async () => {
@@ -837,6 +871,83 @@ describe.skipIf(!db)("api routes", () => {
       }
       const body = (await (await app.request(`/v1/rounds/${SIGNATURE}/verify`)).json()) as VerifyResponse;
       expect(body.matches).toBe(true);
+    });
+
+    it("migrates a rounds table created before mines so that mines rounds can be stored", async () => {
+      await db.query("ALTER TABLE rounds DROP CONSTRAINT rounds_game_check");
+      await db.query(
+        "ALTER TABLE rounds ADD CONSTRAINT rounds_game_check CHECK (game IN ('blackjack', 'roulette', 'baccarat', 'slots'))",
+      );
+      await migrate(db);
+      await migrate(db);
+      const round = {
+        signature: SIGNATURE,
+        player: wallet,
+        round: 1,
+        game: "mines" as const,
+        stake: 1n,
+        payout: 0n,
+        fee: 0n,
+        requestId: 1n,
+        randomness: Buffer.alloc(32, 1),
+        settledAt: new Date(),
+      };
+      expect(await saveRound(db, round)).toBe(true);
+    });
+
+    it("verifies mines rounds from their reveal draws, cashed out (no draw of its own) or busted", async () => {
+      const account = playerAccountAddress(new PublicKey(wallet)).toBase58();
+      const cashedOut = must(
+        vectors.mines.find((m) => m.cashout && m.draws.length > 1),
+        "cash-out after several tiles",
+      );
+      const busted = must(
+        vectors.mines.find((m) => m.busted !== null && m.draws.length > 1),
+        "bust after a safe tile",
+      );
+      const base = { player: wallet, game: "mines" as const, stake: 1_000_000n, settledAt: new Date() };
+      // Round 1 cashed out: its event names the last reveal's request, with zero randomness.
+      let requestId = 0n;
+      const rounds = [
+        { v: cashedOut, signature: "4".repeat(88) },
+        { v: busted, signature: SIGNATURE },
+      ];
+      for (const [i, { v, signature }] of rounds.entries()) {
+        for (const [j, draw] of v.draws.entries()) {
+          requestId++;
+          await saveDraw(db, { account, requestId, randomness: Buffer.from(draw, "hex"), signature: `d${i}${j}` });
+        }
+        await saveRound(db, {
+          ...base,
+          signature,
+          round: i + 1,
+          payout: BigInt(v.payout),
+          fee: BigInt(v.fee),
+          requestId,
+          randomness: v.cashout ? Buffer.alloc(32) : Buffer.from(v.draws[v.draws.length - 1], "hex"),
+        });
+        await saveDetail(db, wallet, i + 1, requestId, {
+          game: "mines",
+          mines: v.mines,
+          order: v.order,
+          pending: null,
+          busted: v.busted,
+          maxGain: v.maxGain,
+        });
+      }
+      const verify = async (signature: string) =>
+        (await (await app.request(`/v1/rounds/${signature}/verify`)).json()) as VerifyResponse;
+      const cash = await verify("4".repeat(88));
+      expect(cash).toMatchObject({
+        game: "mines",
+        matches: true,
+        replayed: { payout: cashedOut.gross, detail: { game: "mines", revealed: cashedOut.order, busted: null } },
+      });
+      const bust = await verify(SIGNATURE);
+      expect(bust).toMatchObject({
+        matches: true,
+        replayed: { payout: "0", detail: { revealed: busted.order, busted: busted.busted } },
+      });
     });
 
     it("tells the web whether the caller's country may play", async () => {

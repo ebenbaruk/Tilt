@@ -44,4 +44,6 @@ pub enum TiltError {
     PromoCapReached,
     #[msg("Blackjack needs the player's table account")]
     MissingTable,
+    #[msg("Mines tile already revealed or off the board")]
+    InvalidTile,
 }

@@ -1,5 +1,5 @@
 // StateResponses as apps/api sends them, one per screen the mod draws.
-import type { BlackjackHandView, Card, RoundView, StateResponse } from "../hooks/protocol";
+import type { BlackjackHandView, Card, MinesView, RoundView, StateResponse } from "../hooks/protocol";
 import { NOW } from "./world";
 
 const HOUR = 3_600_000;
@@ -11,7 +11,7 @@ export const BASE: StateResponse = {
   round: null,
   pendingIntentId: null,
   limits: { minBet: "500000", maxBet: "25000000" },
-  rtp: { blackjack: "99.00", roulette: "97.30", baccarat: "98.94", slots: "96.16" },
+  rtp: { blackjack: "99.00", roulette: "97.30", baccarat: "98.94", slots: "96.16", mines: "99.00" },
   sponsor: {
     name: "Northwind Cloud",
     tagline: "gpus by the minute",
@@ -284,6 +284,64 @@ export const SLOTS: StateResponse = {
 export const SLOTS_DRAWING: StateResponse = {
   ...BASE,
   round: round({ phase: "drawing", net: "0", detail: { game: "slots", reels: null } }),
+};
+
+const minesBoard = (fields: Partial<MinesView>): MinesView => ({
+  game: "mines",
+  mines: 3,
+  revealed: [],
+  pending: null,
+  busted: null,
+  multiplier: "1.0000",
+  nextMultiplier: "1.1250",
+  canCashOut: false,
+  canReveal: false,
+  ...fields,
+});
+
+/** Three mines, g and m safe: the next tile or a cash-out at ×1.2857. */
+export const MINES_TURN: StateResponse = {
+  ...BASE,
+  round: round({
+    phase: "player_turn",
+    net: "0",
+    detail: minesBoard({
+      revealed: [6, 12],
+      multiplier: "1.2857",
+      nextMultiplier: "1.4785",
+      canCashOut: true,
+      canReveal: true,
+    }),
+  }),
+};
+
+/** m revealed after g: its draw is on its way. */
+export const MINES_DRAWING: StateResponse = {
+  ...BASE,
+  round: round({
+    phase: "drawing",
+    net: "0",
+    detail: minesBoard({ revealed: [6], pending: 12, multiplier: "1.1250", nextMultiplier: "1.2857" }),
+  }),
+};
+
+/** g safe, then a mine on h. */
+export const MINES_BUSTED: StateResponse = {
+  ...BASE,
+  round: round({
+    detail: minesBoard({ revealed: [6], busted: 7, multiplier: "1.1250", nextMultiplier: null }),
+  }),
+};
+
+/** Cashed out after g, m and s: 1.00 × 99 × C(25,3) / (100 × C(22,3)) = 1.478571, less 1% of the gain. */
+export const MINES_CASHED: StateResponse = {
+  ...BASE,
+  round: round({
+    payout: "1478571",
+    fee: "4785",
+    net: "473786",
+    detail: minesBoard({ revealed: [6, 12, 18], multiplier: "1.4785", nextMultiplier: null }),
+  }),
 };
 
 export const NOT_OPEN: StateResponse = { ...BASE, accountOpen: false, balance: "0", leaderboard: [], rank: null };

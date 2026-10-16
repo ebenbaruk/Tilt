@@ -3,7 +3,7 @@
 // `unknown` here and checked with the guards in hooks/guards.ts on every read: any plugin can read
 // this state and hook its writes, so the mod does not trust it blindly either.
 
-export type TiltGame = "blackjack" | "roulette" | "baccarat" | "slots";
+export type TiltGame = "blackjack" | "roulette" | "baccarat" | "slots" | "mines";
 
 export type TiltAuth =
   | { status: "out"; message: string | null }
@@ -29,6 +29,8 @@ export type TiltPrefs = {
   baccarat: "player" | "banker" | "tie";
   /** How fast the slots reels turn: turbo shows the draw at once. */
   slotsSpeed: "normal" | "fast" | "turbo";
+  /** Mines per board, 1 to 24; absent from prefs stored before Mines. */
+  mines?: number;
 };
 
 /** A move sent to the api and not drawn yet; resent with the same id until it settles. */

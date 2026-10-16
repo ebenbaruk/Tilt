@@ -20,6 +20,7 @@ const WAGERS = new Set<PlayAction["type"]>([
   "roulette_spin",
   "baccarat_deal",
   "slots_spin",
+  "mines_bet",
 ]);
 
 const toIntentResponse = (o: IntentOutcome): IntentResponse => ({

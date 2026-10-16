@@ -7,13 +7,19 @@
 //   active hand, or the dealer's turn after the last stand. A stand that leaves a hand to play
 //   takes no draw, so every sequence of moves the draws allow is tried, for every number of
 //   dealt hands (the snapshot, when there is one, fixes them and prunes everything else);
-// - roulette / baccarat: the bet comes from the snapshot; without one, every bet is tried.
+// - roulette / baccarat: the bet comes from the snapshot; without one, every bet is tried;
+// - mines: each draw is one reveal, in order; whether a tile is a mine depends only on how many
+//   tiles were revealed before it, never on which one. The snapshot (the board) gives the mine
+//   count, the tiles and the round's cap; without one, every mine count is tried with the
+//   board's own cap (the vault's max_round_gain is unknown here), on tiles 0, 1, 2… A cash-out
+//   takes no draw: the last draw is then the last safe reveal.
 // A round "matches" when a replay reproduces the program's payout and fee (and the snapshot,
 // when there is one).
 import type { BaccaratBet, Game, RouletteBet } from "@tilt/mod/protocol";
 import { isDeepStrictEqual } from "node:util";
 import * as baccarat from "./baccarat";
 import * as blackjack from "./blackjack";
+import * as mines from "./mines";
 import * as roulette from "./roulette";
 import type { Outcome } from "./round";
 import { Rng } from "./rng";
@@ -168,6 +174,39 @@ function slotsCandidates(randomness: Uint8Array, stake: bigint): Candidate[] {
   return [{ outcome: { game: "slots", reels }, gross: slots.gross(reels, stake), possible: true }];
 }
 
+type MinesOutcome = Extract<Outcome, { game: "mines" }>;
+
+/** Plays the reveals of a board with `count` mines; impossible when a draw comes after the
+ *  round ended (bust, cleared board or cap reached). */
+function minesCandidate(draws: Uint8Array[], stake: bigint, count: number, snapshot: MinesOutcome | null): Candidate {
+  const gain = snapshot ? BigInt(snapshot.maxGain) : mines.boardGain(stake, count);
+  let revealed = 0;
+  let busted = false;
+  let possible = true;
+  for (const randomness of draws) {
+    if (busted || !mines.canRevealMore(stake, count, revealed, gain)) possible = false;
+    if (mines.isMine(Rng.fromVrf(randomness), count, revealed)) busted = true;
+    else revealed++;
+  }
+  // Tiles never change the outcome: the snapshot's when it has as many, else 0, 1, 2…
+  const tiles = snapshot?.order.length === revealed ? snapshot.order : Array.from({ length: revealed }, (_, i) => i);
+  const outcome: MinesOutcome = {
+    game: "mines",
+    mines: count,
+    order: tiles,
+    pending: null,
+    busted: busted ? (snapshot?.busted ?? revealed) : null,
+    maxGain: gain.toString(),
+  };
+  return { outcome, gross: busted ? 0n : mines.gross(stake, count, revealed, gain), possible };
+}
+
+function minesCandidates(draws: Uint8Array[], stake: bigint, snapshot: Outcome | null): Candidate[] {
+  const snap = snapshot?.game === "mines" ? snapshot : null;
+  if (snap) return [minesCandidate(draws, stake, snap.mines, snap)];
+  return Array.from({ length: mines.MAX_MINES }, (_, i) => minesCandidate(draws, stake, i + mines.MIN_MINES, null));
+}
+
 export function replay(input: ReplayInput): ReplayResult {
   const last = input.draws.at(-1);
   if (!last) throw new Error("a settled round has at least one draw");
@@ -180,5 +219,7 @@ export function replay(input: ReplayInput): ReplayResult {
       return choose(baccaratCandidates(last, input.stake, input.snapshot), input);
     case "slots":
       return choose(slotsCandidates(last, input.stake), input);
+    case "mines":
+      return choose(minesCandidates(input.draws, input.stake, input.snapshot), input);
   }
 }

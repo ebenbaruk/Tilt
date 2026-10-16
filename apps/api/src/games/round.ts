@@ -4,7 +4,7 @@ import type { BaccaratBet, RouletteBet } from "@tilt/mod/protocol";
 import type { Table } from "./blackjack";
 import type { Reels } from "./slots";
 
-export type Draw = "deal" | "hit" | "double" | "split" | "dealer" | "spin";
+export type Draw = "deal" | "hit" | "double" | "split" | "dealer" | "spin" | "reveal";
 
 export type RoundStatus = { kind: "idle" } | { kind: "awaiting"; draw: Draw } | { kind: "player_turn" };
 
@@ -14,7 +14,18 @@ export type Outcome =
   | ({ game: "blackjack"; bet: string } & Table)
   | { game: "roulette"; bet: RouletteBet; number: number }
   | { game: "baccarat"; bet: BaccaratBet; player: number[]; banker: number[] }
-  | { game: "slots"; reels: Reels };
+  | { game: "slots"; reels: Reels }
+  /** From the player's board. `order`: tiles revealed safe, in reveal order; `pending`: the tile
+   *  awaiting its draw; `busted`: the mine that ended the round; `maxGain`: the round's cap on the
+   *  gain, in base units (a string, like `bet`). */
+  | {
+      game: "mines";
+      mines: number;
+      order: number[];
+      pending: number | null;
+      busted: number | null;
+      maxGain: string;
+    };
 
 export interface ChainRound {
   status: RoundStatus;

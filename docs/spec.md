@@ -107,7 +107,8 @@ Référence visuelle : la maquette d'Eli (image partagée dans la conversation, 
 | Roulette | v1 | Européenne (un seul zéro), un pari par tour : plein, rouge/noir, pair/impair, manque/passe, douzaine, colonne. RTP 97,30 %. |
 | Baccarat | v1 | Punto Banco, sabot infini : joueur (1:1), banque (1:1, commission 5 %) et égalité (8:1). RTP 98,76 % / 98,94 % / ≈ 85,9 %. |
 | Slots | v1 | 3 rouleaux pondérés, table de gains publique, gain max 250×. RTP 96,16 %. |
-| Autres (crash, dice, mines…) | plus tard | Très adaptés au terminal et rapides à jouer. |
+| Mines | v1 | Grille 5×5, 1 à 24 mines. Chaque case cliquée est tirée à l'instant par le VRF (aucune disposition stockée d'avance, lisible on-chain sinon). Multiplicateur 0,99 × C(25, k) / C(25 − mines, k) après k cases sûres, encaissement à tout moment dès une case ; gain plafonné par manche (`max_round_gain`), comme le plafond de profit de Stake. RTP 99,00 %. |
+| Autres (crash, dice, limbo…) | plus tard | Très adaptés au terminal et rapides à jouer. |
 
 Les programmes de jeu existent pour les quatre jeux ; leur interface dans le mod reste à faire (Eli). Chaque jeu affiche son **RTP** (taux de retour au joueur, avant les 1 % Tilt) et est **provably fair** (§6.4).
 
@@ -174,7 +175,7 @@ Options écartées : hybride avec solde off-chain (custodial, confiance reposant
 
 - Solana suffit : la latence vient de l'oracle VRF, pas de la chaîne. On vise l'**Ephemeral Rollup** MagicBlock.
 - Blackjack : environ 3 tirages par main (donne, chaque carte demandée, tirage du croupier après « stand »). La carte cachée du croupier n'existe pas on-chain avant d'être révélée ; on tire donc à la demande (équivalent d'un sabot quasi infini, RTP à recalculer et à afficher).
-- Roulette, baccarat, slots : un tirage par tour.
+- Roulette, baccarat, slots : un tirage par tour. Mines : un tirage par case cliquée, aucun pour la mise ni l'encaissement.
 
 **Frais : Tilt prend 1 % sur le gain de chaque manche gagnante**, ce qui finance les tirages VRF et les frais réseau. Les RTP affichés par jeu (§4.3) sont **avant** ces 1 % ; le mod affiche aussi le taux effectif après les 1 %.
 
@@ -249,7 +250,8 @@ GET  /users/:userId    -> { userId, solanaAddress, accountOpen }        // 404 U
 POST /intents { intentId, userId, action, consent? } -> { intentId, status, signature?, error? }
 GET  /intents/:intentId -> même réponse
 // action : open_account | deposit {amount} · blackjack_bet {amount (par main), hands 1..6} | blackjack_hit | blackjack_stand | blackjack_double | blackjack_split
-//          roulette_spin {amount, bet} · baccarat_deal {amount, bet} · slots_spin {amount} · withdraw {amount}
+//          roulette_spin {amount, bet} · baccarat_deal {amount, bet} · slots_spin {amount}
+//          mines_bet {amount, mines 1..24} | mines_reveal {tile 0..24} | mines_cashout · withdraw {amount}
 // status : pending (en vol ou issue inconnue, le relais la tranche seul) | submitted (arrivée on-chain) | failed
 // error.code : PROGRAM_ERROR (message = nom de l'erreur Anchor, ex. InsufficientBalance), ACCOUNT_NOT_OPEN,
 //              TABLE_NOT_READY (table de blackjack pas encore ouverte dans le rollup ; rien n'est joué, renvoyer l'action), …

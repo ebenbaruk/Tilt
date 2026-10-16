@@ -4,6 +4,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import * as baccarat from "../src/games/baccarat";
 import * as blackjack from "../src/games/blackjack";
+import * as mines from "../src/games/mines";
 import { replay } from "../src/games/replay";
 import type { Outcome } from "../src/games/round";
 import { Rng } from "../src/games/rng";
@@ -322,6 +323,67 @@ describe("slots", () => {
   });
 });
 
+describe("mines", () => {
+  it("pays the program's multiplier for every mine count and safe tile count", () => {
+    vectors.minesGross.forEach((row, i) => {
+      const count = i + 1;
+      expect(row).toHaveLength(mines.safeTiles(count) + 1);
+      row.forEach((g, k) => expect(mines.uncappedGross(STAKE, count, k).toString(), `${count} mines, ${k}`).toBe(g));
+    });
+  });
+
+  it("follows the published table, rounded down", () => {
+    expect(mines.uncappedGross(100_000n, 1, 1)).toBe(103_125n);
+    expect(mines.uncappedGross(100_000n, 24, 1)).toBe(2_475_000n);
+    expect(mines.uncappedGross(1_000_000n, 3, 2)).toBe(1_285_714n);
+    expect(mines.uncappedGross(106n, 1, 1)).toBe(109n);
+  });
+
+  it("caps the gain at the cleared board, within the round limit", () => {
+    expect(mines.maxGain(1_000n, 24, 1_000_000n)).toBe(23_750n);
+    expect(mines.maxGain(1_000n, 24, 10_000n)).toBe(10_000n);
+    expect(mines.maxGain(1_000n, 12, 50_000n)).toBe(50_000n);
+    expect(mines.gross(1_000n, 12, 13, 2_000n)).toBe(3_000n);
+    expect(mines.canRevealMore(1_000n, 24, 1, 23_750n)).toBe(false);
+    expect(mines.canRevealMore(1_000n, 3, 1, 1_000_000n)).toBe(true);
+  });
+
+  it.each(vectors.mines.map((v, i) => ({ ...v, i })))("plays round $i like the program", (v) => {
+    const gain = BigInt(v.maxGain);
+    expect([mines.maxGain(STAKE, v.mines, 3_000_000n), mines.maxGain(STAKE, v.mines, 10n ** 12n)]).toContain(gain);
+    let revealed = 0;
+    let bust = false;
+    for (const [i, draw] of v.draws.entries()) {
+      expect(mines.canRevealMore(STAKE, v.mines, revealed, gain), `reveal ${i}`).toBe(true);
+      if (mines.isMine(Rng.fromVrf(bytes(draw)), v.mines, revealed)) bust = true;
+      else revealed++;
+    }
+    expect(revealed).toBe(v.order.length);
+    expect(bust).toBe(v.busted !== null);
+    // The round ended on its own (bust, cleared board, cap) unless it was cashed out.
+    expect(bust || !mines.canRevealMore(STAKE, v.mines, revealed, gain)).toBe(!v.cashout);
+    const gross = bust ? 0n : mines.gross(STAKE, v.mines, revealed, gain);
+    expect(gross.toString()).toBe(v.gross);
+    expect(settle(STAKE, gross)).toEqual({ payout: BigInt(v.payout), fee: BigInt(v.fee) });
+  });
+
+  it("covers busts, cash-outs and the cap", () => {
+    expect(vectors.mines.some((v) => v.busted !== null)).toBe(true);
+    expect(vectors.mines.some((v) => v.cashout)).toBe(true);
+    expect(vectors.mines.some((v) => !v.cashout && v.busted === null && v.gross === "4000000")).toBe(true);
+  });
+
+  it("formats multipliers with 4 decimals, rounded down, 1 before any tile", () => {
+    expect(mines.formatMultiplier(mines.scaledMultiplier(STAKE, 1, 0, 10n ** 12n))).toBe("1.0000");
+    expect(mines.formatMultiplier(mines.scaledMultiplier(STAKE, 1, 1, 10n ** 12n))).toBe("1.0312");
+    expect(mines.formatMultiplier(mines.scaledMultiplier(STAKE, 24, 1, 10n ** 12n))).toBe("24.7500");
+    expect(mines.formatMultiplier(mines.scaledMultiplier(STAKE, 3, 2, 10n ** 12n))).toBe("1.2857");
+    // The round cap: 1 USDC with a 2 USDC gain limit never shows more than 3x.
+    expect(mines.formatMultiplier(mines.scaledMultiplier(STAKE, 12, 13, 2_000_000n))).toBe("3.0000");
+    expect(mines.formatMultiplier(mines.scaledMultiplier(STAKE, 12, 13, 10n ** 15n))).toBe("5148297.0000");
+  });
+});
+
 describe("replay (GET /verify)", () => {
   const snapshotOf = (v: (typeof vectors.blackjack)[number]): Outcome => ({
     game: "blackjack",
@@ -447,8 +509,62 @@ describe("replay (GET /verify)", () => {
     expect(r).toMatchObject({ matches: true, outcome: { bet: "banker" } });
   });
 
+  const minesSnapshot = (v: (typeof vectors.mines)[number]): Extract<Outcome, { game: "mines" }> => ({
+    game: "mines",
+    mines: v.mines,
+    order: v.order,
+    pending: null,
+    busted: v.busted,
+    maxGain: v.maxGain,
+  });
+  const minesInput = (v: (typeof vectors.mines)[number]) => ({
+    game: "mines" as const,
+    stake: STAKE,
+    onChain: { payout: BigInt(v.payout), fee: BigInt(v.fee) },
+    draws: v.draws.map(bytes),
+  });
+
+  it.each(vectors.mines.map((v, i) => ({ ...v, i })))("replays mines round $i from its reveals and board", (v) => {
+    expect(replay({ ...minesInput(v), snapshot: minesSnapshot(v) })).toMatchObject({
+      matches: true,
+      outcome: minesSnapshot(v),
+      gross: BigInt(v.gross),
+    });
+  });
+
+  it("replays a cashed-out and a busted mines round without a board, tiles aside", () => {
+    const cashedOut = vectors.mines.find((v) => v.cashout && v.draws.length > 2);
+    const busted = vectors.mines.find((v) => v.busted !== null && v.draws.length > 2);
+    if (!cashedOut || !busted) throw new Error("fixture needs a long cash-out and a late bust");
+    const cash = replay({ ...minesInput(cashedOut), snapshot: null });
+    expect(cash).toMatchObject({ matches: true, gross: BigInt(cashedOut.gross), outcome: { busted: null } });
+    expect(cash.outcome.game === "mines" && cash.outcome.order.length).toBe(cashedOut.order.length);
+    const bust = replay({ ...minesInput(busted), snapshot: null });
+    expect(bust).toMatchObject({ matches: true, gross: 0n, outcome: { busted: busted.order.length } });
+  });
+
+  it("does not match a mines round with a draw missing or after the round ended, or another board", () => {
+    const v = vectors.mines.find((m) => m.cashout && m.draws.length > 1);
+    const bust = vectors.mines.find((m) => m.busted !== null);
+    if (!v || !bust) throw new Error("fixture needs a cash-out and a bust");
+    const input = { ...minesInput(v), snapshot: minesSnapshot(v) };
+    expect(replay({ ...input, draws: input.draws.slice(1) }).matches).toBe(false);
+    // Which tiles were clicked never changes a draw: only how many is checked.
+    expect(replay({ ...input, snapshot: { ...minesSnapshot(v), order: v.order.slice(1) } }).matches).toBe(false);
+    expect(replay({ ...input, snapshot: { ...minesSnapshot(v), mines: v.mines === 1 ? 2 : 1 } }).matches).toBe(false);
+    const afterBust = { ...minesInput(bust), draws: [...bust.draws, ...v.draws].map(bytes) };
+    expect(replay({ ...afterBust, snapshot: minesSnapshot(bust) }).matches).toBe(false);
+    expect(replay({ ...afterBust, snapshot: null }).matches).toBe(false);
+  });
+
   it("never throws, whatever the draws and amounts", () => {
-    const game = fc.constantFrom("blackjack" as const, "roulette" as const, "baccarat" as const, "slots" as const);
+    const game = fc.constantFrom(
+      "blackjack" as const,
+      "roulette" as const,
+      "baccarat" as const,
+      "slots" as const,
+      "mines" as const,
+    );
     fc.assert(
       fc.property(
         game,

@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from "claude-code/testing";
 
-import type { StateResponse } from "../hooks/protocol";
+import type { PlayRequest, StateResponse } from "../hooks/protocol";
+import { TABLE_KEY } from "../hooks/table-input";
 import {
   BACCARAT,
   BASE,
@@ -13,12 +14,16 @@ import {
   BLACKJACK_TURN,
   BLACKJACK_WIN,
   BLOCKED,
+  MINES_BUSTED,
+  MINES_CASHED,
+  MINES_DRAWING,
+  MINES_TURN,
   NOT_OPEN,
   ROULETTE,
   SLOTS,
   SLOTS_DRAWING,
 } from "./fixtures";
-import { BAND, NOW, PANE, PANE_INLINE, PLUGIN, seat, SESSION, shownText, textOf, worldOf } from "./world";
+import { BAND, movingTable, NOW, PANE, PANE_INLINE, PLUGIN, seat, SESSION, shownText, textOf, worldOf } from "./world";
 
 /** The band is drawn on these two; a pane on every surface. */
 const SURFACES = ["terminal", "desktop"] as const;
@@ -93,6 +98,14 @@ const cases: [string, StateResponse, string[]][] = [
   ["baccarat, settled", BACCARAT, ["bet banker", "PLAYER 5", "BANKER 7", "Player 5 · banker 7.", "+0.94"]],
   ["slots, settled", SLOTS, ["7", "★", "+3.96", "spin · 0.50", "rtp 96.16%"]],
   ["slots, drawing", SLOTS_DRAWING, ["drawing", "PAYS × BET"]],
+  [
+    "mines, the player to reveal or cash out",
+    MINES_TURN,
+    ["3 mines", "multiplier ×1.2857", "next tile ×1.4785", "cash out 1.28", "2 safe", "◆", "rtp 99.00%"],
+  ],
+  ["mines, a reveal drawing", MINES_DRAWING, ["3 mines", "multiplier ×1.1250", "1 safe", "◆"]],
+  ["mines, busted", MINES_BUSTED, ["✸", "◆", "Mine on h after 1 safe tile.", "−1.00", "play · 0.50 · 3 mines"]],
+  ["mines, cashed out", MINES_CASHED, ["◆", "Cashed out at ×1.4785 after 3 safe tiles.", "+0.47"]],
   ["an account not open yet", NOT_OPEN, ["No Tilt account yet", "first deposit on the web"]],
   ["play blocked", BLOCKED, ["Play paused · Self-exclusion until 2026-11-01."]],
 ];
@@ -186,7 +199,7 @@ describe("the pane draws each state the api sends", () => {
     let current: StateResponse = BASE;
     const { clock } = await seat($, on, BASE, { "GET /v1/state": () => ({ status: 200, body: current }) });
 
-    for (const state of [BASE, BLACKJACK_TURN, BLACKJACK_PAIR, ROULETTE, BACCARAT, SLOTS, BLOCKED]) {
+    for (const state of [BASE, BLACKJACK_TURN, BLACKJACK_PAIR, ROULETTE, BACCARAT, SLOTS, MINES_TURN, BLOCKED]) {
       current = state;
       await clock.advance(5_000);
       const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
@@ -226,6 +239,63 @@ describe("the pane draws each state the api sends", () => {
 
     // Two hands from split aces, one hand from no split.
     expect(text.match(/· 1 card/g)).toHaveLength(2);
+  });
+});
+
+describe("the Mines board", () => {
+  const actionsOf = (calls: { body: unknown }[]) => calls.map((call) => (call.body as PlayRequest).action);
+
+  test("on the main screen its hidden tiles are the keys: a press reveals, the safe ones are not keys", async ($, on) => {
+    const { world } = await seat($, on, MINES_TURN, movingTable(MINES_TURN, MINES_TURN));
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+    const tile = (index: number) => ui.find({ key: `mines-tile-${index}` });
+
+    expect((await tile(0))?.props.hotkey).toBe("a");
+    expect((await tile(24))?.props.hotkey).toBe("y");
+    expect(await tile(6)).toBeUndefined();
+    expect(await tile(12)).toBeUndefined();
+    const tiles = await Promise.all(Array.from({ length: 25 }, (_, index) => tile(index)));
+
+    expect(tiles.filter((found) => found !== undefined)).toHaveLength(23);
+    expect(await ui.find({ key: "mines-cashout" })).toBeDefined();
+
+    await ui.press({ key: "mines-tile-0" });
+
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([{ type: "mines_reveal", tile: 0 }]);
+  });
+
+  test("a reveal being drawn turns its tile and holds the other tiles' keys, inert", async ($, on) => {
+    const { clock } = await seat($, on, MINES_DRAWING);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+    const glyphs = new Set<string>();
+
+    for (let frame = 0; frame < 8; frame++) {
+      const text = textOf(await ui.drawn());
+
+      glyphs.add(text.match(/[◐◓◑◒]/)?.[0] ?? "");
+      await clock.advance(200);
+    }
+
+    expect(glyphs.has("")).toBe(false);
+    expect(glyphs.size).toBeGreaterThan(1);
+    expect(await ui.find({ key: "mines-tile-0" })).toBeUndefined();
+    expect(await ui.find({ key: "held-mines-tile-0" })).toBeDefined();
+    expect(await ui.find({ key: "held-mines-tile-12" })).toBeUndefined();
+  });
+
+  test("in the fullscreen pane a click on a tile reveals it, a click on the cash-out takes it", async ($, on) => {
+    const { world, clock } = await seat($, on, MINES_TURN, movingTable(MINES_TURN, MINES_TURN));
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE, surface: "terminal" });
+
+    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("click a tile to reveal it");
+    await ui.press({ key: "table-mines-tile-24" });
+    await clock.advance(1_000);
+    await ui.press({ key: "table-mines-cashout" });
+
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([
+      { type: "mines_reveal", tile: 24 },
+      { type: "mines_cashout" },
+    ]);
   });
 });
 

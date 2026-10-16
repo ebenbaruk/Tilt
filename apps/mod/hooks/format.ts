@@ -30,6 +30,22 @@ export function formatSigned(net: string): string {
   return BigInt(net) > 0n && text !== "0.00" ? `+${text}` : text;
 }
 
+/** Mines multipliers come with exactly 4 decimals ("1.0312"). */
+const MULTIPLIER_DECIMALS = 4;
+const MULTIPLIER_SCALE = 10n ** BigInt(MULTIPLIER_DECIMALS);
+
+/**
+ * What a Mines cash-out at `multiplier` returns on `stake`, in base units, before Tilt's fee:
+ * stake × multiplier, floored (the multiplier is floored too, so both only round down). Integer
+ * math on the decimal string, never a float; the program computes the real payout.
+ */
+export function minesPayout(stake: string, multiplier: string): string {
+  const [whole = "0", fraction = ""] = multiplier.split(".");
+  const scaled = BigInt(`${whole}${fraction.padEnd(MULTIPLIER_DECIMALS, "0").slice(0, MULTIPLIER_DECIMALS)}`);
+
+  return ((BigInt(stake) * scaled) / MULTIPLIER_SCALE).toString();
+}
+
 /** 31_400 → "31s", 374_000 → "6m 14s", 3_720_000 → "1h 2m". */
 export function formatDuration(ms: number): string {
   const seconds = Math.max(0, Math.floor(ms / 1000));

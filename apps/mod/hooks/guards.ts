@@ -1,6 +1,6 @@
 // Shape checks for what the api sends. The mod cannot import zod, so these small guards are the
 // boundary: anything that fails them is shown as a one-line error instead of being drawn.
-import { MAX_HANDS, MAX_TABLE_HANDS, MIN_HANDS } from "./keys";
+import { MAX_HANDS, MAX_MINES, MAX_TABLE_HANDS, MIN_HANDS, MIN_MINES, MINES_TILES } from "./keys";
 import type {
   BaccaratBet,
   BlackjackHandView,
@@ -19,7 +19,7 @@ import type {
 
 type Json = Record<string, unknown>;
 
-const GAMES: readonly string[] = ["blackjack", "roulette", "baccarat", "slots"];
+const GAMES: readonly string[] = ["blackjack", "roulette", "baccarat", "slots", "mines"];
 const SUITS: readonly string[] = ["♠", "♥", "♦", "♣"];
 const PHASES: readonly string[] = ["idle", "drawing", "player_turn"];
 const BACCARAT_BETS: readonly string[] = ["player", "banker", "tie"];
@@ -75,6 +75,10 @@ const isHandCount = (value: unknown): value is number => isInt(value) && value >
 /** Hands on the table: the dealt ones plus the splits. */
 const isTableHandCount = (value: unknown): value is number =>
   isInt(value) && value >= MIN_HANDS && value <= MAX_TABLE_HANDS;
+const isMineCount = (value: unknown): value is number => isInt(value) && value >= MIN_MINES && value <= MAX_MINES;
+const isTile = (value: unknown): value is number => isInt(value) && value >= 0 && value < MINES_TILES;
+/** "1.0312": the api floors multipliers to 4 decimals. */
+const isMultiplier = (value: unknown): value is string => isString(value) && /^\d{1,12}\.\d{4}$/.test(value);
 
 export const isPlayAction = (value: unknown): value is PlayAction => {
   if (!isRecord(value)) {
@@ -95,6 +99,12 @@ export const isPlayAction = (value: unknown): value is PlayAction => {
       return isStake(value.amount) && isRouletteBet(value.bet);
     case "baccarat_deal":
       return isStake(value.amount) && isBaccaratBet(value.bet);
+    case "mines_bet":
+      return isStake(value.amount) && isMineCount(value.mines);
+    case "mines_reveal":
+      return isTile(value.tile);
+    case "mines_cashout":
+      return true;
     default:
       return false;
   }
@@ -124,6 +134,27 @@ const isBlackjack = (value: Json): boolean =>
   isBool(value.canDouble) &&
   isBool(value.canSplit);
 
+/** A board the mod can draw: distinct safe tiles, at most the 25 − mines there are, none of them pending or the mine. */
+const isMines = (value: Json): boolean => {
+  if (!isMineCount(value.mines) || !isArrayOf(value.revealed, isTile)) {
+    return false;
+  }
+
+  const revealed = new Set(value.revealed);
+  const isFreeTile = (tile: unknown) => tile === null || (isTile(tile) && !revealed.has(tile));
+
+  return (
+    revealed.size === value.revealed.length &&
+    revealed.size <= MINES_TILES - value.mines &&
+    isFreeTile(value.pending) &&
+    isFreeTile(value.busted) &&
+    isMultiplier(value.multiplier) &&
+    isNullable(value.nextMultiplier, isMultiplier) &&
+    isBool(value.canCashOut) &&
+    isBool(value.canReveal)
+  );
+};
+
 const isDetail = (value: unknown): value is RoundView["detail"] => {
   if (!isRecord(value)) {
     return false;
@@ -144,6 +175,8 @@ const isDetail = (value: unknown): value is RoundView["detail"] => {
       );
     case "slots":
       return isNullable(value.reels, isReels);
+    case "mines":
+      return isMines(value);
     default:
       return false;
   }

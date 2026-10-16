@@ -2,7 +2,16 @@ import type { ConfigRow, On, TurnCompleteInput } from "claude-code";
 import { describe, type Engine, expect, test } from "claude-code/testing";
 
 import type { StateResponse } from "../hooks/protocol";
-import { BASE, BLACKJACK_TURN, BLACKJACK_WIN, ROULETTE, SLOTS } from "./fixtures";
+import {
+  BASE,
+  BLACKJACK_TURN,
+  BLACKJACK_WIN,
+  MINES_BUSTED,
+  MINES_CASHED,
+  MINES_TURN,
+  ROULETTE,
+  SLOTS,
+} from "./fixtures";
 import { BAND, command, later, LOGGED_IN, PANE, PANE_INLINE, PLUGIN, seat, shownText, textOf } from "./world";
 
 const POLL_MS = 5_000;
@@ -383,6 +392,26 @@ describe("a win celebrates", () => {
     await show(lost);
     await clock.advance(SPIN_OVER_MS);
 
+    expect(hasSparkles(textOf(await ui.drawn()))).toBe(false);
+  });
+
+  test("a Mines cash-out sparkles, a mine does not", async ($, on) => {
+    const { show, clock } = await moving($, on, BASE);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+
+    await ui.press({ key: "game-mines" });
+    await show(MINES_TURN);
+    expect(hasSparkles(textOf(await ui.drawn()))).toBe(false);
+    await show(MINES_CASHED);
+    expect(hasSparkles(textOf(await ui.drawn()))).toBe(true);
+    await clock.advance(CELEBRATION_OVER_MS);
+    expect(hasSparkles(textOf(await ui.drawn()))).toBe(false);
+
+    const next = (state: StateResponse): StateResponse =>
+      state.round === null ? state : { ...state, round: { ...state.round, number: 8 } };
+
+    await show(next(MINES_TURN));
+    await show(next(MINES_BUSTED));
     expect(hasSparkles(textOf(await ui.drawn()))).toBe(false);
   });
 });

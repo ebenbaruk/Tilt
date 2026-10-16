@@ -1,6 +1,6 @@
 // Request bodies, validated at the boundary. Each schema is checked against the frozen
 // protocol types, so a drift between them fails the typecheck.
-import { Amount, MAX_BLACKJACK_HANDS } from "@tilt/contract";
+import { Amount, MAX_BLACKJACK_HANDS, MAX_MINES, MINES_TILES } from "@tilt/contract";
 import type { ImpressionRequest, PlayAction, PlayRequest, RouletteBet } from "@tilt/mod/protocol";
 import { z } from "zod";
 import type { DepositRequest, DeviceApproveRequest, ExcludeRequest, LimitsRequest, WithdrawRequest } from "./public";
@@ -41,6 +41,18 @@ export const PlayActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("roulette_spin"), amount: Amount, bet: RouletteBet }).strict(),
   z.object({ type: z.literal("baccarat_deal"), amount: Amount, bet: z.enum(["player", "banker", "tie"]) }).strict(),
   z.object({ type: z.literal("slots_spin"), amount: Amount }).strict(),
+  z.object({ type: z.literal("mines_bet"), amount: Amount, mines: z.number().int().min(1).max(MAX_MINES) }).strict(),
+  z
+    .object({
+      type: z.literal("mines_reveal"),
+      tile: z
+        .number()
+        .int()
+        .min(0)
+        .max(MINES_TILES - 1),
+    })
+    .strict(),
+  z.object({ type: z.literal("mines_cashout") }).strict(),
 ]) satisfies z.ZodType<PlayAction>;
 
 export const PlayRequestSchema = z

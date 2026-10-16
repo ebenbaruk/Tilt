@@ -9,6 +9,7 @@ import {
   type ErrorCode,
   idl,
   ledgerAddress,
+  minesBoardAddress,
   playerAccountAddress,
   PROGRAM_ID,
   promoAddress,
@@ -30,9 +31,24 @@ type Vault = IdlAccounts<Tilt>["vault"];
 export type Ledger = IdlAccounts<Tilt>["ledger"];
 type ProgramRouletteBet = IdlTypes<Tilt>["rouletteBet"];
 type ProgramBaccaratBet = IdlTypes<Tilt>["baccaratBet"];
+type Game = IdlTypes<Tilt>["game"];
 type RollupAction = Exclude<Action, { type: "open_account" | "deposit" }>;
 
 const isBlackjack = (action: RollupAction) => action.type.startsWith("blackjack_");
+
+/** Per-player game accounts the rollup must hold before that game's first move: opened and
+ *  delegated on Solana by the relayer, never closed. */
+type GameAccount = "table" | "board";
+const GAME_ACCOUNTS: Record<GameAccount, { label: string; address: (player: PublicKey) => PublicKey }> = {
+  table: { label: "blackjack table", address: tableAddress },
+  board: { label: "mines board", address: minesBoardAddress },
+};
+
+function gameAccountOf(action: RollupAction): GameAccount | undefined {
+  if (isBlackjack(action)) return "table";
+  if (action.type.startsWith("mines_")) return "board";
+  return undefined;
+}
 
 /** A refusal the API can show to the player, e.g. the program's "InsufficientBalance". */
 export class IntentError extends Error {
@@ -111,7 +127,7 @@ const EXPIRY_MARGIN_BLOCKS = 150;
 const RPC_TIMEOUT_MS = 30_000;
 /** How long the rollup gets to see a win cap just raised on Solana. */
 const WIN_CAP_READY_MS = 20_000;
-/** How long the rollup gets to see a table just opened and delegated on Solana. */
+/** How long the rollup gets to see a table or board just opened and delegated on Solana. */
 const TABLE_READY_MS = 20_000;
 const TABLE_POLL_MS = 250;
 
@@ -154,8 +170,8 @@ export class TiltChain {
   private readonly relayer: Keypair;
   private readonly vrfQueue: PublicKey;
   private readonly vault = vaultAddress();
-  /** Players whose table the rollup already holds: tables are never closed, so no need to look again. */
-  private readonly tablesReady = new Set<string>();
+  /** Game accounts (`kind:player`) the rollup already holds: never closed, so no need to look again. */
+  private readonly gameAccountsReady = new Set<string>();
 
   constructor(options: ChainOptions) {
     this.relayer = options.relayer;
@@ -236,12 +252,14 @@ export class TiltChain {
     return this.sendBase(new Transaction().add(ix), record, { wallet, players });
   }
 
-  /** A round action or a withdrawal, in the rollup. Blackjack needs the player's table, opened
-   *  first for players who joined before tables existed. A move past the player's win cap is
-   *  sent again once Solana has raised the cap from the free bankroll (the rolling win cap). */
+  /** A round action or a withdrawal, in the rollup. Blackjack needs the player's table and
+   *  Mines their board, opened first on the player's first move of that game. A move past the
+   *  player's win cap is sent again once Solana has raised the cap from the free bankroll (the
+   *  rolling win cap). */
   async play(player: PublicKey, action: RollupAction, record: RecordSend): Promise<string> {
     if (!(await this.isOpen(player))) throw new IntentError("ACCOUNT_NOT_OPEN", "no account yet: deposit first");
-    if (isBlackjack(action)) await this.ensureTable(player);
+    const gameAccount = gameAccountOf(action);
+    if (gameAccount) await this.ensureGameAccount(player, gameAccount);
     try {
       return await this.sendRollup(await this.playTransaction(player, action), record);
     } catch (e) {
@@ -275,30 +293,35 @@ export class TiltChain {
     }
   }
 
-  /** Relay cron: requests again the draw of a round stuck waiting for it; a blackjack draw
-   *  writes to the table, so it is passed along. */
-  async expireRound(player: PublicKey, blackjack: boolean): Promise<string> {
-    const tx = await this.rollupProgram.methods.expireRound(seed()).accountsPartial(this.playAccounts(player, blackjack)).transaction();
+  /** Relay cron: requests again the draw of a round stuck waiting for it. A blackjack draw
+   *  writes to the table and a Mines reveal to the board, so they are passed along. */
+  async expireRound(player: PublicKey, game: Game): Promise<string> {
+    const m = this.rollupProgram.methods;
+    const tx = "mines" in game
+      ? await m.expireMinesRound(seed()).accountsPartial(this.minesAccounts(player)).transaction()
+      : await m.expireRound(seed()).accountsPartial(this.playAccounts(player, "blackjack" in game)).transaction();
     return this.sendRollup(tx, withoutRecord);
   }
 
-  /** Makes sure the rollup holds the player's blackjack table. Idempotent: a table already on
-   *  Solana is not opened again, only waited for. Nothing of the player's moves in here, so
-   *  any failure is TABLE_NOT_READY and the action can simply be sent again. */
-  async ensureTable(player: PublicKey): Promise<void> {
-    const key = player.toBase58();
-    if (this.tablesReady.has(key)) return;
+  /** Makes sure the rollup holds the player's blackjack table or Mines board. Idempotent: an
+   *  account already on Solana is not opened again, only waited for. Nothing of the player's
+   *  moves in here, so any failure is TABLE_NOT_READY and the action can simply be sent again. */
+  async ensureGameAccount(player: PublicKey, kind: GameAccount): Promise<void> {
+    const key = `${kind}:${player.toBase58()}`;
+    if (this.gameAccountsReady.has(key)) return;
+    const address = GAME_ACCOUNTS[kind].address(player);
     try {
-      if (!(await this.rollupHasTable(player))) {
-        if ((await this.base.getAccountInfo(tableAddress(player))) === null) {
-          await this.sendBase(new Transaction().add(...(await this.tableInstructions(player))), withoutRecord);
+      if (!(await this.rollupHolds(address))) {
+        if ((await this.base.getAccountInfo(address)) === null) {
+          const instructions = kind === "table" ? await this.tableInstructions(player) : await this.minesBoardInstructions(player);
+          await this.sendBase(new Transaction().add(...instructions), withoutRecord);
         }
-        await this.waitForRollupTable(player);
+        await this.waitForRollup(address);
       }
     } catch (e) {
-      throw new IntentError("TABLE_NOT_READY", `blackjack table not ready: ${e instanceof Error ? e.message : String(e)}`);
+      throw new IntentError("TABLE_NOT_READY", `${GAME_ACCOUNTS[kind].label} not ready: ${e instanceof Error ? e.message : String(e)}`);
     }
-    this.tablesReady.add(key);
+    this.gameAccountsReady.add(key);
   }
 
   /** Sponsor prize from the promo pool to the player's wallet (token account created if needed). */
@@ -354,6 +377,18 @@ export class TiltChain {
     };
   }
 
+  /** Mines moves: the board instead of the optional table. */
+  private minesAccounts(player: PublicKey) {
+    return {
+      vault: this.vault,
+      payer: this.relayer.publicKey,
+      account: playerAccountAddress(player),
+      ledger: ledgerAddress(player),
+      board: minesBoardAddress(player),
+      oracleQueue: this.vrfQueue,
+    };
+  }
+
   /** open_table + delegate_table: the relayer pays the table's rent, like the account's. */
   private async tableInstructions(player: PublicKey) {
     const accounts = { vault: this.vault, payer: this.relayer.publicKey, player, ledger: ledgerAddress(player), table: tableAddress(player) };
@@ -363,15 +398,24 @@ export class TiltChain {
     ];
   }
 
+  /** open_mines_board + delegate_mines_board, paid by the relayer like the table. */
+  private async minesBoardInstructions(player: PublicKey) {
+    const accounts = { vault: this.vault, payer: this.relayer.publicKey, player, ledger: ledgerAddress(player), board: minesBoardAddress(player) };
+    return [
+      await this.program.methods.openMinesBoard().accountsPartial(accounts).instruction(),
+      await this.program.methods.delegateMinesBoard().accountsPartial(accounts).instruction(),
+    ];
+  }
+
   /** The rollup holds a delegated account as owned by the program again. */
-  private async rollupHasTable(player: PublicKey): Promise<boolean> {
-    const info = await this.rollup.getAccountInfo(tableAddress(player));
+  private async rollupHolds(address: PublicKey): Promise<boolean> {
+    const info = await this.rollup.getAccountInfo(address);
     return info !== null && info.owner.equals(PROGRAM_ID);
   }
 
-  private async waitForRollupTable(player: PublicKey): Promise<void> {
+  private async waitForRollup(address: PublicKey): Promise<void> {
     for (const end = Date.now() + TABLE_READY_MS; Date.now() < end; await sleep(TABLE_POLL_MS)) {
-      if (await this.rollupHasTable(player)) return;
+      if (await this.rollupHolds(address)) return;
     }
     throw new Error(`not in the rollup within ${TABLE_READY_MS} ms`);
   }
@@ -397,6 +441,12 @@ export class TiltChain {
         return m.baccaratDeal(new BN(action.amount), baccaratBet(action.bet), seed()).accountsPartial(accounts).transaction();
       case "slots_spin":
         return m.slotsSpin(new BN(action.amount), seed()).accountsPartial(accounts).transaction();
+      case "mines_bet":
+        return m.minesBet(new BN(action.amount), action.mines).accountsPartial(this.minesAccounts(player)).transaction();
+      case "mines_reveal":
+        return m.minesReveal(action.tile, seed()).accountsPartial(this.minesAccounts(player)).transaction();
+      case "mines_cashout":
+        return m.minesCashout().accountsPartial(this.minesAccounts(player)).transaction();
       case "withdraw": {
         const vault = await this.fetchVault();
         return m.withdraw(new BN(action.amount))

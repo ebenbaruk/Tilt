@@ -3,7 +3,17 @@ import Link from "next/link";
 import { AgentCliPreview } from "@/components/landing/AgentCliPreview";
 import { Badge } from "@/components/landing/Badge";
 import { CopyPill } from "@/components/landing/CopyPill";
-import { Burst, CardBuddy, Chip, Die, Fan, Reels, Terminal, Wheel } from "@/components/landing/Illustrations";
+import {
+  Burst,
+  CardBuddy,
+  Chip,
+  Die,
+  Fan,
+  Minefield,
+  Reels,
+  Terminal,
+  Wheel,
+} from "@/components/landing/Illustrations";
 import { INSTALL_COMMANDS } from "@/components/landing/InstallSnippet";
 import { WavyWordmark } from "@/components/landing/WavyWordmark";
 import styles from "./landing.module.css";
@@ -63,6 +73,13 @@ const GAMES = [
     rules: "Three weighted reels, a public paytable and a top win of 250× your stake.",
     tone: styles.toneGreen,
     art: <Reels />,
+  },
+  {
+    name: "Mines",
+    rtp: "99.00%",
+    rules: "Pick 1 to 24 mines on a 5×5 board, reveal tiles one by one and cash out before you hit a mine.",
+    tone: styles.tonePaper,
+    art: <Minefield />,
   },
 ];
 
@@ -156,8 +173,8 @@ export default function Landing() {
               The most fun way to wait on your agent.
             </h2>
             <p className={styles.lede}>
-              Blackjack, roulette, baccarat and slots in a panel inside Claude Code. Real USDC on Solana, every draw
-              provably fair, and the panel steps aside the second your agent needs you.
+              Blackjack, roulette, baccarat, slots and mines in a panel inside Claude Code. Real USDC on Solana, every
+              draw provably fair, and the panel steps aside the second your agent needs you.
             </p>
             <div className={styles.row}>
               <a href="#install" className={styles.pill}>

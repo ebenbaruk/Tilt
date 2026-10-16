@@ -1,12 +1,13 @@
 // Generator of rust-vectors.json: draws computed by the program's own Rust code.
-// Regenerate: copy chain/programs/tilt/src/{rng,settlement}.rs and games/{blackjack,baccarat,roulette,slots}.rs
+// Regenerate: copy chain/programs/tilt/src/{rng,settlement}.rs and games/{blackjack,baccarat,roulette,slots,mines}.rs
 // next to this file (src/ and src/games/), strip the anchor derives, `#[account]` and the test
 // modules, replace `use anchor_lang::prelude::*;` with `type Pubkey = [u8; 32];`, then
 // `rustc --edition 2021 -O main.rs && ./main > rust-vectors.json` (and prettier the JSON).
 mod rng;
 mod settlement;
-mod games { pub mod baccarat; pub mod blackjack; pub mod roulette; pub mod slots; }
+mod games { pub mod baccarat; pub mod blackjack; pub mod mines; pub mod roulette; pub mod slots; }
 use games::{baccarat::*, blackjack::*, roulette::*, slots::*};
+use games::mines::{self, MinesBoard};
 use rng::Rng;
 
 fn seed(i: u64) -> [u8; 32] { let mut s = [0u8; 32]; s[..8].copy_from_slice(&i.to_le_bytes()); s[31] = (i % 251) as u8; s }
@@ -84,5 +85,40 @@ fn main() {
         sl.push(format!("{{\"seed\":\"{}\",\"reels\":{},\"gross\":\"{}\"}}", hex(&seed(i)), list(&s.reels), s.gross(1_000_000)));
     }
     out.push(format!("\"slots\":[{}]", sl.join(",")));
+    // mines: the gross of every (mines, safe tiles) for 1 USDC, then rounds revealing tiles one
+    // draw each until a mine, the cleared board or the cap, else cashed out after `stop` tiles.
+    // Every fourth round has a 3 USDC round limit so the cap gets hit.
+    let gross_table: Vec<String> = (1..=mines::MAX_MINES)
+        .map(|m| format!("[{}]", (0..=mines::TILES - m).map(|k| format!("\"{}\"", mines::gross_uncapped(1_000_000, m, k))).collect::<Vec<_>>().join(",")))
+        .collect();
+    out.push(format!("\"minesGross\":[{}]", gross_table.join(",")));
+    let mut mi = Vec::new();
+    for i in 0..150u64 {
+        // Half the rounds on 1 to 5 mines, so that some go on for many tiles.
+        let n_mines = (if i % 2 == 0 { 1 + (i / 2) % 5 } else { 1 + i % mines::MAX_MINES as u64 }) as u8;
+        let stake = 1_000_000u64;
+        let limit = if i % 4 == 3 { 3_000_000 } else { 1_000_000_000_000 };
+        let mut b = MinesBoard::default();
+        b.start(stake, n_mines, mines::max_gain(stake, n_mines, limit));
+        let stop = 1 + (i / 3) % 12;
+        let mut draws = Vec::new();
+        let mut ended = None;
+        let mut j = 0u64;
+        while ended.is_none() && (b.n_revealed as u64) < stop {
+            let tile = (0..25u64).map(|d| ((i * 7 + j * 11 + d) % 25) as u8).find(|&t| b.can_reveal(t)).unwrap();
+            let s = seed(i * 1000 + j);
+            j += 1;
+            b.pending = tile;
+            draws.push(format!("\"{}\"", hex(&s)));
+            ended = b.reveal(&mut Rng::from_vrf(s));
+        }
+        let cashout = ended.is_none();
+        let gross = ended.unwrap_or_else(|| b.gross());
+        let st = settlement::settle(stake, gross);
+        let busted = if b.busted == mines::NONE { "null".to_string() } else { b.busted.to_string() };
+        mi.push(format!("{{\"draws\":[{}],\"mines\":{},\"maxGain\":\"{}\",\"order\":{},\"busted\":{},\"cashout\":{},\"gross\":\"{}\",\"payout\":\"{}\",\"fee\":\"{}\"}}",
+            draws.join(","), n_mines, b.max_gain, list(b.revealed_tiles()), busted, cashout, gross, st.payout, st.fee));
+    }
+    out.push(format!("\"mines\":[{}]", mi.join(",")));
     println!("{{{}}}", out.join(","));
 }

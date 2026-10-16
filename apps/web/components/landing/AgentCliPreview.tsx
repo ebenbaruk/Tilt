@@ -4,7 +4,7 @@ import { PlayingCard } from "@/components/tilt/PlayingCard";
 import { AgentStatus } from "./AgentStatus";
 import styles from "./AgentCliPreview.module.css";
 
-const GAMES = ["Blackjack", "Roulette", "Baccarat", "Slots"];
+const GAMES = ["Blackjack", "Roulette", "Baccarat", "Slots", "Mines"];
 
 const BOARD = [
   { rank: "1", handle: "@0xkira", net: "+412.90" },

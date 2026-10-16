@@ -29,6 +29,10 @@ export type BaccaratBet = z.infer<typeof BaccaratBet>;
 /** Hands one blackjack round can play against a single dealer (`MAX_HANDS` on-chain). */
 export const MAX_BLACKJACK_HANDS = 6;
 
+/** Mines board: 25 tiles (0 to 24, row-major on a 5×5 grid), 1 to 24 mines (`MAX_MINES` on-chain). */
+export const MINES_TILES = 25;
+export const MAX_MINES = MINES_TILES - 1;
+
 /** What a player wants to do. The relay turns it into one Solana or rollup transaction. */
 export const Action = z.discriminatedUnion("type", [
   /** First deposit: opens the account and moves it into the rollup (onboarding fee deducted). */
@@ -44,6 +48,12 @@ export const Action = z.discriminatedUnion("type", [
   z.object({ type: z.literal("roulette_spin"), amount: Amount, bet: RouletteBet }),
   z.object({ type: z.literal("baccarat_deal"), amount: Amount, bet: BaccaratBet }),
   z.object({ type: z.literal("slots_spin"), amount: Amount }),
+  /** Starts a Mines round of `amount` with `mines` mines (1 to 24); no draw until a reveal. */
+  z.object({ type: z.literal("mines_bet"), amount: Amount, mines: z.number().int().min(1).max(MAX_MINES) }),
+  /** Reveals one hidden tile (0 to 24); a mine ends the round. */
+  z.object({ type: z.literal("mines_reveal"), tile: z.number().int().min(0).max(MINES_TILES - 1) }),
+  /** Cashes out at the current multiplier, once at least one tile is revealed. */
+  z.object({ type: z.literal("mines_cashout") }),
   /** Pays to the player's own wallet; moving funds out of it is signed by the player on the web. */
   z.object({ type: z.literal("withdraw"), amount: Amount }),
 ]);
@@ -81,8 +91,8 @@ export const ErrorCode = z.enum([
   "CONSENT_REQUIRED",
   "ACCOUNT_NOT_OPEN",
   "ACCOUNT_ALREADY_OPEN",
-  /** The player's blackjack table could not be opened in the rollup in time; nothing was
-   *  played, the same action can be sent again. */
+  /** The player's blackjack table or Mines board could not be opened in the rollup in time;
+   *  nothing was played, the same action can be sent again. */
   "TABLE_NOT_READY",
   "PROGRAM_ERROR",
   "NETWORK_ERROR",

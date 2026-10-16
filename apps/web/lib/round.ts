@@ -6,6 +6,7 @@ export type BlackjackDetail = Extract<Detail, { game: "blackjack" }>;
 export type RouletteDetail = Extract<Detail, { game: "roulette" }>;
 export type BaccaratDetail = Extract<Detail, { game: "baccarat" }>;
 export type SlotsDetail = Extract<Detail, { game: "slots" }>;
+export type MinesDetail = Extract<Detail, { game: "mines" }>;
 export type Card = BlackjackDetail["dealer"][number];
 export type BlackjackHand = BlackjackDetail["hands"][number];
 export type RouletteBet = RouletteDetail["bet"];
@@ -15,6 +16,7 @@ export const GAME_NAMES: Record<Game, string> = {
   roulette: "Roulette",
   baccarat: "Baccarat",
   slots: "Slots",
+  mines: "Mines",
 };
 
 export function describeRouletteBet(bet: RouletteBet): string {

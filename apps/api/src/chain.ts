@@ -3,14 +3,24 @@
 import anchor from "@coral-xyz/anchor";
 import type { IdlAccounts, IdlTypes, Program as ProgramT } from "@coral-xyz/anchor";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
-import { idl, ledgerAddress, playerAccountAddress, tableAddress, type Tilt, vaultAddress } from "@tilt/contract";
+import {
+  idl,
+  ledgerAddress,
+  minesBoardAddress,
+  playerAccountAddress,
+  tableAddress,
+  type Tilt,
+  vaultAddress,
+} from "@tilt/contract";
 import type { BaccaratBet, RouletteBet } from "@tilt/mod/protocol";
+import { NO_TILE } from "./games/mines";
 import type { ChainRound, Draw, Outcome, RoundStatus } from "./games/round";
 import type { Reels } from "./games/slots";
 
 const { Program } = anchor;
 type PlayerAccountData = IdlAccounts<Tilt>["playerAccount"];
 type TableData = IdlAccounts<Tilt>["blackjackTable"];
+type BoardData = IdlAccounts<Tilt>["minesBoard"];
 type RoundData = IdlTypes<Tilt>["round"];
 
 export interface PlayerState {
@@ -66,6 +76,7 @@ function draw(d: IdlTypes<Tilt>["draw"]): Draw {
   if ("double" in d) return "double";
   if ("split" in d) return "split";
   if ("dealer" in d) return "dealer";
+  if ("reveal" in d) return "reveal";
   return "spin";
 }
 
@@ -108,8 +119,24 @@ function blackjackOutcome(t: TableData | null): Outcome {
   };
 }
 
-function outcome(r: RoundData, table: TableData | null): Outcome {
+const tileOrNull = (t: number) => (t === NO_TILE ? null : t);
+
+/** A mines round lives in the player's board, opened before their first mines bet. */
+function minesOutcome(b: BoardData | null): Outcome {
+  if (!b) throw new Error("mines round without a board");
+  return {
+    game: "mines",
+    mines: b.mines,
+    order: b.order.slice(0, b.nRevealed),
+    pending: tileOrNull(b.pending),
+    busted: tileOrNull(b.busted),
+    maxGain: big(b.maxGain).toString(),
+  };
+}
+
+function outcome(r: RoundData, table: TableData | null, board: BoardData | null): Outcome {
   if ("blackjack" in r.game) return blackjackOutcome(table);
+  if ("mines" in r.game) return minesOutcome(board);
   if ("roulette" in r.game) {
     if (!r.roulette) throw new Error("roulette round without a spin");
     return { game: "roulette", bet: rouletteBet(r.roulette.bet), number: r.roulette.number };
@@ -122,25 +149,25 @@ function outcome(r: RoundData, table: TableData | null): Outcome {
   return { game: "slots", reels: r.slots.reels as Reels };
 }
 
-export function decodeRound(r: RoundData, table: TableData | null): ChainRound {
+export function decodeRound(r: RoundData, table: TableData | null, board: BoardData | null): ChainRound {
   return {
     status: status(r.status),
     stake: big(r.stake),
     payout: big(r.payout),
     fee: big(r.fee),
     requestId: big(r.requestId),
-    outcome: outcome(r, table),
+    outcome: outcome(r, table, board),
   };
 }
 
-export function decodePlayer(a: PlayerAccountData, table: TableData | null): PlayerState {
+export function decodePlayer(a: PlayerAccountData, table: TableData | null, board: BoardData | null): PlayerState {
   return {
     balance: big(a.balance),
     credited: big(a.credited),
     withdrawn: big(a.withdrawn),
     fees: big(a.fees),
     rounds: a.rounds,
-    round: decodeRound(a.round, table),
+    round: decodeRound(a.round, table, board),
   };
 }
 
@@ -172,17 +199,20 @@ export class RpcChainReader implements ChainReader {
     this.rollupProgram = new Program(idl, new anchor.AnchorProvider(this.rollup, wallet)) as ProgramT<Tilt>;
   }
 
-  /** The account and the blackjack table, read together so the round and its cards match. */
+  /** The account, the blackjack table and the mines board, read together so the round and its
+   *  cards or tiles match. */
   async playerAccount(player: PublicKey): Promise<PlayerState | null> {
-    const [account, table] = await this.rollup.getMultipleAccountsInfo([
+    const [account, table, board] = await this.rollup.getMultipleAccountsInfo([
       playerAccountAddress(player),
       tableAddress(player),
+      minesBoardAddress(player),
     ]);
     if (!account) return null;
     const accounts = this.rollupProgram.coder.accounts;
     return decodePlayer(
       accounts.decode<PlayerAccountData>("playerAccount", account.data),
       table ? accounts.decode<TableData>("blackjackTable", table.data) : null,
+      board ? accounts.decode<BoardData>("minesBoard", board.data) : null,
     );
   }
 

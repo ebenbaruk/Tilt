@@ -18,6 +18,11 @@ export interface SettledRound {
   settledAt: Date;
 }
 
+/** A mines cash-out settles without a VRF draw: its RoundSettled carries zero randomness and
+ *  the request id of the last reveal, whose draw is already indexed. */
+export const isCashout = (r: Pick<SettledRound, "game" | "randomness">) =>
+  r.game === "mines" && r.randomness.every((b) => b === 0);
+
 export interface IndexedRound extends SettledRound {
   detail: Outcome | null;
 }
