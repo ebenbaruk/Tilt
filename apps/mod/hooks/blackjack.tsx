@@ -3,13 +3,19 @@
 // frame by the table surface module.
 import type { RenderElement } from "claude-code";
 
-import { BLACKJACK, cardRow, handRow, handTag } from "./cards";
+import { BLACKJACK, type CardSize, handCards, handRow, handTag, largeHandColumns } from "./cards";
 import { formatUsdc, SEPARATOR } from "./format";
 import type { BlackjackHandView, BlackjackResult, BlackjackView, RoundView } from "./protocol";
 import { FG1, FG4, FG6, GOLD, GREEN, PINK, RED, type Ui } from "./theme";
 
-/** A hand's column: room for three cards, "▶ #6 21 BLACKJACK" or "▶ #10 soft 17 split". */
+/** A hand's column: room for three small cards, "▶ #6 21 BLACKJACK" or "▶ #10 soft 17 split". */
 const HAND_COLUMNS = 20;
+/** The rank the api sends for an ace. */
+const ACE_RANK = 1;
+
+/** The columns a hand takes on the table, its cards at `size`. */
+export const handColumns = (cardCount: number, size: CardSize): number =>
+  size === "large" ? Math.max(HAND_COLUMNS, largeHandColumns(cardCount)) : HAND_COLUMNS;
 
 /** What moves on the table between two still frames; `STILL` draws it at rest. */
 export interface TableFx {
@@ -17,9 +23,11 @@ export interface TableFx {
   revealed: number | null;
   /** The active hand's highlight is on its bright beat. */
   isPulseOn: boolean;
+  /** How far into its spin a roulette or slots round is; null when it has landed. */
+  spinElapsed: number | null;
 }
 
-export const STILL: TableFx = { revealed: null, isPulseOn: true };
+export const STILL: TableFx = { revealed: null, isPulseOn: true, spinElapsed: null };
 
 /** One card turned over every step, on the fullscreen table and on the main screen alike. */
 export const DEAL_STEP_MS = 150;
@@ -31,9 +39,6 @@ export function revealedAt(from: number, total: number, elapsed: number): number
 
   return revealed >= total ? null : revealed;
 }
-
-/** The rank the api sends for an ace. */
-const ACE_RANK = 1;
 
 const RESULTS: Record<BlackjackResult, { label: string; color: string }> = {
   blackjack: { label: "BJ", color: GOLD },
@@ -79,6 +84,7 @@ interface HandPlace {
   index: number;
   /** Cards of this hand still face down. */
   faceDown: number;
+  size: CardSize;
 }
 
 function handColumn(
@@ -89,7 +95,7 @@ function handColumn(
   fx: TableFx,
 ): RenderElement {
   const { Box, Text } = ui;
-  const { index, faceDown } = place;
+  const { index, faceDown, size } = place;
   const isActive = detail.activeHand === index;
   const isTurned = faceDown === 0;
   const label = detail.hands.length === 1 ? "YOU" : `#${index + 1}`;
@@ -101,14 +107,14 @@ function handColumn(
   const result = hand.result === null || !isTurned ? null : RESULTS[hand.result];
 
   return (
-    <Box flexDirection="column" width={HAND_COLUMNS}>
+    <Box flexDirection="column" width={handColumns(hand.cards.length, size)}>
       <Text color={isActive ? highlight : FG4} bold={isActive}>
         {isActive ? "▶ " : ""}
         {label} <Text color={FG1}>{total}</Text>
         {isTurned && handTag(ui, hand.total, hand.cards.length, !hand.split)}
         {hand.split && <Text color={FG6}>{" split"}</Text>}
       </Text>
-      {cardRow(ui, hand.cards, { faceDown })}
+      {handCards(ui, hand.cards, size, { faceDown })}
       {result === null ? (
         <Text color={FG6}>{`bet ${stake}`}</Text>
       ) : (
@@ -123,7 +129,7 @@ function handColumn(
   );
 }
 
-export function blackjackTable(ui: Ui, round: RoundView | null, fx: TableFx): RenderElement {
+export function blackjackTable(ui: Ui, round: RoundView | null, fx: TableFx, size: CardSize): RenderElement {
   const { Box, Text } = ui;
 
   if (round === null || round.detail.game !== "blackjack") {
@@ -145,11 +151,18 @@ export function blackjackTable(ui: Ui, round: RoundView | null, fx: TableFx): Re
           total: dealerTotal,
           tag: isMoreToCome || dealerFaceDown > 0 ? null : handTag(ui, detail.dealerTotal, detail.dealer.length),
         },
-        cardRow(ui, detail.dealer, { faceDown: dealerFaceDown, isMoreToCome }),
+        handCards(ui, detail.dealer, size, { faceDown: dealerFaceDown, isMoreToCome }),
+        size,
       )}
       <Box flexDirection="row" flexWrap="wrap" columnGap={2} rowGap={1}>
         {detail.hands.map((hand, index) =>
-          handColumn(ui, detail, hand, { index, faceDown: faceDownOf(order.hands[index] ?? [], fx.revealed) }, fx),
+          handColumn(
+            ui,
+            detail,
+            hand,
+            { index, faceDown: faceDownOf(order.hands[index] ?? [], fx.revealed), size },
+            fx,
+          ),
         )}
       </Box>
     </Box>

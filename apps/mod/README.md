@@ -8,7 +8,8 @@ It reads:
 
 - the **start and end of each turn**: only that a turn started, and when it ended, how long it took and whether it finished, was interrupted or failed. It never reads your prompt, the agent's answer, your code, files, tool calls or transcripts.
 - its own `/tilt` command, its pane and the band above the prompt.
-- its own settings (`apiUrl`) and its own store, which holds your Tilt session token.
+- its own settings (`apiUrl`, `layout`, `cards`, `autoOpen`, `sound`) and its own store, which holds your Tilt session token and whether you have made a first move. `/tilt setup` changes only its own settings rows, as `/config` would.
+- Claude Code's `theme` setting, only to pick light or dark colors.
 
 It sends, only to the Tilt API (`apiUrl`):
 
@@ -17,6 +18,8 @@ It sends, only to the Tilt API (`apiUrl`):
 - `POST /v1/play` and `GET /v1/intents/:id` for the moves you make with the keys. Game moves only: deposits and withdrawals happen on the web.
 - `POST /v1/impressions` with the sponsor's name and how many seconds its block was on screen.
 
+It puts text on your clipboard only when you press `w` on a big win: a line with the amount, the game and the sponsor, nothing about your work. With `sound` on, it plays its own two short sounds (`sounds/`).
+
 It runs one command on your machine, `open <login url>`, when you type `/tilt login`. If that fails, the pane shows the link and the code instead. The mod opens or shows the login URL only if it is on the API's own site: `https` (plain `http` only on loopback, like `apiUrl`), on the API's host or its parent domain (`api.tilt.xyz` → `tilt.xyz`); with a loopback `apiUrl`, any loopback host. Any other URL fails the login. It hooks no other event, uses no file system access, and runs nothing else.
 
 ## Install
@@ -24,15 +27,25 @@ It runs one command on your machine, `open <login url>`, when you type `/tilt lo
 In Claude Code:
 
 ```
-/plugin marketplace add ebenbaruk/Tilt
-/plugin install tilt
+/plugin install tilt --marketplace ebenbaruk/Tilt
 ```
 
-Then `/tilt login`, confirm the code in your browser, and play.
+Answer `y` to add the marketplace, pick a scope, then set where the table sits on the screen that follows (you can change it any time). Then `/tilt login`, confirm the code in your browser, and play.
+
+## Make it yours
+
+`/tilt setup` shows each choice with a small preview and saves the one you press; the same rows are in `/config`.
+
+- **Layout** (`1` side, `2` bottom, `3` compact). Side: a pane, docked beside the transcript in fullscreen (`"tui": "fullscreen"`), under it otherwise. Bottom: the whole table above the prompt, no pane, in every mode. Compact: two lines above the prompt; `/tilt` still opens the pane.
+- **Cards** (`l` large, `s` small). Large: the five-row cards, each overlapped by the next. Where they would push the keys out of the pane (a short terminal, many hands), the table draws small ones by itself.
+- **When the agent starts** (`a`): open Tilt without taking the keyboard, or wait for `/tilt`.
+- **Sounds** (`m`): a short sound on a deal and on a win. Off by default.
+
+Colors follow Claude Code's theme: a light theme gets darker pink and gold.
 
 ## Use
 
-- `/tilt` opens the pane. `/tilt login` and `/tilt logout` manage your session; to switch accounts, `/tilt logout` first.
+- `/tilt` opens the pane (with the bottom layout, the table is already above the prompt). `/tilt login` and `/tilt logout` manage your session; to switch accounts, `/tilt logout` first. `/tilt setup` moves the table and sizes the cards.
 - Blackjack plays 1 to 6 hands against one dealer, at the same bet on each hand, left to right: the hand to play is marked `▶`. A pair splits into two hands (at most 4 splits a round, so up to 10 hands, wrapped to the pane's width); hands born from a split are marked `split`, and their 21 on two cards pays 1:1, not as a blackjack. Split aces get one card each.
 
 Letter keys work everywhere (the pane and the band, inline or fullscreen):
@@ -50,7 +63,15 @@ In the fullscreen layout (`claude --settings '{"tui":"fullscreen"}'`), click the
 - `←` / `→` lower / raise the bet, `↑` / `↓` add / remove a blackjack hand, `1`–`4` switch game. `Esc` hands the keys back.
 - The table deals the cards one by one and counts up a win; the main screen deals them one by one too, the result showing after the last card.
 
-When a turn starts, the pane opens without taking the keyboard. When it ends you see `✓ agent finished in 6m 14s · your hand is saved`. A pane left open comes back by itself when the session starts over: at the next launch, or back from Claude Code's agents view (`←`, then `Esc`). That return moves the session to a new process that Claude Code draws fullscreen, where a pane would dock on the side: if you played with the pane under the transcript, Tilt stays in the band above the prompt instead (`/tilt` still opens the pane). Close the pane (✕) and it stays closed until `/tilt`.
+When a turn starts, the pane opens without taking the keyboard. When it ends you see `✓ agent finished in 6m 14s · your hand is saved`, and a pane under the transcript folds to two lines so the agent's answer stays in view (not while you hold the keys; a docked pane stays). The next turn, or `/tilt`, opens it again. A pane left open comes back by itself when the session starts over: at the next launch, or back from Claude Code's agents view (`←`, then `Esc`). That return moves the session to a new process drawn fullscreen, where a pane would dock on the side: if you played with the pane under the transcript, the table comes back above the prompt instead (as with `layout: bottom`, for that session). Close the pane (✕) and it stays closed until `/tilt`.
+
+Around the table:
+
+- Your first time, a guide says how to give Tilt the keys and deal; it goes after your first move.
+- The bet and, at blackjack, the hands are steppers: `v ◂ bet 0.50 ▸ b`, `j ◂ ●●○○○○ 2 hands ▸ k`. If your balance does not cover the bet, the table says so before you press `n`, with a link to deposit on the web.
+- A blackjack deal shows its cards face down at once, then turns them over as the chain deals them.
+- A win of twice the stake or more gets a banner; `w` copies a line to share.
+- The footer counts this session (`session +2.30 · 14 rounds · 22m`), as the mod saw rounds settle; the leaderboard says how far the next rank is.
 
 ## Local development
 

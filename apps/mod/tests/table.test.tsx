@@ -133,40 +133,46 @@ describe("the table in the fullscreen pane", () => {
 });
 
 describe("the table moves", () => {
-  test("a new round is dealt card by card, a win counts up, wins in a row are counted, a loss ends the streak", async ($, on) => {
-    let current: StateResponse = BASE;
-    const { clock } = await seat($, on, BASE, { "GET /v1/state": () => ({ status: 200, body: current }) });
-    const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
-    const table = async () => textOf(await ui.drawn({ in: TABLE_KEY }));
-    const show = async (state: StateResponse) => {
-      current = state;
-      await clock.advance(POLL_MS);
-    };
+  // Several rounds of frames, one engine hop each: room for loaded CI runners.
+  test(
+    "a new round is dealt card by card, a win counts up, wins in a row are counted, a loss ends the streak",
+    { timeoutMs: 30_000 },
+    async ($, on) => {
+      let current: StateResponse = BASE;
+      const { clock } = await seat($, on, BASE, { "GET /v1/state": () => ({ status: 200, body: current }) });
+      const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+      const table = async () => textOf(await ui.drawn({ in: TABLE_KEY }));
+      const show = async (state: StateResponse) => {
+        current = state;
+        await clock.advance(POLL_MS);
+      };
 
-    await show(BLACKJACK_SIX_TURN);
-    expect(await table()).toContain(" ▒▒ ");
-    expect(await table()).not.toContain("▶ #3 11");
-    await ui.advance(WHOLE_DEAL_MS);
-    expect(await table()).not.toContain(" ▒▒ ");
-    expect(await table()).toContain("▶ #3 11");
+      await show(BLACKJACK_SIX_TURN);
+      // Cards are dealt face down, then turned over one by one.
+      expect(await table()).not.toContain("5♣");
+      expect(await table()).not.toContain("▶ #3 11");
+      await ui.advance(WHOLE_DEAL_MS);
+      expect(await table()).toContain("5♣");
+      expect(await table()).toContain("▶ #3 11");
 
-    await show(BLACKJACK_MIXED);
-    await ui.advance(WHOLE_DEAL_MS);
-    expect(await table()).not.toContain("+2.47");
-    await ui.advance(EFFECT_MS);
-    expect(await table()).toContain("+2.47");
-    expect(await table()).toContain("balance 12.40");
-    expect(await table()).toContain("play again (same bet)");
+      await show(BLACKJACK_MIXED);
+      await ui.advance(WHOLE_DEAL_MS);
+      expect(await table()).not.toContain("+2.47");
+      await ui.advance(EFFECT_MS);
+      expect(await table()).toContain("+2.47");
+      expect(await table()).toContain("balance 12.40");
+      expect(await table()).toContain("play again (same bet)");
 
-    await show(renumbered(BLACKJACK_WIN, 10));
-    await ui.advance(WHOLE_DEAL_MS + EFFECT_MS);
-    expect(await table()).toContain("2 wins in a row");
+      await show(renumbered(BLACKJACK_WIN, 10));
+      await ui.advance(WHOLE_DEAL_MS + EFFECT_MS);
+      expect(await table()).toContain("2 wins in a row");
 
-    await show(renumbered(BLACKJACK_LOSS, 11));
-    await ui.advance(WHOLE_DEAL_MS + EFFECT_MS);
-    expect(await table()).toContain("LOSE 1.00");
-    expect(await table()).not.toContain("wins in a row");
-  });
+      await show(renumbered(BLACKJACK_LOSS, 11));
+      await ui.advance(WHOLE_DEAL_MS + EFFECT_MS);
+      expect(await table()).toContain("LOSE 1.00");
+      expect(await table()).not.toContain("wins in a row");
+    },
+  );
 
   test("keys go through while cards are still being dealt", async ($, on) => {
     let current: StateResponse = BASE;
