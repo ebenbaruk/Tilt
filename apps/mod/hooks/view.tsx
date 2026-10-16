@@ -28,7 +28,7 @@ import {
   type PlanInput,
 } from "./keys";
 import type { TiltKey, TiltSession } from "../types";
-import type { AgentView, AuthView, IntentView, Prefs, RemoteView } from "./model";
+import type { AgentView, AuthView, IntentView, Prefs, RemoteView, SlotsSpeed } from "./model";
 import type { Game, RoundView, SponsorView, StateResponse } from "./protocol";
 import { FG1, FG4, FG6, GOLD, GREEN, INK, LINE3, LINE4, PINK, PINK_RULE, RED, toneOf, type Ui } from "./theme";
 
@@ -55,24 +55,32 @@ export interface Snapshot {
   celebrating: number | null;
 }
 
-/** How long a round of `game` spins on the table before it lands; 0 for the card games. */
-export function spinMs(game: Game): number {
-  return game === "roulette" ? ROULETTE_SPIN_MS : game === "slots" ? SLOTS_SPIN_MS : 0;
+/** How many times faster the reels turn at each slots speed; turbo shows the draw at once. */
+const SLOTS_SPEEDUP: Record<SlotsSpeed, number> = { normal: 1, fast: 3, turbo: Infinity };
+
+/** How long a round of `game` spins on the table before it lands; 0 for the card games and turbo slots. */
+export function spinMs(game: Game, speed: SlotsSpeed): number {
+  return game === "roulette" ? ROULETTE_SPIN_MS : game === "slots" ? SLOTS_SPIN_MS / SLOTS_SPEEDUP[speed] : 0;
 }
 
 /** While the chain draws, the wheel and the reels keep turning: the first part of a spin, looped. */
 const DRAWING_LOOP_MS = 500;
 
 /**
- * How far into its spin the round is, `elapsed` after it showed (or landed) on the table; null once
- * it rests. A round still drawing spins on and on; the landing starts the spin's end afresh.
+ * How far into its spin the round is, `elapsed` after it showed (or landed) on the table, on the
+ * spin's own clock (a fast spin runs it quicker); null once it rests. A round still drawing spins on
+ * and on; the landing starts the spin's end afresh.
  */
-export function spinProgress(round: RoundView, elapsed: number): number | null {
+export function spinProgress(round: RoundView, elapsed: number, speed: SlotsSpeed): number | null {
   if (round.phase === "drawing") {
     return elapsed % DRAWING_LOOP_MS;
   }
 
-  return elapsed < spinMs(round.detail.game) ? elapsed : null;
+  if (elapsed >= spinMs(round.detail.game, speed)) {
+    return null;
+  }
+
+  return round.detail.game === "slots" ? elapsed * SLOTS_SPEEDUP[speed] : elapsed;
 }
 
 export type OnCommand = (command: Command) => void;

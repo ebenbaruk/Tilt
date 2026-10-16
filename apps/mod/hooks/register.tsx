@@ -80,6 +80,7 @@ const prefs = atom({ plugin: "tilt", key: "prefs" } as const, {
   hands: 1,
   roulette: { kind: "red" },
   baccarat: "banker",
+  slotsSpeed: "normal",
 });
 const intent = atom({ plugin: "tilt", key: "intent" } as const, null);
 const NO_ECHO = { keys: [], until: null };
@@ -647,6 +648,10 @@ async function runCommand($: EngineInterface, rt: Runtime, command: Command): Pr
       await setPrefs($, (value) => ({ ...value, baccarat: command.bet }));
 
       return;
+    case "slots-speed":
+      await setPrefs($, (value) => ({ ...value, slotsSpeed: command.speed }));
+
+      return;
     case "start":
       await startRound($, rt);
 
@@ -827,7 +832,7 @@ async function spinElapsed($: EngineInterface, state: StateResponse | null, now:
     return null;
   }
 
-  return spinProgress(round, now - playing.startedAt);
+  return spinProgress(round, now - playing.startedAt, (await readPrefs($)).slotsSpeed);
 }
 
 /** Blackjack cards turned over so far on the table; null when none is being dealt. */
@@ -1019,7 +1024,9 @@ async function countRound(
 
   // A roulette or slots round spins on the table while it draws, and from its landing until the
   // wheel or the last reel stops; the result shows after.
-  if ((isNew || hasLanded) && round !== null && before !== null && spinMs(round.detail.game) > 0) {
+  const speed = (await readPrefs($)).slotsSpeed;
+
+  if ((isNew || hasLanded) && round !== null && before !== null && spinMs(round.detail.game, speed) > 0) {
     // On a landing the balance before the spin is the one already held.
     const balance = isNew ? before.balance : (await read($, spin)).balance;
 
@@ -1067,7 +1074,8 @@ async function countRound(
 async function resultShowsAt($: EngineInterface, round: RoundView, now: number): Promise<number> {
   const spinning = await read($, spin);
   const dealing = await read($, deal);
-  const spinEnd = spinning.round === round.number ? spinning.startedAt + spinMs(round.detail.game) : now;
+  const speed = (await readPrefs($)).slotsSpeed;
+  const spinEnd = spinning.round === round.number ? spinning.startedAt + spinMs(round.detail.game, speed) : now;
   const dealEnd =
     dealing.round === round.number && round.detail.game === "blackjack"
       ? dealing.startedAt + (cardCount(round.detail) - dealing.from) * DEAL_STEP_MS

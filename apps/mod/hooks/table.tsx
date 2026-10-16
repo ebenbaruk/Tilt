@@ -106,6 +106,7 @@ function firstState(props: TableProps): TableState {
 function observe(props: TableProps, state: TableState): TableState {
   const round = props.state.round;
   const cards = cardsOf(round);
+  const speed = props.prefs.slotsSpeed;
   let next = state;
 
   // The keyboard left the pane (the prompt, another pane, the agents view): the table has to be
@@ -116,11 +117,11 @@ function observe(props: TableProps, state: TableState): TableState {
 
   // A round that lands after drawing restarts its spin, so the reels stop one by one on the result.
   if (round !== null && round.number === state.round && round.phase === "idle" && state.wasDrawing) {
-    next = { ...next, spinAt: spinMs(round.detail.game) > 0 ? next.now : null, wokeAt: next.now };
+    next = { ...next, spinAt: spinMs(round.detail.game, speed) > 0 ? next.now : null, wokeAt: next.now };
   }
 
   if ((round?.number ?? null) !== state.round) {
-    const spinAt = round !== null && spinMs(round.detail.game) > 0 ? next.now : null;
+    const spinAt = round !== null && spinMs(round.detail.game, speed) > 0 ? next.now : null;
 
     next = {
       ...next,
@@ -139,7 +140,7 @@ function observe(props: TableProps, state: TableState): TableState {
   if (round !== null && round.phase === "idle" && round.number !== state.settled) {
     const kind = outcomeOf(round.net);
     // The effect waits for the last card, or for the wheel or the reels to land.
-    const spinLeft = next.spinAt === null ? 0 : Math.max(0, next.spinAt + spinMs(round.detail.game) - next.now);
+    const spinLeft = next.spinAt === null ? 0 : Math.max(0, next.spinAt + spinMs(round.detail.game, speed) - next.now);
     const dealLeft = Math.max(0, next.cards - next.revealed) * DEAL_STEP_MS + spinLeft;
     const streak = kind === "win" ? next.streak + 1 : kind === "loss" ? 0 : next.streak;
 
@@ -167,7 +168,7 @@ function spinElapsed(state: TableState, props: TableProps): number | null {
     return null;
   }
 
-  return spinProgress(round, state.now - state.spinAt);
+  return spinProgress(round, state.now - state.spinAt, props.prefs.slotsSpeed);
 }
 
 function isAnimating(state: TableState, props: TableProps): boolean {

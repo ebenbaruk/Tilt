@@ -1,7 +1,7 @@
 // Which keys a drawing offers, as data: the panel and the band render the same plan, and the
 // tests check it is conflict-free without drawing anything.
 import { formatUsdc } from "./format";
-import type { Prefs } from "./model";
+import type { Prefs, SlotsSpeed } from "./model";
 import type { BaccaratBet, Game, Limits, PlayAction, RouletteBet, StateResponse } from "./protocol";
 
 export type Command =
@@ -13,6 +13,7 @@ export type Command =
   | { kind: "roulette-bet"; bet: RouletteBet }
   | { kind: "roulette-cycle"; target: "dozen" | "column" }
   | { kind: "baccarat-bet"; bet: BaccaratBet }
+  | { kind: "slots-speed"; speed: SlotsSpeed }
   /** Starts a round of the active game with the current bet, both read when the key is pressed. */
   | { kind: "start" }
   | { kind: "play"; action: PlayAction }
@@ -225,6 +226,12 @@ function playerTurnKeys(state: StateResponse): KeyAction[] {
   return keys;
 }
 
+const SLOTS_SPEED_KEYS: readonly { hotkey: string; speed: SlotsSpeed }[] = [
+  { hotkey: "x", speed: "normal" },
+  { hotkey: "f", speed: "fast" },
+  { hotkey: "t", speed: "turbo" },
+];
+
 function choiceKeys(game: Game, prefs: Prefs): KeyAction[] {
   switch (game) {
     case "blackjack":
@@ -237,7 +244,13 @@ function choiceKeys(game: Game, prefs: Prefs): KeyAction[] {
     case "baccarat":
       return baccaratKeys(prefs);
     case "slots":
-      return [];
+      return SLOTS_SPEED_KEYS.map(({ hotkey, speed }) => ({
+        key: `slots-${speed}`,
+        hotkey,
+        label: speed,
+        isSelected: prefs.slotsSpeed === speed,
+        command: { kind: "slots-speed", speed },
+      }));
   }
 }
 

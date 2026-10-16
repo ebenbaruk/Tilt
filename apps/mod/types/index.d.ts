@@ -27,6 +27,8 @@ export type TiltPrefs = {
   /** A `RouletteBet`. */
   roulette: unknown;
   baccarat: "player" | "banker" | "tie";
+  /** How fast the slots reels turn: turbo shows the draw at once. */
+  slotsSpeed: "normal" | "fast" | "turbo";
 };
 
 /** A move sent to the api and not drawn yet; resent with the same id until it settles. */

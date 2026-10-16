@@ -17,7 +17,14 @@ import type { StateResponse } from "../hooks/protocol";
 import { isTablePost, pressFor } from "../hooks/table-input";
 import * as fixtures from "./fixtures";
 
-const PREFS: Prefs = { game: "blackjack", betIndex: 0, hands: 1, roulette: { kind: "red" }, baccarat: "banker" };
+const PREFS: Prefs = {
+  game: "blackjack",
+  betIndex: 0,
+  hands: 1,
+  roulette: { kind: "red" },
+  baccarat: "banker",
+  slotsSpeed: "normal",
+};
 const STATES: [string, StateResponse][] = Object.entries(fixtures);
 const HOTKEY = /^[0-9a-z]$/;
 
@@ -50,7 +57,7 @@ describe("the key plan", () => {
     expect(hotkeysOf("blackjack")).toBe("1234jkvbn");
     expect(hotkeysOf("roulette")).toBe("1234rkoelgzcvbn");
     expect(hotkeysOf("baccarat")).toBe("1234pytvbn");
-    expect(hotkeysOf("slots")).toBe("1234vbn");
+    expect(hotkeysOf("slots")).toBe("1234xftvbn");
   });
 
   test("blackjack in turn: hit, stand and double for the active hand, whatever the hand count", () => {

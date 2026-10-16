@@ -15,6 +15,9 @@ export interface RemoteView {
   fetchedAt: number;
 }
 
+/** How fast the slots reels turn: turbo shows the draw as soon as the chain has it. */
+export type SlotsSpeed = "normal" | "fast" | "turbo";
+
 export interface Prefs {
   game: Game;
   betIndex: number;
@@ -22,6 +25,7 @@ export interface Prefs {
   hands: number;
   roulette: RouletteBet;
   baccarat: BaccaratBet;
+  slotsSpeed: SlotsSpeed;
 }
 
 export interface IntentView extends Omit<TiltIntent, "action"> {

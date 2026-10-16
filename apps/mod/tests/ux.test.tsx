@@ -302,6 +302,27 @@ describe("spins", () => {
     expect(landed).toContain("★ BIG WIN +3.96 USDC");
   });
 
+  test("fast reels land in a third of the time; turbo shows the draw at once", async ($, on) => {
+    const { show, clock } = await moving($, on, BASE);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+    const win = (number: number) => ({
+      ...SLOTS,
+      balance: "16360000",
+      round: SLOTS.round === null ? null : { ...SLOTS.round, number },
+    });
+
+    await ui.press({ key: "game-slots" });
+    await ui.press({ key: "slots-fast" });
+    await show(win(901));
+    expect(textOf(await ui.drawn())).not.toContain("+3.96");
+    await clock.advance(SPIN_OVER_MS / 3);
+    expect(textOf(await ui.drawn())).toContain("+3.96");
+
+    await ui.press({ key: "slots-turbo" });
+    await show(win(902));
+    expect(textOf(await ui.drawn())).toContain("+3.96");
+  });
+
   test("a roulette spin lands the ball, then names the pocket", async ($, on) => {
     const { show, clock } = await moving($, on, { ...BASE, round: null });
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
