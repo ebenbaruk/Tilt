@@ -441,6 +441,17 @@ describe("rolling win cap", () => {
     expect(sent.rollup.map(instructionNames)).toEqual([["slots_spin"], ["slots_spin"]]);
   });
 
+  it("never raises the cap for a move that stakes nothing", async () => {
+    const { chain, player, sent } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
+    vi.mocked(chain.rollup.simulateTransaction).mockImplementationOnce(async () => ({
+      context: { slot: 1 },
+      value: { err: { InstructionError: [0, { Custom: 6008 }] }, logs: SHORT_LOGS, accounts: null, unitsConsumed: 0, returnData: null },
+    }));
+
+    await expect(chain.play(player, { type: "hilo_guess", guess: "higher" }, record)).rejects.toMatchObject({ code: "PROGRAM_ERROR", message: "WinCapReached" });
+    expect(sent.solana).toHaveLength(0);
+  });
+
   it("passes any other refusal on, untouched", async () => {
     const { chain, player, sent } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
     vi.mocked(chain.rollup.simulateTransaction).mockImplementationOnce(async () => ({
