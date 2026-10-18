@@ -82,13 +82,14 @@ export function wheelPosition(pocket: number | null, elapsed: number | null, isD
 /**
  * The wheel unrolled around `position`, as the design system's RouletteStrip: tiles on their felt,
  * the marker `▼` over the pocket under it and the ball `●` in it once `hasBall`. `isIdle` dims the
- * wheel: at rest before any spin, or turning while the pocket is not drawn yet.
+ * wheel: at rest before any spin, or turning while the pocket is not drawn yet. Small, where the
+ * room is short: the tiles' middle row alone under the marker, the ball beside the number.
  */
 function rouletteWheel(
   ui: Ui,
   position: number,
   reach: number,
-  look: { hasBall: boolean; isIdle: boolean },
+  look: { hasBall: boolean; isIdle: boolean; size: CardSize },
 ): RenderElement {
   const { Box, Text } = ui;
   // The strip moves a column at a time, not a pocket: the wheel creeps into its pocket at the end
@@ -106,8 +107,11 @@ function rouletteWheel(
       const number = wheelAt(index);
       const isCenter = index === center;
       const start = slot * TILE_STEP - shift;
+      const ball = isCenter && look.hasBall ? "●" : " ";
       const label =
-        line !== 1 ? (isCenter && look.hasBall && line === 0 ? " ●  " : "    ") : ` ${String(number).padStart(2)} `;
+        line !== 1
+          ? ` ${line === 0 ? ball : " "}  `
+          : `${look.size === "small" ? ball : " "}${String(number).padStart(2)} `;
       const shown = label.slice(Math.max(0, -start), Math.max(0, width - start));
       const gap = start + POCKET_COLUMNS;
 
@@ -127,6 +131,17 @@ function rouletteWheel(
     });
   const marker = `${" ".repeat(TILE_STEP * reach + 2)}▼`;
   const under = marker.replace("▼", "▲");
+
+  if (look.size === "small") {
+    return (
+      <Box flexDirection="column">
+        <Text color={GOLD} bold>
+          {marker.slice(1)}
+        </Text>
+        <Box flexDirection="row">{row(1)}</Box>
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection="column">
@@ -214,6 +229,12 @@ const layoutColumns = (cell: number): number => cell * (LAYOUT_NUMBERS_ACROSS + 
 const MAX_REACH = 6;
 /** The wheel strip's frame: a column each side. */
 const WHEEL_FRAME = 2;
+/** The wheel strip's rows: the marker, the tiles' three rows in their frame, the marker under them;
+ *  small, the marker over the tiles' middle row. */
+const WHEEL_ROWS: Record<CardSize, number> = { large: 7, small: 2 };
+/** The rows the roulette table takes with its wheel at `size`: the wheel, the pocket line, the
+ *  layout (its rows of numbers, the dozens, the outside bets), a row between each. */
+export const rouletteRows = (size: CardSize): number => WHEEL_ROWS[size] + 1 + 1 + 1 + LAYOUT_ROWS.length + 2;
 /** A chip on a cell: its stake beside it, in gold. */
 const CHIP = "●";
 
@@ -334,17 +355,18 @@ function chipsLine(ui: Ui, chips: readonly RouletteChip[]): RenderElement {
 
 /**
  * `columns`: the cells the table has; the wheel and the layout take the widest that fits, and under
- * the narrowest layout the keys alone place chips. `spinElapsed`: how far into its spin the round on
- * the table is; null draws it at rest. `cellButton`: the Button a cell of the layout takes a chip
- * with, where the drawing has one. A spin in play shows its own chips; between spins the table
- * shows the chips placed, which stay for the next spin, and the last spin's pocket and winning
- * cells stay lit.
+ * the narrowest layout the keys alone place chips. `size`: small draws the wheel on one row, where
+ * the room is short. `spinElapsed`: how far into its spin the round on the table is; null draws it
+ * at rest. `cellButton`: the Button a cell of the layout takes a chip with, where the drawing has
+ * one. A spin in play shows its own chips; between spins the table shows the chips placed, which
+ * stay for the next spin, and the last spin's pocket and winning cells stay lit.
  */
 export function rouletteTable(
   ui: Ui,
   round: RoundView | null,
   prefs: Prefs,
   columns: number,
+  size: CardSize,
   spinElapsed: number | null,
   cellButton: TileButton,
 ): RenderElement {
@@ -370,6 +392,7 @@ export function rouletteTable(
       {rouletteWheel(ui, position, Math.max(1, Math.min(MAX_REACH, reach)), {
         hasBall: landed !== null,
         isIdle: pocket === null,
+        size,
       })}
       <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
         {landed !== null ? (

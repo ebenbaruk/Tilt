@@ -1,11 +1,12 @@
 import type { ConfigRow, On, TurnCompleteInput } from "claude-code";
 import { describe, type Engine, expect, test } from "claude-code/testing";
 
-import { ROULETTE_SPIN_MS, wheelPosition } from "../hooks/games";
+import { ROULETTE_SPIN_MS, TILE_FILL, wheelPosition } from "../hooks/games";
 import { WHEEL_SPIN_MS, wheelSegmentAt } from "../hooks/quick";
 import type { StateResponse } from "../hooks/protocol";
 import {
   BASE,
+  BLACKJACK_LOSS,
   BLACKJACK_TURN,
   BLACKJACK_WIN,
   DICE,
@@ -299,6 +300,61 @@ describe("tight rooms", () => {
       expect(text.indexOf("hit")).toBeLessThan(text.indexOf("DEALER"));
     },
   );
+
+  test("a game shown before its first round counts its whole table in a short pane", async ($, on) => {
+    // The last round was blackjack: roulette and Mines have none to show, yet draw their table.
+    await seat($, on, BLACKJACK_LOSS, {}, { ...LOGGED_IN, onboarded: true });
+    const ui = await $.ui.mount({
+      plugin: PLUGIN,
+      ...PANE_INLINE,
+      props: { ...PANE_INLINE.props, bodyColumns: 78, scroll: { offset: 0, bodyRows: 24 } },
+    });
+    const tileWidths = async () =>
+      new Set(
+        (await ui.findAll({ type: "Box" }))
+          .filter((box) => box.props.backgroundColor === TILE_FILL.hidden)
+          .map((box) => box.props.width),
+      );
+
+    await ui.press({ key: "game-roulette" });
+    const text = textOf(await ui.drawn());
+
+    // The keys come first, and the wheel is a row of tiles under the marker, not a framed strip.
+    expect(text.indexOf("chip on number 0")).toBeGreaterThan(-1);
+    expect(text.indexOf("chip on number 0")).toBeLessThan(text.indexOf("1st 12"));
+    expect(text).not.toContain("▲");
+
+    // Large tiles would push the keys out: the board draws small ones.
+    await ui.press({ key: "game-mines" });
+    expect(await tileWidths()).toEqual(new Set([4]));
+  });
+
+  test(
+    "a band of a few rows shows the keys before the first-hand guide",
+    { options: { layout: "bottom" } },
+    async ($, on) => {
+      await seat($, on, BASE);
+      const band = {
+        ...BAND,
+        props: { ...BAND.props, maxRows: 6, bodyColumns: 75, scroll: { offset: 0, bodyRows: 6 } },
+      };
+      const text = textOf(await (await $.ui.mount({ plugin: PLUGIN, ...band })).drawn());
+
+      expect(text.indexOf("deal · 0.50")).toBeGreaterThan(-1);
+      expect(text.indexOf("deal · 0.50")).toBeLessThan(text.indexOf("First hand?"));
+    },
+  );
+
+  test("with room, the roulette table keeps its framed wheel and the keys under it", async ($, on) => {
+    await seat($, on, BASE);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+
+    await ui.press({ key: "game-roulette" });
+    const text = textOf(await ui.drawn());
+
+    expect(text).toContain("▲");
+    expect(text.indexOf("1st 12")).toBeLessThan(text.indexOf("chip on number 0"));
+  });
 });
 
 describe("spins", () => {

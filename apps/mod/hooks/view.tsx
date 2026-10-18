@@ -36,6 +36,7 @@ import {
   minesBoardRows,
   minesTable,
   rouletteChip,
+  rouletteRows,
   ROULETTE_SPIN_MS,
   rouletteTable,
   SLOTS_SPIN_MS,
@@ -505,7 +506,7 @@ export function gameTable(
     case "blackjack":
       return blackjackTable(ui, round, fx, size);
     case "roulette":
-      return rouletteTable(ui, round, prefs, columns, fx.spinElapsed, tileButton);
+      return rouletteTable(ui, round, prefs, columns, size, fx.spinElapsed, tileButton);
     case "baccarat":
       return baccaratTable(ui, round, prefs, size, fx.revealed);
     case "slots":
@@ -1094,14 +1095,19 @@ function steppers(ui: Ui, state: StateResponse, prefs: Prefs, keys: readonly Key
   });
 }
 
-/** The play keys: the moves as keycaps, the steppers, then the rest (roulette and baccarat picks) on a line. */
+/**
+ * The play keys: the moves as keycaps, the steppers, then the rest (roulette and baccarat picks) on
+ * a line; a row above them, unless they come `isFirst`, where every row counts.
+ */
 function keyArea(
   ui: Ui,
   buttons: readonly PlayButton[],
   hasCaps: boolean,
   steps: readonly RenderElement[],
+  isFirst = false,
 ): RenderElement {
   const { Box } = ui;
+  const gap = isFirst ? 0 : 1;
   const isStepDrawn = steps.length > 0;
   const shown = buttons.filter((button) => !(isStepDrawn && STEP_KEYS.has(button.key)));
   const moves = shown.filter((button) => button.isMove).map((button) => button.element);
@@ -1109,14 +1115,14 @@ function keyArea(
 
   if (!hasCaps) {
     return (
-      <Box flexDirection="row" flexWrap="wrap" columnGap={3} marginTop={1}>
+      <Box flexDirection="row" flexWrap="wrap" columnGap={3} marginTop={gap}>
         {[...moves, ...setup]}
       </Box>
     );
   }
 
   return (
-    <Box flexDirection="column" marginTop={1}>
+    <Box flexDirection="column" marginTop={gap}>
       {setup.length > 0 && (
         <Box flexDirection="row" flexWrap="wrap" columnGap={3}>
           {setup}
@@ -1217,7 +1223,8 @@ function tableRows(
   columns: number,
   wheel: number | null,
 ): number {
-  const round = roundOf(state, activeGame(state, prefs));
+  const game = activeGame(state, prefs);
+  const detail = roundOf(state, game)?.detail;
   const cardRows = size === "large" ? LARGE_CARD_ROWS : 1;
 
   if (dealing !== null) {
@@ -1228,18 +1235,21 @@ function tableRows(
     );
   }
 
-  switch (round?.detail.game) {
+  // Every table is drawn before its game's first round too: the board, the layout, the reels.
+  switch (game) {
     case "blackjack":
-      return blackjackRows(
-        round.detail.hands.map((hand) => hand.cards.length),
-        size,
-        columns,
-      );
+      return detail?.game === "blackjack"
+        ? blackjackRows(
+            detail.hands.map((hand) => hand.cards.length),
+            size,
+            columns,
+          )
+        : 1;
     case "baccarat":
-      return 2 + (size === "large" ? 1 + cardRows : 2);
+      return detail?.game === "baccarat" ? 2 + (size === "large" ? 1 + cardRows : 2) : 3;
     case "roulette":
-      // The wheel and the pocket, then the layout: three rows of numbers, the dozens, the outside bets.
-      return 11;
+      // And the line under it: the table's prompt, or how to bet with keys.
+      return rouletteRows(size) + 1;
     case "slots":
       return size === "large" ? 5 : 3;
     case "mines":
@@ -1256,12 +1266,10 @@ function tableRows(
     case "wheel":
       return wheelRows(wheel);
     case "hilo":
-      // The cards and their trail beside the multipliers, skips and cash-out.
-      return Math.max((size === "large" ? cardRows : 1) + 1, 6);
+      // The cards and their trail beside the multipliers, skips and cash-out; before any, a line on how to play.
+      return detail?.game === "hilo" ? Math.max((size === "large" ? cardRows : 1) + 1, 6) : 2;
     case "tower":
       return 9;
-    default:
-      return 0;
   }
 }
 
@@ -1350,11 +1358,12 @@ export function renderPane(
   const state = snap.remote.state;
   const keys = state === null ? [] : planKeys({ state, prefs: snap.prefs, isBusy: snap.intent !== null });
   const intro = preamble(ui, snap);
-  // The engine frames the pane: the brand sits on the header bar, not on a second border.
-  const frame = (body: RenderElement | null, foot: RenderElement | null = null) => (
+  // The engine frames the pane: the brand sits on the header bar, not on a second border. `gap`:
+  // the row under the header, left out where the keys come first.
+  const frame = (body: RenderElement | null, foot: RenderElement | null = null, gap = 1) => (
     <Box flexDirection="column">
       {header(ui, snap, keys, onCommand, layout.bodyColumns)}
-      <Box flexDirection="column" paddingX={1} marginTop={1}>
+      <Box flexDirection="column" paddingX={1} marginTop={gap}>
         {agentLine(ui, snap.agent)}
         {body}
       </Box>
@@ -1436,9 +1445,10 @@ export function renderPane(
         : table(size, gameColumns(layout), wheel);
   const gameColumn = (
     <Box flexDirection="column" flexGrow={1} marginTop={snap.agent.notice !== null || snap.agent.isWorking ? 1 : 0}>
+      {/* Short of room, the keys come before the guide too: a band of a few rows still shows them. */}
+      {isKeysFirst && linePlays.length > 0 && <Box marginBottom={1}>{keyArea(ui, linePlays, false, steps, true)}</Box>}
       {!snap.isOnboarded && canPlay && firstHandGuide(ui, layout.isFocused)}
       {state.blocked !== null && <Text color={RED}>{`Play paused · ${cleanText(state.blocked)}`}</Text>}
-      {isKeysFirst && linePlays.length > 0 && <Box marginBottom={1}>{keyArea(ui, linePlays, false, steps)}</Box>}
       {shownTable}
       {table === null && layoutHint(ui, keys, layout.isClickable)}
       {table === null && celebration(ui, roundOf(state, game), snap.celebrating, gameColumns(layout) - 1)}
@@ -1479,6 +1489,7 @@ export function renderPane(
         </Box>
       </Box>,
       foot,
+      isKeysFirst ? 0 : 1,
     );
   }
 
@@ -1488,6 +1499,7 @@ export function renderPane(
       {state.sponsor !== null && sponsorLine(ui, state.sponsor, snap.remote.fetchedAt)}
     </Box>,
     foot,
+    isKeysFirst ? 0 : 1,
   );
 }
 
