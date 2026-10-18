@@ -78,6 +78,7 @@ import {
   type PaneLayout,
   renderBand,
   renderPane,
+  RESULT_MS,
   sendingRound,
   type Snapshot,
   spinMs,
@@ -124,7 +125,7 @@ const layout = atom({ plugin: "tilt", key: "layout" } as const, {
 });
 const spin = atom({ plugin: "tilt", key: "spin" } as const, { round: null, startedAt: 0, balance: "0" });
 const deal = atom({ plugin: "tilt", key: "deal" } as const, { round: null, from: 0, startedAt: 0, balance: "0" });
-const celebration = atom({ plugin: "tilt", key: "celebration" } as const, { round: null, startsAt: 0 });
+const result = atom({ plugin: "tilt", key: "result" } as const, { round: null, startsAt: 0 });
 const session = atom({ plugin: "tilt", key: "session" } as const, {
   net: "0",
   rounds: 0,
@@ -952,13 +953,9 @@ async function dealRevealed($: EngineInterface, state: StateResponse | null, now
   return revealedAt(playing.from, dealtCards(round), now - playing.startedAt);
 }
 
-/** How far into its win's celebration the round on the table is; null when none plays. */
-async function celebrationElapsed(
-  $: EngineInterface,
-  state: StateResponse | null,
-  now: number,
-): Promise<number | null> {
-  const playing = await read($, celebration);
+/** How far into its result's effects (and a win's celebration) the round on the table is; null when none plays. */
+async function resultElapsed($: EngineInterface, state: StateResponse | null, now: number): Promise<number | null> {
+  const playing = await read($, result);
   const round = state?.round;
 
   if (round === undefined || round === null || playing.round !== round.number) {
@@ -967,13 +964,13 @@ async function celebrationElapsed(
 
   const elapsed = now - playing.startsAt;
 
-  return elapsed >= 0 && elapsed < celebrationMs(round) ? elapsed : null;
+  return elapsed >= 0 && elapsed < Math.max(RESULT_MS, celebrationMs(round)) ? elapsed : null;
 }
 
-/** The spin, the deal or the celebration playing on the table, and the balance held back until the round shows. */
+/** The spin, the deal or the result playing on the table, and the balance held back until the round shows. */
 async function motionView(
   $: EngineInterface,
-): Promise<Pick<Snapshot, "spinElapsed" | "revealed" | "heldBalance" | "celebrating">> {
+): Promise<Pick<Snapshot, "spinElapsed" | "revealed" | "heldBalance" | "resultElapsed">> {
   const state = (await readRemote($)).state;
   const now = await $.clock.now();
   const elapsed = await spinElapsed($, state, now);
@@ -985,16 +982,16 @@ async function motionView(
     spinElapsed: elapsed,
     revealed,
     heldBalance: held,
-    celebrating: await celebrationElapsed($, state, now),
+    resultElapsed: await resultElapsed($, state, now),
   };
 }
 
-/** Whether a spin, a deal or a celebration is playing on the table. */
+/** Whether a spin, a deal or a result is playing on the table. */
 async function isMoving($: EngineInterface, state: StateResponse | null, now: number): Promise<boolean> {
   return (
     (await spinElapsed($, state, now)) !== null ||
     (await dealRevealed($, state, now)) !== null ||
-    (await celebrationElapsed($, state, now)) !== null
+    (await resultElapsed($, state, now)) !== null
   );
 }
 
@@ -1169,10 +1166,12 @@ async function countRound(
 
   if (BigInt(round.net) > 0n) {
     playSound($, rt, SOUND_WIN);
-    const startsAt = await resultShowsAt($, round, now);
-
-    await update($, celebration, () => ({ round: round.number, startsAt }));
   }
+
+  // A still table (the main screen's Mines and Tower boards) plays the result as the moving one does.
+  const startsAt = await resultShowsAt($, round, now);
+
+  await update($, result, () => ({ round: round.number, startsAt }));
 }
 
 /** When `round`'s result shows on the table: after its spin lands and its last card is turned over. */

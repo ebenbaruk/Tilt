@@ -105,8 +105,9 @@ export interface Snapshot {
   revealed: number | null;
   /** The balance before that round or those cards, shown while they play out; null otherwise. */
   heldBalance: string | null;
-  /** How far into a win's celebration the table is, once its result shows; null when none plays. */
-  celebrating: number | null;
+  /** How far into its result's effects (the count-up, the flash, the shake, a win's celebration) the
+   * table is, once its result shows; null when none plays. */
+  resultElapsed: number | null;
 }
 
 /** How many times faster the reels turn at each slots speed; turbo shows the draw at once. */
@@ -521,6 +522,50 @@ export function outcomeLine(ui: Ui, round: RoundView | null, shownNet?: string):
       </Text>
       {BigInt(round.fee) > 0n && <Text color={FG6}>{`${SEPARATOR}fee ${formatUsdc(round.fee)}`}</Text>}
     </Text>
+  );
+}
+
+/** A settled round's effects once its result shows, as blackjack's: a win's net counts up, then the
+ * balance; the line flashes gold on a win, red on a loss; a loss shakes the table. */
+const COUNT_UP_MS = 700;
+const BALANCE_MS = 600;
+export const RESULT_MS = COUNT_UP_MS + BALANCE_MS;
+const FLASH_MS = 600;
+const FLASH_BEAT_MS = 150;
+const WIN_FLASH = "#4a3b12";
+const LOSS_FLASH = "#4a1c1c";
+const SHAKE_STEP_MS = 60;
+const SHAKE_OFFSETS = [2, 0, 2, 0, 1, 0];
+const PROGRESS_STEPS = 1000n;
+
+/** How far right a lost round's table is shaken `elapsed` into its result: back to 0 once the shake is over. */
+export const shakeAt = (elapsed: number): number => SHAKE_OFFSETS[Math.floor(elapsed / SHAKE_STEP_MS)] ?? 0;
+
+/** `value` scaled by how far `elapsed` is into `span`, from 0 to all of it. */
+function partOf(value: bigint, elapsed: number, span: number): bigint {
+  const progress = Math.max(0, Math.min(1, elapsed / span));
+
+  return (value * BigInt(Math.round(progress * Number(PROGRESS_STEPS)))) / PROGRESS_STEPS;
+}
+
+/** The settled `round`'s line `elapsed` into its effects (RESULT_MS), with `balance`, the one after it. */
+export function resultLine(ui: Ui, round: RoundView, elapsed: number, balance: string): RenderElement {
+  const { Box, Text } = ui;
+  const net = BigInt(round.net);
+  const isWin = net > 0n;
+  const shownNet = isWin ? partOf(net, elapsed, COUNT_UP_MS) : net;
+  const balanceFrom = BigInt(balance) - net;
+  const shownBalance = isWin ? balanceFrom + partOf(net, elapsed - COUNT_UP_MS, BALANCE_MS) : BigInt(balance);
+  const isFlashBeat = elapsed < FLASH_MS && Math.floor(elapsed / FLASH_BEAT_MS) % 2 === 0;
+  const flash = net === 0n || !isFlashBeat ? undefined : isWin ? WIN_FLASH : LOSS_FLASH;
+
+  return (
+    <Box flexDirection="row" flexWrap="wrap" columnGap={2} backgroundColor={flash}>
+      {outcomeLine(ui, round, shownNet.toString())}
+      <Text color={FG4}>
+        balance <Text color={isWin ? GOLD : FG4}>{formatUsdc(shownBalance.toString())}</Text>
+      </Text>
+    </Box>
   );
 }
 
@@ -1476,23 +1521,34 @@ export function renderPane(
   const steps = steppers(ui, state, snap.prefs, keys, onCommand);
   const side = state.sponsor !== null || state.leaderboard.length > 0;
   const canPlay = state.accountOpen && state.blocked === null;
+  const round = tableRound(state, snap.prefs);
+  // The result waits for the wheel, the reels or the last card: the text must not tell it first.
+  const isResultHeld = dealing !== null || sending !== null || snap.spinElapsed !== null || snap.revealed !== null;
+  // The still table (the main screen's Mines and Tower) plays the result as the moving one does:
+  // the line counted up and flashed, a loss shaken.
+  const resultAt = table === null && !isResultHeld && round?.phase === "idle" ? snap.resultElapsed : null;
+  const shake = round !== null && resultAt !== null && BigInt(round.net) < 0n ? shakeAt(resultAt) : 0;
   // The table surface module draws a deal in flight itself: swapped out, it would lose the keys a
   // click gave it, and deal the hands all at once when they show.
   const shownTable =
-    table !== null
-      ? table(size, gameColumns(layout), wheel)
-      : dealing !== null
-        ? dealingTable(ui, dealing, size)
-        : gameTable(
-            ui,
-            sending === null ? state : { ...state, round: sending },
-            snap.prefs,
-            gameColumns(layout),
-            { ...STILL, spinElapsed: snap.spinElapsed, revealed: snap.revealed, frame: snap.agent.frame },
-            size,
-            wheel,
-            cellButton,
-          );
+    table !== null ? (
+      table(size, gameColumns(layout), wheel)
+    ) : dealing !== null ? (
+      dealingTable(ui, dealing, size)
+    ) : (
+      <Box flexDirection="column" paddingLeft={shake}>
+        {gameTable(
+          ui,
+          sending === null ? state : { ...state, round: sending },
+          snap.prefs,
+          gameColumns(layout),
+          { ...STILL, spinElapsed: snap.spinElapsed, revealed: snap.revealed, frame: snap.agent.frame },
+          size,
+          wheel,
+          cellButton,
+        )}
+      </Box>
+    );
   const gameColumn = (
     <Box flexDirection="column" flexGrow={1} marginTop={snap.agent.notice !== null || snap.agent.isWorking ? 1 : 0}>
       {/* Short of room, the keys come before the guide too: a band of a few rows still shows them. */}
@@ -1502,16 +1558,10 @@ export function renderPane(
       {shownTable}
       {/* The table surface module invites clicks; where none land, the keys are recalled here. */}
       {(table === null || !layout.isClickable) && layoutHint(ui, keys, layout.isClickable)}
+      {table === null && sending === null && celebration(ui, round, snap.resultElapsed, gameColumns(layout) - 1)}
       {table === null &&
-        sending === null &&
-        celebration(ui, tableRound(state, snap.prefs), snap.celebrating, gameColumns(layout) - 1)}
-      {/* The result waits for the wheel, the reels or the last card: the text must not tell it first. */}
-      {dealing === null &&
-        sending === null &&
-        table === null &&
-        snap.spinElapsed === null &&
-        snap.revealed === null &&
-        outcomeLine(ui, tableRound(state, snap.prefs))}
+        !isResultHeld &&
+        (round !== null && resultAt !== null ? resultLine(ui, round, resultAt, state.balance) : outcomeLine(ui, round))}
       {dealing === null &&
         sending === null &&
         snap.spinElapsed === null &&

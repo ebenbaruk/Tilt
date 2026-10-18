@@ -7,7 +7,7 @@
 import type { ClientSurface, RenderElement } from "claude-code";
 
 import { DEAL_STEP_MS, dealtCards } from "./cards";
-import { formatUsdc, SEPARATOR } from "./format";
+import { SEPARATOR } from "./format";
 import { KENO_PICK_KEY, MINES_TILE_KEY, ROULETTE_STRAIGHT_KEY, STEPPER_NAMES, TOWER_TILE_KEY } from "./keys";
 import type { RoundView } from "./protocol";
 import { pressFor, stepperOf, type TableKey, type TableProps } from "./table-input";
@@ -18,24 +18,18 @@ import {
   dealingTable,
   gameTable,
   outcomeLine,
+  RESULT_MS,
+  resultLine,
+  shakeAt,
   spinMs,
   spinProgress,
   tableRound,
 } from "./view";
 
 const FRAME_MS = 33;
-const COUNT_UP_MS = 700;
-const BALANCE_MS = 600;
-const FLASH_MS = 600;
-const FLASH_BEAT_MS = 150;
-const SHAKE_STEP_MS = 60;
-const SHAKE_OFFSETS = [2, 0, 2, 0, 1, 0];
 const PULSE_BEAT_MS = 450;
 /** The active hand and the play-again prompt pulse this long after the last change, then rest. */
 const PULSE_WINDOW_MS = 12_000;
-const WIN_FLASH = "#4a3b12";
-const LOSS_FLASH = "#4a1c1c";
-const PROGRESS_STEPS = 1000n;
 const STREAK_SHOWN_FROM = 2;
 /** A Mines tile awaiting its draw turns one step this often. */
 const PENDING_FRAME_MS = 120;
@@ -186,7 +180,7 @@ function isAnimating(state: TableState, props: TableProps): boolean {
   const detail = round?.detail;
   const isTileDrawing = (detail?.game === "mines" || detail?.game === "tower") && detail.pending !== null;
   const isDealing = state.revealed < state.cards || spinElapsed(state, props) !== null || isTileDrawing;
-  const effectMs = Math.max(COUNT_UP_MS + BALANCE_MS, round === null ? 0 : celebrationMs(round));
+  const effectMs = Math.max(RESULT_MS, round === null ? 0 : celebrationMs(round));
   const hasEffect = state.effect !== null && state.now < state.effect.at + effectMs;
   const canPulse = hasKey(props.keys, "bj-stand") || hasKey(props.keys, "start");
 
@@ -247,15 +241,7 @@ function listen(surface: ClientSurface<TableState>, rt: Runtime): void {
   });
 }
 
-/** `value` scaled by how far `elapsed` is into `span`, from 0 to all of it. */
-function partOf(value: bigint, elapsed: number, span: number): bigint {
-  const progress = Math.max(0, Math.min(1, elapsed / span));
-
-  return (value * BigInt(Math.round(progress * Number(PROGRESS_STEPS)))) / PROGRESS_STEPS;
-}
-
 function summary(ui: Ui, state: TableState, round: RoundView | null, isSpinning: boolean): RenderElement | null {
-  const { Box, Text } = ui;
   const effect = state.effect;
 
   if (round === null || round.phase !== "idle" || state.revealed < state.cards || isSpinning) {
@@ -266,23 +252,7 @@ function summary(ui: Ui, state: TableState, round: RoundView | null, isSpinning:
     return outcomeLine(ui, round);
   }
 
-  const elapsed = state.now - effect.at;
-  const net = BigInt(effect.net);
-  const isWin = effect.kind === "win";
-  const shownNet = isWin ? partOf(net, elapsed, COUNT_UP_MS) : net;
-  const balanceFrom = BigInt(effect.balance) - net;
-  const shownBalance = isWin ? balanceFrom + partOf(net, elapsed - COUNT_UP_MS, BALANCE_MS) : BigInt(effect.balance);
-  const isFlashBeat = elapsed < FLASH_MS && Math.floor(elapsed / FLASH_BEAT_MS) % 2 === 0;
-  const flash = effect.kind === "push" || !isFlashBeat ? undefined : isWin ? WIN_FLASH : LOSS_FLASH;
-
-  return (
-    <Box flexDirection="row" flexWrap="wrap" columnGap={2} backgroundColor={flash}>
-      {outcomeLine(ui, round, shownNet.toString())}
-      <Text color={FG4}>
-        balance <Text color={isWin ? GOLD : FG4}>{formatUsdc(shownBalance.toString())}</Text>
-      </Text>
-    </Box>
-  );
+  return resultLine(ui, round, state.now - effect.at, effect.balance);
 }
 
 interface PromptView {
@@ -497,8 +467,7 @@ export default function Table(props: TableProps, surface: ClientSurface<TableSta
   const isPulseOn = !isPulsing || Math.floor(state.now / PULSE_BEAT_MS) % 2 === 0;
   const effect = state.effect;
   const sinceEffect = effect === null ? -1 : state.now - effect.at;
-  const shake =
-    effect?.kind === "loss" && sinceEffect >= 0 ? (SHAKE_OFFSETS[Math.floor(sinceEffect / SHAKE_STEP_MS)] ?? 0) : 0;
+  const shake = effect?.kind === "loss" && sinceEffect >= 0 ? shakeAt(sinceEffect) : 0;
   const round = tableRound(props.state, props.prefs);
   const spinning = spinElapsed(state, props);
   const fx = {

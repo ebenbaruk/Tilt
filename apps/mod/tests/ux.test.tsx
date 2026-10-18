@@ -35,6 +35,7 @@ import {
   WHEEL,
 } from "./fixtures";
 import { TABLE_KEY } from "../hooks/table-input";
+import { RESULT_MS } from "../hooks/view";
 import {
   BAND,
   command,
@@ -657,9 +658,12 @@ describe("one draw plays out before the result shows", () => {
     const landed = textOf(await ui.drawn());
 
     expect(landed).toContain("rolled 37.42 WIN");
-    expect(landed).toContain("Rolled 37.42: under 49.00 wins. +0.99");
+    expect(landed).toContain("Rolled 37.42: under 49.00 wins. +");
     expect(landed).toContain("balance 13.39 USDC");
     expect(hasSparkles(landed)).toBe(true);
+    // The win counts up, as on the moving table.
+    await clock.advance(RESULT_MS);
+    expect(textOf(await ui.drawn())).toContain("Rolled 37.42: under 49.00 wins. +0.99");
   });
 
   test("the roll tumbles across the track, then closes in on the drawn one", () => {
@@ -748,6 +752,8 @@ describe("one draw plays out before the result shows", () => {
     await clock.advance(flipMs(FLIP_DETAIL) - 3 * SPIN_FRAME_MS);
     expect(textOf(await ui.drawn())).not.toContain("3 heads in a row.");
     await clock.advance(3 * SPIN_FRAME_MS);
+    expect(textOf(await ui.drawn())).toContain("3 heads in a row. +");
+    await clock.advance(RESULT_MS);
     expect(textOf(await ui.drawn())).toContain("3 heads in a row. +5.77");
   });
 
@@ -773,7 +779,9 @@ describe("one draw plays out before the result shows", () => {
 
     expect(landed).toContain("3 hits WIN");
     expect(landed).toContain(" 3 ×4.00 ");
-    expect(landed).toContain("3 hits of 5 picks. +2.97");
+    expect(landed).toContain("3 hits of 5 picks. +");
+    await clock.advance(RESULT_MS);
+    expect(textOf(await ui.drawn())).toContain("3 hits of 5 picks. +2.97");
   });
 
   test("a choice changed after a round drops its result and its sentence together", async ($, on) => {
@@ -951,10 +959,12 @@ describe("the wheel", () => {
     expect(landed).not.toContain("10 segments · low risk");
 
     expect(landed.match(/landed on/gi)).toEqual(["Landed on"]);
-    expect(landed).toContain("Landed on ×1.50. +0.49 · fee 0.00");
+    expect(landed).toContain("Landed on ×1.50. +");
     expect(landed).toContain("balance 12.89 USDC");
     expect(landed).not.toContain("spinning…");
     expect(hasSparkles(landed)).toBe(true);
+    await clock.advance(RESULT_MS);
+    expect(textOf(await ui.drawn())).toContain("Landed on ×1.50. +0.49 · fee 0.00");
   });
 });
 
@@ -1033,6 +1043,59 @@ describe("a win celebrates", () => {
     await show(renumbered(TOWER_TURN, 10));
     await show(renumbered(TOWER_BUSTED, 10));
     expect(hasSparkles(textOf(await ui.drawn()))).toBe(false);
+  });
+
+  test("the still Mines board of the main screen shakes on a mine and counts a cash-out up, as blackjack does", async ($, on) => {
+    let current: StateResponse = BASE;
+    const { clock } = await seat($, on, BASE, { "GET /v1/state": () => ({ status: 200, body: current }) });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+    const shakes = (node: unknown): boolean => {
+      if (Array.isArray(node)) {
+        return node.some(shakes);
+      }
+
+      if (typeof node !== "object" || node === null) {
+        return false;
+      }
+
+      const { props, children } = node as { props?: { paddingLeft?: number }; children?: unknown };
+
+      return (props?.paddingLeft ?? 0) > 0 || shakes(children);
+    };
+    // Every frame from the next poll on, until the result's effects are over.
+    const frames = async (state: StateResponse) => {
+      const seen: { isShaken: boolean; text: string }[] = [];
+
+      current = state;
+
+      for (let elapsed = 0; elapsed <= POLL_MS + RESULT_MS; elapsed += SPIN_FRAME_MS) {
+        const drawn = await ui.drawn();
+
+        seen.push({ isShaken: shakes(drawn), text: textOf(drawn) });
+        await clock.advance(SPIN_FRAME_MS);
+      }
+
+      return seen;
+    };
+    const next = (state: StateResponse): StateResponse =>
+      state.round === null ? state : { ...state, round: { ...state.round, number: 8 } };
+
+    await ui.press({ key: "game-mines" });
+    expect(await ui.find({ type: "Client" })).toBeUndefined();
+    await frames(MINES_TURN);
+    const bust = (await frames(MINES_BUSTED)).filter((frame) => frame.text.includes("Mine on h"));
+
+    expect(bust.some((frame) => frame.isShaken)).toBe(true);
+    expect(bust.every((frame) => frame.text.includes("Mine on h after 1 safe tile. −1.00"))).toBe(true);
+    expect(bust.at(-1)?.isShaken).toBe(false);
+
+    await frames(next(MINES_TURN));
+    const cashOut = (await frames(next(MINES_CASHED))).filter((frame) => frame.text.includes("Cashed out"));
+
+    expect(cashOut.some((frame) => frame.isShaken)).toBe(false);
+    // Counted up from below to the whole win.
+    expect(cashOut[0]?.text).not.toContain("+0.47");
+    expect(cashOut.at(-1)?.text).toContain("+0.47");
   });
 });
 

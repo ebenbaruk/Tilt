@@ -137,8 +137,9 @@ export type TiltDeal = {
   balance: string;
 };
 
-/** The win whose sparkles the table plays, once its last card shows or its spin lands. */
-export type TiltCelebration = {
+/** The settled round whose result the table plays (a win counted up and its sparkles, a loss
+ * shaken), once its last card shows or its spin lands. */
+export type TiltResult = {
   round: number | null;
   /** `$.clock.now()` when its result shows. */
   startsAt: number;
@@ -159,7 +160,7 @@ declare module "claude-code" {
       session: TiltSession;
       spin: TiltSpin;
       deal: TiltDeal;
-      celebration: TiltCelebration;
+      result: TiltResult;
     };
   }
 }
