@@ -98,8 +98,10 @@ const FLIP_DETAIL: FlipView = {
 /** Where the table surface module's region sits in a drawing's tree. */
 const TABLE_REGION = '"type":"Client"';
 
+/** A band of 30 rows on the main screen of a terminal tall enough for it to take them. */
 const BAND_ROOMY = {
   ...BAND,
+  viewport: { columns: 125, rows: 80, isFullscreen: false },
   props: { ...BAND.props, maxRows: 30, bodyColumns: 120, scroll: { offset: 0, bodyRows: 29 } },
 };
 
@@ -143,6 +145,29 @@ describe("the table stays when the agent finishes", () => {
 
       expect(band).toContain("LEADERBOARD");
       expect(band).toContain("your hand is saved");
+    },
+  );
+});
+
+describe("the bottom band on the main screen", () => {
+  test(
+    "takes at most half the terminal: a table taller than that gives way to the compact band, the answer in view",
+    { options: { layout: "bottom" } },
+    async ($, on) => {
+      await seat($, on, BLACKJACK_TURN);
+      const short = await $.ui.mount({
+        plugin: PLUGIN,
+        ...BAND_ROOMY,
+        viewport: { columns: 125, rows: 24, isFullscreen: false },
+      });
+
+      expect(await short.find({ type: "Client" })).toBeUndefined();
+      expect(textOf(await short.drawn())).toContain("blackjack · you 11 · dealer 9");
+      await short.unmount();
+
+      const tall = await $.ui.mount({ plugin: PLUGIN, ...BAND_ROOMY });
+
+      expect(textOf(await tall.drawn({ in: TABLE_KEY }))).toContain("DEALER");
     },
   );
 });
@@ -381,6 +406,7 @@ describe("tight rooms", () => {
       await seat($, on, BLACKJACK_TURN);
       const band = {
         ...BAND,
+        viewport: { columns: 125, rows: 24, isFullscreen: true },
         props: { ...BAND.props, maxRows: 12, bodyColumns: 120, scroll: { offset: 0, bodyRows: 11 } },
       };
       const ui = await $.ui.mount({ plugin: PLUGIN, ...band });
@@ -399,6 +425,7 @@ describe("tight rooms", () => {
       await seat($, on, ROULETTE_CHIPS);
       const band = {
         ...BAND,
+        viewport: { columns: 85, rows: 24, isFullscreen: true },
         props: { ...BAND.props, maxRows: 12, bodyColumns: 80, scroll: { offset: 0, bodyRows: 11 } },
       };
       const ui = await $.ui.mount({ plugin: PLUGIN, ...band });
@@ -446,6 +473,7 @@ describe("tight rooms", () => {
       await seat($, on, BASE);
       const band = {
         ...BAND,
+        viewport: { columns: 80, rows: 12, isFullscreen: true },
         props: { ...BAND.props, maxRows: 6, bodyColumns: 75, scroll: { offset: 0, bodyRows: 6 } },
       };
       const text = textOf(await (await $.ui.mount({ plugin: PLUGIN, ...band })).drawn());

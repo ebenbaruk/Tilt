@@ -1095,8 +1095,9 @@ function sessionText(ui: Ui, session: TiltSession, now: number): RenderElement |
   );
 }
 
-/** The session and the odds on the left; on the right, how to give the pane the keys while it does not hold them. */
-function footer(ui: Ui, snap: Snapshot, state: StateResponse, game: Game, isFocused: boolean): RenderElement {
+/** The session and the odds on the left; on the right, how to give the pane the keys while it does
+ * not hold them, or how to hand them back. The band never says whether it holds them: both, there. */
+function footer(ui: Ui, snap: Snapshot, state: StateResponse, game: Game, layout: PaneLayout): RenderElement {
   const { Box, Text } = ui;
   const rtp = `${RTP_AT_MOST.has(game) ? "≤ " : ""}${cleanText(state.rtp[game])}`;
 
@@ -1109,7 +1110,14 @@ function footer(ui: Ui, snap: Snapshot, state: StateResponse, game: Game, isFocu
         sessionText(ui, snap.session, snap.remote.fetchedAt)}
       <Text color={FG6}>{`rtp ${rtp}% · 1% fee on wins`}</Text>
       <Box flexGrow={1} />
-      {isFocused ? (
+      {layout.isBand ? (
+        <Text color={FG6}>
+          <Text color={GOLD} bold>
+            ctrl+x tab
+          </Text>{" "}
+          keys · esc hands them back
+        </Text>
+      ) : layout.isFocused ? (
         <Text color={FG6}>esc hands the keys back</Text>
       ) : (
         <Text color={FG6}>
@@ -1472,6 +1480,13 @@ function paneRows(snap: Snapshot, state: StateResponse, layout: PaneLayout, size
   );
 }
 
+/** Whether the pane, with small cards, takes at most `rows`; true before there is a table to measure. */
+export function fitsRows(snap: Snapshot, layout: PaneLayout, rows: number): boolean {
+  const state = snap.remote.state;
+
+  return state === null || paneRows(snap, state, layout, "small") <= rows;
+}
+
 /** The card size the pane draws: the one asked for, or small where large ones would not fit. */
 function cardSizeFor(snap: Snapshot, state: StateResponse, layout: PaneLayout): CardSize {
   return layout.cards === "large" && paneRows(snap, state, layout, "large") <= layout.bodyRows ? "large" : "small";
@@ -1666,7 +1681,7 @@ export function renderPane(
   const foot = (
     <Box flexDirection="column" marginTop={1}>
       <Text color={LINE3}>{"─".repeat(Math.max(0, layout.bodyColumns))}</Text>
-      {footer(ui, snap, state, game, layout.isFocused)}
+      {footer(ui, snap, state, game, layout)}
     </Box>
   );
 

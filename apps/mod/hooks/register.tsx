@@ -73,6 +73,7 @@ import {
   bigWinOf,
   celebrationMs,
   dealingHands,
+  fitsRows,
   isPlayHeld,
   PANE_ROWS,
   type PaneLayout,
@@ -1562,16 +1563,20 @@ export const register: Register = (on, options) => {
     const ui: Ui = $.ui.resolve(e);
     const snap = await snapshot($, rt);
 
-    if (rt.settings.layout === "bottom") {
-      const band: PaneLayout = {
-        bodyColumns: e.props.bodyColumns,
-        bodyRows: e.props.scroll.bodyRows,
-        isFocused: false,
-        cards: rt.settings.cards,
-        isClickable: isClickable(e.surface, e.viewport?.isFullscreen === true),
-        isBand: true,
-      };
+    const band: PaneLayout = {
+      bodyColumns: e.props.bodyColumns,
+      bodyRows: e.props.scroll.bodyRows,
+      isFocused: false,
+      cards: rt.settings.cards,
+      isClickable: isClickable(e.surface, e.viewport?.isFullscreen === true),
+      isBand: true,
+    };
+    // Off fullscreen the band may take the terminal's whole height: a table taller than half of it
+    // would push the agent's answer off the screen, so the compact band stands in for it there.
+    const isRoomy =
+      e.viewport === undefined || e.viewport.isFullscreen || fitsRows(snap, band, Math.floor(e.viewport.rows / 2));
 
+    if (rt.settings.layout === "bottom" && isRoomy) {
       return renderPane(
         ui,
         snap,

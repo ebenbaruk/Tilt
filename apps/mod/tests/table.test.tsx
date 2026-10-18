@@ -552,6 +552,7 @@ describe("the table on the main screen", () => {
       const band = await $.ui.mount({
         plugin: PLUGIN,
         ...BAND,
+        viewport: { columns: 125, rows: 80, isFullscreen: false },
         props: { ...BAND.props, maxRows: 30, bodyColumns: 120, scroll: { offset: 0, bodyRows: 30 } },
       });
 

@@ -815,7 +815,7 @@ describe("the roulette layout", () => {
       const ui = await $.ui.mount({
         plugin: PLUGIN,
         ...BOTTOM,
-        viewport: { columns: 125, rows: 60, isFullscreen: false },
+        viewport: { columns: 125, rows: 80, isFullscreen: false },
       });
 
       await ui.press({ key: "game-roulette" });

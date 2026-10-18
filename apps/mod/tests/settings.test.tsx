@@ -6,8 +6,10 @@ import { BAND, command, PANE, PLUGIN, seat, shownText, textOf } from "./world";
 
 const LARGE_CARD_TOP = "╭─────╮";
 const SETUP_PANE = { ...PANE, requestId: "tilt-setup" };
+/** A band of 30 rows on the main screen of a terminal tall enough for it to take them. */
 const BAND_ROOMY = {
   ...BAND,
+  viewport: { columns: 125, rows: 80, isFullscreen: false },
   props: { ...BAND.props, maxRows: 30, bodyColumns: 120, scroll: { offset: 0, bodyRows: 29 } },
 };
 

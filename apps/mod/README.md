@@ -36,7 +36,7 @@ Answer `y` to add the marketplace, pick a scope, then set where the table sits o
 
 `/tilt setup` shows each choice with a small preview and saves the one you press; the same rows are in `/config`.
 
-- **Layout** (`1` side, `2` bottom, `3` compact). Side: a pane, docked beside the transcript in fullscreen (`"tui": "fullscreen"`), under it otherwise. Bottom: the whole table above the prompt, no pane, in every mode. Compact: two lines above the prompt; `/tilt` still opens the pane.
+- **Layout** (`1` side, `2` bottom, `3` compact). Side: a pane, docked beside the transcript in fullscreen (`"tui": "fullscreen"`), under it otherwise. Bottom: the whole table above the prompt, no pane, in every mode; on the main screen (not fullscreen) a table taller than half the terminal gives way to the compact band, so the agent's answer stays in view. Compact: two lines above the prompt; `/tilt` still opens the pane.
 - **Cards** (`l` large, `s` small). Large: the five-row cards, each overlapped by the next. Where they would push the keys out of the pane (a short terminal, many hands), the table draws small ones by itself.
 - **When the agent starts** (`a`): open Tilt without taking the keyboard, or wait for `/tilt`.
 - **Sounds** (`m`): a short sound on a deal and on a win. Off by default.
