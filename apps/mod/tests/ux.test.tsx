@@ -1181,6 +1181,26 @@ describe("the result says what won", () => {
   });
 });
 
+describe("the band never takes what is typed in the prompt", () => {
+  test("its tabs take clicks only, so a digit typed first in an empty prompt stays there; m steps the game", async ($, on) => {
+    await seat($, on, BASE);
+    const band = await $.ui.mount({ plugin: PLUGIN, ...BAND });
+    const tab = await band.find({ key: "game-roulette" });
+
+    expect(tab?.props.hotkey ?? "").toBe("");
+    expect((await band.find({ key: "game-page" }))?.props.hotkey ?? "").toBe("");
+    expect((await band.find({ key: "game-next" }))?.props.hotkey).toBe("m");
+    await band.press({ key: "game-next" });
+    expect(textOf(await band.drawn())).toContain("roulette · no");
+    await band.unmount();
+
+    // A pane takes no key from the prompt: its digits switch games once it has the keys.
+    const pane = await $.ui.mount({ plugin: PLUGIN, ...PANE });
+
+    expect((await pane.find({ key: "game-baccarat" }))?.props.hotkey).toBe("3");
+  });
+});
+
 describe("the key row keeps its keys in place", () => {
   /** The play keys drawn, in order, live or waiting: their addresses without the waiting prefix. */
   const rowOf = async (ui: Pick<Mounted, "findAll">) =>

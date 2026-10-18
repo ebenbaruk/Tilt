@@ -53,6 +53,7 @@ import {
 } from "./games";
 import {
   activeGame,
+  bandSwitchKeys,
   clampHands,
   clampMines,
   type Command,
@@ -212,7 +213,7 @@ function keyButton(ui: Ui, action: KeyAction, onCommand: OnCommand): RenderEleme
   const { Button, Text } = ui;
 
   return (
-    <Button key={action.key} plain hotkey={action.hotkey} onPress={() => onCommand(action.command)}>
+    <Button key={action.key} plain hotkey={hotkeyOf(action)} onPress={() => onCommand(action.command)}>
       {action.key.startsWith(ROULETTE_KEY_PREFIX) ? (
         rouletteChip(ui, action.key.slice(ROULETTE_KEY_PREFIX.length), action.label, action.isSelected)
       ) : (
@@ -225,6 +226,9 @@ function keyButton(ui: Ui, action: KeyAction, onCommand: OnCommand): RenderEleme
 }
 
 const ROULETTE_KEY_PREFIX = "roulette-";
+
+/** A key's hotkey for its Button; none for a key only a click presses. */
+const hotkeyOf = (action: KeyAction): string | undefined => (action.hotkey === "" ? undefined : action.hotkey);
 
 /** A key a press must not reach the prompt through: dim, at its own address, and inert. */
 function inertButton(ui: Ui, action: RowKey): RenderElement {
@@ -329,7 +333,7 @@ function tabs(ui: Ui, keys: readonly KeyAction[], onCommand: OnCommand): RenderE
   return keys
     .filter((action) => action.command.kind === "switch")
     .map((action) => (
-      <Button key={action.key} plain hotkey={action.hotkey} onPress={() => onCommand(action.command)}>
+      <Button key={action.key} plain hotkey={hotkeyOf(action)} onPress={() => onCommand(action.command)}>
         {action.isSelected ? (
           <Text backgroundColor={PINK} color={INK} bold>
             {` ${action.label} `}
@@ -1355,6 +1359,8 @@ export interface PaneLayout {
   /** The surface reports clicks (not the terminal's main screen): the still table's roulette cells
    *  and Keno numbers are Buttons. */
   isClickable: boolean;
+  /** Drawn in the band above the prompt, where a digit typed in an empty prompt presses a Button. */
+  isBand: boolean;
 }
 
 /** Everything around the table: header, agent line, outcome, status, keys and footer. */
@@ -1525,12 +1531,13 @@ export function renderPane(
   const { Box, Button, Text } = ui;
   const state = snap.remote.state;
   const keys = state === null ? [] : planKeys({ state, prefs: snap.prefs, isBusy: isPlayHeld(snap) });
+  const tabKeys = state !== null && layout.isBand ? bandSwitchKeys(state, snap.prefs) : keys;
   const intro = preamble(ui, snap);
   // The engine frames the pane: the brand sits on the header bar, not on a second border. `gap`:
   // the row under the header, left out where the keys come first.
   const frame = (body: RenderElement | null, foot: RenderElement | null = null, gap = 1) => (
     <Box flexDirection="column">
-      {header(ui, snap, keys, onCommand, layout.bodyColumns)}
+      {header(ui, snap, tabKeys, onCommand, layout.bodyColumns)}
       <Box flexDirection="column" paddingX={1} marginTop={gap}>
         {agentLine(ui, snap.agent)}
         {body}
@@ -1817,7 +1824,7 @@ export function renderBand(ui: Ui, snap: Snapshot, layout: BandLayout, onCommand
         {agent}
       </Box>
       <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-        {keys.filter((action) => action.command.kind === "switch").map((action) => keyButton(ui, action, onCommand))}
+        {bandSwitchKeys(state, snap.prefs).map((action) => keyButton(ui, action, onCommand))}
         {playButtons(ui, input, keys, row, onCommand).map((button) => button.element)}
         {status}
       </Box>

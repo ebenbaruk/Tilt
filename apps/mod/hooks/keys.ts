@@ -529,6 +529,31 @@ function switchKeys(state: StateResponse, prefs: Prefs): KeyAction[] {
   ];
 }
 
+/** The band's key to the next game: a letter, never typed from the prompt. */
+export const NEXT_GAME_HOTKEY = "m";
+
+/**
+ * The game keys of the band above the prompt. A bare digit typed first in an empty prompt presses a
+ * band Button whether the band has the keys or not ("2 bugs" would switch to Roulette and lose its
+ * 2), so there the tabs take clicks only, and `m`, which only a band with the keys gets, steps to
+ * the next game.
+ */
+export function bandSwitchKeys(state: StateResponse, prefs: Prefs): KeyAction[] {
+  const shown = activeGame(state, prefs);
+  const next = GAMES[(GAMES.indexOf(shown) + 1) % GAMES.length] ?? shown;
+
+  return [
+    ...switchKeys(state, prefs).map((key) => ({ ...key, hotkey: "" })),
+    {
+      key: "game-next",
+      hotkey: NEXT_GAME_HOTKEY,
+      label: "next game",
+      isSelected: false,
+      command: { kind: "switch", game: next },
+    },
+  ];
+}
+
 /**
  * `r k o e l g` put a chip on an outside bet; `s` and `d` move the cursor over the numbers, dozens
  * and columns one at a time, `f` and `h` across the felt; `a` puts a chip under it and `x` takes its

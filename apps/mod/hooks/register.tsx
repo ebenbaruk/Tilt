@@ -1516,6 +1516,7 @@ export const register: Register = (on, options) => {
       isFocused: e.props.isFocused,
       cards: rt.settings.cards,
       isClickable: isClickable(e.surface, e.viewport?.isFullscreen === true),
+      isBand: false,
     };
     const snap = await snapshot($, rt);
 
@@ -1566,6 +1567,7 @@ export const register: Register = (on, options) => {
         isFocused: false,
         cards: rt.settings.cards,
         isClickable: isClickable(e.surface, e.viewport?.isFullscreen === true),
+        isBand: true,
       };
 
       return renderPane(
