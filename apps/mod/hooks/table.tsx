@@ -8,14 +8,7 @@ import type { ClientSurface, RenderElement } from "claude-code";
 
 import { DEAL_STEP_MS, dealtCards } from "./cards";
 import { formatUsdc, SEPARATOR } from "./format";
-import {
-  activeGame,
-  KENO_PICK_KEY,
-  MINES_TILE_KEY,
-  ROULETTE_STRAIGHT_KEY,
-  STEPPER_NAMES,
-  TOWER_TILE_KEY,
-} from "./keys";
+import { KENO_PICK_KEY, MINES_TILE_KEY, ROULETTE_STRAIGHT_KEY, STEPPER_NAMES, TOWER_TILE_KEY } from "./keys";
 import type { RoundView } from "./protocol";
 import { pressFor, stepperOf, type TableKey, type TableProps } from "./table-input";
 import { applyTheme, FG4, FG6, GOLD, PINK, type Ui } from "./theme";
@@ -25,9 +18,9 @@ import {
   dealingTable,
   gameTable,
   outcomeLine,
-  roundOf,
   spinMs,
   spinProgress,
+  tableRound,
 } from "./view";
 
 const FRAME_MS = 33;
@@ -506,7 +499,7 @@ export default function Table(props: TableProps, surface: ClientSurface<TableSta
   const sinceEffect = effect === null ? -1 : state.now - effect.at;
   const shake =
     effect?.kind === "loss" && sinceEffect >= 0 ? (SHAKE_OFFSETS[Math.floor(sinceEffect / SHAKE_STEP_MS)] ?? 0) : 0;
-  const round = roundOf(props.state, activeGame(props.state, props.prefs));
+  const round = tableRound(props.state, props.prefs);
   const spinning = spinElapsed(state, props);
   const fx = {
     revealed: state.revealed < state.cards ? state.revealed : null,

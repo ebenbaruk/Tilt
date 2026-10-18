@@ -4,6 +4,7 @@ import { isPlayAction, isStateResponse } from "../hooks/guards";
 import {
   addChip,
   betOptions,
+  choicesOf,
   clampHands,
   clampMines,
   crossCursor,
@@ -27,7 +28,7 @@ import {
   toggleKenoPick,
 } from "../hooks/keys";
 import { type Prefs, prefsView } from "../hooks/model";
-import type { RouletteBet, RouletteChip, StateResponse } from "../hooks/protocol";
+import type { RouletteBet, RouletteChip, RoundView, StateResponse } from "../hooks/protocol";
 import { isTablePost, pressFor } from "../hooks/table-input";
 import * as fixtures from "./fixtures";
 
@@ -700,6 +701,38 @@ describe("the twelve games", () => {
     expect(step({}, "keno", -1).kenoPicks).toEqual([4, 12, 19, 27]);
     expect(step({ kenoPicks: [7] }, "keno", -1).kenoPicks).toEqual([7]);
     expect(step({ kenoPicks: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] }, "keno", 1).kenoPicks).toHaveLength(10);
+  });
+
+  test("a new session takes the last one-draw round's choices; other games keep the prefs", () => {
+    const round = (detail: RoundView["detail"]): RoundView => ({
+      phase: "idle",
+      stake: "500000",
+      payout: "0",
+      fee: "0",
+      net: "-500000",
+      number: 1,
+      settledSignature: null,
+      detail,
+    });
+
+    expect(
+      choicesOf(PREFS, round({ game: "dice", target: 7500, over: true, roll: 1200, multiplier: "3.9200" })),
+    ).toEqual({ ...PREFS, diceOver: true, diceChance: 2500 });
+    expect(choicesOf(PREFS, round({ game: "limbo", target: "10.00", result: "1.53" }))).toEqual({
+      ...PREFS,
+      limboTarget: 1000,
+    });
+    expect(
+      choicesOf(PREFS, round({ game: "flip", side: "tails", flips: 3, results: null, multiplier: "7.8400" })),
+    ).toEqual({ ...PREFS, flipSide: "tails", flips: 3 });
+    expect(choicesOf(PREFS, round({ game: "keno", picks: [9, 2], drawn: null, hits: null, paytable: [] }))).toEqual({
+      ...PREFS,
+      kenoPicks: [2, 9],
+    });
+    expect(
+      choicesOf(PREFS, round({ game: "wheel", segments: 30, risk: "high", multipliers: [], segment: null })),
+    ).toEqual({ ...PREFS, wheelSegments: 30, wheelRisk: "high" });
+    expect(choicesOf(PREFS, round({ game: "slots", reels: null }))).toBe(PREFS);
   });
 
   test("keno picks: a click toggles a number within 1 to 10 picks, r draws as many new distinct ones", () => {

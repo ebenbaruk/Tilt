@@ -27,6 +27,7 @@ import { isPlayAction } from "./guards";
 import {
   activeGame,
   addChip,
+  choicesOf,
   type Command,
   currentBet,
   crossCursor,
@@ -847,11 +848,11 @@ async function pollStep($: EngineInterface, rt: Runtime, token: string, now: num
     await dropIntent($, current.id);
   }
 
-  // A new session opens on the game last played.
-  const lastGame = fetched.value.round?.detail.game;
+  // A new session opens on the game last played, set up as it was played.
+  const last = fetched.value.round;
 
-  if (held.state === null && lastGame !== undefined) {
-    await setPrefs($, (value) => ({ ...value, game: lastGame }));
+  if (held.state === null && last !== null) {
+    await setPrefs($, (value) => choicesOf({ ...value, game: last.detail.game }, last));
   }
 
   return needsFastPoll(fetched.value, await readIntent($)) ? FAST_POLL_MS : SLOW_POLL_MS;

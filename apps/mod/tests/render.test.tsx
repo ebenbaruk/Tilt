@@ -154,8 +154,8 @@ const cases: [string, StateResponse, string[]][] = [
       "rtp 98.00%",
     ],
   ],
-  ["dice, a loss over the target", DICE_LOSS, ["Rolled 12.00: over 75.00 loses.", "−1.00"]],
-  ["dice, a winning roll at ×1 is a push", DICE_PUSH, ["Rolled 57.00: over 2.00 wins ×1.0000, a push. 0.00"]],
+  ["dice, a loss over the target", DICE_LOSS, ["Rolled 12.00: over 75.00 loses.", "LOSE", "−1.00"]],
+  ["dice, a winning roll at ×1 is a push", DICE_PUSH, ["Rolled 57.00: over 2.00 wins ×1.0000, a push. 0.00", "PUSH"]],
   ["dice, rolling", DICE_DRAWING, ["rolling…", "drawing"]],
   [
     "limbo, short of the target",
@@ -171,7 +171,12 @@ const cases: [string, StateResponse, string[]][] = [
     ],
   ],
   ["limbo, the target reached", LIMBO_WIN, ["×3.12", "×3.12 reaches ×2.00.", "+0.99"]],
-  ["flip, three heads in a row", FLIP, ["3 heads in a row.", "+5.77", "BIG WIN +5.77 USDC", "flip · 0.50 · 1 × heads"]],
+  // A new session opens on the last round's choices: three coins on heads, the round on the table.
+  [
+    "flip, three heads in a row",
+    FLIP,
+    ["(H)(H)(H)", "WIN", "3 heads in a row.", "+5.77", "BIG WIN +5.77 USDC", "flip · 0.50 · 3 × heads"],
+  ],
   ["flip, a tail", FLIP_LOSS, ["Tails on coin 2 of 2.", "−1.00"]],
   [
     "keno, three hits",

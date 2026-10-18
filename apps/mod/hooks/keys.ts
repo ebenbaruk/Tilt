@@ -1,6 +1,6 @@
 // Which keys a drawing offers, as data: the panel and the band render the same plan, and the
 // tests check it is conflict-free without drawing anything.
-import { cashOutPayout, chipsTotal, formatUsdc, rouletteBetLabel, scaledDecimal } from "./format";
+import { cashOutPayout, chipsTotal, formatUsdc, hundredths, rouletteBetLabel, scaledDecimal } from "./format";
 import type { Prefs, SlotsSpeed } from "./model";
 import type {
   BaccaratBet,
@@ -310,6 +310,29 @@ export function stepSetting(prefs: Prefs, setting: Setting, step: -1 | 1, random
 
 /** The roll a dice bet targets: the chance itself under, the rolls above the rest over. */
 export const diceTarget = (chance: number, over: boolean): number => (over ? DICE_ROLLS - chance : chance);
+
+/**
+ * `prefs` with the choices a one-draw `round` was played with: a new session sets the table up as
+ * the last round was, so that round shows on it and the next plays the same way.
+ */
+export function choicesOf(prefs: Prefs, round: RoundView): Prefs {
+  const detail = round.detail;
+
+  switch (detail.game) {
+    case "dice":
+      return { ...prefs, diceOver: detail.over, diceChance: detail.over ? DICE_ROLLS - detail.target : detail.target };
+    case "limbo":
+      return { ...prefs, limboTarget: Number(hundredths(detail.target)) };
+    case "flip":
+      return { ...prefs, flipSide: detail.side, flips: detail.flips };
+    case "keno":
+      return { ...prefs, kenoPicks: [...detail.picks].sort(byValue) };
+    case "wheel":
+      return { ...prefs, wheelSegments: detail.segments, wheelRisk: detail.risk };
+    default:
+      return prefs;
+  }
+}
 
 /** The address of the key revealing a tile: `mines-tile-0` to `mines-tile-24`. */
 export const MINES_TILE_KEY = "mines-tile-";

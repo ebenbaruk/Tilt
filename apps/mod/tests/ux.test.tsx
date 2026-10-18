@@ -742,6 +742,26 @@ describe("one draw plays out before the result shows", () => {
     expect(landed).toContain(" 3 ×4.00 ");
     expect(landed).toContain("3 hits of 5 picks. +2.97");
   });
+
+  test("a choice changed after a round drops its result and its sentence together", async ($, on) => {
+    const { show, clock } = await moving($, on, { ...BASE, round: null });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_STILL });
+
+    await ui.press({ key: "game-dice" });
+    await show(DICE);
+    await clock.advance(DICE_ROLL_MS);
+    expect(textOf(await ui.drawn())).toContain("Rolled 37.42: under 49.00 wins.");
+
+    await ui.press({ key: "dice-up" });
+    const changed = textOf(await ui.drawn());
+
+    expect(changed).toContain("No roll yet.");
+    expect(changed).not.toContain("Rolled 37.42");
+    expect(changed).not.toContain("+0.99 · fee");
+
+    await ui.press({ key: "dice-down" });
+    expect(textOf(await ui.drawn())).toContain("Rolled 37.42: under 49.00 wins.");
+  });
 });
 
 describe("the wheel", () => {
@@ -789,11 +809,7 @@ describe("the wheel", () => {
     // Room for the big win's banner and the first-hand guide over the biggest disc.
     const tall = { ...PANE_INLINE, props: { ...PANE_INLINE.props, scroll: { offset: 0, bodyRows: 48 } } };
     const ui = await $.ui.mount({ plugin: PLUGIN, ...tall });
-
-    for (const key of ["wheel-up", "wheel-up", "wheel-up", "wheel-up", "wheel-risk", "wheel-risk"]) {
-      await ui.press({ key });
-    }
-
+    // The session opened on the last round's fifty segments at high risk: that round is on the table.
     const drawn = await ui.drawn({ in: TABLE_KEY });
     const [, ...disc] = wheelRowsOf(drawn);
 

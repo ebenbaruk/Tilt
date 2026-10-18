@@ -26,6 +26,7 @@ import {
   diceTable,
   flipMs,
   flipTable,
+  isRoundShown,
   KENO_DRAW_MS,
   kenoTable,
   LIMBO_RISE_MS,
@@ -186,6 +187,16 @@ export const spinnerGlyph = (frame: number): string => SPINNER[frame % SPINNER.l
 /** The round of `game` to show: the current or last one, if it was of that game. */
 export function roundOf(state: StateResponse, game: Game): RoundView | null {
   return state.round?.detail.game === game ? state.round : null;
+}
+
+/**
+ * The round the game in play's table shows: as `roundOf`, less a settled one-draw round whose
+ * choices have changed since (`isRoundShown`), so nothing describes a result the table dropped.
+ */
+export function tableRound(state: StateResponse, prefs: Prefs): RoundView | null {
+  const round = roundOf(state, activeGame(state, prefs));
+
+  return round !== null && isRoundShown(round, prefs) ? round : null;
 }
 
 function keyButtons(ui: Ui, keys: readonly KeyAction[], onCommand: OnCommand): RenderElement[] {
@@ -1483,13 +1494,13 @@ export function renderPane(
       {shownTable}
       {/* The table surface module invites clicks; where none land, the keys are recalled here. */}
       {(table === null || !layout.isClickable) && layoutHint(ui, keys, layout.isClickable)}
-      {table === null && celebration(ui, roundOf(state, game), snap.celebrating, gameColumns(layout) - 1)}
+      {table === null && celebration(ui, tableRound(state, snap.prefs), snap.celebrating, gameColumns(layout) - 1)}
       {/* The result waits for the wheel, the reels or the last card: the text must not tell it first. */}
       {dealing === null &&
         table === null &&
         snap.spinElapsed === null &&
         snap.revealed === null &&
-        outcomeLine(ui, roundOf(state, game))}
+        outcomeLine(ui, tableRound(state, snap.prefs))}
       {dealing === null && snap.spinElapsed === null && snap.revealed === null && winBanner(ui, state, onCommand)}
       {statusLine(ui, snap, state)}
       {lowBalanceLine(ui, snap, state)}
