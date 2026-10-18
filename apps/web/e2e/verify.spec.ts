@@ -283,6 +283,52 @@ test("a single-bet roulette round keeps its pocket and bet", async ({ page }) =>
   await expect(page.getByRole("img", { name: /chips won/ })).toHaveCount(0);
 });
 
+test("the widest drawings stay readable on a phone", async ({ page }) => {
+  const felt = replayOf(
+    {
+      game: "roulette",
+      bet: { kind: "straight", number: 36 },
+      chips: [
+        { bet: { kind: "straight", number: 36 }, amount: "100000000" },
+        { bet: { kind: "straight", number: 0 }, amount: "12500000" },
+        { bet: { kind: "dozen", dozen: 1 }, amount: "300000" },
+        { bet: { kind: "column", column: 3 }, amount: "500000" },
+      ],
+      number: 36,
+    },
+    "0",
+    "0",
+  );
+  const wheel = replayOf(
+    {
+      game: "wheel",
+      segments: 50,
+      risk: "high",
+      multipliers: Array.from({ length: 50 }, (_, i) => (i === 0 ? "49.00" : "0.00")),
+      segment: 0,
+    },
+    "0",
+    "0",
+  );
+  await page.setViewportSize({ width: 375, height: 800 });
+  for (const [round, name] of [
+    [felt, "landed on 36, 2 of 4 chips won"],
+    [wheel, "50 segments · high risk · landed on segment 1, ×49.00"],
+  ] as const) {
+    await page.route(`**/v1/rounds/${SIGNATURE}/verify`, (route) => json(route, 200, round));
+    await page.goto(`/verify/${SIGNATURE}`);
+    const drawing = page.getByRole("img", { name });
+    await expect(drawing).toBeVisible();
+    // Every cell's label and stake fit inside it, and only the drawing itself may scroll sideways.
+    const clipped = await drawing.evaluate((el) =>
+      [...el.children].filter((cell) => cell.scrollWidth > cell.clientWidth).map((cell) => cell.textContent),
+    );
+    expect(clipped).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBe(0);
+    await page.unroute(`**/v1/rounds/${SIGNATURE}/verify`);
+  }
+});
+
 test("flags a mismatch", async ({ page }) => {
   const mismatch: VerifyResponse = { ...RESULT, onChain: { ...RESULT.onChain, payout: "6500000" }, matches: false };
   await page.route(`**/v1/rounds/${SIGNATURE}/verify`, (route) => json(route, 200, mismatch));
