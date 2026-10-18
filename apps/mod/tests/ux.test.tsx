@@ -1,5 +1,5 @@
 import type { ConfigRow, On, TurnCompleteInput } from "claude-code";
-import { describe, type Engine, expect, test } from "claude-code/testing";
+import { describe, type Engine, expect, type Mounted, test } from "claude-code/testing";
 
 import { baccaratOutcome, ROULETTE_SPIN_MS, slotsOutcome, TILE_FILL, wheelPosition } from "../hooks/games";
 import {
@@ -22,12 +22,18 @@ import {
   DICE_LOSS,
   FLIP,
   FLIP_LOSS,
+  HILO_ACE,
+  HILO_BUSTED,
+  HILO_DRAWING,
+  HILO_TURN,
   KENO,
+  KENO_DRAWING,
   LIMBO,
   MINES_BUSTED,
   MINES_CASHED,
   MINES_TURN,
   ROULETTE,
+  ROULETTE_CHIPS,
   SLOTS,
   TOWER_BUSTED,
   TOWER_CASHED,
@@ -39,6 +45,7 @@ import { RESULT_MS, SURFACE_LAG_MS } from "../hooks/view";
 import {
   BAND,
   command,
+  FIRST_TICK_MS,
   later,
   LOGGED_IN,
   PANE,
@@ -1171,5 +1178,67 @@ describe("the result says what won", () => {
     expect(slotsOutcome(["♥", "★", "♥"])).toBe("Two ♥ pay ×4.");
     expect(slotsOutcome(["♥", "♥", "♥"])).toBe("♥ ♥ ♥ pays ×10.");
     expect(slotsOutcome(["7", "7", "★"])).toBe("No line.");
+  });
+});
+
+describe("the key row keeps its keys in place", () => {
+  /** The play keys drawn, in order, live or waiting: their addresses without the waiting prefix. */
+  const rowOf = async (ui: Pick<Mounted, "findAll">) =>
+    (await ui.findAll({ type: "Button" }))
+      .map((button) => String(button.key).replace(/^held-/, ""))
+      .filter((key) => !key.startsWith("game-") && !key.startsWith("table-") && key !== "share");
+
+  test("a turn's moves are always drawn: z before any cash-out, s with no skip left, h after a bust", async ($, on) => {
+    const { world, show, clock } = await moving($, on, HILO_ACE);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
+
+    expect((await ui.find({ key: "held-hilo-cashout" }))?.props.hotkey).toBe("z");
+    expect((await ui.find({ key: "held-hilo-skip" }))?.props.hotkey).toBe("s");
+    // Pressed, it is swallowed: nothing reaches the prompt, nothing is played.
+    await ui.press({ key: "held-hilo-cashout" });
+    expect(world.calls("POST /v1/play")).toHaveLength(0);
+
+    await show(HILO_BUSTED);
+    await clock.advance(SPIN_OVER_MS);
+    const after = await $.ui.mount({ plugin: PLUGIN, ...BAND });
+
+    expect((await after.find({ key: "held-hilo-higher" }))?.props.hotkey).toBe("h");
+    expect((await after.find({ key: "held-hilo-lower" }))?.props.hotkey).toBe("l");
+  });
+
+  test("while a guess's card turns over, the keys wait in their place and tell nothing of it", async ($, on) => {
+    let current = HILO_DRAWING;
+    const { clock } = await seat($, on, current, { "GET /v1/state": () => ({ status: 200, body: current }) });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+
+    current = HILO_TURN;
+    await clock.advance(FIRST_TICK_MS * 2);
+    const turning = textOf(await ui.drawn());
+
+    expect(await ui.find({ key: "held-hilo-higher" })).toBeDefined();
+    expect(turning).not.toContain("cash out ·");
+    expect(turning).not.toContain("×2.2151");
+
+    await clock.advance(SPIN_OVER_MS);
+    expect((await ui.find({ key: "hilo-higher" }))?.props.hotkey).toBe("h");
+    expect(textOf(await ui.drawn())).toContain("cash out · 1.53");
+  });
+
+  test("a draw in flight keeps the row's keys, order and values: Keno, roulette", async ($, on) => {
+    const { show } = await moving($, on, KENO);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+    const idleRow = await rowOf(ui);
+
+    await show(KENO_DRAWING);
+    expect(await rowOf(ui)).toEqual(idleRow);
+    expect(textOf(await ui.drawn())).toContain("bet 0.50");
+
+    await show(ROULETTE_CHIPS);
+    await ui.press({ key: "game-roulette" });
+    await ui.press({ key: "roulette-red" });
+    const spunRow = await rowOf(ui);
+
+    await show({ ...ROULETTE_CHIPS, pendingIntentId: "elsewhere" });
+    expect(await rowOf(ui)).toEqual(spunRow);
   });
 });

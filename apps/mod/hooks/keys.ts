@@ -960,6 +960,48 @@ export function planKeys({ state, prefs, isBusy }: PlanInput): KeyAction[] {
   }
 }
 
+/** A key the key row always draws: live when the plan offers it, else dim and inert in its place. */
+export interface RowKey {
+  key: string;
+  hotkey: string;
+  label: string;
+}
+
+/**
+ * The moves of a turn, by game, in plain words: on the key row in every phase, so a reflex press
+ * of one is never typed into the prompt, and drawn dim they say nothing of the cards to come.
+ */
+const TURN_ROW: Partial<Record<Game, readonly RowKey[]>> = {
+  blackjack: [
+    { key: "bj-hit", hotkey: "h", label: "hit" },
+    { key: "bj-stand", hotkey: "s", label: "stand" },
+    { key: "bj-double", hotkey: "d", label: "double" },
+    { key: "bj-split", hotkey: "p", label: "split" },
+  ],
+  hilo: [
+    { key: "hilo-higher", hotkey: HILO_KEYS.higher, label: "higher" },
+    { key: "hilo-lower", hotkey: HILO_KEYS.lower, label: "lower" },
+    { key: "hilo-skip", hotkey: HILO_KEYS.skip, label: "skip" },
+    { key: "hilo-cashout", hotkey: CASH_OUT_HOTKEY, label: "cash out" },
+  ],
+  mines: [{ key: "mines-cashout", hotkey: CASH_OUT_HOTKEY, label: "cash out" }],
+  tower: [{ key: "tower-cashout", hotkey: CASH_OUT_HOTKEY, label: "cash out" }],
+};
+
+/**
+ * The game's key row, in the order it is drawn whatever the phase: its turn's moves, then its
+ * choices, the bet and the start key. The labels are the ones the next round is set up with (or plain words
+ * for a turn's moves), never a round's own: drawn dim while a move is in flight or the cards turn,
+ * they tell nothing of how it ends.
+ */
+export function keyRow(game: Game, state: StateResponse, prefs: Prefs): RowKey[] {
+  return [...(TURN_ROW[game] ?? []), ...idleKeys(game, state, prefs)].map(({ key, hotkey, label }) => ({
+    key,
+    hotkey,
+    label,
+  }));
+}
+
 /** A click-only key: no hotkey, so no letter ever presses it. */
 const clickKey = (key: string, label: string, isSelected: boolean, command: Command): KeyAction => ({
   key,
@@ -1037,7 +1079,8 @@ function afterDraw(round: RoundView): RoundView {
         detail: { ...detail, canClimb: detail.nextMultiplier !== null, canCashOut: detail.climbed.length > 0 },
       };
     case "hilo":
-      return { ...turn, detail: { ...detail, canGuess: true } };
+      // A round's first card being drawn: no guess before it shows.
+      return { ...turn, detail: { ...detail, canGuess: detail.cards.length > 0 } };
     default:
       return { ...round, phase: "idle" };
   }

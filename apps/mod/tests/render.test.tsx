@@ -683,7 +683,7 @@ describe("the roulette layout", () => {
     await ui.press({ key: "table-chip-undo" });
     expect(await table()).toContain("on the table 2.00 · 3 chips");
     await ui.press({ key: "table-start" });
-    await clock.advance(1_000);
+    await clock.advance(3_000);
     // The chips stay for the next spin, until cleared.
     expect(await table()).toContain("on the table 2.00 · 3 chips");
     await ui.press({ key: "table-chip-clear" });

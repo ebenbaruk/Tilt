@@ -2,8 +2,8 @@
 // the pane or the bottom band). In fullscreen it takes raw keys once a click gives it the focus and
 // posts the plan key each one presses to the hooks module; on the main screen it takes neither. It
 // animates on its own frame clock everywhere: cards dealt one by one, the active hand pulsing, a
-// win counted up, a loss shaken. The clock stops once nothing moves, and no animation ever holds a
-// key back.
+// win counted up, a loss shaken. The clock stops once nothing moves. Its keys are the plan's: none
+// while a round plays out, as the pane's (view.tsx `isPlayHeld`).
 import type { ClientSurface, RenderElement } from "claude-code";
 
 import { dealMs, dealtCards, revealedAt } from "./cards";

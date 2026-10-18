@@ -76,19 +76,6 @@ export type TiltIntent = {
   submittedAt: number | null;
 };
 
-/** A play key as drawn: its Button's address, hotkey and label. */
-export type TiltKey = { key: string; hotkey: string; label: string };
-
-/**
- * The play keys live when the last move was sent: once it settles they stay drawn, dim and inert,
- * for a moment, so the rest of a mashed key does not land in the prompt.
- */
-export type TiltEcho = {
-  keys: TiltKey[];
-  /** `$.clock.now()` when they go; null while the move is in flight. */
-  until: number | null;
-};
-
 export type TiltAgent = {
   isWorking: boolean;
   frame: number;
@@ -154,7 +141,6 @@ declare module "claude-code" {
       remote: TiltRemote;
       prefs: TiltPrefs;
       intent: TiltIntent | null;
-      echo: TiltEcho;
       /** Last move's error, cleared by the next move. */
       message: string | null;
       agent: TiltAgent;

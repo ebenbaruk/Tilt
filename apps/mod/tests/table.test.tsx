@@ -29,6 +29,8 @@ const UNFOCUSED = { ...FULLSCREEN, props: { ...PANE.props, isFocused: false } };
 const CLICK = { type: "down", x: 2, y: 1, button: "left" } as const;
 /** Every card of six hands and the dealer turned over, one deal step each. */
 const WHOLE_DEAL_MS = 14 * 150;
+/** A new round's four cards turned over, and the table's beat after them: its keys are live. */
+const DEALT_MS = 4 * 150;
 const EFFECT_MS = 1_400;
 const POLL_MS = 5_000;
 
@@ -107,9 +109,9 @@ describe("the table in the fullscreen pane", () => {
     expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("Space hit · Enter stand · d double");
     // Each key waits for the state to show the move before it: a stale table offers none.
     await ui.key({ key: "space" });
-    await clock.advance(FIRST_TICK_MS);
+    await clock.advance(FIRST_TICK_MS + DEALT_MS);
     await ui.key({ key: "return" });
-    await clock.advance(FIRST_TICK_MS);
+    await clock.advance(FIRST_TICK_MS + DEALT_MS);
     await ui.key({ key: "d" });
 
     expect(actionsOf(world.calls("POST /v1/play"))).toEqual([
@@ -175,6 +177,8 @@ describe("the table moves", () => {
       await ui.advance(EFFECT_MS);
       expect(await table()).toContain("+2.47");
       expect(await table()).toContain("balance 12.40");
+      // The next round's key comes once this one has played out.
+      await clock.advance(WHOLE_DEAL_MS);
       expect(await table()).toContain("play again (same bet)");
 
       await show(renumbered(BLACKJACK_WIN, 10));
@@ -247,7 +251,7 @@ describe("the table moves", () => {
     },
   );
 
-  test("keys go through while cards are still being dealt", async ($, on) => {
+  test("keys wait while cards are dealt, then go through", async ($, on) => {
     let current: StateResponse = BASE;
     const { world, clock } = await seat($, on, BASE, {
       "GET /v1/state": () => ({ status: 200, body: current }),
@@ -258,8 +262,12 @@ describe("the table moves", () => {
     current = BLACKJACK_SIX_TURN;
     await clock.advance(POLL_MS);
     await ui.pointer(CLICK);
+    // A hand's move before its cards show would play on cards nobody has seen.
     await ui.key({ key: "return" });
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([]);
 
+    await clock.advance(WHOLE_DEAL_MS);
+    await ui.key({ key: "return" });
     expect(actionsOf(world.calls("POST /v1/play"))).toEqual([{ type: "blackjack_stand" }]);
   });
 

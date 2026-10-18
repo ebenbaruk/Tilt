@@ -61,16 +61,18 @@ import {
   GAME_LABELS,
   heldKeys,
   type KeyAction,
+  keyRow,
   MINES_TILE_KEY,
   planKeys,
   type PlanInput,
+  type RowKey,
   STEPPER_NAMES,
   stakeOn,
   tableKeys,
   tileLetter,
   TOWER_TILE_KEY,
 } from "./keys";
-import type { TiltKey, TiltSession } from "../types";
+import type { TiltSession } from "../types";
 import type { AgentView, AuthView, IntentView, Prefs, RemoteView, SlotsSpeed } from "./model";
 import type {
   DiceView,
@@ -91,7 +93,6 @@ export interface Snapshot {
   remote: RemoteView;
   prefs: Prefs;
   intent: IntentView | null;
-  echo: readonly TiltKey[];
   message: string | null;
   agent: AgentView;
   session: TiltSession;
@@ -189,8 +190,6 @@ const STEP_KEYS = new Set([
 ]);
 /** Games whose paytables return up to the rtp the api sends, not exactly it (chain/…/games/keno.rs, limbo.rs). */
 const RTP_AT_MOST: ReadonlySet<Game> = new Set(["keno", "limbo"]);
-/** Where playButtons draws the echo of a settled move's key. */
-const ECHO_PREFIX = "echo-";
 
 export const spinnerGlyph = (frame: number): string => SPINNER[frame % SPINNER.length] ?? "⠋";
 
@@ -209,10 +208,10 @@ export function tableRound(state: StateResponse, prefs: Prefs): RoundView | null
   return round !== null && isRoundShown(round, prefs) ? round : null;
 }
 
-function keyButtons(ui: Ui, keys: readonly KeyAction[], onCommand: OnCommand): RenderElement[] {
+function keyButton(ui: Ui, action: KeyAction, onCommand: OnCommand): RenderElement {
   const { Button, Text } = ui;
 
-  return keys.map((action) => (
+  return (
     <Button key={action.key} plain hotkey={action.hotkey} onPress={() => onCommand(action.command)}>
       {action.key.startsWith(ROULETTE_KEY_PREFIX) ? (
         rouletteChip(ui, action.key.slice(ROULETTE_KEY_PREFIX.length), action.label, action.isSelected)
@@ -222,20 +221,20 @@ function keyButtons(ui: Ui, keys: readonly KeyAction[], onCommand: OnCommand): R
         </Text>
       )}
     </Button>
-  ));
+  );
 }
 
 const ROULETTE_KEY_PREFIX = "roulette-";
 
-/** Keys a press must not reach the prompt through: dim, at their own addresses, and inert. */
-function inertButtons(ui: Ui, keys: readonly TiltKey[], scope: "held" | "echo"): RenderElement[] {
+/** A key a press must not reach the prompt through: dim, at its own address, and inert. */
+function inertButton(ui: Ui, action: RowKey): RenderElement {
   const { Button, Text } = ui;
 
-  return keys.map((action) => (
-    <Button key={`${scope}-${action.key}`} plain dimColor hotkey={action.hotkey} onPress={() => undefined}>
+  return (
+    <Button key={`held-${action.key}`} plain dimColor hotkey={action.hotkey} onPress={() => undefined}>
       <Text dimColor>{action.label}</Text>
     </Button>
-  ));
+  );
 }
 
 /** A play key drawn, live or inert, and whether it is a move (dealing, hitting), drawn as a keycap. */
@@ -243,58 +242,81 @@ interface PlayButton {
   key: string;
   element: RenderElement;
   isMove: boolean;
+  isLive: boolean;
 }
+
+/**
+ * The play keys wait while a move is in flight and while its round plays out (a spin, cards
+ * turning, the result a beat behind on the table): a press then would play on a table not shown
+ * yet, or start the next round over this one's result.
+ */
+export const isPlayHeld = (snap: Pick<Snapshot, "intent" | "spinElapsed" | "revealed" | "heldBalance">): boolean =>
+  snap.intent !== null || snap.spinElapsed !== null || snap.revealed !== null || snap.heldBalance !== null;
 
 /** Moves: the round's own keys (deal or spin, hit, stand, double, split, guess, cash out); the rest set up the next one. */
 const isMoveKey = (key: string): boolean =>
   key === "start" || key.startsWith("bj-") || key.startsWith("hilo-") || key.endsWith("-cashout");
 
-/** The Mines or tower tile a play key presses, live, held or echoed; null for any other key. */
+/** The Mines or tower tile a play key presses, live or held; null for any other key. */
 function tileOf(key: string): number | null {
-  const address = key.startsWith(ECHO_PREFIX) ? key.slice(ECHO_PREFIX.length) : key;
-  const prefix = [MINES_TILE_KEY, TOWER_TILE_KEY].find((start) => address.startsWith(start));
+  const prefix = [MINES_TILE_KEY, TOWER_TILE_KEY].find((start) => key.startsWith(start));
 
-  return prefix === undefined ? null : Number(address.slice(prefix.length));
+  return prefix === undefined ? null : Number(key.slice(prefix.length));
 }
 
 /**
- * The play keys (no game switches) to draw: the live ones, or else the ones a move in flight
- * holds; then the settled move's echo, on every letter nothing else takes.
+ * The play keys (no game switches) to draw: the game's key row (`keyRow`) in its order, each key
+ * live when the plan offers it and dim and inert in its place otherwise, unless a live key takes its
+ * letter; then the live keys the row has not (tiles, roulette's undo) and the tiles a draw in
+ * flight holds. A dim key never tells how a round ends: its label is the row's own, not the plan's.
+ * The row holds every key a game offers but its tiles: a key mashed past a move lands on one.
  */
 function playButtons(
   ui: Ui,
   input: PlanInput,
   keys: readonly KeyAction[],
-  echo: readonly TiltKey[],
+  row: readonly RowKey[],
   onCommand: OnCommand,
 ): PlayButton[] {
   const live = keys.filter((action) => action.command.kind !== "switch");
-  const held = live.length > 0 ? [] : heldKeys(input);
-  const taken = new Set([...keys, ...held].map((action) => action.hotkey));
-  const faded = echo.filter((action) => !taken.has(action.hotkey));
-  const drawn = live.length > 0 ? keyButtons(ui, live, onCommand) : inertButtons(ui, held, "held");
-  const drawnKeys = live.length > 0 ? live : held;
+  const liveTaken = new Set(live.map((action) => action.hotkey));
+  const rowKeys = new Set(row.map((key) => key.key));
+  const heldTiles = live.length > 0 ? [] : heldKeys(input).filter((action) => tileOf(action.key) !== null);
+  const extras = live.filter((action) => !rowKeys.has(action.key));
+  const liveButton = (action: KeyAction): PlayButton => ({
+    key: action.key,
+    element: keyButton(ui, action, onCommand),
+    isMove: isMoveKey(action.key),
+    isLive: true,
+  });
+  const waiting = (key: RowKey, isMove: boolean): PlayButton => ({
+    key: key.key,
+    element: inertButton(ui, key),
+    isMove,
+    isLive: false,
+  });
 
   return [
-    ...drawn.map((element, index) => {
-      const key = drawnKeys[index]?.key ?? "";
+    ...row.flatMap((key) => {
+      const action = live.find((each) => each.key === key.key);
 
-      return { key, element, isMove: isMoveKey(key) };
-    }),
-    ...inertButtons(ui, faded, "echo").map((element, index) => {
-      const key = faded[index]?.key ?? "";
+      if (action !== undefined) {
+        return [liveButton(action)];
+      }
 
-      return { key: `${ECHO_PREFIX}${key}`, element, isMove: isMoveKey(key) };
+      return liveTaken.has(key.hotkey) ? [] : [waiting(key, isMoveKey(key.key))];
     }),
+    ...extras.map(liveButton),
+    ...heldTiles.map((key) => waiting(key, false)),
   ];
 }
 
-/** A move's key in a frame, as the design system's KeyButton. */
-function keycap(ui: Ui, button: RenderElement): RenderElement {
+/** A move's key in a frame, as the design system's KeyButton; a dimmer frame while it waits. */
+function keycap(ui: Ui, button: RenderElement, isLive: boolean): RenderElement {
   const { Box } = ui;
 
   return (
-    <Box borderStyle="round" borderColor={LINE4} paddingX={1}>
+    <Box borderStyle="round" borderColor={isLive ? LINE4 : LINE3} paddingX={1}>
       {button}
     </Box>
   );
@@ -1111,21 +1133,31 @@ function footer(ui: Ui, snap: Snapshot, state: StateResponse, game: Game, isFocu
   );
 }
 
-/** One stepper: `v ◂ bet 0.50 ▸ b`, its two keys from the plan around the value; `far`, two
- *  more keys outside them (`f « s ◂ on number 17 ▸ d » h`). */
+/** A stepper's key: the plan's, live, or the key row's, dim and inert while play waits. */
+type StepKey = KeyAction | RowKey;
+
+const isLiveKey = (key: StepKey): key is KeyAction => "command" in key;
+
+/** One stepper: `v ◂ bet 0.50 ▸ b`, its two keys around the value; `far`, two more keys outside
+ *  them (`f « s ◂ on number 17 ▸ d » h`). Its arrows wait dim while play does, in the same place. */
 function stepper(
   ui: Ui,
-  [down, up]: readonly [KeyAction, KeyAction],
-  far: readonly [KeyAction, KeyAction] | null,
+  [down, up]: readonly [StepKey, StepKey],
+  far: readonly [StepKey, StepKey] | null,
   value: RenderElement,
   onCommand: OnCommand,
 ): RenderElement {
   const { Box, Button, Text } = ui;
-  const arrow = (action: KeyAction, glyph: string) => (
-    <Button key={action.key} plain hotkey={action.hotkey} onPress={() => onCommand(action.command)}>
-      <Text color={FG1}>{glyph}</Text>
-    </Button>
-  );
+  const arrow = (action: StepKey, glyph: string) =>
+    isLiveKey(action) ? (
+      <Button key={action.key} plain hotkey={action.hotkey} onPress={() => onCommand(action.command)}>
+        <Text color={FG1}>{glyph}</Text>
+      </Button>
+    ) : (
+      <Button key={`held-${action.key}`} plain dimColor hotkey={action.hotkey} onPress={() => undefined}>
+        <Text dimColor>{glyph}</Text>
+      </Button>
+    );
 
   return (
     <Box flexDirection="row" columnGap={1}>
@@ -1196,9 +1228,24 @@ function stepperValue(ui: Ui, address: string, state: StateResponse, prefs: Pref
   }
 }
 
-/** The bet and the game's own choice (hands, mines, dice chance…) as steppers; none when their keys are not live. */
-function steppers(ui: Ui, state: StateResponse, prefs: Prefs, keys: readonly KeyAction[], onCommand: OnCommand) {
-  const find = (key: string) => keys.find((action) => action.key === key);
+/**
+ * The bet and the game's own choice (hands, mines, dice chance…) as steppers, live or waiting dim in
+ * their place; none where a live key of another address (a Mines tile) takes an arrow's letter.
+ */
+function steppers(
+  ui: Ui,
+  state: StateResponse,
+  prefs: Prefs,
+  keys: readonly KeyAction[],
+  row: readonly RowKey[],
+  onCommand: OnCommand,
+) {
+  const find = (key: string): StepKey | undefined => {
+    const live = keys.find((action) => action.key === key);
+    const waiting = row.find((action) => action.key === key);
+
+    return live ?? (keys.some((action) => action.hotkey === waiting?.hotkey) ? undefined : waiting);
+  };
   const [left, right] = ACROSS_KEYS.map(find);
   const across = left !== undefined && right !== undefined ? ([left, right] as const) : null;
 
@@ -1228,13 +1275,13 @@ function keyArea(
   const gap = isFirst ? 0 : 1;
   const isStepDrawn = steps.length > 0;
   const shown = buttons.filter((button) => !(isStepDrawn && STEP_KEYS.has(button.key)));
-  const moves = shown.filter((button) => button.isMove).map((button) => button.element);
+  const moves = shown.filter((button) => button.isMove);
   const setup = [...steps, ...shown.filter((button) => !button.isMove).map((button) => button.element)];
 
   if (!hasCaps) {
     return (
       <Box flexDirection="row" flexWrap="wrap" columnGap={3} marginTop={gap}>
-        {[...moves, ...setup]}
+        {[...moves.map((move) => move.element), ...setup]}
       </Box>
     );
   }
@@ -1248,7 +1295,7 @@ function keyArea(
       )}
       {moves.length > 0 && (
         <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
-          {moves.map((move) => keycap(ui, move))}
+          {moves.map((move) => keycap(ui, move.element, move.isLive))}
         </Box>
       )}
     </Box>
@@ -1477,7 +1524,7 @@ export function renderPane(
 ): RenderElement {
   const { Box, Button, Text } = ui;
   const state = snap.remote.state;
-  const keys = state === null ? [] : planKeys({ state, prefs: snap.prefs, isBusy: snap.intent !== null });
+  const keys = state === null ? [] : planKeys({ state, prefs: snap.prefs, isBusy: isPlayHeld(snap) });
   const intro = preamble(ui, snap);
   // The engine frames the pane: the brand sits on the header bar, not on a second border. `gap`:
   // the row under the header, left out where the keys come first.
@@ -1502,8 +1549,9 @@ export function renderPane(
   // Where even small cards overflow (the band at the bottom of a short terminal), the keys come
   // first, so the ones to press are always in view and the table scrolls instead.
   const isKeysFirst = paneRows(snap, state, layout, size) > layout.bodyRows;
-  const input = { state, prefs: snap.prefs, isBusy: snap.intent !== null };
-  const plays = playButtons(ui, input, keys, snap.echo, onCommand);
+  const input = { state, prefs: snap.prefs, isBusy: isPlayHeld(snap) };
+  const row = keyRow(game, state, snap.prefs);
+  const plays = playButtons(ui, input, keys, row, onCommand);
   const dealing = dealingHands(snap);
   const sending = sendingRound(snap);
   // Drawn here, the Mines board and the tower are their own keys: each hidden tile is the Button of
@@ -1547,7 +1595,7 @@ export function renderPane(
       </Button>
     );
   };
-  const steps = steppers(ui, state, snap.prefs, keys, onCommand);
+  const steps = steppers(ui, state, snap.prefs, keys, row, onCommand);
   const side = state.sponsor !== null || state.leaderboard.length > 0;
   const canPlay = state.accountOpen && state.blocked === null;
   const round = tableRound(state, snap.prefs);
@@ -1749,8 +1797,9 @@ export function renderBand(ui: Ui, snap: Snapshot, layout: BandLayout, onCommand
     );
   }
 
-  const input = { state, prefs: snap.prefs, isBusy: snap.intent !== null };
+  const input = { state, prefs: snap.prefs, isBusy: isPlayHeld(snap) };
   const keys = planKeys(input);
+  const row = keyRow(activeGame(state, snap.prefs), state, snap.prefs);
   const status = statusLine(ui, snap, state);
 
   return (
@@ -1768,12 +1817,8 @@ export function renderBand(ui: Ui, snap: Snapshot, layout: BandLayout, onCommand
         {agent}
       </Box>
       <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-        {keyButtons(
-          ui,
-          keys.filter((action) => action.command.kind === "switch"),
-          onCommand,
-        )}
-        {playButtons(ui, input, keys, snap.echo, onCommand).map((button) => button.element)}
+        {keys.filter((action) => action.command.kind === "switch").map((action) => keyButton(ui, action, onCommand))}
+        {playButtons(ui, input, keys, row, onCommand).map((button) => button.element)}
         {status}
       </Box>
       {state.sponsor !== null && sponsorLine(ui, state.sponsor, snap.remote.fetchedAt)}

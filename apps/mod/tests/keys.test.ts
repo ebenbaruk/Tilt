@@ -12,6 +12,7 @@ import {
   cursorBet,
   GAMES,
   heldKeys,
+  keyRow,
   MAX_ROULETTE_CHIPS,
   MAX_ROULETTE_PLACED,
   planKeys,
@@ -832,6 +833,26 @@ describe("the twelve games", () => {
 
     expect(plays(fixtures.HILO_DRAWING)).toEqual([]);
     expect(heldKeys(drawing).map((key) => key.hotkey)).toEqual(["s"]);
+    // A round's first card being drawn: no guess, not even a skip, before it shows.
+    expect(heldKeys({ state: fixtures.HILO_FIRST_DRAWING, prefs: PREFS, isBusy: false })).toEqual([]);
+  });
+
+  test("the key row is the same keys in the same order in every phase, its words never a round's own", () => {
+    const row = (state: StateResponse) => keyRow("blackjack", state, PREFS).map((key) => `${key.hotkey} ${key.label}`);
+
+    expect(row(fixtures.BLACKJACK_TURN)).toEqual(row(fixtures.BASE));
+    expect(row(fixtures.BASE)).toEqual([
+      "h hit",
+      "s stand",
+      "d double",
+      "p split",
+      "j hands −",
+      "k hands +",
+      "v bet −",
+      "b bet +",
+      "n deal · 0.50",
+    ]);
+    expect(keyRow("hilo", fixtures.HILO_TURN, PREFS).map((key) => key.label)).toContain("cash out");
   });
 
   test("tower in turn: a to d climb onto a tile of the next level, z cashes out", () => {

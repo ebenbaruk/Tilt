@@ -40,7 +40,6 @@ import {
   DEFAULT_WHEEL_SEGMENTS,
   GAME_LABELS,
   isRoundOpen,
-  planKeys,
   randomPicks,
   type RandomBelow,
   sameBet,
@@ -74,6 +73,7 @@ import {
   bigWinOf,
   celebrationMs,
   dealingHands,
+  isPlayHeld,
   PANE_ROWS,
   type PaneLayout,
   renderBand,
@@ -114,8 +114,6 @@ const prefs = atom({ plugin: "tilt", key: "prefs" } as const, {
   towerDifficulty: "easy",
 });
 const intent = atom({ plugin: "tilt", key: "intent" } as const, null);
-const NO_ECHO = { keys: [], until: null };
-const echo = atom({ plugin: "tilt", key: "echo" } as const, NO_ECHO);
 const message = atom({ plugin: "tilt", key: "message" } as const, null);
 const agent = atom({ plugin: "tilt", key: "agent" } as const, { isWorking: false, frame: 0, notice: null });
 const layout = atom({ plugin: "tilt", key: "layout" } as const, {
@@ -161,8 +159,6 @@ const RATE_LIMIT_BACKOFF_MS = 5_000;
 const OPEN_TIMEOUT_MS = 10_000;
 /** A submitted move whose state never shows frees the keys after this long rather than never. */
 const SETTLE_TIMEOUT_MS = 15_000;
-/** How long a settled move's keys stay inert: a mashed key's last presses land in it. */
-const ECHO_MS = 1_500;
 const MS_PER_MINUTE = 60_000;
 
 const UNTRUSTED_LOGIN_PAGE = "the login page the API sent is not on its own site.";
@@ -544,44 +540,9 @@ async function sendMove($: EngineInterface, rt: Runtime, action: PlayAction): Pr
   }
 
   await markOnboarded($);
-
-  const live =
-    state === null
-      ? []
-      : planKeys({ state, prefs: await readPrefs($), isBusy: false })
-          .filter((key) => key.command.kind !== "switch")
-          .map(({ key, hotkey, label }) => ({ key, hotkey, label }));
-
-  await update($, echo, () => ({ keys: live, until: null }));
   await update($, message, () => null);
   rt.wakeAt = 0;
   await submit($, rt, sent);
-}
-
-/**
- * Starts the echo's ECHO_MS once its move settled (the intent is gone), and clears it after. The
- * deadline lives in the store, which every load of the mod shares. Returns the ms until it is due.
- */
-async function fadeEcho($: EngineInterface, now: number): Promise<number> {
-  const held = await read($, echo);
-
-  if (held.keys.length === 0 || (await readIntent($)) !== null) {
-    return Infinity;
-  }
-
-  if (held.until === null) {
-    await update($, echo, (value) => (value.until === null ? { ...value, until: now + ECHO_MS } : value));
-
-    return ECHO_MS;
-  }
-
-  if (now < held.until) {
-    return held.until - now;
-  }
-
-  await update($, echo, (value) => (value.until !== null && now >= value.until ? NO_ECHO : value));
-
-  return Infinity;
 }
 
 async function intentStep($: EngineInterface, rt: Runtime, token: string, now: number): Promise<void> {
@@ -792,7 +753,7 @@ async function onTablePost($: EngineInterface, rt: Runtime, data: unknown): Prom
   const action =
     state === null
       ? undefined
-      : tableKeys({ state, prefs: snap.prefs, isBusy: snap.intent !== null }).find((key) => key.key === data.press);
+      : tableKeys({ state, prefs: snap.prefs, isBusy: isPlayHeld(snap) }).find((key) => key.key === data.press);
 
   if (action !== undefined) {
     commandRunner($, rt)(action.command);
@@ -1104,9 +1065,7 @@ async function tick($: EngineInterface, rt: Runtime): Promise<void> {
     const now = await $.clock.now();
 
     if (now >= rt.wakeAt) {
-      const wait = await step($, rt, now);
-
-      rt.wakeAt = now + Math.min(wait, await fadeEcho($, now));
+      rt.wakeAt = now + (await step($, rt, now));
     }
   } catch (error) {
     logDebug($, `background step failed: ${errorText(error)}`);
@@ -1300,7 +1259,6 @@ async function snapshot($: EngineInterface, rt: Runtime): Promise<Snapshot> {
     remote: await readRemote($),
     prefs: await readPrefs($),
     intent: await readIntent($),
-    echo: (await read($, echo)).keys,
     message: await read($, message),
     agent: await read($, agent),
     session: await read($, session),
@@ -1347,7 +1305,7 @@ function tableOf(
   }
 
   const { Client } = $.ui.resolve(e);
-  const keys = tableKeys({ state, prefs: snap.prefs, isBusy: snap.intent !== null });
+  const keys = tableKeys({ state, prefs: snap.prefs, isBusy: isPlayHeld(snap) });
   const props = (cards: CardSize, columns: number, wheel: number | null): TableProps => ({
     state,
     prefs: snap.prefs,

@@ -25,6 +25,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{1
 const SPARKLES = /[✦✧✺✹⋆]/;
 /** Past a win's count-up and balance on the table. */
 const EFFECT_MS = 1_400;
+/** Past a spin's landing or a deal's last card, and the table's beat behind them: the keys are back. */
+const PLAYED_OUT_MS = 3_000;
 
 const answering =
   (...answers: Answer[]): Route =>
@@ -115,12 +117,12 @@ describe("keys send moves", () => {
       // 17 is black: 3.00 back on black and 36.00 on 17, over the 2.50 staked.
       expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("on the table 2.50 · 2 chips · max win 36.50");
       await ui.press({ key: "start" });
-      await clock.advance(FIRST_TICK_MS);
+      await clock.advance(PLAYED_OUT_MS);
       await ui.press({ key: "start" });
-      await clock.advance(FIRST_TICK_MS);
+      await clock.advance(PLAYED_OUT_MS);
       await ui.press({ key: "chip-undo" });
       await ui.press({ key: "start" });
-      await clock.advance(FIRST_TICK_MS);
+      await clock.advance(PLAYED_OUT_MS);
       await ui.press({ key: "chip-clear" });
       expect(await ui.find({ key: "start" })).toBeUndefined();
 
@@ -147,7 +149,7 @@ describe("keys send moves", () => {
     await ui.press({ key: "game-baccarat" });
     await ui.press({ key: "baccarat-tie" });
     await ui.press({ key: "start" });
-    await clock.advance(FIRST_TICK_MS);
+    await clock.advance(PLAYED_OUT_MS);
     await ui.press({ key: "game-slots" });
     await ui.press({ key: "start" });
 
@@ -339,7 +341,10 @@ describe("a move in flight", () => {
 
     world.routes["GET /v1/state"] = () => ({ status: 200, body: BLACKJACK_TURN });
     await clock.advance(400);
+    // Its cards turn over first: the hand's keys wait in their place, dim.
+    expect(await ui.find({ key: "held-bj-hit" })).toBeDefined();
 
+    await clock.advance(PLAYED_OUT_MS);
     expect(await ui.find({ key: "bj-hit" })).toBeDefined();
     expect(world.calls("POST /v1/play")).toHaveLength(1);
   });
@@ -474,26 +479,24 @@ describe("a move in flight", () => {
   });
 
   // On a fast chain the hand is dealt before the mashing stops: n is no key of the hand.
-  test("n mashed past a deal that settled at once stays on the pane a moment, then gives way", async ($, on) => {
+  test("n mashed past a deal that settled at once stays on the pane, dim, through the hand", async ($, on) => {
     const { world, clock } = await seat($, on, BASE, movingTable(BASE, BLACKJACK_TURN));
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
 
     await ui.press({ key: "start" });
     await clock.advance(FIRST_TICK_MS);
-    expect(await ui.find({ key: "bj-stand" })).toBeDefined();
-    const echo = await ui.find({ key: "echo-start" });
+    const held = await ui.find({ key: "held-start" });
 
-    expect(echo?.props.hotkey).toBe("n");
-    await ui.press({ key: "echo-start" });
+    expect(held?.props.hotkey).toBe("n");
+    await ui.press({ key: "held-start" });
     expect(world.calls("POST /v1/play")).toHaveLength(1);
 
-    await clock.advance(1_000);
-    expect(await ui.find({ key: "echo-start" })).toBeDefined();
+    // The hand's keys go live in their place; the deal key waits in its own until the hand is over.
+    await clock.advance(PLAYED_OUT_MS);
+    expect(await ui.find({ key: "bj-stand" })).toBeDefined();
+    expect(await ui.find({ key: "held-start" })).toBeDefined();
     const band = await $.ui.mount({ plugin: PLUGIN, ...BAND });
-    expect(await band.find({ key: "echo-start" })).toBeDefined();
-
-    await clock.advance(1_000);
-    expect(await ui.find({ key: "echo-start" })).toBeUndefined();
+    expect(await band.find({ key: "held-start" })).toBeDefined();
   });
 
   test("a 429 while following a pending move keeps the move, and the api is left alone a while", async ($, on) => {
