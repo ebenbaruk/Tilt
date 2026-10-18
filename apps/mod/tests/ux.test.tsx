@@ -1242,6 +1242,14 @@ describe("the card games tag their result as blackjack does", () => {
     expect(textOf(await ui.drawn())).toContain("bet player LOSE 1.00");
   });
 
+  test("mines in the band: a board on one line, its hidden tiles the keys, its gems shown", async ($, on) => {
+    await seat($, on, MINES_TURN);
+    const band = await $.ui.mount({ plugin: PLUGIN, ...BAND });
+
+    expect((await band.find({ key: "mines-tile-0" }))?.props.hotkey).toBe("a");
+    expect(textOf(await band.drawn()).match(/◆/g)).toHaveLength(2);
+  });
+
   test("hilo: a bust says so in the band, never a multiplier that reads as a win", async ($, on) => {
     await seat($, on, HILO_BUSTED);
     const band = textOf(await (await $.ui.mount({ plugin: PLUGIN, ...BAND })).drawn());

@@ -6,6 +6,7 @@ import type { TableFx } from "./blackjack";
 import { type CardSize, faceDownCards, faceDownOf, handCards } from "./cards";
 import { cardFace, hiloChance, hiloGuessName, shortMultiplier, towerMultiplier } from "./format";
 import {
+  BOARD_SIDE_COLUMNS,
   boardSide,
   cashOutLine,
   MINE_GLYPH,
@@ -272,7 +273,7 @@ export function towerTable(
   return (
     <Box flexDirection="row" flexWrap="wrap" columnGap={4} justifyContent="center">
       <Box flexDirection="column">{rows}</Box>
-      <Box flexDirection="column">
+      <Box flexDirection="column" width={BOARD_SIDE_COLUMNS}>
         <Text color={FG4}>
           <Text color={PINK} bold>
             {difficulty}

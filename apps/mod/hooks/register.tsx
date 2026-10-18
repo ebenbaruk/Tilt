@@ -1280,7 +1280,7 @@ function depositUrlOf(rt: Runtime, state: StateResponse | null): string | null {
   return state?.webUrl === undefined || rt.base === null ? null : trustedVerifyUrl(state.webUrl, rt.base);
 }
 
-/** Games whose board is its keys: on the main screen each hidden tile is the letter Button of its key. */
+/** Games whose board is its keys: each hidden tile is the letter Button of its key, a click on it in fullscreen. */
 const KEYED_BOARDS: ReadonlySet<Game> = new Set(["mines", "tower"]);
 
 /** The table drawn by its surface module, at a card size, `columns` wide, the Wheel drawn as `wheel`,
@@ -1307,8 +1307,9 @@ function tableOf(
     return null;
   }
 
-  // A `Client` arms no hotkey: where nothing is clicked, a board whose tiles are its keys stays still.
-  if (!site.isClickable && KEYED_BOARDS.has(activeGame(state, snap.prefs))) {
+  // A `Client` arms no hotkey: a board whose tiles are its keys is drawn still, its tiles the
+  // Buttons of their letters (clicked too, in fullscreen), so the key line needs none of them.
+  if (KEYED_BOARDS.has(activeGame(state, snap.prefs))) {
     return null;
   }
 

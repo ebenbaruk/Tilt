@@ -474,14 +474,16 @@ describe("the Mines board", () => {
     expect(await ui.find({ key: "held-mines-tile-12" })).toBeUndefined();
   });
 
-  test("in the fullscreen pane a click on a tile reveals it, a click on the cash-out takes it", async ($, on) => {
+  test("in the fullscreen pane the board is still: a tile is its key's Button, a click reveals it", async ($, on) => {
     const { world, clock } = await seat($, on, MINES_TURN, movingTable(MINES_TURN, MINES_TURN));
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE, surface: "terminal" });
 
-    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("click a tile to reveal it");
-    await ui.press({ key: "table-mines-tile-24" });
+    // The tiles' letters are on the board, not twenty-five blank keys on the key line.
+    expect(await ui.find({ type: "Client" })).toBeUndefined();
+    expect((await ui.find({ key: "mines-tile-24" }))?.props.hotkey).toBe("y");
+    await ui.press({ key: "mines-tile-24" });
     await clock.advance(1_000);
-    await ui.press({ key: "table-mines-cashout" });
+    await ui.press({ key: "mines-cashout" });
 
     expect(actionsOf(world.calls("POST /v1/play"))).toEqual([
       { type: "mines_reveal", tile: 24 },
@@ -493,18 +495,16 @@ describe("the Mines board", () => {
     let current: StateResponse = MINES_TURN;
     const { clock } = await seat($, on, current, { "GET /v1/state": () => ({ status: 200, body: current }) });
     const fullscreen = await $.ui.mount({ plugin: PLUGIN, ...PANE, surface: "terminal" });
-    const table = await tilesOf(fullscreen, TABLE_KEY);
+    const table = await tilesOf(fullscreen);
 
     expect(table).toHaveLength(25);
     expect(table.filter((tile) => tile.props.backgroundColor === TILE_FILL.safe)).toHaveLength(2);
-    // Each hidden tile is a Button, its letter dim in its corner: a click reveals it (the test above).
-    const buttons = (await fullscreen.findAll({ type: "Button", in: TABLE_KEY })).filter((button) =>
-      String(button.props.key).startsWith("table-mines-tile-"),
+    // Each hidden tile is the Button of its letter: a click or the letter reveals it (the test above).
+    const buttons = (await fullscreen.findAll({ type: "Button" })).filter((button) =>
+      String(button.props.key).startsWith("mines-tile-"),
     );
 
     expect(buttons).toHaveLength(23);
-    expect(textOf(await fullscreen.find({ key: "table-mines-tile-0", in: TABLE_KEY }))).toMatch(/^a +$/);
-    expect(textOf(await fullscreen.find({ key: "table-mines-tile-24", in: TABLE_KEY }))).toMatch(/^y +$/);
     await fullscreen.unmount();
 
     for (const [state, fill, glyph] of [
@@ -569,14 +569,14 @@ describe("the Tower, Hilo and Keno boards", () => {
     expect(await ui.find({ key: "held-tower-tile-2" })).toBeUndefined();
   });
 
-  test("in the fullscreen pane a click on a tile climbs, a click on the cash-out takes it", async ($, on) => {
+  test("in the fullscreen pane the tower is still too: a click on a tile climbs, on the cash-out takes it", async ($, on) => {
     const { world, clock } = await seat($, on, TOWER_TURN, movingTable(TOWER_TURN, TOWER_TURN));
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE, surface: "terminal" });
 
-    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("click a tile to climb");
-    await ui.press({ key: "table-tower-tile-1" });
+    expect(await ui.find({ type: "Client" })).toBeUndefined();
+    await ui.press({ key: "tower-tile-1" });
     await clock.advance(1_000);
-    await ui.press({ key: "table-tower-cashout" });
+    await ui.press({ key: "tower-cashout" });
 
     expect(actionsOf(world.calls("POST /v1/play"))).toEqual([
       { type: "tower_climb", tile: 1 },
@@ -584,7 +584,7 @@ describe("the Tower, Hilo and Keno boards", () => {
     ]);
   });
 
-  test("hilo: the guesses are keys on the main screen and clicks on the fullscreen table", async ($, on) => {
+  test("hilo: the guesses are the key row's, keyed on the main screen, clicked in fullscreen, said once", async ($, on) => {
     const { world, clock } = await seat($, on, HILO_TURN, movingTable(HILO_TURN, HILO_TURN));
     const inline = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
 
@@ -596,9 +596,11 @@ describe("the Tower, Hilo and Keno boards", () => {
 
     const full = await $.ui.mount({ plugin: PLUGIN, ...PANE, surface: "terminal" });
 
-    await full.press({ key: "table-hilo-higher" });
+    // The table repeats no move: its side gives the odds, the key row the moves.
+    expect(await full.find({ key: "table-hilo-higher", in: TABLE_KEY })).toBeUndefined();
+    await full.press({ key: "hilo-higher" });
     await clock.advance(1_000);
-    await full.press({ key: "table-hilo-cashout" });
+    await full.press({ key: "hilo-cashout" });
 
     expect(actionsOf(world.calls("POST /v1/play"))).toEqual([
       { type: "hilo_guess", guess: "lower" },

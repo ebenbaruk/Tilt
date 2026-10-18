@@ -42,11 +42,13 @@ import {
   baccaratOutcome,
   baccaratTable,
   minesBoardRows,
+  MINE_GLYPH,
   minesTable,
   rouletteChip,
   rouletteRows,
   ROULETTE_SPIN_MS,
   rouletteTable,
+  SAFE_GLYPH,
   SLOTS_SPIN_MS,
   slotsOutcome,
   slotsTable,
@@ -64,6 +66,7 @@ import {
   heldKeys,
   type KeyAction,
   keyRow,
+  MINES_COLUMNS,
   MINES_TILE_KEY,
   planKeys,
   type PlanInput,
@@ -1750,7 +1753,7 @@ export function handSummary(state: StateResponse, prefs: Prefs, isLanded: boolea
     case "slots":
       return `${label}${detail.reels === null ? "" : ` · ${detail.reels.map(cleanText).join(" ")}`}${net}`;
     case "mines":
-      return `${label} · ${detail.mines} ${detail.mines === 1 ? "mine" : "mines"} · ${detail.revealed.length} safe · ×${detail.multiplier}${net}`;
+      return `${label} · ${detail.mines} ${detail.mines === 1 ? "mine" : "mines"} · ${detail.revealed.length} safe · ${detail.busted === null ? `×${detail.multiplier}` : "bust"}${net}`;
     case "dice": {
       const roll = detail.roll === null ? "" : ` · roll ${rollText(detail.roll)}`;
 
@@ -1805,6 +1808,33 @@ function undrawn(detail: RoundView["detail"]): RoundView["detail"] {
   }
 }
 
+/** A Mines board on one line for the band: a hidden tile is its key, the others their glyph, five a row. */
+function bandBoard(ui: Ui, detail: MinesView, tiles: readonly PlayButton[]): RenderElement {
+  const { Box, Text } = ui;
+  const glyphOf = (tile: number): string =>
+    detail.revealed.includes(tile)
+      ? SAFE_GLYPH
+      : detail.busted === tile
+        ? MINE_GLYPH
+        : detail.pending === tile
+          ? "◐"
+          : "·";
+  const cell = (tile: number): RenderElement =>
+    tiles.find((button) => tileOf(button.key) === tile)?.element ?? (
+      <Text color={detail.revealed.includes(tile) ? GREEN : FG4}>{` ${glyphOf(tile)} `}</Text>
+    );
+
+  return (
+    <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
+      {Array.from({ length: MINES_COLUMNS }, (_, row) => (
+        <Box flexDirection="row">
+          {Array.from({ length: MINES_COLUMNS }, (_, column) => cell(row * MINES_COLUMNS + column))}
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
 export interface BandLayout {
   bodyColumns: number;
 }
@@ -1830,6 +1860,9 @@ export function renderBand(ui: Ui, snap: Snapshot, layout: BandLayout, onCommand
   const keys = planKeys(input);
   const row = keyRow(activeGame(state, snap.prefs), state, snap.prefs);
   const status = statusLine(ui, snap, state);
+  const plays = playButtons(ui, input, keys, row, onCommand);
+  const board = roundOf(state, activeGame(state, snap.prefs))?.detail;
+  const tiles = board?.game === "mines" ? plays.filter((button) => tileOf(button.key) !== null) : [];
 
   return (
     <Box flexDirection="column" width={layout.bodyColumns}>
@@ -1850,8 +1883,9 @@ export function renderBand(ui: Ui, snap: Snapshot, layout: BandLayout, onCommand
       </Box>
       <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
         {bandSwitchKeys(state, snap.prefs).map((action) => keyButton(ui, action, onCommand))}
-        {playButtons(ui, input, keys, row, onCommand).map((button) => button.element)}
+        {plays.filter((button) => !tiles.includes(button)).map((button) => button.element)}
       </Box>
+      {board?.game === "mines" && tiles.length > 0 && bandBoard(ui, board, tiles)}
       {state.sponsor !== null && sponsorLine(ui, state.sponsor, snap.remote.fetchedAt)}
     </Box>
   );

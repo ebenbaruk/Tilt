@@ -807,6 +807,10 @@ export function boardSide(ui: Ui, round: RoundView, progress: BoardProgress): Re
   ].filter((row): row is RenderElement => row !== false);
 }
 
+/** The side of a Mines or tower board, as wide in every state ("CASHED OUT ×12.9933" the widest
+ *  line), so the centred board never moves sideways when it changes. */
+export const BOARD_SIDE_COLUMNS = 22;
+
 /** A tile's glyphs: a gem found, the mine that ended the round, a tile awaiting its draw turning through these. */
 export const SAFE_GLYPH = "◆";
 export const MINE_GLYPH = "✸";
@@ -971,7 +975,7 @@ export function minesTable(
 
   if (detail === null || round === null) {
     return table(
-      <Box flexDirection="column">
+      <Box flexDirection="column" width={BOARD_SIDE_COLUMNS}>
         {count}
         <Text color={FG6}>Pick the mines with j and k, then play with n.</Text>
       </Box>,
@@ -979,7 +983,7 @@ export function minesTable(
   }
 
   return table(
-    <Box flexDirection="column">
+    <Box flexDirection="column" width={BOARD_SIDE_COLUMNS}>
       {count}
       {boardSide(ui, round, {
         multiplier: detail.multiplier,
