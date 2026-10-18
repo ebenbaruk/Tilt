@@ -2,8 +2,17 @@ import type { ConfigRow, On, TurnCompleteInput } from "claude-code";
 import { describe, type Engine, expect, test } from "claude-code/testing";
 
 import { ROULETTE_SPIN_MS, TILE_FILL, wheelPosition } from "../hooks/games";
-import { WHEEL_SPIN_MS, wheelSegmentAt } from "../hooks/quick";
-import type { StateResponse } from "../hooks/protocol";
+import {
+  DICE_ROLL_MS,
+  flipMs,
+  KENO_DRAW_MS,
+  LIMBO_RISE_MS,
+  limboAt,
+  rollAt,
+  WHEEL_SPIN_MS,
+  wheelSegmentAt,
+} from "../hooks/quick";
+import type { FlipView, StateResponse } from "../hooks/protocol";
 import {
   BASE,
   BLACKJACK_LOSS,
@@ -11,6 +20,10 @@ import {
   BLACKJACK_WIN,
   DICE,
   DICE_LOSS,
+  FLIP,
+  FLIP_LOSS,
+  KENO,
+  LIMBO,
   MINES_BUSTED,
   MINES_CASHED,
   MINES_TURN,
@@ -63,6 +76,15 @@ const themeRow = (value: string): ConfigRow => ({
   provider: { plugin: "engine", tier: "core" },
   isLocked: false,
 });
+
+/** Three heads called on three coins, as FLIP lands them. */
+const FLIP_DETAIL: FlipView = {
+  game: "flip",
+  side: "heads",
+  flips: 3,
+  results: ["heads", "heads", "heads"],
+  multiplier: "7.8400",
+};
 
 /** Where the table surface module's region sits in a drawing's tree. */
 const TABLE_REGION = '"type":"Client"';
@@ -569,6 +591,159 @@ const WHEEL_HIGH_50: StateResponse =
         },
       };
 
+describe("one draw plays out before the result shows", () => {
+  const hasSparkles = (text: string) => /[✦✧✺✹⋆]/.test(text);
+  const numbered = (state: StateResponse, number: number): StateResponse =>
+    state.round === null ? state : { ...state, round: { ...state.round, number } };
+
+  test("a dice roll tumbles, rests on the roll, then the verdict, the balance and the sparkles show", async ($, on) => {
+    const { show, clock } = await moving($, on, { ...BASE, round: null });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_STILL });
+    const untold = (text: string) => {
+      expect(text).toContain("rolling ");
+      expect(text).toContain("balance 12.40 USDC");
+      expect(text).not.toContain("Rolled 37.42");
+      expect(text).not.toContain("WIN");
+      expect(text).not.toContain("+0.99");
+      expect(hasSparkles(text)).toBe(false);
+    };
+
+    await ui.press({ key: "game-dice" });
+    await show({ ...DICE, balance: "13390000" });
+    const first = textOf(await ui.drawn());
+
+    untold(first);
+    await clock.advance(SPIN_FRAME_MS);
+    expect(textOf(await ui.drawn())).not.toBe(first);
+
+    // Closing in on the roll, nearly there: still nothing tells it.
+    await clock.advance(DICE_ROLL_MS - 4 * SPIN_FRAME_MS);
+    untold(textOf(await ui.drawn()));
+
+    await clock.advance(3 * SPIN_FRAME_MS);
+    const landed = textOf(await ui.drawn());
+
+    expect(landed).toContain("rolled 37.42 WIN");
+    expect(landed).toContain("Rolled 37.42: under 49.00 wins. +0.99");
+    expect(landed).toContain("balance 13.39 USDC");
+    expect(hasSparkles(landed)).toBe(true);
+  });
+
+  test("the roll tumbles across the track, then closes in on the drawn one", () => {
+    const tumbling = [0, 1, 2, 3].map((frame) => rollAt(null, frame * SPIN_FRAME_MS));
+    const settling = [600, 800, 950].map((elapsed) => Math.abs((rollAt(3742, elapsed) ?? 0) - 3742));
+
+    expect(new Set(tumbling).size).toBe(tumbling.length);
+    settling.slice(1).forEach((gap, index) => expect(gap).toBeLessThanOrEqual(settling[index] ?? 0));
+    expect(settling[settling.length - 1]).toBeLessThan(10);
+    expect(rollAt(3742, DICE_ROLL_MS)).toBe(3742);
+    expect(rollAt(3742, null)).toBe(3742);
+  });
+
+  test("the limbo multiplier rises from ×1.00 by ratios and stops on the result, never past it", async ($, on) => {
+    const rise = Array.from({ length: LIMBO_RISE_MS / SPIN_FRAME_MS + 1 }, (_, frame) =>
+      Number(limboAt("312.00", frame * SPIN_FRAME_MS)),
+    );
+
+    expect(rise[0]).toBe(1);
+    rise.slice(1).forEach((value, frame) => expect(value).toBeGreaterThanOrEqual(rise[frame] ?? 0));
+    expect(rise.every((value) => value <= 312)).toBe(true);
+    expect(rise[rise.length - 1]).toBe(312);
+    // Halfway through, past halfway in ratios: the slowing is at the end.
+    expect(rise[LIMBO_RISE_MS / SPIN_FRAME_MS / 2] ?? 0).toBeGreaterThan(Math.sqrt(312));
+
+    const { show, clock } = await moving($, on, { ...BASE, round: null });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_STILL });
+
+    await ui.press({ key: "game-limbo" });
+    await show(LIMBO);
+    const rising = textOf(await ui.drawn());
+
+    expect(rising).toContain("rising…");
+    expect(rising).not.toContain("falls short");
+    expect(rising).not.toContain("LOSE");
+
+    await clock.advance(LIMBO_RISE_MS);
+    const landed = textOf(await ui.drawn());
+
+    expect(landed).toContain("×1.53");
+    expect(landed).toContain("LOSE");
+    expect(landed).toContain("×1.53 falls short of ×2.00. −1.00");
+  });
+
+  test("the coins land one by one up to the first off the call, which decides the round", async ($, on) => {
+    const { show, clock } = await moving($, on, { ...BASE, round: null });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_STILL });
+    const missFirst: StateResponse = {
+      ...FLIP_LOSS,
+      round:
+        FLIP_LOSS.round === null
+          ? null
+          : {
+              ...FLIP_LOSS.round,
+              detail: {
+                game: "flip",
+                side: "heads",
+                flips: 3,
+                results: ["tails", "heads", "heads"],
+                multiplier: "7.8400",
+              },
+            },
+    };
+
+    await ui.press({ key: "game-flip" });
+    await ui.press({ key: "flips-up" });
+    await ui.press({ key: "flips-up" });
+    await show(numbered(missFirst, 21));
+    expect(textOf(await ui.drawn())).not.toContain("Tails on coin 1 of 3.");
+    // The first coin decides: its landing ends the flip, the two after it show with it.
+    await clock.advance(flipMs(missFirst.round?.detail.game === "flip" ? missFirst.round.detail : FLIP_DETAIL));
+    const missed = textOf(await ui.drawn());
+
+    expect(missed).toContain("(T)(H)(H)");
+    expect(missed).toContain("Tails on coin 1 of 3. −1.00");
+  });
+
+  test("three heads called take all three coins to land", async ($, on) => {
+    const { show, clock } = await moving($, on, { ...BASE, round: null });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_STILL });
+
+    await ui.press({ key: "game-flip" });
+    await ui.press({ key: "flips-up" });
+    await ui.press({ key: "flips-up" });
+    await show(FLIP);
+    await clock.advance(flipMs(FLIP_DETAIL) - 3 * SPIN_FRAME_MS);
+    expect(textOf(await ui.drawn())).not.toContain("3 heads in a row.");
+    await clock.advance(3 * SPIN_FRAME_MS);
+    expect(textOf(await ui.drawn())).toContain("3 heads in a row. +5.77");
+  });
+
+  test("the ten Keno numbers light one by one, the hits counting up, then the paytable's row", async ($, on) => {
+    const { show, clock } = await moving($, on, { ...BASE, round: null });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_STILL });
+
+    await ui.press({ key: "game-keno" });
+    // 1, 4, 8, 12, 15, 22, 27… are drawn in turn; 4, 12 and 27 are picks.
+    await show(KENO);
+    expect(textOf(await ui.drawn())).toContain("0 hits");
+    await clock.advance(2 * SPIN_FRAME_MS);
+    expect(textOf(await ui.drawn())).toContain("1 hit");
+    await clock.advance(2 * SPIN_FRAME_MS);
+    const counting = textOf(await ui.drawn());
+
+    expect(counting).toContain("2 hits");
+    expect(counting).not.toContain("3 hits of 5 picks.");
+    expect(counting).not.toContain("+2.97");
+
+    await clock.advance(KENO_DRAW_MS);
+    const landed = textOf(await ui.drawn());
+
+    expect(landed).toContain("3 hits WIN");
+    expect(landed).toContain(" 3 ×4.00 ");
+    expect(landed).toContain("3 hits of 5 picks. +2.97");
+  });
+});
+
 describe("the wheel", () => {
   const hasSparkles = (text: string) => /[✦✧✺✹⋆]/.test(text);
   const DARK_LINE4 = "#4a4b50";
@@ -785,15 +960,17 @@ describe("a win celebrates", () => {
     expect(hasSparkles(textOf(await ui.drawn()))).toBe(false);
   });
 
-  test("the new games celebrate their wins as soon as they show: a dice roll, a tower cash-out", async ($, on) => {
+  test("the new games celebrate their wins once they show: a dice roll once it rests, a tower cash-out", async ($, on) => {
     // Each show is one poll later: a small win's sparkles are over by the next one.
-    const { show } = await moving($, on, BASE);
+    const { show, clock } = await moving($, on, BASE);
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_STILL });
     const renumbered = (state: StateResponse, number: number): StateResponse =>
       state.round === null ? state : { ...state, round: { ...state.round, number } };
 
     await ui.press({ key: "game-dice" });
     await show(DICE);
+    expect(hasSparkles(textOf(await ui.drawn()))).toBe(false);
+    await clock.advance(DICE_ROLL_MS);
     expect(hasSparkles(textOf(await ui.drawn()))).toBe(true);
     await show(renumbered(DICE_LOSS, 8));
     expect(hasSparkles(textOf(await ui.drawn()))).toBe(false);

@@ -22,9 +22,13 @@ import {
 } from "./format";
 import { hiloRight, hiloTable, towerTable } from "./climb";
 import {
+  DICE_ROLL_MS,
   diceTable,
+  flipMs,
   flipTable,
+  KENO_DRAW_MS,
   kenoTable,
+  LIMBO_RISE_MS,
   limboTable,
   rollText,
   WHEEL_SPIN_MS,
@@ -92,7 +96,7 @@ export interface Snapshot {
   isOnboarded: boolean;
   /** Where to deposit, when the api named a page on its own site. */
   depositUrl: string | null;
-  /** How far into its spin the roulette, wheel or slots round on the table is; null once it landed. */
+  /** How far into its spin (a roll, a rise, a flip, a draw) the round on the table is; null once it landed. */
   spinElapsed: number | null;
   /** Blackjack or baccarat cards turned over so far, while new ones are being dealt; null when all show. */
   revealed: number | null;
@@ -105,15 +109,26 @@ export interface Snapshot {
 /** How many times faster the reels turn at each slots speed; turbo shows the draw at once. */
 const SLOTS_SPEEDUP: Record<SlotsSpeed, number> = { normal: 1, fast: 3, turbo: Infinity };
 
-/** How long a round of `game` spins on the table before it lands; 0 for the games drawn still and turbo slots. */
-export function spinMs(game: Game, speed: SlotsSpeed): number {
-  switch (game) {
+/**
+ * How long a round spins on the table before it lands: the wheels and the reels, and the one-draw
+ * games' roll, rise, coins or numbers. 0 for the games drawn still and turbo slots.
+ */
+export function spinMs(detail: RoundView["detail"], speed: SlotsSpeed): number {
+  switch (detail.game) {
     case "roulette":
       return ROULETTE_SPIN_MS;
     case "wheel":
       return WHEEL_SPIN_MS;
     case "slots":
       return SLOTS_SPIN_MS / SLOTS_SPEEDUP[speed];
+    case "dice":
+      return DICE_ROLL_MS;
+    case "limbo":
+      return LIMBO_RISE_MS;
+    case "flip":
+      return flipMs(detail);
+    case "keno":
+      return KENO_DRAW_MS;
     default:
       return 0;
   }
@@ -133,7 +148,7 @@ export function spinProgress(round: RoundView, elapsed: number, speed: SlotsSpee
     return round.detail.game === "slots" ? elapsed % DRAWING_LOOP_MS : elapsed;
   }
 
-  if (elapsed >= spinMs(round.detail.game, speed)) {
+  if (elapsed >= spinMs(round.detail, speed)) {
     return null;
   }
 
@@ -527,13 +542,13 @@ export function gameTable(
     case "mines":
       return minesTable(ui, round, prefs, fx.frame, size, tileButton);
     case "dice":
-      return diceTable(ui, round, prefs);
+      return diceTable(ui, round, prefs, fx.spinElapsed);
     case "limbo":
-      return limboTable(ui, round, prefs);
+      return limboTable(ui, round, prefs, fx.spinElapsed);
     case "flip":
-      return flipTable(ui, round, prefs);
+      return flipTable(ui, round, prefs, fx.spinElapsed);
     case "keno":
-      return kenoTable(ui, round, prefs, tileButton);
+      return kenoTable(ui, round, prefs, fx.spinElapsed, tileButton);
     case "wheel":
       return wheelTable(ui, round, prefs, wheel, fx.spinElapsed);
     case "hilo":

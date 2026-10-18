@@ -1125,11 +1125,11 @@ async function countRound(
     playSound($, rt, SOUND_DEAL);
   }
 
-  // A roulette, wheel or slots round spins on the table while it draws, and from its landing until
-  // the wheel or the last reel stops; the result shows after.
+  // A roulette, wheel, slots or one-draw round spins on the table while it draws, and from its
+  // landing until the wheel, the last reel, the roll or the last number stops; the result shows after.
   const speed = (await readPrefs($)).slotsSpeed;
 
-  if ((isNew || hasLanded) && round !== null && before !== null && spinMs(round.detail.game, speed) > 0) {
+  if ((isNew || hasLanded) && round !== null && before !== null && spinMs(round.detail, speed) > 0) {
     // On a landing the balance before the spin is the one already held.
     const balance = isNew ? before.balance : (await read($, spin)).balance;
 
@@ -1178,7 +1178,7 @@ async function resultShowsAt($: EngineInterface, round: RoundView, now: number):
   const spinning = await read($, spin);
   const dealing = await read($, deal);
   const speed = (await readPrefs($)).slotsSpeed;
-  const spinEnd = spinning.round === round.number ? spinning.startedAt + spinMs(round.detail.game, speed) : now;
+  const spinEnd = spinning.round === round.number ? spinning.startedAt + spinMs(round.detail, speed) : now;
   // The last card is up one step before the deal's length is over: the first one is at once (revealedAt).
   const dealEnd =
     dealing.round === round.number ? dealing.startedAt + (dealtCards(round) - dealing.from - 1) * DEAL_STEP_MS : now;

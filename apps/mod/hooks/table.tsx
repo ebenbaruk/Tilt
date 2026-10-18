@@ -65,7 +65,7 @@ interface TableState {
   cards: number;
   /** Cards turned over so far, in deal order. */
   revealed: number;
-  /** Frame clock time a roulette, wheel or slots round started spinning; null when none is. */
+  /** Frame clock time a round started spinning (a wheel, the reels, a one-draw game's draw); null when none is. */
   spinAt: number | null;
   /** The round on the table was drawing at the last props. */
   wasDrawing: boolean;
@@ -133,11 +133,11 @@ function observe(props: TableProps, state: TableState): TableState {
 
   // A round that lands after drawing restarts its spin, so the reels stop one by one on the result.
   if (round !== null && round.number === state.round && round.phase === "idle" && state.wasDrawing) {
-    next = { ...next, spinAt: spinMs(round.detail.game, speed) > 0 ? next.now : null, wokeAt: next.now };
+    next = { ...next, spinAt: spinMs(round.detail, speed) > 0 ? next.now : null, wokeAt: next.now };
   }
 
   if ((round?.number ?? null) !== state.round) {
-    const spinAt = round !== null && spinMs(round.detail.game, speed) > 0 ? next.now : null;
+    const spinAt = round !== null && spinMs(round.detail, speed) > 0 ? next.now : null;
 
     next = {
       ...next,
@@ -156,7 +156,7 @@ function observe(props: TableProps, state: TableState): TableState {
   if (round !== null && round.phase === "idle" && round.number !== state.settled) {
     const kind = outcomeOf(round.net);
     // The effect waits for the last card, or for the wheel or the reels to land.
-    const spinLeft = next.spinAt === null ? 0 : Math.max(0, next.spinAt + spinMs(round.detail.game, speed) - next.now);
+    const spinLeft = next.spinAt === null ? 0 : Math.max(0, next.spinAt + spinMs(round.detail, speed) - next.now);
     const dealLeft = Math.max(0, next.cards - next.revealed) * DEAL_STEP_MS + spinLeft;
     const streak = kind === "win" ? next.streak + 1 : kind === "loss" ? 0 : next.streak;
 

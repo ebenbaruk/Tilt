@@ -1,76 +1,175 @@
-// Dice, Limbo, Flip, Keno and Wheel: one draw each, drawn still by the pane and the table surface
-// module alike. A settled round stays on the table while the next one is set up with the same
-// choices; once a choice changes, the table shows the next round's instead.
+// Dice, Limbo, Flip, Keno and Wheel: one draw each, drawn by the pane and the table surface module
+// alike. Each draw plays out on the spin clock (view.tsx `spinMs`): the roll tumbles, the
+// multiplier rises, the coins land and the numbers light one by one before the result shows. A
+// settled round stays on the table while the next one is set up with the same choices; once a
+// choice changes, the table shows the next round's instead.
 import type { RenderElement } from "claude-code";
 
 import { diceMultiplier, flipMultiplier, hundredths, scaledDecimal } from "./format";
 import type { TileButton } from "./games";
 import { diceTarget, DICE_ROLLS, KENO_NUMBERS, KENO_PICK_KEY } from "./keys";
 import type { Prefs } from "./model";
-import type { DiceView, FlipView, KenoView, LimboView, RoundView, WheelView } from "./protocol";
-import { BLUE, CARD_FACE, FG1, FG4, FG6, GOLD, GREEN, INK, LINE3, LINE4, PINK, RED, TEAL, type Ui } from "./theme";
+import type { FlipView, RoundView, WheelView } from "./protocol";
+import {
+  BLUE,
+  CARD_FACE,
+  FG1,
+  FG4,
+  FG6,
+  GOLD,
+  GREEN,
+  INK,
+  LINE3,
+  LINE4,
+  PINK,
+  RED,
+  TEAL,
+  toneOf,
+  type Ui,
+} from "./theme";
 
 const isOpen = (round: RoundView | null): boolean => round !== null && round.phase !== "idle";
 
-const isWin = (round: RoundView): boolean => BigInt(round.net) > 0n;
+/**
+ * Whether the table shows `round`: an open one always; a settled one of these games while the
+ * next is set up with its choices. Once a choice changes, the table shows the next round's.
+ */
+export function isRoundShown(round: RoundView, prefs: Prefs): boolean {
+  const detail = round.detail;
 
-/** What a settled result shows in: gold for a win, red for a loss, as the nets. */
-const resultColor = (round: RoundView): string => (isWin(round) ? GOLD : RED);
+  if (isOpen(round)) {
+    return true;
+  }
+
+  switch (detail.game) {
+    case "dice":
+      return detail.over === prefs.diceOver && detail.target === diceTarget(prefs.diceChance, prefs.diceOver);
+    case "limbo":
+      return detail.target === scaledDecimal(BigInt(prefs.limboTarget), 2);
+    case "flip":
+      return detail.side === prefs.flipSide && detail.flips === prefs.flips;
+    case "keno":
+      return [...detail.picks].sort((a, b) => a - b).join(",") === prefs.kenoPicks.join(",");
+    case "wheel":
+      return detail.segments === prefs.wheelSegments && detail.risk === prefs.wheelRisk;
+    default:
+      return true;
+  }
+}
+
+/** The round of `game` on the table, as `isRoundShown` says; null when there is none. */
+function shownRound<G extends RoundView["detail"]["game"]>(
+  round: RoundView | null,
+  prefs: Prefs,
+  game: G,
+): (RoundView & { detail: Extract<RoundView["detail"], { game: G }> }) | null {
+  return round !== null && round.detail.game === game && isRoundShown(round, prefs)
+    ? (round as RoundView & { detail: Extract<RoundView["detail"], { game: G }> })
+    : null;
+}
+
+/** A settled round's verdict, as blackjack tags its hands: WIN in gold, LOSE in red, PUSH in grey. */
+function verdict(ui: Ui, round: RoundView): RenderElement {
+  const { Text } = ui;
+  const net = BigInt(round.net);
+
+  return (
+    <Text color={toneOf(round.net)} bold>
+      {net > 0n ? "WIN" : net < 0n ? "LOSE" : "PUSH"}
+    </Text>
+  );
+}
 
 /** The dice track: 40 cells of 250 rolls each, 0 at the left, 99.99 at the right. */
 const DICE_CELLS = 40;
 const ROLLS_PER_CELL = DICE_ROLLS / DICE_CELLS;
 
-/** The dice round to show: the open one, or the last one while the next is rolled the same way. */
-function shownDice(round: RoundView | null, prefs: Prefs): DiceView | null {
-  const detail = round?.detail.game === "dice" ? round.detail : null;
-  const isSame =
-    detail !== null && detail.over === prefs.diceOver && detail.target === diceTarget(prefs.diceChance, prefs.diceOver);
-
-  return detail !== null && (isOpen(round) || isSame) ? detail : null;
-}
+/** How long a roll tumbles once drawn before it rests on the roll: about a blackjack deal. */
+export const DICE_ROLL_MS = 1_000;
+/** The tumbling roll changes this often. */
+const TUMBLE_FRAME_MS = 60;
+/** Steps the tumbling roll across the track: prime to the rolls, so it visits all of them. */
+const TUMBLE_STRIDE = 6_133;
 
 /** "37.42": a roll of 0 to 9999 as the roll 00.00 to 99.99. */
 export const rollText = (roll: number): string => scaledDecimal(BigInt(roll), 2);
 
 /**
- * The roll's track, as Stake's slider: the winning side green, the losing side red, the target
- * between them and the roll marked `▼` over its cell once it lands.
+ * The roll shown `elapsed` into a roll: tumbling while the chain draws (`roll` null), then closing
+ * in on the drawn `roll` until it rests on it at DICE_ROLL_MS. A null `elapsed` is the roll at rest.
  */
-export function diceTable(ui: Ui, round: RoundView | null, prefs: Prefs): RenderElement {
+export function rollAt(roll: number | null, elapsed: number | null): number | null {
+  if (elapsed === null || (roll !== null && elapsed >= DICE_ROLL_MS)) {
+    return roll;
+  }
+
+  const tumbling = ((Math.floor(elapsed / TUMBLE_FRAME_MS) + 1) * TUMBLE_STRIDE) % DICE_ROLLS;
+
+  if (roll === null) {
+    return tumbling;
+  }
+
+  const settled = 1 - (1 - elapsed / DICE_ROLL_MS) ** 3;
+
+  return Math.round(tumbling + (roll - tumbling) * settled);
+}
+
+/**
+ * The roll's track, as Stake's slider: the winning side green, the losing side red, the target
+ * `┃` between them and the roll `▼` over its cell, moving while it tumbles. Beside it, the roll
+ * and once it rests, its verdict. `spinElapsed`: how far into its roll the round on the table is.
+ */
+export function diceTable(ui: Ui, round: RoundView | null, prefs: Prefs, spinElapsed: number | null): RenderElement {
   const { Box, Text } = ui;
-  const detail = shownDice(round, prefs);
+  const shown = shownRound(round, prefs, "dice");
+  const detail = shown?.detail ?? null;
   const over = detail?.over ?? prefs.diceOver;
   const target = detail?.target ?? diceTarget(prefs.diceChance, prefs.diceOver);
   const chance = over ? DICE_ROLLS - target : target;
+  const targetCell = Math.min(DICE_CELLS - 1, Math.round(target / ROLLS_PER_CELL));
   const cells = Array.from({ length: DICE_CELLS }, (_, cell) => {
     const middle = cell * ROLLS_PER_CELL + ROLLS_PER_CELL / 2;
 
     return over ? middle >= target : middle < target;
   });
-  const roll = detail?.roll ?? null;
+  const isRolling = shown !== null && (spinElapsed !== null || isOpen(shown));
+  const roll = rollAt(detail?.roll ?? null, isRolling ? spinElapsed : null);
   const marker = roll === null ? " " : `${" ".repeat(Math.floor(roll / ROLLS_PER_CELL))}▼`;
   const half = DICE_CELLS / 2;
   const scale = `0${" ".repeat(half - 1)}50${" ".repeat(half - 5)}100`;
   const result =
-    round !== null && detail !== null && roll !== null ? (
-      <Text color={resultColor(round)} bold>
-        {`rolled ${rollText(roll)}`}
-      </Text>
+    shown === null ? (
+      <Text color={FG6}>No roll yet.</Text>
+    ) : roll === null ? (
+      <Text color={FG6}>rolling…</Text>
+    ) : isRolling ? (
+      <Text color={FG1} bold>{`rolling ${rollText(roll)}`}</Text>
     ) : (
-      <Text color={FG6}>{isOpen(round) && detail !== null ? "rolling…" : "No roll yet."}</Text>
+      <Text color={FG4}>
+        {"rolled "}
+        <Text color={toneOf(shown.net)} bold>
+          {rollText(roll)}
+        </Text>{" "}
+        {verdict(ui, shown)}
+      </Text>
     );
 
   return (
     <Box flexDirection="row" flexWrap="wrap" columnGap={3}>
       <Box flexDirection="column">
-        <Text color={GOLD} bold>
+        <Text color={isRolling ? FG1 : GOLD} bold>
           {marker}
         </Text>
         <Text>
-          {cells.map((wins) => (
-            <Text color={wins ? GREEN : RED}>━</Text>
-          ))}
+          {cells.map((wins, cell) =>
+            cell === targetCell ? (
+              <Text color={FG1} bold>
+                ┃
+              </Text>
+            ) : (
+              <Text color={wins ? GREEN : RED}>━</Text>
+            ),
+          )}
         </Text>
         <Text color={FG6}>{scale}</Text>
       </Box>
@@ -94,29 +193,50 @@ export function diceTable(ui: Ui, round: RoundView | null, prefs: Prefs): Render
   );
 }
 
+/** How long the multiplier takes to rise from ×1.00 to the drawn one. */
+export const LIMBO_RISE_MS = 1_000;
+
+/**
+ * The multiplier shown `elapsed` into its rise to `result`: from ×1.00, fast at first, slowing
+ * onto it at LIMBO_RISE_MS. It rises by ratios, so a ×1.20 and a ×500 take as long. A null
+ * `elapsed` is the result at rest.
+ */
+export function limboAt(result: string, elapsed: number | null): string {
+  if (elapsed === null || elapsed >= LIMBO_RISE_MS) {
+    return result;
+  }
+
+  const eased = 1 - (1 - elapsed / LIMBO_RISE_MS) ** 3;
+  const top = Number(hundredths(result));
+  // A display value, not money: a float only sets where the count is on its way.
+  const shown = Math.min(top, Math.floor(100 * (top / 100) ** eased));
+
+  return scaledDecimal(BigInt(shown), 2);
+}
+
 /** Limbo's win chance at a target × 100: 98 % / target, in hundredths of a percent. */
 const limboChance = (target: bigint): string => scaledDecimal(980_000n / target, 2);
 
-/** The result multiplier in a frame, gold when it reached the target, under the target and its chance. */
-export function limboTable(ui: Ui, round: RoundView | null, prefs: Prefs): RenderElement {
+/**
+ * The multiplier in a frame, rising from ×1.00 once drawn: gold from the moment it reaches the
+ * target, red when it stops short. Beside it, the target, its chance and the verdict.
+ */
+export function limboTable(ui: Ui, round: RoundView | null, prefs: Prefs, spinElapsed: number | null): RenderElement {
   const { Box, Text } = ui;
-  const detail = round?.detail.game === "limbo" ? round.detail : null;
-  const chosen = scaledDecimal(BigInt(prefs.limboTarget), 2);
-  const shown: LimboView | null = detail !== null && (isOpen(round) || detail.target === chosen) ? detail : null;
-  const target = shown?.target ?? chosen;
-  const result = shown?.result ?? null;
-  const reached = result !== null && hundredths(result) >= hundredths(target);
+  const shown = shownRound(round, prefs, "limbo");
+  const target = shown?.detail.target ?? scaledDecimal(BigInt(prefs.limboTarget), 2);
+  const result = shown?.detail.result ?? null;
+  const isRising = shown !== null && (spinElapsed !== null || isOpen(shown));
+  const current = result === null ? null : limboAt(result, isRising ? spinElapsed : null);
+  const reached = current !== null && hundredths(current) >= hundredths(target);
+  const color = current === null ? FG6 : reached ? GOLD : isRising ? FG1 : RED;
 
   return (
     <Box flexDirection="row" flexWrap="wrap" columnGap={3} alignItems="center">
-      <Box borderStyle="round" borderColor={result === null ? LINE3 : reached ? GOLD : RED} paddingX={3}>
-        {result === null ? (
-          <Text color={FG6}>{shown !== null && isOpen(round) ? "×…" : "×—"}</Text>
-        ) : (
-          <Text color={reached ? GOLD : RED} bold>
-            {`×${result}`}
-          </Text>
-        )}
+      <Box borderStyle="round" borderColor={current === null || isRising ? LINE3 : color} paddingX={3}>
+        <Text color={color} bold={current !== null}>
+          {current === null ? (isRising ? "×1.00" : "×—") : `×${current}`}
+        </Text>
       </Box>
       <Box flexDirection="column">
         <Text color={FG4}>
@@ -126,37 +246,84 @@ export function limboTable(ui: Ui, round: RoundView | null, prefs: Prefs): Rende
           </Text>
         </Text>
         <Text color={FG4}>{`win chance ${limboChance(hundredths(target))}%`}</Text>
-        {result === null && <Text color={FG6}>The result has to reach the target.</Text>}
+        {shown === null ? (
+          <Text color={FG6}>The result has to reach the target.</Text>
+        ) : isRising ? (
+          <Text color={FG6}>{current === null ? "drawing…" : "rising…"}</Text>
+        ) : (
+          verdict(ui, shown)
+        )}
       </Box>
     </Box>
   );
 }
 
 const SIDE_LETTER: Record<FlipView["side"], string> = { heads: "H", tails: "T" };
+/** A coin in the air, turning over; no face shows before it lands. */
+const SPINNING_COIN = ["(|)", "(/)", "(-)", "(\\)"];
+const COIN_TURN_MS = 75;
+/** The first coin turns this long before it lands; each next one lands this much later. */
+const FLIP_FIRST_MS = 450;
+const FLIP_STEP_MS = 150;
 
-/** The coins in a row: each lands H or T, gold on the side chosen, red off it. */
-export function flipTable(ui: Ui, round: RoundView | null, prefs: Prefs): RenderElement {
+/** The coins that land one by one: every coin must land on the call, so up to the first one off it. */
+function decidingCoins(detail: FlipView): number {
+  const miss = detail.results?.findIndex((side) => side !== detail.side) ?? -1;
+
+  return miss >= 0 ? miss + 1 : detail.flips;
+}
+
+/** How long the coins take to land, one after another, up to the one that decides the round. */
+export const flipMs = (detail: FlipView): number => FLIP_FIRST_MS + (decidingCoins(detail) - 1) * FLIP_STEP_MS;
+
+/** The coins landed `elapsed` into the flip; a null `elapsed` lands them all. */
+function coinsLandedAt(detail: FlipView, elapsed: number | null): number {
+  if (detail.results === null) {
+    return 0;
+  }
+
+  if (elapsed === null) {
+    return detail.flips;
+  }
+
+  return elapsed < FLIP_FIRST_MS
+    ? 0
+    : Math.min(decidingCoins(detail), 1 + Math.floor((elapsed - FLIP_FIRST_MS) / FLIP_STEP_MS));
+}
+
+/**
+ * The coins in a row, landing one by one: gold on the side called, red on the first off it. The
+ * coins after that one decide nothing: they show once it lands, dim.
+ */
+export function flipTable(ui: Ui, round: RoundView | null, prefs: Prefs, spinElapsed: number | null): RenderElement {
   const { Box, Text } = ui;
-  const detail = round?.detail.game === "flip" ? round.detail : null;
-  const isSame = detail !== null && detail.side === prefs.flipSide && detail.flips === prefs.flips;
-  const shown = detail !== null && (isOpen(round) || isSame) ? detail : null;
-  const side = shown?.side ?? prefs.flipSide;
-  const flips = shown?.flips ?? prefs.flips;
-  const results = shown?.results ?? null;
+  const shown = shownRound(round, prefs, "flip");
+  const detail = shown?.detail ?? null;
+  const side = detail?.side ?? prefs.flipSide;
+  const flips = detail?.flips ?? prefs.flips;
+  const isFlipping = shown !== null && (spinElapsed !== null || isOpen(shown));
+  const landed = detail === null ? 0 : coinsLandedAt(detail, isFlipping ? spinElapsed : null);
+  const deciding = detail === null ? flips : decidingCoins(detail);
   const coins = Array.from({ length: flips }, (_, index) => {
-    const landed = results?.[index];
+    const result = detail?.results?.[index];
 
-    if (landed === undefined) {
-      return (
+    if (result === undefined || index >= landed) {
+      const turn = Math.floor((spinElapsed ?? 0) / COIN_TURN_MS) + index;
+
+      return isFlipping ? (
+        <Text color={FG4} bold>
+          {SPINNING_COIN[turn % SPINNING_COIN.length]}
+        </Text>
+      ) : (
         <Text color={LINE4} bold>
-          {shown !== null && isOpen(round) ? "(·)" : "( )"}
+          ( )
         </Text>
       );
     }
 
     return (
-      <Text color={landed === side ? GOLD : RED} bold>
-        {`(${SIDE_LETTER[landed]})`}
+      <Text color={index >= deciding ? FG6 : result === side ? GOLD : RED} bold={index < deciding}>
+        {`(${SIDE_LETTER[result]})`}
       </Text>
     );
   });
@@ -173,9 +340,15 @@ export function flipTable(ui: Ui, round: RoundView | null, prefs: Prefs): Render
         </Text>
         {" pays "}
         <Text color={FG1} bold>
-          {`×${shown?.multiplier ?? flipMultiplier(flips)}`}
+          {`×${detail?.multiplier ?? flipMultiplier(flips)}`}
         </Text>
-        {results === null && <Text color={FG6}>{" · every coin has to land on it"}</Text>}
+        {shown === null && <Text color={FG6}>{" · every coin has to land on it"}</Text>}
+        {shown !== null && !isFlipping && (
+          <Text>
+            {"  "}
+            {verdict(ui, shown)}
+          </Text>
+        )}
       </Text>
     </Box>
   );
@@ -183,28 +356,43 @@ export function flipTable(ui: Ui, round: RoundView | null, prefs: Prefs): Render
 
 const KENO_COLUMNS = 8;
 const KENO_CELL = 4;
+/** Ten numbers are drawn, lit one after another this often. */
+const KENO_DRAWN = 10;
+const KENO_STEP_MS = 110;
+/** How long the draw takes to light its numbers. */
+export const KENO_DRAW_MS = KENO_DRAWN * KENO_STEP_MS;
 
-/** The Keno round to show: the open one, or the last one while its picks are still the ones chosen. */
-function shownKeno(round: RoundView | null, prefs: Prefs): KenoView | null {
-  const detail = round?.detail.game === "keno" ? round.detail : null;
-  const isSame = detail !== null && detail.picks.join(",") === prefs.kenoPicks.join(",");
+/** The drawn numbers lit `elapsed` into the draw, in the order drawn; a null `elapsed` lights them all. */
+function litAt(drawn: readonly number[] | null, elapsed: number | null): readonly number[] {
+  if (drawn === null) {
+    return [];
+  }
 
-  return detail !== null && (isOpen(round) || isSame) ? detail : null;
+  return elapsed === null ? drawn : drawn.slice(0, 1 + Math.floor(elapsed / KENO_STEP_MS));
 }
 
-/** What each hit count pays, the one landed in gold. */
-function kenoPays(ui: Ui, detail: KenoView): RenderElement {
+/** What each hit count pays: the hits so far bright while the numbers light, the landed count on a chip. */
+function kenoPays(ui: Ui, paytable: readonly string[], hits: number | null, isLanded: boolean): RenderElement {
   const { Box, Text } = ui;
 
   return (
     <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
       <Text color={FG6}>HITS</Text>
-      {detail.paytable.map((pays, hits) => {
-        const isLanded = detail.hits === hits;
+      {paytable.map((pays, count) => {
+        const label = `${count} ×${pays}`;
+        const isPaying = hundredths(pays) > 0n;
 
-        return (
-          <Text color={isLanded ? GOLD : hundredths(pays) > 0n ? FG4 : FG6} bold={isLanded}>
-            {`${hits} ×${pays}`}
+        if (count !== hits) {
+          return <Text color={isPaying ? FG4 : FG6}>{label}</Text>;
+        }
+
+        return isLanded ? (
+          <Text backgroundColor={isPaying ? GOLD : LINE4} color={isPaying ? INK : FG1} bold>
+            {` ${label} `}
+          </Text>
+        ) : (
+          <Text color={FG1} bold>
+            {label}
           </Text>
         );
       })}
@@ -213,26 +401,44 @@ function kenoPays(ui: Ui, detail: KenoView): RenderElement {
 }
 
 /**
- * The 40 numbers, eight a row: picks in brackets (gold once drawn), the other drawn numbers
- * bright. On the fullscreen table each number is a Button: a click picks or unpicks it.
+ * The 40 numbers, eight a row: picks in brackets, gold once drawn (a hit), the other drawn numbers
+ * bright. Drawn, the ten light one by one, the newest on a chip, while the hits count up and the
+ * paytable follows them; the hit count's row lands on a chip with the verdict. On the fullscreen
+ * table each number is a Button: a click picks or unpicks it.
  */
-export function kenoTable(ui: Ui, round: RoundView | null, prefs: Prefs, numberButton: TileButton): RenderElement {
+export function kenoTable(
+  ui: Ui,
+  round: RoundView | null,
+  prefs: Prefs,
+  spinElapsed: number | null,
+  numberButton: TileButton,
+): RenderElement {
   const { Box, Text } = ui;
-  const detail = shownKeno(round, prefs);
+  const shown = shownRound(round, prefs, "keno");
+  const detail = shown?.detail ?? null;
+  const isDrawing = shown !== null && (spinElapsed !== null || isOpen(shown));
   const picks = new Set(detail?.picks ?? prefs.kenoPicks);
-  const drawn = new Set(detail?.drawn ?? []);
+  const lit = litAt(detail?.drawn ?? null, isDrawing ? spinElapsed : null);
+  const drawn = new Set(lit);
+  const newest = isDrawing ? lit[lit.length - 1] : undefined;
+  const hits = lit.filter((number) => picks.has(number)).length;
   const cell = (number: number): RenderElement => {
     const isPick = picks.has(number);
     const isDrawn = drawn.has(number);
     const text = isPick ? `[${String(number).padStart(2)}]` : ` ${String(number).padStart(2)} `;
     const color = isPick ? (isDrawn ? GOLD : PINK) : isDrawn ? FG1 : FG6;
-    const face = (
-      <Text color={color} bold={isPick || isDrawn}>
-        {text}
-      </Text>
-    );
+    const face =
+      number === newest ? (
+        <Text backgroundColor={isPick ? GOLD : LINE4} color={isPick ? INK : FG1} bold>
+          {text}
+        </Text>
+      ) : (
+        <Text color={color} bold={isPick || isDrawn}>
+          {text}
+        </Text>
+      );
 
-    return detail !== null && isOpen(round) ? face : (numberButton(`${KENO_PICK_KEY}${number}`, face) ?? face);
+    return shown !== null && isOpen(shown) ? face : (numberButton(`${KENO_PICK_KEY}${number}`, face) ?? face);
   };
   const rows = Array.from({ length: KENO_NUMBERS / KENO_COLUMNS }, (_, row) => (
     <Box flexDirection="row">
@@ -242,6 +448,7 @@ export function kenoTable(ui: Ui, round: RoundView | null, prefs: Prefs, numberB
     </Box>
   ));
   const count = picks.size;
+  const hitsText = `${hits} ${hits === 1 ? "hit" : "hits"}`;
 
   return (
     <Box flexDirection="column" gap={1}>
@@ -254,22 +461,29 @@ export function kenoTable(ui: Ui, round: RoundView | null, prefs: Prefs, numberB
             </Text>
             {` ${count === 1 ? "pick" : "picks"}`}
           </Text>
-          {detail?.hits !== null && detail?.hits !== undefined ? (
-            <Text color={round !== null && isWin(round) ? GOLD : FG4} bold>
-              {`${detail.hits} ${detail.hits === 1 ? "hit" : "hits"}`}
+          {shown === null ? (
+            <Text color={FG6}>Ten numbers are drawn.</Text>
+          ) : lit.length === 0 ? (
+            <Text color={FG6}>drawing…</Text>
+          ) : isDrawing ? (
+            <Text color={hits > 0 ? GOLD : FG4} bold>
+              {hitsText}
             </Text>
           ) : (
-            <Text color={FG6}>{detail !== null && isOpen(round) ? "drawing…" : "Ten numbers are drawn."}</Text>
+            <Text color={toneOf(shown.net)} bold>
+              {`${hitsText} `}
+              {verdict(ui, shown)}
+            </Text>
           )}
         </Box>
       </Box>
-      {detail !== null && kenoPays(ui, detail)}
+      {detail !== null && kenoPays(ui, detail.paytable, lit.length === 0 ? null : hits, !isDrawing)}
     </Box>
   );
 }
 
 /** How long the wheel takes to slow from full speed into the drawn segment. */
-export const WHEEL_SPIN_MS = 2_500;
+export const WHEEL_SPIN_MS = 1_500;
 /** How far it turns meanwhile, in laps: the half lap keeps the drawn segment off the pointer when the slowing starts. */
 const SPIN_LAPS = 3.5;
 
@@ -478,9 +692,7 @@ export function wheelTable(
   spinElapsed: number | null,
 ): RenderElement {
   const { Box, Text } = ui;
-  const detail = round?.detail.game === "wheel" ? round.detail : null;
-  const isSame = detail !== null && detail.segments === prefs.wheelSegments && detail.risk === prefs.wheelRisk;
-  const shown: WheelView | null = detail !== null && (isOpen(round) || isSame) ? detail : null;
+  const shown: WheelView | null = shownRound(round, prefs, "wheel")?.detail ?? null;
   const segments = shown?.segments ?? prefs.wheelSegments;
   const risk = shown?.risk ?? prefs.wheelRisk;
   const pays = shown?.multipliers ?? [];

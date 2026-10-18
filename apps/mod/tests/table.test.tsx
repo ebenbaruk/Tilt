@@ -3,7 +3,7 @@ import { describe, expect, test } from "claude-code/testing";
 
 import { DEAL_STEP_MS } from "../hooks/cards";
 import type { PlayRequest, StateResponse } from "../hooks/protocol";
-import { WHEEL_SPIN_MS } from "../hooks/quick";
+import { DICE_ROLL_MS, KENO_DRAW_MS, WHEEL_SPIN_MS } from "../hooks/quick";
 import { TABLE_KEY } from "../hooks/table-input";
 import {
   BACCARAT,
@@ -14,6 +14,8 @@ import {
   BLACKJACK_SIX_TURN,
   BLACKJACK_TURN,
   BLACKJACK_WIN,
+  DICE,
+  KENO,
   WHEEL,
 } from "./fixtures";
 import { BAND, FIRST_TICK_MS, movingTable, PANE, PANE_INLINE, PLUGIN, seat, textOf, type Answer } from "./world";
@@ -203,6 +205,40 @@ describe("the table moves", () => {
     expect(await table()).toContain("balance 12.89");
     expect(await table()).not.toContain("spinning…");
   });
+
+  test(
+    "a dice roll tumbles, then the verdict and the count-up, and Keno lights its numbers first",
+    { timeoutMs: 30_000 },
+    async ($, on) => {
+      let current: StateResponse = { ...BASE, round: null };
+      const { clock } = await seat($, on, current, { "GET /v1/state": () => ({ status: 200, body: current }) });
+      const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+      const table = async () => textOf(await ui.drawn({ in: TABLE_KEY }));
+
+      await ui.press({ key: "game-dice" });
+      current = { ...DICE, balance: "13390000" };
+      await clock.advance(POLL_MS);
+      await ui.advance(DICE_ROLL_MS - 300);
+      expect(await table()).toContain("rolling ");
+      expect(await table()).not.toContain("WIN");
+      expect(await table()).not.toContain("Rolled 37.42");
+
+      await ui.advance(300 + EFFECT_MS);
+      expect(await table()).toContain("rolled 37.42 WIN");
+      expect(await table()).toContain("Rolled 37.42: under 49.00 wins. +0.99");
+      expect(await table()).toContain("balance 13.39");
+
+      await ui.press({ key: "game-keno" });
+      current = renumbered({ ...KENO, balance: "16360000" }, 8);
+      await clock.advance(POLL_MS);
+      await ui.advance(KENO_DRAW_MS - 300);
+      expect(await table()).not.toContain("3 hits of 5 picks.");
+
+      await ui.advance(300 + EFFECT_MS);
+      expect(await table()).toContain("3 hits WIN");
+      expect(await table()).toContain("3 hits of 5 picks. +2.97");
+    },
+  );
 
   test("keys go through while cards are still being dealt", async ($, on) => {
     let current: StateResponse = BASE;
