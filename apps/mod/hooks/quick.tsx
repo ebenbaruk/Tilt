@@ -75,18 +75,16 @@ const HILO_FIRST_MULTIPLIER = "0.9800";
  * The round a start in flight opens, or a draw in flight leaves, drawn as drawing until the
  * chain's shows, as a blackjack deal in flight is drawn face down: the choices sent, nothing
  * drawn. Keno's paytable and the wheel's segments come with the round: the `last` one's, when it
- * was played the same way. A Hilo guess draws its card face down. Null for any other move, and
- * for a wheel spun another way than the last.
+ * was played the same way. A Hilo guess lays its card face down, a Mines reveal or a tower climb
+ * turns its tile. Null for any other move, and for a wheel spun another way than the last.
  */
 export function sentRound(action: PlayAction, last: RoundView | null): RoundView | null {
-  if (action.type === "hilo_guess") {
-    return last?.phase === "player_turn" && last.detail.game === "hilo"
-      ? {
-          ...last,
-          phase: "drawing",
-          detail: { ...last.detail, pending: action.guess, canGuess: false, canCashOut: false },
-        }
-      : null;
+  if (last?.phase === "player_turn") {
+    const detail = sentMove(action, last.detail);
+
+    if (detail !== null) {
+      return { ...last, phase: "drawing", detail };
+    }
   }
 
   const detail = sentDetail(action, last?.detail ?? null);
@@ -105,6 +103,23 @@ export function sentRound(action: PlayAction, last: RoundView | null): RoundView
     settledSignature: null,
     detail,
   };
+}
+
+/** A turn's board once its move is sent: the guess or the tile awaiting its draw, nothing else to play meanwhile. */
+function sentMove(action: PlayAction, board: RoundView["detail"]): RoundView["detail"] | null {
+  if (action.type === "hilo_guess" && board.game === "hilo") {
+    return { ...board, pending: action.guess, canGuess: false, canCashOut: false };
+  }
+
+  if (action.type === "mines_reveal" && board.game === "mines") {
+    return { ...board, pending: action.tile, canReveal: false, canCashOut: false };
+  }
+
+  if (action.type === "tower_climb" && board.game === "tower") {
+    return { ...board, pending: action.tile, canClimb: false, canCashOut: false };
+  }
+
+  return null;
 }
 
 function sentDetail(action: PlayAction, last: RoundView["detail"] | null): RoundView["detail"] | null {

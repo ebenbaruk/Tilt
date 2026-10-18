@@ -1290,6 +1290,8 @@ const GUIDE_ROWS = 4;
 /** The big-win banner in its frame. */
 const BANNER_ROWS = 3;
 const NARROW_EXTRA_ROWS = 2;
+/** Beside the Mines board: the mines, the multiplier, whose move it is, the next tile, the cash-out and the safe tiles. */
+const MINES_SIDE_ROWS = 6;
 
 /** The rows a blackjack table takes: the dealer over hands of these card counts, wrapped to `columns`. */
 function blackjackRows(handCards: readonly number[], size: CardSize, columns: number): number {
@@ -1344,7 +1346,7 @@ function tableRows(
     case "slots":
       return size === "large" ? 5 : 3;
     case "mines":
-      return minesBoardRows(size);
+      return Math.max(minesBoardRows(size), MINES_SIDE_ROWS);
     case "dice":
       return 4;
     case "limbo":

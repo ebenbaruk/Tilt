@@ -4,8 +4,10 @@ import type { RenderElement } from "claude-code";
 
 import type { TableFx } from "./blackjack";
 import { type CardSize, faceDownCards, faceDownOf, handCards } from "./cards";
-import { cardFace, cashOutPayout, formatUsdc, hiloChance, hiloGuessName, towerMultiplier } from "./format";
+import { cardFace, hiloChance, hiloGuessName, towerMultiplier } from "./format";
 import {
+  boardSide,
+  cashOutLine,
   MINE_GLYPH,
   pendingLook,
   SAFE_GLYPH,
@@ -177,14 +179,10 @@ export function hiloTable(ui: Ui, round: RoundView | null, fx: TableFx, size: Ca
         {isTurn && hiloOffer(ui, "higher", rank, detail.higherMultiplier)}
         {isTurn && hiloOffer(ui, "lower", rank, detail.lowerMultiplier)}
         {isTurn && <Text color={FG6}>{`${GUESS_GLYPHS.skip} skip · ${detail.skipsLeft} left`}</Text>}
-        {isOpen(round) && right > 0 && turning === 0 && (
-          <Text color={FG4}>
-            cash out{" "}
-            <Text color={detail.canCashOut ? GOLD : FG6} bold>
-              {formatUsdc(cashOutPayout(round.stake, detail.multiplier))}
-            </Text>
-          </Text>
-        )}
+        {isOpen(round) &&
+          right > 0 &&
+          turning === 0 &&
+          cashOutLine(ui, round.stake, detail.multiplier, detail.canCashOut)}
         {turning === 0 && <Text color={FG6}>{`${right} right`}</Text>}
       </Box>
     </Box>
@@ -281,31 +279,18 @@ export function towerTable(
           </Text>
           {` · ${safe} safe of ${tiles}`}
         </Text>
-        {round !== null && detail !== null && (
-          <Text color={FG4}>
-            multiplier{" "}
-            <Text color={FG1} bold>
-              {`×${detail.multiplier}`}
-            </Text>
-          </Text>
-        )}
-        {isPlaying && detail.nextMultiplier !== null && (
-          <Text color={FG4}>
-            next level <Text color={FG1}>{`×${detail.nextMultiplier}`}</Text>
-          </Text>
-        )}
-        {isPlaying && detail.canCashOut && (
-          <Text color={FG4}>
-            cash out{" "}
-            <Text color={GOLD} bold>
-              {formatUsdc(cashOutPayout(round.stake, detail.multiplier))}
-            </Text>
-          </Text>
-        )}
-        {detail === null ? (
+        {round === null || detail === null ? (
           <Text color={FG6}>Pick the difficulty with j and k, then play with n.</Text>
         ) : (
-          <Text color={FG6}>{`${climbed.length} ${climbed.length === 1 ? "level" : "levels"}`}</Text>
+          boardSide(ui, round, {
+            multiplier: detail.multiplier,
+            nextMultiplier: detail.nextMultiplier,
+            canCashOut: detail.canCashOut,
+            isBusted: detail.busted !== null,
+            safe: climbed.length,
+            nextLabel: "next level",
+            safeLabel: `${climbed.length} ${climbed.length === 1 ? "level" : "levels"}`,
+          })
         )}
       </Box>
     </Box>

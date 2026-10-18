@@ -140,11 +140,20 @@ const cases: [string, StateResponse, string[]][] = [
   [
     "mines, the player to reveal or cash out",
     MINES_TURN,
-    ["3 mines", "multiplier ×1.2857", "next tile ×1.4785", "cash out 1.28", "2 safe", "◆", "rtp 99.00%"],
+    ["3 mines", "multiplier ×1.2857", "YOUR TURN", "next tile ×1.4785", "z cash out 1.28", "2 safe", "◆", "rtp 99.00%"],
   ],
-  ["mines, a reveal drawing", MINES_DRAWING, ["3 mines", "multiplier ×1.1250", "1 safe", "◆"]],
-  ["mines, busted", MINES_BUSTED, ["✸", "◆", "Mine on h after 1 safe tile.", "−1.00", "play · 0.50 · 3 mines"]],
-  ["mines, cashed out", MINES_CASHED, ["◆", "Cashed out at ×1.4785 after 3 safe tiles.", "+0.47"]],
+  // The next tile stays in view while one is drawn; the cash-out waits for it.
+  [
+    "mines, a reveal drawing",
+    MINES_DRAWING,
+    ["3 mines", "multiplier ×1.1250", "drawing…", "next tile ×1.2857", "z cash out 1.12", "1 safe", "◆"],
+  ],
+  ["mines, busted", MINES_BUSTED, ["✸", "◆", "BUST", "Mine on h after 1 safe tile.", "−1.00", "play · 0.50 · 3 mines"]],
+  [
+    "mines, cashed out",
+    MINES_CASHED,
+    ["◆", "CASHED OUT ×1.4785", "Cashed out at ×1.4785 after 3 safe tiles.", "+0.47"],
+  ],
   [
     "dice, a win under the target",
     DICE,
@@ -231,11 +240,20 @@ const cases: [string, StateResponse, string[]][] = [
   [
     "tower, the player to climb or cash out",
     TOWER_TURN,
-    ["easy · 3 safe of 4", "multiplier ×1.7422", "next level ×2.3229", "cash out 1.74", "2 levels", "×13.0519", "◆"],
+    [
+      "easy · 3 safe of 4",
+      "multiplier ×1.7422",
+      "YOUR TURN",
+      "next level ×2.3229",
+      "z cash out 1.74",
+      "2 levels",
+      "×13.0519",
+      "◆",
+    ],
   ],
-  ["tower, a climb drawing", TOWER_DRAWING, ["multiplier ×1.3066", "1 level", "drawing"]],
-  ["tower, a fall", TOWER_BUSTED, ["✸", "◆", "Fell on level 3.", "−1.00", "play · 0.50 · easy"]],
-  ["tower, cashed out", TOWER_CASHED, ["Cashed out at ×1.7422 on level 2.", "+0.73"]],
+  ["tower, a climb drawing", TOWER_DRAWING, ["multiplier ×1.3066", "drawing…", "next level ×1.7422", "1 level"]],
+  ["tower, a fall", TOWER_BUSTED, ["✸", "◆", "BUST", "Fell on level 3.", "−1.00", "play · 0.50 · easy"]],
+  ["tower, cashed out", TOWER_CASHED, ["CASHED OUT ×1.7422", "Cashed out at ×1.7422 on level 2.", "+0.73"]],
   ["an account not open yet", NOT_OPEN, ["No Tilt account yet", "first deposit on the web"]],
   ["play blocked", BLOCKED, ["Play paused · Self-exclusion until 2026-11-01."]],
 ];
@@ -408,6 +426,26 @@ describe("the Mines board", () => {
 
     expect(actionsOf(world.calls("POST /v1/play"))).toEqual([{ type: "mines_reveal", tile: 0 }]);
   });
+
+  for (const [game, turn, key] of [
+    ["mines", MINES_TURN, "mines-tile-0"],
+    ["tower", TOWER_TURN, "tower-tile-0"],
+  ] as const) {
+    test(`${game}: a move turns its tile from the key on, before the api shows it drawing`, async ($, on) => {
+      const answer = { status: 200, body: { intentId: "sent", status: "submitted", error: null } };
+
+      await seat($, on, turn, { "POST /v1/play": () => answer });
+      const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+
+      expect(await shownText(ui)).toContain("YOUR TURN");
+      expect(await shownText(ui)).not.toMatch(/[◐◓◑◒]/);
+      await ui.press({ key });
+      const text = await shownText(ui);
+
+      expect(text).toContain("drawing…");
+      expect(text).toMatch(/[◐◓◑◒]/);
+    });
+  }
 
   test("a reveal being drawn turns its tile and holds the other tiles' keys, inert", async ($, on) => {
     const { clock } = await seat($, on, MINES_DRAWING);

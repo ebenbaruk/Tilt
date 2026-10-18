@@ -700,13 +700,16 @@ const START_VERB: Record<Game, string> = {
   tower: "play",
 };
 
+/** The key a Mines, Hilo or tower round is cashed out with, named on the table too. */
+export const CASH_OUT_HOTKEY = "z";
+
 /** A cash-out key on `z` at the current multiplier: what it returns before Tilt's fee. */
 function cashOutKey(game: "mines" | "hilo" | "tower", stake: string, multiplier: string): KeyAction {
   const action: PlayAction = { type: `${game}_cashout` };
 
   return {
     key: `${game}-cashout`,
-    hotkey: "z",
+    hotkey: CASH_OUT_HOTKEY,
     label: `cash out · ${formatUsdc(cashOutPayout(stake, multiplier))}`,
     isSelected: false,
     command: { kind: "play", action },

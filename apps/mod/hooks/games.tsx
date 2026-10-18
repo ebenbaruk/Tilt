@@ -13,6 +13,7 @@ import {
   rouletteWins,
 } from "./format";
 import {
+  CASH_OUT_HOTKEY,
   cursorBet,
   MINES_COLUMNS,
   MINES_TILE_KEY,
@@ -687,6 +688,82 @@ export function slotsTable(ui: Ui, round: RoundView | null, size: CardSize, spin
   );
 }
 
+/** `z cash out 1.53`: what a cash-out returns now, on its key; dim while it is not offered (a draw on its way). */
+export function cashOutLine(ui: Ui, stake: string, multiplier: string, isOffered: boolean): RenderElement {
+  const { Text } = ui;
+  const color = isOffered ? GOLD : FG6;
+
+  return (
+    <Text color={FG4}>
+      <Text color={color} bold>
+        {CASH_OUT_HOTKEY}
+      </Text>
+      {" cash out "}
+      <Text color={color} bold>
+        {formatUsdc(cashOutPayout(stake, multiplier))}
+      </Text>
+    </Text>
+  );
+}
+
+/** A Mines or tower round as its side tells it, under the mines or the difficulty. */
+interface BoardProgress {
+  multiplier: string;
+  nextMultiplier: string | null;
+  canCashOut: boolean;
+  isBusted: boolean;
+  /** Safe tiles or levels so far: a cash-out is offered from the first. */
+  safe: number;
+  /** "next tile", "next level". */
+  nextLabel: string;
+  /** "2 safe", "2 levels". */
+  safeLabel: string;
+}
+
+/**
+ * The side of a Mines or tower board, as blackjack tags its hands: the multiplier, whose move it
+ * is (a tile on its way, or how the round ended: BUST in red, CASHED OUT in gold), what the next
+ * tile or level brings, and the cash-out on its key.
+ */
+export function boardSide(ui: Ui, round: RoundView, progress: BoardProgress): RenderElement[] {
+  const { Text } = ui;
+  const isOpen = round.phase !== "idle";
+  const state =
+    round.phase === "drawing" ? (
+      <Text color={FG4}>drawing…</Text>
+    ) : isOpen ? (
+      <Text color={PINK} bold>
+        YOUR TURN
+      </Text>
+    ) : progress.isBusted ? (
+      <Text color={RED} bold>
+        BUST
+      </Text>
+    ) : (
+      <Text color={GOLD} bold>
+        {`CASHED OUT ×${progress.multiplier}`}
+      </Text>
+    );
+
+  return [
+    <Text color={FG4}>
+      multiplier{" "}
+      <Text color={FG1} bold>
+        {`×${progress.multiplier}`}
+      </Text>
+    </Text>,
+    state,
+    isOpen && progress.nextMultiplier !== null && (
+      <Text color={FG4}>
+        {`${progress.nextLabel} `}
+        <Text color={FG1}>{`×${progress.nextMultiplier}`}</Text>
+      </Text>
+    ),
+    isOpen && progress.safe > 0 && cashOutLine(ui, round.stake, progress.multiplier, progress.canCashOut),
+    <Text color={FG6}>{progress.safeLabel}</Text>,
+  ].filter((row): row is RenderElement => row !== false);
+}
+
 /** A tile's glyphs: a gem found, the mine that ended the round, a tile awaiting its draw turning through these. */
 export const SAFE_GLYPH = "◆";
 export const MINE_GLYPH = "✸";
@@ -861,26 +938,15 @@ export function minesTable(
   return table(
     <Box flexDirection="column">
       {count}
-      <Text color={FG4}>
-        multiplier{" "}
-        <Text color={FG1} bold>
-          {`×${detail.multiplier}`}
-        </Text>
-      </Text>
-      {isOpen && detail.nextMultiplier !== null && (
-        <Text color={FG4}>
-          next tile <Text color={FG1}>{`×${detail.nextMultiplier}`}</Text>
-        </Text>
-      )}
-      {isOpen && detail.canCashOut && (
-        <Text color={FG4}>
-          cash out{" "}
-          <Text color={GOLD} bold>
-            {formatUsdc(cashOutPayout(round.stake, detail.multiplier))}
-          </Text>
-        </Text>
-      )}
-      <Text color={FG6}>{`${detail.revealed.length} safe`}</Text>
+      {boardSide(ui, round, {
+        multiplier: detail.multiplier,
+        nextMultiplier: detail.nextMultiplier,
+        canCashOut: detail.canCashOut,
+        isBusted: detail.busted !== null,
+        safe: detail.revealed.length,
+        nextLabel: "next tile",
+        safeLabel: `${detail.revealed.length} safe`,
+      })}
     </Box>,
   );
 }
