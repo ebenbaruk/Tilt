@@ -19,8 +19,9 @@
 //   one, every choice that can reproduce the payout is tried (keno: the picks are unknown, only
 //   how many and how many hit matter, so drawn numbers stand for the hits and others for the misses);
 // - hilo: the first draw is the first card, then one per guess, in order. The snapshot (the
-//   board) gives the guesses and the cap; without one, every sequence of guesses the cards allow
-//   is tried, uncapped (the vault's max_round_gain is unknown here);
+//   board) gives the guesses and the cap; without one, guesses are searched for a sequence the
+//   cards allow that settles at the program's gross return (payout + fee), with the board's own
+//   cap of 10 000× the stake (the vault's max_round_gain is unknown here);
 // - tower: like mines, one draw per climb; the snapshot gives the difficulty, tiles and cap.
 //   Cash-outs of hilo and tower take no draw either.
 // A round "matches" when a replay reproduces the program's payout and fee (and the snapshot,
@@ -315,20 +316,22 @@ function wheelCandidates(randomness: Uint8Array, stake: bigint, snapshot: Outcom
 
 type HiloOutcome = Extract<Outcome, { game: "hilo" }>;
 
-/** Bounds the search of a hilo round without snapshot. */
-const MAX_HILO_STATES = 100_000;
+/** Bounds the search of a hilo round without snapshot: one step per state, a few ms at most. */
+const MAX_HILO_STATES = 10_000;
 /** No cap known without a snapshot: the largest gain a u64 can hold. */
 const UNCAPPED = (1n << 64n) - 1n;
 
 /** Plays `guesses` on the cards the draws give. A cash-out (the round did not end by itself)
- *  needs a right guess. */
+ *  needs a right guess. An impossible candidate is still shown, so it keeps only guesses these
+ *  cards can play. */
 function hiloCandidate(cards: number[], guesses: HiloGuess[], stake: bigint, gain: bigint): Candidate {
   const played = guesses.length === cards.length - 1 ? hilo.play(stake, gain, cards, guesses) : null;
   const gross = played ? (played.ended ?? hilo.gross(stake, played.fair, gain)) : 0n;
+  const prefix = guesses.slice(0, cards.length - 1);
   const outcome: HiloOutcome = {
     game: "hilo",
     cards,
-    guesses,
+    guesses: played || hilo.play(stake, gain, cards, prefix) ? prefix : [],
     pending: null,
     busted: played?.busted ?? false,
     maxGain: gain.toString(),
@@ -336,29 +339,53 @@ function hiloCandidate(cards: number[], guesses: HiloGuess[], stake: bigint, gai
   return { outcome, gross, possible: played !== null && (played.ended !== null || played.right >= 1) };
 }
 
-function hiloCandidates(draws: Uint8Array[], stake: bigint, snapshot: Outcome | null): Candidate[] {
+/** Guesses on `cards` that settle the round at `target` (its gross return), searched depth first
+ *  with the board carried along, so each state costs one step. A multiplier never goes down: a
+ *  board already past a target below the cap cannot reach it. Null when none is found within
+ *  the budget. */
+function hiloGuessesFor(cards: number[], stake: bigint, gain: bigint, target: bigint): HiloGuess[] | null {
+  const cap = stake + gain;
+  const last = cards.length - 1;
+  const guesses: HiloGuess[] = [];
+  /** Fewest skips each board (card, multiplier) was seen with: more skips can only do less. */
+  const seen = new Map<string, number>();
+  /** The board showing card `i` after a guess: the cap or a full board ends the round there. */
+  const reached = (i: number, fair: bigint, right: number, skips: number): boolean => {
+    if (i + 1 === hilo.MAX_CARDS || hilo.uncappedGross(stake, fair) >= cap) {
+      return i === last && hilo.gross(stake, fair, gain) === target;
+    }
+    return inPlay(i, fair, right, skips);
+  };
+  /** The board showing card `i`, waiting for the player: a cash-out on the last card. */
+  const inPlay = (i: number, fair: bigint, right: number, skips: number): boolean => {
+    if (i === last) return right >= 1 && hilo.gross(stake, fair, gain) === target;
+    if (target > 0n && target < cap && hilo.uncappedGross(stake, fair) > target) return false;
+    const key = `${i}:${fair}`;
+    if ((seen.get(key) ?? Infinity) <= skips || seen.size >= MAX_HILO_STATES) return false;
+    seen.set(key, skips);
+    const current = hilo.rank(cards[i]);
+    for (const guess of hilo.GUESSES) {
+      const winning = hilo.winningRanks(guess, current);
+      guesses.push(guess);
+      if (winning === null) {
+        if (skips < hilo.MAX_SKIPS && reached(i + 1, fair, right, skips + 1)) return true;
+      } else if (!hilo.isRight(guess, current, hilo.rank(cards[i + 1]))) {
+        if (i + 1 === last && target === 0n) return true;
+      } else if (reached(i + 1, hilo.nextFair(fair, winning), right + 1, skips)) {
+        return true;
+      }
+      guesses.pop();
+    }
+    return false;
+  };
+  return cards.length > 0 && inPlay(0, hilo.FAIR_ONE, 0, 0) ? guesses : null;
+}
+
+function hiloCandidates(draws: Uint8Array[], stake: bigint, snapshot: Outcome | null, target: bigint): Candidate[] {
   const cards = draws.map((d) => hilo.drawCard(Rng.fromVrf(d)));
   if (snapshot?.game === "hilo") return [hiloCandidate(cards, snapshot.guesses, stake, BigInt(snapshot.maxGain))];
-  const candidates: Candidate[] = [];
-  const seen = new Set<string>();
-  /** Extends `guesses` (all leading to the round still in play) by one guess per remaining card. */
-  const explore = (guesses: HiloGuess[]): void => {
-    if (seen.size > MAX_HILO_STATES) return;
-    const played = hilo.play(stake, UNCAPPED, cards.slice(0, guesses.length + 1), guesses);
-    if (!played) return;
-    if (guesses.length === cards.length - 1) {
-      candidates.push(hiloCandidate(cards, guesses, stake, UNCAPPED));
-      return;
-    }
-    if (played.ended !== null) return;
-    // Guesses leading to the same fair multiplier and skips play on alike: try one of them.
-    const key = `${guesses.length}:${played.fair}:${played.skips}:${played.right > 0}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    for (const guess of hilo.GUESSES) explore([...guesses, guess]);
-  };
-  explore([]);
-  return candidates.length > 0 ? candidates : [hiloCandidate(cards, [], stake, UNCAPPED)];
+  const gain = hilo.maxGain(stake, UNCAPPED);
+  return [hiloCandidate(cards, hiloGuessesFor(cards, stake, gain, target) ?? [], stake, gain)];
 }
 
 type TowerOutcome = Extract<Outcome, { game: "tower" }>;
@@ -425,7 +452,10 @@ export function replay(input: ReplayInput): ReplayResult {
     case "wheel":
       return choose(wheelCandidates(last, input.stake, input.snapshot), input);
     case "hilo":
-      return choose(hiloCandidates(input.draws, input.stake, input.snapshot), input);
+      return choose(
+        hiloCandidates(input.draws, input.stake, input.snapshot, input.onChain.payout + input.onChain.fee),
+        input,
+      );
     case "tower":
       return choose(towerCandidates(input.draws, input.stake, input.snapshot), input);
   }

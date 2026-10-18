@@ -12,7 +12,7 @@ use crate::settlement::Settlement;
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, InitSpace, PartialEq, Eq, Debug)]
 pub struct Config {
-    /// Smallest stake; below it the 1% fee would round to nothing while Tilt still pays the round.
+    /// Smallest stake. Whatever a round gains, a win pays Tilt at least `MIN_FEE` (`settle`).
     pub min_bet: u64,
     /// Largest stake for one round, in USDC base units.
     pub max_bet: u64,
@@ -52,11 +52,8 @@ pub struct Config {
 impl Config {
     /// Refuses settings that would silently break play or payouts.
     pub fn validate(&self) -> Result<()> {
-        use crate::settlement::{mul_div, BPS, FEE_BPS};
         require!(
-            // Below BPS / FEE_BPS units of gain the 1% fee rounds to zero; the smallest gain
-            // of a winning bet is a Banker win at baccarat, 95% of the stake.
-            mul_div(self.min_bet, 95, 100) >= BPS / FEE_BPS
+            self.min_bet > 0
                 && self.min_bet <= self.max_bet
                 // Settlement multiplies stakes by up to the slots jackpot; a doubled blackjack
                 // stake only returns 2x, well within this.
@@ -533,8 +530,7 @@ mod tests {
         assert!(config().validate().is_ok());
         for broken in [
             Config {
-                // A Banker win would gain 99: no fee.
-                min_bet: 105,
+                min_bet: 0,
                 ..config()
             },
             Config {

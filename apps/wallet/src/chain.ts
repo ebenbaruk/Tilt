@@ -44,6 +44,25 @@ type RollupAction = Exclude<Action, { type: "open_account" | "deposit" }>;
 
 const isBlackjack = (action: RollupAction) => action.type.startsWith("blackjack_");
 
+/** Moves that put a stake down: the only ones the program checks against the win cap, so the
+ *  only ones whose refusal may raise it. */
+const STAKING_MOVES: ReadonlySet<RollupAction["type"]> = new Set<RollupAction["type"]>([
+  "blackjack_bet",
+  "blackjack_split",
+  "roulette_spin",
+  "roulette_chips",
+  "baccarat_deal",
+  "slots_spin",
+  "mines_bet",
+  "dice_roll",
+  "limbo_play",
+  "flip_play",
+  "keno_play",
+  "wheel_spin",
+  "hilo_bet",
+  "tower_bet",
+]);
+
 /** Per-player game accounts the rollup must hold before that game's first move: opened and
  *  delegated on Solana by the relayer, never closed. */
 type GameAccount = "table" | "quick" | "roulette" | "mines" | "hilo" | "tower";
@@ -287,8 +306,8 @@ export class TiltChain {
   /** A round action or a withdrawal, in the rollup. Blackjack needs the player's table and the
    *  other games but baccarat, slots and single-bet roulette their own account (one-draw or
    *  roulette table, Mines, Hilo or Tower board), opened first on the player's first move of that
-   *  game. A move past the player's win cap is sent again once Solana has raised the cap from the
-   *  free bankroll (the rolling win cap). */
+   *  game. A staking move past the player's win cap is sent again once Solana has raised the cap
+   *  from the free bankroll (the rolling win cap). */
   async play(player: PublicKey, action: RollupAction, record: RecordSend): Promise<string> {
     if (!(await this.isOpen(player))) throw new IntentError("ACCOUNT_NOT_OPEN", "no account yet: deposit first");
     const gameAccount = action.type === "roulette_chips" ? "roulette" : GAME_ACCOUNT_OF[action.type.split("_")[0]];
@@ -298,7 +317,8 @@ export class TiltChain {
     } catch (e) {
       // A program refusal comes from the simulation: nothing was sent, so sending again is safe.
       const short = e instanceof IntentError && e.message === "WinCapReached" ? winCapShortfall(e.logs) : undefined;
-      if (short === undefined) throw e;
+      // Fail closed: a move staking nothing never reserves bankroll.
+      if (short === undefined || !STAKING_MOVES.has(action.type)) throw e;
       await this.raiseWinCap(player, short);
       return this.sendRollup(await this.playTransaction(player, action), record);
     }

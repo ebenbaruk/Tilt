@@ -47,12 +47,12 @@ scripts/
 | Flip | 1 à 10 pièces `below(2)`, toutes du côté choisi | 98,00 % (exact) | `0,98 × 2ⁿ − 1` |
 | Keno | 1 à 10 numéros sur 40, 10 tirés sans remise (Fisher–Yates), table `keno::PAYTABLES` | 94,90 à 95,00 % selon le nombre de numéros (exact, testé) | 999 (10/10) |
 | Wheel | 10 à 50 segments, risque faible/moyen/élevé, tables `wheel::multiplier` de somme `98 × segments` | 98,00 % (exact) | `0,98 × segments − 1` (risque élevé) |
-| Hilo | Carte `below(52)`, as bas. Plus haut ou égal / plus bas ou égal ; au roi, plus bas strict ; à l'as, plus haut strict (aucun pari n'est certain) ; 10 cartes passées au plus, 64 cartes par manche. Multiplicateur `0,98 × Π 13 / issues gagnantes` (virgule fixe 10⁻⁶, arrondie vers le bas) | 98,00 % à chaque point d'encaissement | borné par `max_round_gain` |
+| Hilo | Carte `below(52)`, as bas. Plus haut ou égal / plus bas ou égal ; au roi, plus bas strict ; à l'as, plus haut strict (aucun pari n'est certain) ; 10 cartes passées au plus, 64 cartes par manche. Multiplicateur `0,98 × Π 13 / issues gagnantes` (virgule fixe 10⁻⁶, arrondie vers le bas) | 98,00 % à chaque point d'encaissement | 9 999 (retour plafonné à 10 000×), borné par `max_round_gain` |
 | Tower | 9 étages ; facile 3/4, moyen 2/3, difficile 1/2, expert 1/3, maître 1/4 cases sûres ; chaque case tirée au clic (`below(cases) < sûres`) ; `0,98 × (cases / sûres)^étages` | 98,00 % à chaque point d'encaissement | `0,98 × (cases / sûres)⁹ − 1`, borné par `max_round_gain` |
 
 Les jeux à un tirage refusent (`RoundGainTooHigh`) un choix dont le gain max dépasse `max_round_gain`, sans jamais le plafonner (ce qui changerait le RTP). Mines, Hilo et Tower plafonnent le gain et s'encaissent seuls au plafond.
 
-Chaque tirage a un identifiant de requête (`round.request_id`) transmis avec la requête VRF : seule la réponse à la requête en cours peut jouer la manche, une réponse tardive est refusée. À la fin de chaque manche, l'événement `RoundSettled` (jeu, mise, gain, frais, aléa) est émis dans le rollup ; en rejouant l'aléa dans les règles des jeux, on retrouve le résultat. Les 1 % Tilt sont pris sur le gain de chaque manche gagnante, jamais sur la mise ni sur une perte ou une égalité.
+Chaque tirage a un identifiant de requête (`round.request_id`) transmis avec la requête VRF : seule la réponse à la requête en cours peut jouer la manche, une réponse tardive est refusée. À la fin de chaque manche, l'événement `RoundSettled` (jeu, mise, gain, frais, aléa) est émis dans le rollup ; en rejouant l'aléa dans les règles des jeux, on retrouve le résultat. Les 1 % Tilt sont pris sur le gain de chaque manche gagnante (arrondis vers le bas, au moins 1 unité : un gain de moins de 100 unités paie 1 unité), jamais sur la mise ni sur une perte ou une égalité.
 
 ## Parcours
 

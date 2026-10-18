@@ -19,6 +19,7 @@ import * as roulette from "../src/games/roulette";
 import { settle } from "../src/games/settlement";
 import * as slots from "../src/games/slots";
 import * as tower from "../src/games/tower";
+import { buildRoundView } from "../src/games/view";
 import * as wheel from "../src/games/wheel";
 import { PlayActionSchema } from "../src/schemas";
 import vectors from "./fixtures/rust-vectors.json";
@@ -79,8 +80,18 @@ describe("settlement", () => {
     expect(settle(1_000_000n, 2_000_000n)).toEqual({ payout: 1_990_000n, fee: 10_000n });
     expect(settle(1_000_000n, 1_000_000n)).toEqual({ payout: 1_000_000n, fee: 0n });
     expect(settle(1_000_000n, 0n)).toEqual({ payout: 0n, fee: 0n });
-    expect(settle(1_000n, 1_199n).fee).toBe(1n);
-    expect(settle(1_000n, 1_099n).fee).toBe(0n);
+    expect(settle(1_000n, 1_299n).fee).toBe(2n);
+  });
+
+  it("takes at least 1 unit of a win, never more than its gain", () => {
+    expect(settle(1_000n, 1_099n).fee).toBe(1n);
+    expect(settle(1_000n, 1_001n)).toEqual({ payout: 1_000n, fee: 1n });
+    fc.assert(
+      fc.property(fc.bigInt(1n, 10n ** 12n), fc.bigInt(1n, 10n ** 6n), (stake, gain) => {
+        const { payout, fee } = settle(stake, stake + gain);
+        return fee >= 1n && payout >= stake && payout + fee === stake + gain;
+      }),
+    );
   });
 });
 
@@ -642,6 +653,11 @@ describe("hilo", () => {
     expect(formatFixed(hilo.scaledMultiplier(STAKE, fair, 10n ** 12n), 4)).toBe("1.8199");
     expect(formatFixed(hilo.scaledMultiplier(STAKE, 100n * hilo.FAIR_ONE, 2_000_000n), 4)).toBe("3.0000");
   });
+
+  it("caps a round at 10 000x its stake, and at the round limit", () => {
+    expect(hilo.maxGain(1_000n, 10n ** 12n)).toBe(9_999_000n);
+    expect(hilo.maxGain(1_000n, 5_000_000n)).toBe(5_000_000n);
+  });
 });
 
 describe("tower", () => {
@@ -1005,6 +1021,84 @@ describe("replay (GET /verify)", () => {
     expect(cash).toMatchObject({ matches: true, gross: BigInt(cashedOut.gross), outcome: { cards: cashedOut.cards } });
     const bust = replay({ ...multiInput("hilo", busted), snapshot: null });
     expect(bust).toMatchObject({ matches: true, gross: 0n, outcome: { busted: true, cards: busted.cards } });
+  });
+
+  /** A VRF output whose card has rank `r`. */
+  const rankSeed = (r: number) => {
+    for (let i = 0; ; i++) {
+      const seed = new Uint8Array(32);
+      new DataView(seed.buffer).setUint32(0, i, true);
+      if (hilo.rank(hilo.drawCard(Rng.fromVrf(seed))) === r) return seed;
+    }
+  };
+  /** `n` cards, the ten skips first (the search tries them last), then right guesses, cashed out. */
+  const skipsFirst = (n: number): ReplayInput => {
+    const ranks = Array.from({ length: n }, (_, i) => 1 + ((i * 5) % 13));
+    const draws = ranks.map(rankSeed);
+    const guesses = ranks
+      .slice(1)
+      .map((next, i): HiloGuess =>
+        i < hilo.MAX_SKIPS ? "skip" : hilo.isRight("higher", ranks[i], next) ? "higher" : "lower",
+      );
+    const gain = hilo.maxGain(STAKE, 1n << 64n);
+    const played = hilo.play(
+      STAKE,
+      gain,
+      ranks.map((r) => r - 1),
+      guesses,
+    );
+    if (!played || played.ended !== null) throw new Error("a cash-out expected");
+    return {
+      game: "hilo",
+      stake: STAKE,
+      onChain: settle(STAKE, hilo.gross(STAKE, played.fair, gain)),
+      draws,
+      snapshot: null,
+    };
+  };
+
+  it("replays a hilo round without a board whose skips come first", () => {
+    expect(replay(skipsFirst(20)).matches).toBe(true);
+  });
+
+  it("bounds the work of a long hilo round without a board", () => {
+    // The search used to replay every card for each of 100 000 boards: ~1 s here, blocking the api.
+    const input = skipsFirst(30);
+    const started = performance.now();
+    replay(input);
+    replay({ ...input, onChain: { payout: 0n, fee: 0n } });
+    expect(performance.now() - started).toBeLessThan(200);
+  });
+
+  it("shows a hilo round with draws missing without failing", () => {
+    // The snapshot has two guesses but only the first card was indexed.
+    const snapshot: Outcome = {
+      game: "hilo",
+      cards: [3, 20, 7],
+      guesses: ["higher", "skip"],
+      pending: null,
+      busted: false,
+      maxGain: "1000000",
+    };
+    const result = replay({
+      game: "hilo",
+      stake: STAKE,
+      onChain: { payout: 0n, fee: 0n },
+      draws: [rankSeed(4)],
+      snapshot,
+    });
+    expect(result).toMatchObject({ matches: false, outcome: { guesses: [] } });
+    const view = buildRoundView({
+      player: "11111111111111111111111111111111",
+      number: 2,
+      status: { kind: "idle" },
+      stake: STAKE,
+      payout: result.settlement.payout,
+      fee: result.settlement.fee,
+      outcome: result.outcome,
+      settledSignature: "x",
+    });
+    expect(view.detail).toMatchObject({ game: "hilo", guesses: [] });
   });
 
   it("does not match a hilo round with a draw missing or after the round ended, or other guesses", () => {

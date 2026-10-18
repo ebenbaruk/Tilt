@@ -113,7 +113,7 @@ Référence visuelle : la maquette d'Eli (image partagée dans la conversation, 
 | Flip | v1 | Pile ou face sur 1 à 10 pièces, toutes du côté choisi : 0,98 × 2ⁿ. RTP 98,00 %. |
 | Keno | v1 | 1 à 10 numéros sur 40, 10 tirés, table de gains publique par nombre de numéros (jusqu'à 1 000× à 10/10). RTP entre 94,90 et 95,00 % selon le nombre de numéros. |
 | Wheel | v1 | Roue de 10 à 50 segments, risque faible, moyen ou élevé, table publique. RTP 98,00 %. |
-| Hilo | v1 | Sabot infini : plus haut ou égal / plus bas ou égal que la carte suivante ; au roi, plus bas strict ; à l'as, plus haut strict (aucun pari n'est certain). 10 cartes passées au plus, encaissement dès une bonne réponse. Multiplicateur 0,98 × Π 13 / issues gagnantes ; gain plafonné par `max_round_gain`. RTP 98,00 %. |
+| Hilo | v1 | Sabot infini : plus haut ou égal / plus bas ou égal que la carte suivante ; au roi, plus bas strict ; à l'as, plus haut strict (aucun pari n'est certain). 10 cartes passées au plus, encaissement dès une bonne réponse. Multiplicateur 0,98 × Π 13 / issues gagnantes ; retour plafonné à 10 000 × la mise et par `max_round_gain`. RTP 98,00 %. |
 | Tower | v1 | Dragon Tower : 9 étages, 5 difficultés (4 cases dont 3 sûres … 4 cases dont 1 sûre), chaque case tirée au clic, encaissement dès un étage, 0,98 × (cases / sûres)^étages, plafonné par `max_round_gain`. RTP 98,00 %. |
 | Autres (crash, plinko…) | plus tard | |
 

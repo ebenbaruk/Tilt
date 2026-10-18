@@ -2,6 +2,9 @@
 
 /// Tilt keeps 1% of what each winning round gains (never of the stake, never on losses or pushes).
 pub const FEE_BPS: u64 = 100;
+/// Least fee on a winning round: 1% of a gain under 100 units rounds to nothing, and some games
+/// gain that little (Limbo 1.01×, a hedged roulette spin), while Tilt still pays the round.
+pub const MIN_FEE: u64 = 1;
 pub const BPS: u64 = 10_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,7 +23,8 @@ pub fn settle(stake: u64, gross: u64) -> Settlement {
         };
     }
     let gain = gross - stake;
-    let fee = gain * FEE_BPS / BPS;
+    // At most the gain (at least 1 here): a win never pays back less than the stake.
+    let fee = (gain * FEE_BPS / BPS).max(MIN_FEE);
     Settlement {
         payout: gross - fee,
         fee,
@@ -63,12 +67,28 @@ mod tests {
 
     #[test]
     fn fee_rounds_down_in_the_players_favour() {
-        // A 199-unit gain pays a 1-unit fee; below 100 units the fee is 0, hence `min_bet`.
         assert_eq!(settle(1_000, 1_199).fee, 1);
-        assert_eq!(settle(1_000, 1_099).fee, 0);
-        // A Banker win gains 95% of the stake: the smallest valid `min_bet` (106) still pays a fee.
-        assert_eq!(settle(106, 106 + mul_div(106, 95, 100)).fee, 1);
-        assert_eq!(settle(105, 105 + mul_div(105, 95, 100)).fee, 0);
+        assert_eq!(settle(1_000, 1_299).fee, 2);
+    }
+
+    #[test]
+    fn every_win_pays_a_fee_and_at_least_the_stake() {
+        // Under 100 units of gain, 1% rounds to nothing: the fee is 1 unit.
+        assert_eq!(settle(1_000, 1_099).fee, 1);
+        assert_eq!(
+            settle(1_000, 1_001),
+            Settlement {
+                payout: 1_000,
+                fee: 1
+            }
+        );
+        for stake in [1, 106, 1_000, 99_999] {
+            for gross in stake + 1..stake + 300 {
+                let s = settle(stake, gross);
+                assert!(s.fee >= 1 && s.payout >= stake, "{stake} -> {gross}");
+                assert_eq!(s.payout + s.fee, gross);
+            }
+        }
     }
 
     #[test]

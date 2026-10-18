@@ -3,11 +3,12 @@
 //! they want. At the edges, where "or equal" would be certain, the bet is strict: lower from
 //! a king wins on 1..=12, higher from an ace on 2..=13. Each card is its own VRF draw. A right
 //! guess multiplies the fair multiplier by `13 / winning ranks`; the round pays `0.98 ×` the
-//! fair multiplier (RTP 98.00% at every cash-out point, before Tilt's fee).
+//! fair multiplier (RTP 98.00% at every cash-out point, before Tilt's fee). A round returns at
+//! most `MAX_MULTIPLE` × its stake, like Limbo's highest target.
 
 use anchor_lang::prelude::*;
 
-use crate::games::to_u64;
+use crate::games::{gain, to_u64};
 use crate::rng::Rng;
 
 pub const RANKS: u8 = 13;
@@ -20,6 +21,8 @@ pub const MAX_SKIPS: u8 = 10;
 pub const FAIR_ONE: u128 = 1_000_000;
 /// `pending` when no guess waits for its card.
 pub const NONE: u8 = 255;
+/// Most a round returns, × its stake: what it reserves of the bankroll scales with the stake.
+pub const MAX_MULTIPLE: u64 = 10_000;
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, InitSpace, PartialEq, Eq, Debug)]
 pub enum HiloMove {
@@ -82,6 +85,12 @@ pub fn next_fair(fair: u128, winning: u8) -> u128 {
 /// Saturates: a product past u128 is far above any cap.
 pub fn gross_uncapped(stake: u64, fair: u128) -> u128 {
     (stake as u128).saturating_mul(98).saturating_mul(fair) / (100 * FAIR_ONE)
+}
+
+/// Most a round of `stake` can gain: `MAX_MULTIPLE` × the stake, at most `max_round_gain`.
+/// Saturates like every game's `max_gain`, so a huge stake is refused by `start_round`.
+pub fn max_gain(stake: u64, max_round_gain: u64) -> u64 {
+    gain(stake, stake as u128 * MAX_MULTIPLE as u128).min(max_round_gain)
 }
 
 /// The player's Hilo round. Lives in the rollup next to the player account; between rounds
@@ -360,6 +369,19 @@ mod tests {
         // 1 000, round limit 3 000: ace then lower ×1 (13×) passes the 4 000 cap.
         let mut b = board(1, 3_000);
         assert_eq!(guess(&mut b, HiloMove::Lower, 1), Some(4_000));
+    }
+
+    #[test]
+    fn the_max_gain_scales_with_the_stake() {
+        assert_eq!(max_gain(1_000, u64::MAX), 9_999_000);
+        assert_eq!(max_gain(1_000, 5_000_000), 5_000_000, "the round limit");
+        assert_eq!(max_gain(u64::MAX, u64::MAX), u64::MAX, "saturates");
+        // The board cashes out once the multiplier reaches 10 000×: 13× four times is 28 561×.
+        let mut b = board(1, max_gain(1_000, u64::MAX));
+        for _ in 0..3 {
+            assert_eq!(guess(&mut b, HiloMove::Lower, 1), None);
+        }
+        assert_eq!(guess(&mut b, HiloMove::Lower, 1), Some(10_000_000));
     }
 
     #[test]

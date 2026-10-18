@@ -8,7 +8,7 @@ use ephemeral_rollups_sdk::cpi::DelegateConfig;
 
 use crate::constants::{ACCOUNT_SEED, HILO_SEED, LEDGER_SEED, VAULT_SEED};
 use crate::errors::TiltError;
-use crate::games::hilo::{HiloBoard, HiloMove};
+use crate::games::hilo::{self, HiloBoard, HiloMove};
 use crate::instructions::play::{
     callback_account, draw_request, expired_draw, now, pending_draw, settle_round,
 };
@@ -103,7 +103,8 @@ pub struct ConsumeHiloRandomness<'info> {
 }
 
 /// Takes the stake of a new round and resets the board; the first card is drawn next. The
-/// multiplier has no ceiling of its own: the round limit is the cap.
+/// round reserves `hilo::max_gain`, in proportion to the stake (never the whole round limit for
+/// a small bet).
 fn start_hilo(
     account: &mut PlayerAccount,
     board: &mut HiloBoard,
@@ -111,7 +112,7 @@ fn start_hilo(
     config: &Config,
     now: i64,
 ) -> Result<()> {
-    let max_gain = config.max_round_gain;
+    let max_gain = hilo::max_gain(amount, config.max_round_gain);
     account.start_round(Game::Hilo, amount, 1, max_gain, config, now)?;
     board.start(amount, max_gain);
     Ok(())
@@ -355,6 +356,21 @@ mod tests {
             b,
             HiloBoard::default(),
             "a refused bet leaves the board alone"
+        );
+    }
+
+    #[test]
+    fn a_small_bet_reserves_a_gain_in_proportion_to_its_stake() {
+        // Headroom far below the 50 000 000 round limit: a 1 000 bet only needs 9 999 000.
+        let (mut a, mut b) = (account(), HiloBoard::default());
+        a.max_win = 9_999_000;
+        start_hilo(&mut a, &mut b, 1_000, &config(), 0).unwrap();
+        assert_eq!(b.max_gain, 9_999_000);
+        let (mut a, mut b) = (account(), HiloBoard::default());
+        a.max_win = 9_998_999;
+        assert_eq!(
+            start_hilo(&mut a, &mut b, 1_000, &config(), 0),
+            Err(TiltError::WinCapReached.into())
         );
     }
 
