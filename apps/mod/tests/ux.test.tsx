@@ -398,6 +398,22 @@ describe("spins", () => {
     expect(textOf(await ui.drawn())).toContain("+3.96");
   });
 
+  test("the band says the pocket and the net only once the wheel lands", async ($, on) => {
+    const { show, clock } = await moving($, on, { ...BASE, round: null });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...BAND });
+
+    await ui.press({ key: "game-roulette" });
+    await show(ROULETTE);
+    const spinning = textOf(await ui.drawn());
+
+    expect(spinning).toContain("roulette · red");
+    expect(spinning).not.toContain("ball 17");
+    expect(spinning).not.toContain("−1.00");
+
+    await clock.advance(SPIN_OVER_MS);
+    expect(textOf(await ui.drawn())).toContain("roulette · red · ball 17 · −1.00");
+  });
+
   test("a roulette spin lands the ball, then names the pocket", async ($, on) => {
     const { show, clock } = await moving($, on, { ...BASE, round: null });
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });

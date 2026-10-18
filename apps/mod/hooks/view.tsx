@@ -1503,8 +1503,12 @@ export function renderPane(
   );
 }
 
-/** The current hand in a few words, for the band. */
-export function handSummary(state: StateResponse, prefs: Prefs): string {
+/**
+ * The current hand in a few words, for the band. `isLanded`: the spin or the cards have played
+ * out; until then the draw (the ball, the reels, the roll…) and the net are left out, as the table
+ * holds them back.
+ */
+export function handSummary(state: StateResponse, prefs: Prefs, isLanded: boolean): string {
   const game = activeGame(state, prefs);
   const round = roundOf(state, game);
   const label = GAME_LABELS[game].toLowerCase();
@@ -1513,8 +1517,8 @@ export function handSummary(state: StateResponse, prefs: Prefs): string {
     return `${label} · no hand yet`;
   }
 
-  const net = round.phase === "idle" ? `${SEPARATOR}${formatSigned(round.net)}` : "";
-  const detail = round.detail;
+  const net = round.phase === "idle" && isLanded ? `${SEPARATOR}${formatSigned(round.net)}` : "";
+  const detail = isLanded ? round.detail : undrawn(round.detail);
 
   switch (detail.game) {
     case "blackjack":
@@ -1562,6 +1566,28 @@ export function handSummary(state: StateResponse, prefs: Prefs): string {
   }
 }
 
+/** A round's detail as before its draw shows: no ball, reels, roll, result, coins, hits or segment yet. */
+function undrawn(detail: RoundView["detail"]): RoundView["detail"] {
+  switch (detail.game) {
+    case "roulette":
+      return { ...detail, number: null };
+    case "slots":
+      return { ...detail, reels: null };
+    case "dice":
+      return { ...detail, roll: null };
+    case "limbo":
+      return { ...detail, result: null };
+    case "flip":
+      return { ...detail, results: null };
+    case "keno":
+      return { ...detail, hits: null };
+    case "wheel":
+      return { ...detail, segment: null };
+    default:
+      return detail;
+  }
+}
+
 export interface BandLayout {
   bodyColumns: number;
 }
@@ -1595,7 +1621,9 @@ export function renderBand(ui: Ui, snap: Snapshot, layout: BandLayout, onCommand
         </Text>
         <Text color={GOLD}>{formatUsdc(snap.heldBalance ?? state.balance)} USDC</Text>
         <Text color={FG4} wrap="truncate-end">
-          {state.blocked !== null ? `play paused · ${cleanText(state.blocked)}` : handSummary(state, snap.prefs)}
+          {state.blocked !== null
+            ? `play paused · ${cleanText(state.blocked)}`
+            : handSummary(state, snap.prefs, snap.spinElapsed === null && snap.revealed === null)}
         </Text>
         {agent}
       </Box>
