@@ -64,6 +64,14 @@ export function cashOutPayout(stake: string, multiplier: string): string {
 /** "1.53" (2 decimals, as the api sends multipliers) in hundredths: 153n. */
 export const hundredths = (multiplier: string): bigint => BigInt(multiplier.replace(".", ""));
 
+/** A multiplier as the table shows it, cut to 2 decimals: "×2.2151" reads "×2.21", as the other
+ *  games' "×1.95". Cut, never rounded up: it never shows more than the round pays. */
+export function shortMultiplier(multiplier: string): string {
+  const [whole, fraction = ""] = multiplier.split(".");
+
+  return `${whole ?? multiplier}.${fraction.padEnd(2, "0").slice(0, 2)}`;
+}
+
 /** A whole number of 10^-decimals as a decimal string: (19600n, 4) → "1.9600", (742n, 2) → "7.42". */
 export function scaledDecimal(value: bigint, decimals: number): string {
   const scale = 10n ** BigInt(decimals);

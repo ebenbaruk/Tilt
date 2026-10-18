@@ -790,9 +790,9 @@ export function boardSide(ui: Ui, round: RoundView, progress: BoardProgress): Re
 
   return [
     <Text color={FG4}>
-      multiplier{" "}
-      <Text color={FG1} bold>
-        {`×${progress.multiplier}`}
+      multiplier {/* A bust pays nothing: its multiplier would read as a payout. */}
+      <Text color={progress.isBusted && !isOpen ? RED : FG1} bold>
+        {progress.isBusted && !isOpen ? "×0" : `×${progress.multiplier}`}
       </Text>
     </Text>,
     state,

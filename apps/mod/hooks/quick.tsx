@@ -5,7 +5,7 @@
 // choice changes, the table shows the next round's instead.
 import type { RenderElement } from "claude-code";
 
-import { diceMultiplier, flipMultiplier, hundredths, scaledDecimal } from "./format";
+import { diceMultiplier, flipMultiplier, hundredths, scaledDecimal, shortMultiplier } from "./format";
 import type { TileButton } from "./games";
 import { diceTarget, DICE_ROLLS, KENO_NUMBERS, KENO_PICK_KEY } from "./keys";
 import type { Prefs } from "./model";
@@ -260,7 +260,7 @@ export function diceTable(ui: Ui, round: RoundView | null, prefs: Prefs, spinEla
   return (
     <Box flexDirection="row" flexWrap="wrap" columnGap={3}>
       <Box flexDirection="column">
-        <Text color={isRolling ? FG1 : GOLD} bold>
+        <Text color={isRolling || shown === null ? FG1 : toneOf(shown.net)} bold>
           {marker}
         </Text>
         <Text>
@@ -287,7 +287,7 @@ export function diceTable(ui: Ui, round: RoundView | null, prefs: Prefs, spinEla
         <Text color={FG4}>
           multiplier{" "}
           <Text color={FG1} bold>
-            {`×${detail?.multiplier ?? diceMultiplier(chance)}`}
+            {`×${shortMultiplier(detail?.multiplier ?? diceMultiplier(chance))}`}
           </Text>
         </Text>
         {result}
@@ -443,7 +443,7 @@ export function flipTable(ui: Ui, round: RoundView | null, prefs: Prefs, spinEla
         </Text>
         {" pays "}
         <Text color={FG1} bold>
-          {`×${detail?.multiplier ?? flipMultiplier(flips)}`}
+          {`×${shortMultiplier(detail?.multiplier ?? flipMultiplier(flips))}`}
         </Text>
         {shown === null && <Text color={FG6}>{" · every coin has to land on it"}</Text>}
         {shown !== null && !isFlipping && (
@@ -623,23 +623,30 @@ export function wheelSegmentAt(
 
 /** Multipliers under ×2 count as small wins, in cool colors; the rest are the warm big ones. */
 const BIG_WIN = 200n;
+/** Under ×1 a landing gives part of the stake back: a loss, never drawn in a win's color. */
+const STAKE_BACK = 100n;
 
 /**
- * One color per multiplier the wheel pays: nothing dim, the small wins cool (blue, teal, green as
- * they rise), the big ones warm, the biggest pink and the others gold.
+ * One color per multiplier the wheel pays: nothing dim, part of the stake back a dim red, the small
+ * wins cool (blue, teal, green as they rise), the big ones warm, the biggest pink and the others gold.
  */
-function segmentColors(pays: readonly string[]): Map<string, string> {
+export function segmentColors(pays: readonly string[]): Map<string, string> {
   const values = [...new Set(pays)].sort((a, b) => Number(hundredths(a) - hundredths(b)));
-  const small = values.filter((value) => hundredths(value) > 0n && hundredths(value) < BIG_WIN);
+  const small = values.filter((value) => hundredths(value) >= STAKE_BACK && hundredths(value) < BIG_WIN);
   const big = values.filter((value) => hundredths(value) >= BIG_WIN);
   const cool = [BLUE, TEAL, GREEN];
-  const colors = new Map<string, string>(values.map((value) => [value, LINE4]));
+  const colors = new Map<string, string>(
+    values.map((value) => [value, hundredths(value) > 0n && hundredths(value) < STAKE_BACK ? PART_BACK : LINE4]),
+  );
 
   small.forEach((value, rank) => colors.set(value, cool[Math.min(rank, cool.length - 1)] ?? GREEN));
   big.forEach((value, rank) => colors.set(value, rank === big.length - 1 ? PINK : GOLD));
 
   return colors;
 }
+
+/** The color of a landing that gives part of the stake back: a loss, dimmer than LOSE's red. */
+const PART_BACK = "#8a4a4a";
 
 /** A label in the strip (`×19.60` at most) with its gap, or a dot with its gap where there are too many to label. */
 const LABEL_CELL = 7;

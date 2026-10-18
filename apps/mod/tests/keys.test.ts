@@ -809,7 +809,7 @@ describe("the twelve games", () => {
       plays(fixtures.HILO_TURN)
         .map((key) => `${key.hotkey} ${key.label}`)
         .join(" | "),
-    ).toBe("h higher or same ×2.2151 | l lower or same ×3.9871 | s skip · 10 left | z cash out · 1.53");
+    ).toBe("h higher or same ×2.21 | l lower or same ×3.98 | s skip · 10 left | z cash out · 1.53");
     expect(keyOf(fixtures.HILO_TURN, "hilo-higher")?.command).toEqual({
       kind: "play",
       action: { type: "hilo_guess", guess: "higher" },
@@ -820,13 +820,13 @@ describe("the twelve games", () => {
     });
     // An ace: higher is strict, so offered at ×13/12; no skip left; no right guess to cash out yet.
     expect(plays(fixtures.HILO_ACE).map((key) => `${key.hotkey} ${key.label}`)).toEqual([
-      "h higher ×1.0616",
-      "l lower or same ×12.7400",
+      "h higher ×1.06",
+      "l lower or same ×12.74",
     ]);
     // A king: lower is strict.
     expect(plays(fixtures.HILO_KING).map((key) => `${key.hotkey} ${key.label}`)).toEqual([
-      "h higher or same ×12.7400",
-      "l lower ×1.0616",
+      "h higher or same ×12.74",
+      "l lower ×1.06",
     ]);
     // A card being drawn holds the guesses.
     const drawing = { state: fixtures.HILO_DRAWING, prefs: PREFS, isBusy: false };

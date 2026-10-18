@@ -897,7 +897,7 @@ describe("the wheel", () => {
   const hasSparkles = (text: string) => /[✦✧✺✹⋆]/.test(text);
   const DARK_LINE4 = "#4a4b50";
   const DARK_GOLD = "#f1c45e";
-  const DARK_GREEN = "#7ccd8e";
+  const PART_BACK = "#8a4a4a";
   const DARK_BLUE = "#7fa8f2";
   const DARK_TEAL = "#5ccbc2";
   const DARK_HUB = "#f0eee9";
@@ -916,12 +916,13 @@ describe("the wheel", () => {
     // The rim at the top and the bottom under the pointer, the wedge landed on (×1.50) just inside it.
     expect(cellColor(disc[0], POINTER)).toBe(DARK_GOLD);
     expect(cellColor(disc[DISC_ROWS - 1], POINTER)).toBe(DARK_GOLD);
-    expect(cellColor(disc[1], POINTER)).toBe(DARK_GREEN);
+    expect(cellColor(disc[1], POINTER)).toBe(DARK_TEAL);
     expect(cellColor(disc[DISC_ROWS / 2], POINTER)).toBe(DARK_HUB);
     // Every multiplier's wedges show, colored as the legend says.
     const colors = discColors(disc);
 
-    for (const color of [DARK_LINE4, DARK_BLUE, DARK_TEAL, DARK_GREEN]) {
+    // ×0.80 gives part of the stake back: a loss, never a win's cool color.
+    for (const color of [DARK_LINE4, PART_BACK, DARK_BLUE, DARK_TEAL]) {
       expect(colors.has(color), color).toBe(true);
     }
 
@@ -1042,7 +1043,7 @@ describe("the wheel", () => {
     const landed = textOf(drawn);
 
     // At rest with the landed wedge (×1.50) under the pointer, its multiplier on the chip.
-    expect(cellColor(wheelRowsOf(drawn)[2], POINTER)).toBe(DARK_GREEN);
+    expect(cellColor(wheelRowsOf(drawn)[2], POINTER)).toBe(DARK_TEAL);
     expect(landed).toContain(" ×1.50 ");
     expect(landed).not.toContain("10 segments · low risk");
 
@@ -1241,6 +1242,14 @@ describe("the card games tag their result as blackjack does", () => {
     expect(textOf(await ui.drawn())).toContain("bet player LOSE 1.00");
   });
 
+  test("hilo: a bust says so in the band, never a multiplier that reads as a win", async ($, on) => {
+    await seat($, on, HILO_BUSTED);
+    const band = textOf(await (await $.ui.mount({ plugin: PLUGIN, ...BAND })).drawn());
+
+    expect(band).toContain("hilo · J♦ · wrong guess · −1.00");
+    expect(band).not.toContain("×1.06");
+  });
+
   test("blackjack: a hand's WIN or BJ waits for the dealer's hole card", async ($, on) => {
     const { show, clock } = await moving($, on, BLACKJACK_TURN);
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_STILL });
@@ -1337,7 +1346,7 @@ describe("the key row keeps its keys in place", () => {
 
     expect(await ui.find({ key: "held-hilo-higher" })).toBeDefined();
     expect(turning).not.toContain("cash out ·");
-    expect(turning).not.toContain("×2.2151");
+    expect(turning).not.toContain("×2.21");
 
     await clock.advance(SPIN_OVER_MS);
     expect((await ui.find({ key: "hilo-higher" }))?.props.hotkey).toBe("h");

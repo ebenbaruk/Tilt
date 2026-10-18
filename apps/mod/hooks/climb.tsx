@@ -4,7 +4,7 @@ import type { RenderElement } from "claude-code";
 
 import type { TableFx } from "./blackjack";
 import { type CardSize, faceDownCards, faceDownOf, handCards } from "./cards";
-import { cardFace, hiloChance, hiloGuessName, towerMultiplier } from "./format";
+import { cardFace, hiloChance, hiloGuessName, shortMultiplier, towerMultiplier } from "./format";
 import {
   boardSide,
   cashOutLine,
@@ -95,7 +95,7 @@ function hiloOffer(ui: Ui, guess: "higher" | "lower", rank: number, multiplier: 
       {`${GUESS_GLYPHS[guess]} ${hiloGuessName(guess, rank)} `}
       <Text color={FG6}>{`${hiloChance(guess, rank)}% `}</Text>
       <Text color={FG1} bold>
-        {`×${multiplier}`}
+        {`×${shortMultiplier(multiplier)}`}
       </Text>
     </Text>
   );
@@ -127,7 +127,7 @@ function hiloState(ui: Ui, round: RoundView, detail: HiloView, isTurning: boolea
     </Text>
   ) : (
     <Text color={GOLD} bold>
-      {`CASHED OUT ×${detail.multiplier}`}
+      {`CASHED OUT ×${shortMultiplier(detail.multiplier)}`}
     </Text>
   );
 }
@@ -170,9 +170,9 @@ export function hiloTable(ui: Ui, round: RoundView | null, fx: TableFx, size: Ca
       </Box>
       <Box flexDirection="column">
         <Text color={FG4}>
-          multiplier{" "}
-          <Text color={FG1} bold>
-            {turning > 0 ? "×…" : `×${detail.multiplier}`}
+          multiplier {/* A bust pays nothing; before a right guess there is no multiplier to cash out yet. */}
+          <Text color={detail.busted && turning === 0 ? RED : FG1} bold>
+            {turning > 0 ? "×…" : detail.busted ? "×0" : right === 0 ? "×—" : `×${shortMultiplier(detail.multiplier)}`}
           </Text>
         </Text>
         {hiloState(ui, round, detail, isTurning, fx.isPulseOn)}

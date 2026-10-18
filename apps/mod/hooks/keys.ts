@@ -8,6 +8,7 @@ import {
   hundredths,
   rouletteBetLabel,
   scaledDecimal,
+  shortMultiplier,
 } from "./format";
 import type { Prefs, SlotsSpeed } from "./model";
 import type {
@@ -789,7 +790,7 @@ const HILO_KEYS: Record<HiloGuess, string> = { higher: "h", lower: "l", skip: "s
 function hiloTurnKeys(detail: HiloView, stake: string): KeyAction[] {
   const rank = detail.cards.at(-1)?.rank ?? 0;
   const guess = (name: "higher" | "lower", multiplier: string | null) =>
-    multiplier === null ? null : `${hiloGuessName(name, rank)} ×${multiplier}`;
+    multiplier === null ? null : `${hiloGuessName(name, rank)} ×${shortMultiplier(multiplier)}`;
   const offers: { guess: HiloGuess; label: string | null }[] = [
     { guess: "higher", label: guess("higher", detail.higherMultiplier) },
     { guess: "lower", label: guess("lower", detail.lowerMultiplier) },

@@ -15,6 +15,7 @@ import {
   diceMultiplier,
   flipMultiplier,
   scaledDecimal,
+  shortMultiplier,
   towerMultiplier,
   pocketColor,
   rankLabel,
@@ -23,6 +24,23 @@ import {
   rouletteWins,
 } from "../hooks/format";
 import type { RouletteBet } from "../hooks/protocol";
+import { segmentColors } from "../hooks/quick";
+
+describe("multipliers as the table shows them", () => {
+  test("cut to two decimals, never rounded up past what the round pays", () => {
+    expect(shortMultiplier("2.2151")).toBe("2.21");
+    expect(shortMultiplier("3.9871")).toBe("3.98");
+    expect(shortMultiplier("12.7400")).toBe("12.74");
+    expect(shortMultiplier("2")).toBe("2.00");
+  });
+
+  test("a wheel landing under ×1 gives part of the stake back: never a win's color", () => {
+    const colors = segmentColors(["0.00", "0.80", "1.20", "1.50"]);
+
+    expect(colors.get("0.80")).not.toBe(colors.get("1.20"));
+    expect(new Set([colors.get("0.00"), colors.get("0.80"), colors.get("1.20"), colors.get("1.50")]).size).toBe(4);
+  });
+});
 import { finishNotice } from "../hooks/register";
 
 describe("money", () => {

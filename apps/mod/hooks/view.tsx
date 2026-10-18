@@ -18,6 +18,7 @@ import {
   rouletteWins,
   scaledDecimal,
   SEPARATOR,
+  shortMultiplier,
 } from "./format";
 import { hiloRight, hiloTable, towerTable } from "./climb";
 import {
@@ -485,7 +486,7 @@ function diceOutcome(detail: DiceView, net: string): string {
   }
 
   const isWon = over ? roll >= target : roll < target;
-  const result = !isWon ? "loses" : BigInt(net) > 0n ? "wins" : `wins ×${detail.multiplier}, a push`;
+  const result = !isWon ? "loses" : BigInt(net) > 0n ? "wins" : `wins ×${shortMultiplier(detail.multiplier)}, a push`;
 
   return `Rolled ${rollText(roll)}: ${over ? "over" : "under"} ${rollText(target)} ${result}.`;
 }
@@ -522,7 +523,7 @@ function hiloOutcome(detail: HiloView): string {
 
   return detail.busted
     ? `Wrong guess after ${right} right.`
-    : `Cashed out at ×${detail.multiplier} after ${right} right ${right === 1 ? "guess" : "guesses"}.`;
+    : `Cashed out at ×${shortMultiplier(detail.multiplier)} after ${right} right ${right === 1 ? "guess" : "guesses"}.`;
 }
 
 /** "Fell on level 4.", "Cashed out at ×1.7422 on level 2.", or "Reached the top at ×12.9933." */
@@ -1773,7 +1774,9 @@ export function handSummary(state: StateResponse, prefs: Prefs, isLanded: boolea
     case "hilo": {
       const current = detail.cards[detail.cards.length - 1];
 
-      return `${label}${current === undefined ? "" : ` · ${cardFace(current)}`} · ×${detail.multiplier}${net}`;
+      const standing = detail.busted ? "wrong guess" : `×${shortMultiplier(detail.multiplier)}`;
+
+      return `${label}${current === undefined ? "" : ` · ${cardFace(current)}`} · ${standing}${net}`;
     }
     case "tower":
       return `${label} · ${detail.difficulty} · level ${detail.climbed.length} · ×${detail.multiplier}${net}`;
