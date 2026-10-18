@@ -3,7 +3,7 @@
 import type { RenderElement } from "claude-code";
 
 import { blackjackOutcome, blackjackSummary, blackjackTable, handColumns, STILL, type TableFx } from "./blackjack";
-import { type CardSize, faceDownCards, handCards, handRow, LARGE_CARD_ROWS } from "./cards";
+import { type CardSize, DEAL_STEP_MS, faceDownCards, handCards, handRow, LARGE_CARD_ROWS } from "./cards";
 import {
   cardFace,
   cardsInline,
@@ -137,6 +137,13 @@ export function spinMs(detail: RoundView["detail"], speed: SlotsSpeed): number {
       return 0;
   }
 }
+
+/**
+ * The table surface module starts a deal or a spin when its props come, a frame or two after the
+ * hooks' clock starts it: what the pane holds back (the balance, the result, the keys) waits this
+ * much longer, so it never tells the result before the table shows it.
+ */
+export const SURFACE_LAG_MS = DEAL_STEP_MS;
 
 /** While the chain draws, the reels keep turning: the first part of their spin, looped. */
 const DRAWING_LOOP_MS = 500;
@@ -342,7 +349,7 @@ function header(
           <Text color={FG4}>
             balance{" "}
             <Text color={GOLD} bold>
-              {formatUsdc(snap.heldBalance ?? state.balance)} USDC
+              {formatUsdc(shownBalance(snap, state))} USDC
             </Text>
             {state.rank !== null && (
               <Text>
@@ -548,14 +555,34 @@ function partOf(value: bigint, elapsed: number, span: number): bigint {
   return (value * BigInt(Math.round(progress * Number(PROGRESS_STEPS)))) / PROGRESS_STEPS;
 }
 
+/** The balance `elapsed` into a settled `round`'s effects, `balance` the one after it: a win's counts
+ *  up once its net has. */
+function countedBalance(round: RoundView, elapsed: number, balance: string): bigint {
+  const net = BigInt(round.net);
+
+  return net > 0n ? BigInt(balance) - net + partOf(net, elapsed - COUNT_UP_MS, BALANCE_MS) : BigInt(balance);
+}
+
+/** The balance the header shows: held while the round plays out, then counted up with its result line. */
+export function shownBalance(snap: Snapshot, state: StateResponse): string {
+  const round = state.round;
+
+  if (snap.heldBalance !== null) {
+    return snap.heldBalance;
+  }
+
+  return round !== null && round.phase === "idle" && snap.resultElapsed !== null
+    ? countedBalance(round, snap.resultElapsed, state.balance).toString()
+    : state.balance;
+}
+
 /** The settled `round`'s line `elapsed` into its effects (RESULT_MS), with `balance`, the one after it. */
 export function resultLine(ui: Ui, round: RoundView, elapsed: number, balance: string): RenderElement {
   const { Box, Text } = ui;
   const net = BigInt(round.net);
   const isWin = net > 0n;
   const shownNet = isWin ? partOf(net, elapsed, COUNT_UP_MS) : net;
-  const balanceFrom = BigInt(balance) - net;
-  const shownBalance = isWin ? balanceFrom + partOf(net, elapsed - COUNT_UP_MS, BALANCE_MS) : BigInt(balance);
+  const shownBalance = countedBalance(round, elapsed, balance);
   const isFlashBeat = elapsed < FLASH_MS && Math.floor(elapsed / FLASH_BEAT_MS) % 2 === 0;
   const flash = net === 0n || !isFlashBeat ? undefined : isWin ? WIN_FLASH : LOSS_FLASH;
 
@@ -1524,8 +1551,14 @@ export function renderPane(
   const side = state.sponsor !== null || state.leaderboard.length > 0;
   const canPlay = state.accountOpen && state.blocked === null;
   const round = tableRound(state, snap.prefs);
-  // The result waits for the wheel, the reels or the last card: the text must not tell it first.
-  const isResultHeld = dealing !== null || sending !== null || snap.spinElapsed !== null || snap.revealed !== null;
+  // The result waits for the wheel, the reels or the last card, on the table surface module too
+  // (the balance is held until then): the text must not tell it first.
+  const isResultHeld =
+    dealing !== null ||
+    sending !== null ||
+    snap.spinElapsed !== null ||
+    snap.revealed !== null ||
+    snap.heldBalance !== null;
   // The still table (the main screen's Mines and Tower) plays the result as the moving one does:
   // the line counted up and flashed, a loss shaken.
   const resultAt = table === null && !isResultHeld && round?.phase === "idle" ? snap.resultElapsed : null;
@@ -1564,11 +1597,8 @@ export function renderPane(
       {table === null &&
         !isResultHeld &&
         (round !== null && resultAt !== null ? resultLine(ui, round, resultAt, state.balance) : outcomeLine(ui, round))}
-      {dealing === null &&
-        sending === null &&
-        snap.spinElapsed === null &&
-        snap.revealed === null &&
-        winBanner(ui, state, onCommand)}
+      {/* The banner is the shown round's, and comes with its result. */}
+      {!isResultHeld && round !== null && round === state.round && winBanner(ui, state, onCommand)}
       {statusLine(ui, snap, state)}
       {lowBalanceLine(ui, snap, state)}
       {!isKeysFirst && linePlays.length > 0 && keyArea(ui, linePlays, size === "large", steps)}
@@ -1729,7 +1759,7 @@ export function renderBand(ui: Ui, snap: Snapshot, layout: BandLayout, onCommand
         <Text color={PINK} bold>
           TILT
         </Text>
-        <Text color={GOLD}>{formatUsdc(snap.heldBalance ?? state.balance)} USDC</Text>
+        <Text color={GOLD}>{formatUsdc(shownBalance(snap, state))} USDC</Text>
         <Text color={FG4} wrap="truncate-end">
           {state.blocked !== null
             ? `play paused · ${cleanText(state.blocked)}`

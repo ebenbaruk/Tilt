@@ -26,13 +26,20 @@ const BACK_ART = ["╭─────╮", `│${BACK_ROW}│`, `│${BACK_ROW}�
 /** One card turned over every step, on the fullscreen table and on the main screen alike. */
 export const DEAL_STEP_MS = 150;
 
-/** Cards turned over `elapsed` ms into a deal that found `from` of `total` already shown (the
- *  first new one at once); null once all are. */
+/** A round's first cards turn from the first one at once (they lay face down while the move was in
+ *  flight); a card drawn into a round in play lies face down a step first, so its face never shows in
+ *  the frame it lands. */
+const leadOf = (from: number): number => (from === 0 ? 1 : 0);
+
+/** Cards turned over `elapsed` ms into a deal that found `from` of `total` already shown; null once all are. */
 export function revealedAt(from: number, total: number, elapsed: number): number | null {
-  const revealed = from + 1 + Math.floor(elapsed / DEAL_STEP_MS);
+  const revealed = from + leadOf(from) + Math.floor(elapsed / DEAL_STEP_MS);
 
   return revealed >= total ? null : revealed;
 }
+
+/** How long after a deal starts its last card is turned over. */
+export const dealMs = (from: number, total: number): number => Math.max(0, total - from - leadOf(from)) * DEAL_STEP_MS;
 
 /** The cards on a blackjack, baccarat or Hilo table, all hands together; 0 for the other games. */
 export function dealtCards(round: RoundView | null): number {

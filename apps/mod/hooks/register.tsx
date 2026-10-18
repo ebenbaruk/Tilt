@@ -21,7 +21,7 @@ import {
   startDevice,
   trustedVerifyUrl,
 } from "./api";
-import { type CardSize, DEAL_STEP_MS, dealtCards, revealedAt } from "./cards";
+import { type CardSize, dealMs, dealtCards, revealedAt } from "./cards";
 import { cleanText, formatDuration, formatUsdc, moveFailure, SEPARATOR } from "./format";
 import { isPlayAction } from "./guards";
 import {
@@ -83,6 +83,7 @@ import {
   type Snapshot,
   spinMs,
   spinProgress,
+  SURFACE_LAG_MS,
 } from "./view";
 
 const PANE = "tilt";
@@ -125,7 +126,7 @@ const layout = atom({ plugin: "tilt", key: "layout" } as const, {
 });
 const spin = atom({ plugin: "tilt", key: "spin" } as const, { round: null, startedAt: 0, balance: "0" });
 const deal = atom({ plugin: "tilt", key: "deal" } as const, { round: null, from: 0, startedAt: 0, balance: "0" });
-const result = atom({ plugin: "tilt", key: "result" } as const, { round: null, startsAt: 0 });
+const result = atom({ plugin: "tilt", key: "result" } as const, { round: null, startsAt: 0, balance: "0" });
 const session = atom({ plugin: "tilt", key: "session" } as const, {
   net: "0",
   rounds: 0,
@@ -837,12 +838,14 @@ async function pollStep($: EngineInterface, rt: Runtime, token: string, now: num
     minute(held.fetchedAt) === minute(now) &&
     JSON.stringify(held.state) === JSON.stringify(fetched.value);
 
+  // The deal, the spin and the result it holds back are set before the state can be drawn: a
+  // drawing in between would show the settled round with nothing held, its balance first.
+  await countRound($, rt, held.state, fetched.value, now);
+
   // An unchanged state is not written, so the pane is not redrawn on every poll.
   if (!isSame) {
     await update($, remote, () => ({ state: fetched.value, error: null, fetchedAt: now }));
   }
-
-  await countRound($, rt, held.state, fetched.value, now);
 
   const current = await readIntent($);
 
@@ -941,7 +944,10 @@ async function spinElapsed($: EngineInterface, state: StateResponse | null, now:
   return spinProgress(round, now - playing.startedAt, (await readPrefs($)).slotsSpeed);
 }
 
-/** Blackjack or baccarat cards turned over so far on the table; null when none is being dealt. */
+/**
+ * Blackjack, baccarat or Hilo cards turned over so far on the table; null when none is being dealt.
+ * The deal lasts SURFACE_LAG_MS past its last card, the table surface module's own lag.
+ */
 async function dealRevealed($: EngineInterface, state: StateResponse | null, now: number): Promise<number | null> {
   const playing = await read($, deal);
   const round = state?.round;
@@ -950,7 +956,14 @@ async function dealRevealed($: EngineInterface, state: StateResponse | null, now
     return null;
   }
 
-  return revealedAt(playing.from, dealtCards(round), now - playing.startedAt);
+  const total = dealtCards(round);
+  const elapsed = now - playing.startedAt;
+
+  if (elapsed >= dealMs(playing.from, total) + SURFACE_LAG_MS) {
+    return null;
+  }
+
+  return revealedAt(playing.from, total, elapsed) ?? total;
 }
 
 /** How far into its result's effects (and a win's celebration) the round on the table is; null when none plays. */
@@ -967,6 +980,13 @@ async function resultElapsed($: EngineInterface, state: StateResponse | null, no
   return elapsed >= 0 && elapsed < Math.max(RESULT_MS, celebrationMs(round)) ? elapsed : null;
 }
 
+/** Whether the round on the table has a result still to show: it waits for the table to catch up. */
+async function isResultAhead($: EngineInterface, state: StateResponse | null, now: number): Promise<boolean> {
+  const playing = await read($, result);
+
+  return playing.round !== null && playing.round === state?.round?.number && now < playing.startsAt;
+}
+
 /** The spin, the deal or the result playing on the table, and the balance held back until the round shows. */
 async function motionView(
   $: EngineInterface,
@@ -976,7 +996,13 @@ async function motionView(
   const elapsed = await spinElapsed($, state, now);
   const revealed = await dealRevealed($, state, now);
   const held =
-    elapsed !== null ? (await read($, spin)).balance : revealed !== null ? (await read($, deal)).balance : null;
+    elapsed !== null
+      ? (await read($, spin)).balance
+      : revealed !== null
+        ? (await read($, deal)).balance
+        : (await isResultAhead($, state, now))
+          ? (await read($, result)).balance
+          : null;
 
   return {
     spinElapsed: elapsed,
@@ -991,6 +1017,7 @@ async function isMoving($: EngineInterface, state: StateResponse | null, now: nu
   return (
     (await spinElapsed($, state, now)) !== null ||
     (await dealRevealed($, state, now)) !== null ||
+    (await isResultAhead($, state, now)) ||
     (await resultElapsed($, state, now)) !== null
   );
 }
@@ -1169,22 +1196,32 @@ async function countRound(
   }
 
   // A still table (the main screen's Mines and Tower boards) plays the result as the moving one does.
+  const spinning = await read($, spin);
+  const dealing = await read($, deal);
+  // The balance shown until then: the one held while it spun or was dealt, else the one before it settled.
+  const balance =
+    spinning.round === round.number
+      ? spinning.balance
+      : dealing.round === round.number
+        ? dealing.balance
+        : (before?.balance ?? after.balance);
   const startsAt = await resultShowsAt($, round, now);
 
-  await update($, result, () => ({ round: round.number, startsAt }));
+  await update($, result, () => ({ round: round.number, startsAt, balance }));
 }
 
-/** When `round`'s result shows on the table: after its spin lands and its last card is turned over. */
+/**
+ * When `round`'s result shows: after its spin lands and its last card is turned over, on the table
+ * surface module too, which starts them when its props come (SURFACE_LAG_MS later).
+ */
 async function resultShowsAt($: EngineInterface, round: RoundView, now: number): Promise<number> {
   const spinning = await read($, spin);
   const dealing = await read($, deal);
   const speed = (await readPrefs($)).slotsSpeed;
   const spinEnd = spinning.round === round.number ? spinning.startedAt + spinMs(round.detail, speed) : now;
-  // The last card is up one step before the deal's length is over: the first one is at once (revealedAt).
-  const dealEnd =
-    dealing.round === round.number ? dealing.startedAt + (dealtCards(round) - dealing.from - 1) * DEAL_STEP_MS : now;
+  const dealEnd = dealing.round === round.number ? dealing.startedAt + dealMs(dealing.from, dealtCards(round)) : now;
 
-  return Math.max(now, spinEnd, dealEnd);
+  return Math.max(now, spinEnd, dealEnd) + SURFACE_LAG_MS;
 }
 
 /** Copies a line about the last big win for the person to paste; nothing about their work is in it. */

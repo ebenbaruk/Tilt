@@ -6,7 +6,7 @@
 // key back.
 import type { ClientSurface, RenderElement } from "claude-code";
 
-import { DEAL_STEP_MS, dealtCards } from "./cards";
+import { dealMs, dealtCards, revealedAt } from "./cards";
 import { SEPARATOR } from "./format";
 import { KENO_PICK_KEY, MINES_TILE_KEY, ROULETTE_STRAIGHT_KEY, STEPPER_NAMES, TOWER_TILE_KEY } from "./keys";
 import type { RoundView } from "./protocol";
@@ -42,25 +42,29 @@ interface Effect {
   at: number;
   net: string;
   balance: string;
+  /** Rounds won in a row once this result shows. */
+  streak: number;
 }
 
 interface TableState {
   /** Frame clock time, advanced by the ticker only while something moves. */
   now: number;
-  /** The round last drawn, and its blackjack or baccarat card count then. */
+  /** The round last drawn, and its blackjack, baccarat or Hilo card count then. */
   round: number | null;
   cards: number;
-  /** Cards turned over so far, in deal order. */
-  revealed: number;
+  /** The cards already shown when the last ones came, and when they came: they turn over from
+   *  then on as the hooks module's clock turns them (cards.tsx `revealedAt`). */
+  dealFrom: number;
+  dealAt: number;
   /** Frame clock time a round started spinning (a wheel, the reels, a one-draw game's draw); null when none is. */
   spinAt: number | null;
   /** The round on the table was drawing at the last props. */
   wasDrawing: boolean;
-  lastDealAt: number;
   /** The last round counted as settled, so a redraw never counts it twice. */
   settled: number | null;
   effect: Effect | null;
-  /** Rounds won in a row, kept while the instance lives. */
+  /** Rounds won in a row before the effect's round, kept while the instance lives: the effect's
+   *  own count shows only with its result, so the line never tells the result first. */
   streak: number;
   /** The last change or key: the pulses run for a while after it. */
   wokeAt: number;
@@ -91,10 +95,10 @@ function firstState(props: TableProps): TableState {
     now: 0,
     round: round?.number ?? null,
     cards,
-    revealed: cards,
+    dealFrom: cards,
+    dealAt: 0,
     spinAt: null,
     wasDrawing: round?.phase === "drawing",
-    lastDealAt: 0,
     settled: round?.phase === "idle" ? round.number : null,
     effect: null,
     streak: 0,
@@ -130,29 +134,36 @@ function observe(props: TableProps, state: TableState): TableState {
       ...next,
       round: round?.number ?? null,
       cards,
-      revealed: 0,
+      dealFrom: 0,
+      dealAt: next.now,
       spinAt,
-      lastDealAt: -DEAL_STEP_MS,
       effect: null,
+      streak: next.effect?.streak ?? next.streak,
     };
     next.wokeAt = next.now;
   } else if (cards !== state.cards) {
-    next = { ...next, cards, revealed: Math.min(next.revealed, cards), wokeAt: next.now };
+    next = { ...next, cards, dealFrom: state.cards, dealAt: next.now, wokeAt: next.now };
   }
 
   if (round !== null && round.phase === "idle" && round.number !== state.settled) {
     const kind = outcomeOf(round.net);
     // The effect waits for the last card, or for the wheel or the reels to land.
-    const spinLeft = next.spinAt === null ? 0 : Math.max(0, next.spinAt + spinMs(round.detail, speed) - next.now);
-    const dealLeft = Math.max(0, next.cards - next.revealed) * DEAL_STEP_MS + spinLeft;
-    const streak = kind === "win" ? next.streak + 1 : kind === "loss" ? 0 : next.streak;
+    const spinEnd = next.spinAt === null ? 0 : next.spinAt + spinMs(round.detail, speed);
+    const at = Math.max(next.now, spinEnd, next.dealAt + dealMs(next.dealFrom, next.cards));
+    const base = next.effect?.streak ?? next.streak;
 
     next = {
       ...next,
       settled: round.number,
-      streak,
-      effect: { kind, at: next.now + dealLeft, net: round.net, balance: props.state.balance },
-      wokeAt: next.now + dealLeft,
+      streak: base,
+      effect: {
+        kind,
+        at,
+        net: round.net,
+        balance: props.state.balance,
+        streak: kind === "win" ? base + 1 : kind === "loss" ? 0 : base,
+      },
+      wokeAt: at,
     };
   }
 
@@ -162,6 +173,14 @@ function observe(props: TableProps, state: TableState): TableState {
 }
 
 const hasKey = (keys: readonly TableKey[], address: string): boolean => keys.some((key) => key.key === address);
+
+/** Cards turned over so far, in deal order. */
+const revealedOf = (state: TableState): number =>
+  revealedAt(state.dealFrom, state.cards, state.now - state.dealAt) ?? state.cards;
+
+/** Rounds won in a row as shown now: the effect's count once its result shows. */
+const streakOf = (state: TableState): number =>
+  state.effect !== null && state.now >= state.effect.at ? state.effect.streak : state.streak;
 
 /** How far into its spin the round on the table is; null once it landed. */
 function spinElapsed(state: TableState, props: TableProps): number | null {
@@ -179,7 +198,7 @@ function isAnimating(state: TableState, props: TableProps): boolean {
   // A Mines or tower tile being drawn turns until its draw lands.
   const detail = round?.detail;
   const isTileDrawing = (detail?.game === "mines" || detail?.game === "tower") && detail.pending !== null;
-  const isDealing = state.revealed < state.cards || spinElapsed(state, props) !== null || isTileDrawing;
+  const isDealing = revealedOf(state) < state.cards || spinElapsed(state, props) !== null || isTileDrawing;
   const effectMs = Math.max(RESULT_MS, round === null ? 0 : celebrationMs(round));
   const hasEffect = state.effect !== null && state.now < state.effect.at + effectMs;
   const canPulse = hasKey(props.keys, "bj-stand") || hasKey(props.keys, "start");
@@ -194,11 +213,7 @@ function tick(surface: ClientSurface<TableState>, rt: Runtime): void {
     return;
   }
 
-  const now = state.now + FRAME_MS;
-  const isDealDue = state.revealed < state.cards && now - state.lastDealAt >= DEAL_STEP_MS;
-  const next: TableState = isDealDue
-    ? { ...state, now, revealed: state.revealed + 1, lastDealAt: now }
-    : { ...state, now };
+  const next: TableState = { ...state, now: state.now + FRAME_MS };
 
   if (!isAnimating(next, rt.props)) {
     rt.stopClock?.();
@@ -244,11 +259,16 @@ function listen(surface: ClientSurface<TableState>, rt: Runtime): void {
 function summary(ui: Ui, state: TableState, round: RoundView | null, isSpinning: boolean): RenderElement | null {
   const effect = state.effect;
 
-  if (round === null || round.phase !== "idle" || state.revealed < state.cards || isSpinning) {
+  if (round === null || round.phase !== "idle" || revealedOf(state) < state.cards || isSpinning) {
     return null;
   }
 
-  if (effect === null || effect.net !== round.net || state.now < effect.at) {
+  // A round this instance saw settle says nothing before its result starts: then it counts up.
+  if (effect !== null && effect.net === round.net && state.now < effect.at) {
+    return null;
+  }
+
+  if (effect === null || effect.net !== round.net) {
     return outcomeLine(ui, round);
   }
 
@@ -470,8 +490,10 @@ export default function Table(props: TableProps, surface: ClientSurface<TableSta
   const shake = effect?.kind === "loss" && sinceEffect >= 0 ? shakeAt(sinceEffect) : 0;
   const round = tableRound(props.state, props.prefs);
   const spinning = spinElapsed(state, props);
+  const revealed = revealedOf(state);
+  const streak = streakOf(state);
   const fx = {
-    revealed: state.revealed < state.cards ? state.revealed : null,
+    revealed: revealed < state.cards ? revealed : null,
     isPulseOn,
     spinElapsed: spinning,
     frame: Math.floor(state.now / PENDING_FRAME_MS),
@@ -507,9 +529,10 @@ export default function Table(props: TableProps, surface: ClientSurface<TableSta
               },
               post,
             )}
-          {state.streak >= STREAK_SHOWN_FROM && (
+          {/* The last streak is not the round in play's: it waits for this one's result. */}
+          {!isDealing && fx.revealed === null && spinning === null && streak >= STREAK_SHOWN_FROM && (
             <Text color={GOLD} bold>
-              {`${state.streak} wins in a row`}
+              {`${streak} wins in a row`}
             </Text>
           )}
         </Box>

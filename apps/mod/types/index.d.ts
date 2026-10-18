@@ -143,6 +143,8 @@ export type TiltResult = {
   round: number | null;
   /** `$.clock.now()` when its result shows. */
   startsAt: number;
+  /** The balance before its result, shown until then so the header does not tell it first. */
+  balance: string;
 };
 
 declare module "claude-code" {

@@ -178,10 +178,15 @@ describe("the table moves", () => {
       expect(await table()).toContain("play again (same bet)");
 
       await show(renumbered(BLACKJACK_WIN, 10));
+      // The streak is this round's result: it waits for its last card.
+      await ui.advance(DEAL_STEP_MS / 2);
+      expect(await table()).not.toContain("wins in a row");
       await ui.advance(WHOLE_DEAL_MS + EFFECT_MS);
       expect(await table()).toContain("2 wins in a row");
 
       await show(renumbered(BLACKJACK_LOSS, 11));
+      // While the next round is dealt, the last streak is not its own: none shows.
+      expect(await table()).not.toContain("wins in a row");
       await ui.advance(WHOLE_DEAL_MS + EFFECT_MS);
       expect(await table()).toContain("LOSE 1.00");
       expect(await table()).not.toContain("wins in a row");

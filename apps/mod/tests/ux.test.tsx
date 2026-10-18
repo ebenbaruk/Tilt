@@ -35,7 +35,7 @@ import {
   WHEEL,
 } from "./fixtures";
 import { TABLE_KEY } from "../hooks/table-input";
-import { RESULT_MS } from "../hooks/view";
+import { RESULT_MS, SURFACE_LAG_MS } from "../hooks/view";
 import {
   BAND,
   command,
@@ -440,6 +440,7 @@ describe("spins", () => {
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
     const won = { ...SLOTS, balance: "16360000" };
 
+    await ui.press({ key: "game-slots" });
     await show(won);
     const spinning = textOf(await ui.drawn());
 
@@ -450,7 +451,13 @@ describe("spins", () => {
     await clock.advance(SPIN_OVER_MS);
     const landed = textOf(await ui.drawn());
 
-    expect(landed).toContain("balance 16.36 USDC");
+    expect(landed).toContain("★ BIG WIN +3.96 USDC");
+    // The header counts up with the result line.
+    await clock.advance(RESULT_MS);
+    expect(textOf(await ui.drawn())).toContain("balance 16.36 USDC");
+    // Another game's tab shows no banner of it.
+    await ui.press({ key: "game-mines" });
+    expect(textOf(await ui.drawn())).not.toContain("BIG WIN");
     expect(landed).toContain("★ BIG WIN +3.96 USDC");
   });
 
@@ -626,6 +633,24 @@ const WHEEL_HIGH_50: StateResponse =
       };
 
 describe("one draw plays out before the result shows", () => {
+  test("the header balance waits for the result, then counts up with its line, never ahead of it", async ($, on) => {
+    const { show, clock } = await moving($, on, { ...BASE, round: null });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_STILL });
+    const header = async () => textOf(await ui.drawn()).split("rank")[0] ?? "";
+
+    await ui.press({ key: "game-dice" });
+    await show({ ...DICE, balance: "13390000" });
+    // Landed, and the table surface module a beat behind: the balance before it still shows.
+    await clock.advance(DICE_ROLL_MS);
+    expect(await header()).toContain("balance 12.40 USDC");
+    expect(textOf(await ui.drawn())).not.toContain("Rolled 37.42");
+    // The net counts up first: the balance after it.
+    await clock.advance(SURFACE_LAG_MS + RESULT_MS / 3);
+    expect(await header()).toContain("balance 12.40 USDC");
+    await clock.advance(RESULT_MS);
+    expect(await header()).toContain("balance 13.39 USDC");
+  });
+
   const hasSparkles = (text: string) => /[✦✧✺✹⋆]/.test(text);
   const numbered = (state: StateResponse, number: number): StateResponse =>
     state.round === null ? state : { ...state, round: { ...state.round, number } };
@@ -654,12 +679,12 @@ describe("one draw plays out before the result shows", () => {
     await clock.advance(DICE_ROLL_MS - 4 * SPIN_FRAME_MS);
     untold(textOf(await ui.drawn()));
 
-    await clock.advance(3 * SPIN_FRAME_MS);
+    await clock.advance(3 * SPIN_FRAME_MS + SURFACE_LAG_MS);
     const landed = textOf(await ui.drawn());
 
     expect(landed).toContain("rolled 37.42 WIN");
     expect(landed).toContain("Rolled 37.42: under 49.00 wins. +");
-    expect(landed).toContain("balance 13.39 USDC");
+    expect(landed).toContain("balance 12.40");
     expect(hasSparkles(landed)).toBe(true);
     // The win counts up, as on the moving table.
     await clock.advance(RESULT_MS);
@@ -700,7 +725,7 @@ describe("one draw plays out before the result shows", () => {
     expect(rising).not.toContain("falls short");
     expect(rising).not.toContain("LOSE");
 
-    await clock.advance(LIMBO_RISE_MS);
+    await clock.advance(LIMBO_RISE_MS + SURFACE_LAG_MS);
     const landed = textOf(await ui.drawn());
 
     expect(landed).toContain("×1.53");
@@ -734,7 +759,9 @@ describe("one draw plays out before the result shows", () => {
     await show(numbered(missFirst, 21));
     expect(textOf(await ui.drawn())).not.toContain("Tails on coin 1 of 3.");
     // The first coin decides: its landing ends the flip, the two after it show with it.
-    await clock.advance(flipMs(missFirst.round?.detail.game === "flip" ? missFirst.round.detail : FLIP_DETAIL));
+    await clock.advance(
+      flipMs(missFirst.round?.detail.game === "flip" ? missFirst.round.detail : FLIP_DETAIL) + SURFACE_LAG_MS,
+    );
     const missed = textOf(await ui.drawn());
 
     expect(missed).toContain("(T)(H)(H)");
@@ -751,7 +778,7 @@ describe("one draw plays out before the result shows", () => {
     await show(FLIP);
     await clock.advance(flipMs(FLIP_DETAIL) - 3 * SPIN_FRAME_MS);
     expect(textOf(await ui.drawn())).not.toContain("3 heads in a row.");
-    await clock.advance(3 * SPIN_FRAME_MS);
+    await clock.advance(3 * SPIN_FRAME_MS + SURFACE_LAG_MS);
     expect(textOf(await ui.drawn())).toContain("3 heads in a row. +");
     await clock.advance(RESULT_MS);
     expect(textOf(await ui.drawn())).toContain("3 heads in a row. +5.77");
@@ -790,7 +817,7 @@ describe("one draw plays out before the result shows", () => {
 
     await ui.press({ key: "game-dice" });
     await show(DICE);
-    await clock.advance(DICE_ROLL_MS);
+    await clock.advance(DICE_ROLL_MS + SURFACE_LAG_MS);
     expect(textOf(await ui.drawn())).toContain("Rolled 37.42: under 49.00 wins.");
 
     await ui.press({ key: "dice-up" });
@@ -949,7 +976,7 @@ describe("the wheel", () => {
     await clock.advance(WHEEL_SPIN_MS - 3 * SPIN_FRAME_MS);
     untold(textOf(await ui.drawn()));
 
-    await clock.advance(3 * SPIN_FRAME_MS);
+    await clock.advance(3 * SPIN_FRAME_MS + SURFACE_LAG_MS);
     const drawn = await ui.drawn();
     const landed = textOf(drawn);
 
@@ -960,11 +987,11 @@ describe("the wheel", () => {
 
     expect(landed.match(/landed on/gi)).toEqual(["Landed on"]);
     expect(landed).toContain("Landed on ×1.50. +");
-    expect(landed).toContain("balance 12.89 USDC");
     expect(landed).not.toContain("spinning…");
     expect(hasSparkles(landed)).toBe(true);
     await clock.advance(RESULT_MS);
     expect(textOf(await ui.drawn())).toContain("Landed on ×1.50. +0.49 · fee 0.00");
+    expect(textOf(await ui.drawn())).toContain("balance 12.89 USDC");
   });
 });
 
@@ -1007,6 +1034,7 @@ describe("a win celebrates", () => {
     await show(MINES_TURN);
     expect(hasSparkles(textOf(await ui.drawn()))).toBe(false);
     await show(MINES_CASHED);
+    await clock.advance(SURFACE_LAG_MS);
     expect(hasSparkles(textOf(await ui.drawn()))).toBe(true);
     await clock.advance(CELEBRATION_OVER_MS);
     expect(hasSparkles(textOf(await ui.drawn()))).toBe(false);
@@ -1029,7 +1057,7 @@ describe("a win celebrates", () => {
     await ui.press({ key: "game-dice" });
     await show(DICE);
     expect(hasSparkles(textOf(await ui.drawn()))).toBe(false);
-    await clock.advance(DICE_ROLL_MS);
+    await clock.advance(DICE_ROLL_MS + SURFACE_LAG_MS);
     expect(hasSparkles(textOf(await ui.drawn()))).toBe(true);
     await show(renumbered(DICE_LOSS, 8));
     expect(hasSparkles(textOf(await ui.drawn()))).toBe(false);
@@ -1039,6 +1067,7 @@ describe("a win celebrates", () => {
     await show(renumbered(TOWER_TURN, 9));
     expect(hasSparkles(textOf(await ui.drawn()))).toBe(false);
     await show(renumbered(TOWER_CASHED, 9));
+    await clock.advance(SURFACE_LAG_MS);
     expect(hasSparkles(textOf(await ui.drawn()))).toBe(true);
     await show(renumbered(TOWER_TURN, 10));
     await show(renumbered(TOWER_BUSTED, 10));

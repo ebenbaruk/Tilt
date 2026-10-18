@@ -3,6 +3,7 @@ import { describe, expect, test } from "claude-code/testing";
 import { DEAL_STEP_MS } from "../hooks/cards";
 import type { PlayAction, PlayRequest } from "../hooks/protocol";
 import { TABLE_KEY } from "../hooks/table-input";
+import { RESULT_MS } from "../hooks/view";
 import { BACCARAT, BASE, BLACKJACK_TURN, BLACKJACK_WIN, HILO_TURN, ROULETTE, TOWER_TURN } from "./fixtures";
 import {
   BAND,
@@ -468,6 +469,7 @@ describe("a move in flight", () => {
     expect(dealt).toContain("Banker wins 7 to 5: pays ×1.95.");
     expect(dealt).toContain("BANKER 7 WINS");
     expect(dealt).toContain("+0.94");
+    await clock.advance(RESULT_MS);
     expect(textOf(await ui.drawn())).toContain("13.34 USDC");
   });
 
