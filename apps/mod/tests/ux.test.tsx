@@ -405,39 +405,40 @@ describe("a one-draw round in flight", () => {
 
 describe("tight rooms", () => {
   test(
-    "the band at the bottom of a short terminal puts the keys before the table",
+    "a fullscreen band too short for the table gives way to the compact band, its sponsor in view",
     { options: { layout: "bottom" } },
     async ($, on) => {
       await seat($, on, BLACKJACK_TURN);
+      // 100x30 fullscreen: the bottom slot leaves the band about ten rows.
       const band = {
         ...BAND,
-        viewport: { columns: 125, rows: 24, isFullscreen: true },
-        props: { ...BAND.props, maxRows: 12, bodyColumns: 120, scroll: { offset: 0, bodyRows: 11 } },
+        viewport: { columns: 100, rows: 30, isFullscreen: true },
+        props: { ...BAND.props, maxRows: 10, bodyColumns: 95, scroll: { offset: 0, bodyRows: 9 } },
       };
       const ui = await $.ui.mount({ plugin: PLUGIN, ...band });
-      const tree = JSON.stringify(await ui.drawn());
+      const text = textOf(await ui.drawn());
 
-      expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("DEALER");
-      expect(tree.indexOf('"hit"')).toBeGreaterThan(-1);
-      expect(tree.indexOf('"hit"')).toBeLessThan(tree.indexOf(TABLE_REGION));
+      expect(await ui.find({ type: "Client" })).toBeUndefined();
+      expect(text).toContain("blackjack · you 11 · dealer 9");
+      expect(text).toContain("PRESENTED BY Northwind Cloud");
     },
   );
 
   test(
-    "in a short band the result comes right under the keys, over a table that scrolls: roulette",
+    "on the main screen the Wheel takes its strip in half the terminal rather than the compact band",
     { options: { layout: "bottom" } },
     async ($, on) => {
-      await seat($, on, ROULETTE_CHIPS);
+      await seat($, on, WHEEL);
+      // The band may take the terminal's height there: half of it fits the strip, not a disc.
       const band = {
         ...BAND,
-        viewport: { columns: 85, rows: 24, isFullscreen: true },
-        props: { ...BAND.props, maxRows: 12, bodyColumns: 80, scroll: { offset: 0, bodyRows: 11 } },
+        viewport: { columns: 125, rows: 54, isFullscreen: false },
+        props: { ...BAND.props, maxRows: 54, bodyColumns: 120, scroll: { offset: 0, bodyRows: 53 } },
       };
       const ui = await $.ui.mount({ plugin: PLUGIN, ...band });
-      const table = textOf(await ui.drawn({ in: TABLE_KEY }));
 
-      expect(table.indexOf("2 of 3 bets win.")).toBeGreaterThan(-1);
-      expect(table.indexOf("2 of 3 bets win.")).toBeLessThan(table.indexOf("1st 12"));
+      expect(wheelLines(await ui.drawn({ in: TABLE_KEY }))).toHaveLength(2);
+      expect(textOf(await ui.drawn())).toContain("Northwind Cloud");
     },
   );
 
@@ -470,23 +471,6 @@ describe("tight rooms", () => {
     await ui.press({ key: "game-mines" });
     expect(await tileWidths()).toEqual(new Set([4]));
   });
-
-  test(
-    "a band of a few rows shows the keys before the first-hand guide",
-    { options: { layout: "bottom" } },
-    async ($, on) => {
-      await seat($, on, BASE);
-      const band = {
-        ...BAND,
-        viewport: { columns: 80, rows: 12, isFullscreen: true },
-        props: { ...BAND.props, maxRows: 6, bodyColumns: 75, scroll: { offset: 0, bodyRows: 6 } },
-      };
-      const text = textOf(await (await $.ui.mount({ plugin: PLUGIN, ...band })).drawn());
-
-      expect(text.indexOf("deal · 0.50")).toBeGreaterThan(-1);
-      expect(text.indexOf("deal · 0.50")).toBeLessThan(text.indexOf("First hand?"));
-    },
-  );
 
   test("with room, the roulette table keeps its framed wheel and the keys under it", async ($, on) => {
     await seat($, on, BASE);

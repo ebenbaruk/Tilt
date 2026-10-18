@@ -766,12 +766,13 @@ describe("the roulette layout", () => {
     expect(await ui.find({ key: "start" })).toBeUndefined();
   });
 
-  /** The whole table above the prompt of a fullscreen terminal: the table surface module, as in the pane. */
+  /** The whole table above the prompt of a fullscreen terminal tall enough for the roulette table:
+   *  the table surface module, as in the pane. */
   const BOTTOM: RenderInput<"AbovePrompt", "terminal"> = {
     ...BAND,
     surface: "terminal",
-    viewport: { columns: 125, rows: 60, isFullscreen: true },
-    props: { ...BAND.props, maxRows: 30, bodyColumns: 120, scroll: { offset: 0, bodyRows: 30 } },
+    viewport: { columns: 125, rows: 90, isFullscreen: true },
+    props: { ...BAND.props, maxRows: 40, bodyColumns: 120, scroll: { offset: 0, bodyRows: 39 } },
   };
   const cell = (address: string) => `table-${address}`;
 

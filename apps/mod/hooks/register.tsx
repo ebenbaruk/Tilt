@@ -1578,20 +1578,24 @@ export const register: Register = (on, options) => {
     const ui: Ui = $.ui.resolve(e);
     const snap = await snapshot($, rt);
 
+    // The band shows a tree of at most `maxRows` whole and scrolls a taller one, the sponsor out of
+    // view with it. Off fullscreen it may take the terminal's whole height: there it keeps to half,
+    // the agent's answer in view. The table takes its smallest form (small cards, the Wheel's strip)
+    // where that is what fits; where nothing does, the compact band stands in for it.
+    const rows =
+      e.viewport === undefined || e.viewport.isFullscreen
+        ? e.props.maxRows
+        : Math.min(e.props.maxRows, Math.floor(e.viewport.rows / 2));
     const band: PaneLayout = {
       bodyColumns: e.props.bodyColumns,
-      bodyRows: e.props.scroll.bodyRows,
+      bodyRows: rows,
       isFocused: false,
       cards: rt.settings.cards,
       isClickable: isClickable(e.surface, e.viewport?.isFullscreen === true),
       isBand: true,
     };
-    // Off fullscreen the band may take the terminal's whole height: a table taller than half of it
-    // would push the agent's answer off the screen, so the compact band stands in for it there.
-    const isRoomy =
-      e.viewport === undefined || e.viewport.isFullscreen || fitsRows(snap, band, Math.floor(e.viewport.rows / 2));
 
-    if (rt.settings.layout === "bottom" && isRoomy) {
+    if (rt.settings.layout === "bottom" && fitsRows(snap, band, rows)) {
       return renderPane(
         ui,
         snap,
