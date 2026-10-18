@@ -507,37 +507,46 @@ export default function Table(props: TableProps, surface: ClientSurface<TableSta
   // letters of the pane's key line play it.
   const isClickable = props.isClickable;
 
+  const drawnTable =
+    props.dealing !== null
+      ? dealingTable(ui, props.dealing, props.cards)
+      : gameTable(ui, shown, props.prefs, props.columns, fx, props.cards, props.wheel, (address, face) =>
+          isClickable ? tileButton(ui, props.keys, address, face, post) : null,
+        );
+  // A row each, always drawn (the sparkles, the result, the prompt): nothing under the table moves
+  // when one comes or goes.
+  const invite = isClickable
+    ? prompt(
+        ui,
+        props.keys,
+        { isFocused: state.isFocused && props.isPaneFocused, isSettled: round?.phase === "idle", isPulseOn },
+        post,
+      )
+    : null;
+  // The last streak is not the round in play's: it waits for this one's result.
+  const isStreakShown = !isDealing && fx.revealed === null && spinning === null && streak >= STREAK_SHOWN_FROM;
+  const effects = (
+    <Box flexDirection="column">
+      {celebration(ui, isDealing ? null : round, effect?.kind === "win" ? sinceEffect : null, props.columns - 1)}
+      {(!isDealing && summary(ui, state, round, spinning !== null)) || <Text> </Text>}
+      <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+        {invite}
+        {isStreakShown && (
+          <Text color={GOLD} bold>
+            {`${streak} wins in a row`}
+          </Text>
+        )}
+        {invite === null && !isStreakShown && <Text> </Text>}
+      </Box>
+      {isClickable && rouletteButtons(ui, props.keys, state.isFocused && props.isPaneFocused, post)}
+    </Box>
+  );
+
   return (
     <Box flexDirection="column" paddingLeft={shake}>
-      {props.dealing !== null
-        ? dealingTable(ui, props.dealing, props.cards)
-        : gameTable(ui, shown, props.prefs, props.columns, fx, props.cards, props.wheel, (address, face) =>
-            isClickable ? tileButton(ui, props.keys, address, face, post) : null,
-          )}
-      {!isDealing && celebration(ui, round, effect?.kind === "win" ? sinceEffect : null, props.columns - 1)}
-      <Box flexDirection="column" marginTop={1}>
-        {!isDealing && summary(ui, state, round, spinning !== null)}
-        <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-          {isClickable &&
-            prompt(
-              ui,
-              props.keys,
-              {
-                isFocused: state.isFocused && props.isPaneFocused,
-                isSettled: round?.phase === "idle",
-                isPulseOn,
-              },
-              post,
-            )}
-          {/* The last streak is not the round in play's: it waits for this one's result. */}
-          {!isDealing && fx.revealed === null && spinning === null && streak >= STREAK_SHOWN_FROM && (
-            <Text color={GOLD} bold>
-              {`${streak} wins in a row`}
-            </Text>
-          )}
-        </Box>
-        {isClickable && rouletteButtons(ui, props.keys, state.isFocused && props.isPaneFocused, post)}
-      </Box>
+      {props.isResultFirst && effects}
+      {drawnTable}
+      {!props.isResultFirst && effects}
     </Box>
   );
 }

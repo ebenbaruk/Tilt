@@ -177,8 +177,9 @@ const SIDEBAR_COLUMNS = 32;
 /** The sponsor and leaderboard column with its frame, under the header and over the footer. */
 const SIDEBAR_MIN_ROWS = 22;
 const LEADERBOARD_TOP = 3;
-/** A win paying at least this many times the stake gets the banner and the share key. */
-const BIG_WIN_MULTIPLE = 2n;
+/** A win of at least this many times the stake gets the fireworks, the banner and the share key;
+ *  a smaller one sparkles. Slots' common ♥ ♥ (×4) is not one: it would be loud for someone coding. */
+const BIG_WIN_MULTIPLE = 10n;
 const HANDS_MAX = 6;
 /** A roulette chip, beside the chip size and the cursor's cell. */
 const CHIP_GLYPH = "●";
@@ -228,14 +229,14 @@ function keyButton(ui: Ui, action: KeyAction, onCommand: OnCommand): RenderEleme
 const ROULETTE_KEY_PREFIX = "roulette-";
 
 /** A key's hotkey for its Button; none for a key only a click presses. */
-const hotkeyOf = (action: KeyAction): string | undefined => (action.hotkey === "" ? undefined : action.hotkey);
+const hotkeyOf = (action: RowKey): string | undefined => (action.hotkey === "" ? undefined : action.hotkey);
 
 /** A key a press must not reach the prompt through: dim, at its own address, and inert. */
 function inertButton(ui: Ui, action: RowKey): RenderElement {
   const { Button, Text } = ui;
 
   return (
-    <Button key={`held-${action.key}`} plain dimColor hotkey={action.hotkey} onPress={() => undefined}>
+    <Button key={`held-${action.key}`} plain dimColor hotkey={hotkeyOf(action)} onPress={() => undefined}>
       <Text dimColor>{action.label}</Text>
     </Button>
   );
@@ -270,8 +271,7 @@ function tileOf(key: string): number | null {
 
 /**
  * The play keys (no game switches) to draw: the game's key row (`keyRow`) in its order, each key
- * live when the plan offers it and dim and inert in its place otherwise, unless a live key takes its
- * letter; then the live keys the row has not (tiles, roulette's undo) and the tiles a draw in
+ * live when the plan offers it and dim and inert in its place otherwise; then the live keys the row has not (tiles, roulette's undo) and the tiles a draw in
  * flight holds. A dim key never tells how a round ends: its label is the row's own, not the plan's.
  * The row holds every key a game offers but its tiles: a key mashed past a move lands on one.
  */
@@ -308,7 +308,8 @@ function playButtons(
         return [liveButton(action)];
       }
 
-      return liveTaken.has(key.hotkey) ? [] : [waiting(key, isMoveKey(key.key))];
+      // A live key of another address on its letter (a Mines tile) leaves it drawn, letterless.
+      return [waiting(liveTaken.has(key.hotkey) ? { ...key, hotkey: "" } : key, isMoveKey(key.key))];
     }),
     ...extras.map(liveButton),
     ...heldTiles.map((key) => waiting(key, false)),
@@ -537,6 +538,8 @@ function towerOutcome(detail: TowerView): string {
     : `Cashed out at ×${detail.multiplier} on level ${level}.`;
 }
 
+const ZERO_USDC = formatUsdc("0");
+
 /** A settled round's sentence and net; `shownNet` is what a count-up has reached so far. */
 export function outcomeLine(ui: Ui, round: RoundView | null, shownNet?: string): RenderElement | null {
   const { Text } = ui;
@@ -553,7 +556,8 @@ export function outcomeLine(ui: Ui, round: RoundView | null, shownNet?: string):
       <Text color={toneOf(round.net)} bold>
         {formatSigned(shownNet ?? round.net)}
       </Text>
-      {BigInt(round.fee) > 0n && <Text color={FG6}>{`${SEPARATOR}fee ${formatUsdc(round.fee)}`}</Text>}
+      {/* A fee under a cent reads as 0.00: noise that looks like a bug. */}
+      {formatUsdc(round.fee) !== ZERO_USDC && <Text color={FG6}>{`${SEPARATOR}fee ${formatUsdc(round.fee)}`}</Text>}
     </Text>
   );
 }
@@ -709,7 +713,7 @@ export function dealingHands(snap: Pick<Snapshot, "intent">): number | null {
   return action?.type === "blackjack_bet" ? clampHands(action.hands) : null;
 }
 
-/** The last round, when it was a win of at least twice the stake. */
+/** The last round, when it was a big win (BIG_WIN_MULTIPLE). */
 export function bigWinOf(state: StateResponse): { net: string; game: Game } | null {
   const round = state.round;
 
@@ -729,7 +733,6 @@ const SPARKLE_FRAME_MS = 100;
 const SPARKLE_GLYPHS = ["✦", "✧", "⋆", "·", "*"];
 /** Per thousand cells lit when a celebration starts; it thins out to none. */
 const SPARKLE_DENSITY = 180;
-const FIREWORK_ROWS = 3;
 const BURSTS = 3;
 const BURST_STAGGER_MS = 450;
 const BURST_LIFE_MS = 900;
@@ -760,28 +763,24 @@ function scramble(a: number, b: number, c: number): number {
 
 type Spark = { glyph: string; color: string } | null;
 
-/** The cells of a celebration `elapsed` into it: sparkles thinning out, and on a big win bursts opening one after another. */
-function celebrationCells(round: RoundView, elapsed: number, columns: number): Spark[][] {
+/** The row of a celebration `elapsed` into it: sparkles thinning out, and on a big win bursts opening one after another. */
+function celebrationCells(round: RoundView, elapsed: number, columns: number): Spark[] {
   const total = celebrationMs(round);
-  const isBig = total === FIREWORKS_MS;
-  const rows = isBig ? FIREWORK_ROWS : 1;
   const colors = [GOLD, PINK, GREEN, FG1];
   const frame = Math.floor(elapsed / SPARKLE_FRAME_MS);
   const density = Math.round(SPARKLE_DENSITY * (1 - elapsed / total));
-  const cells: Spark[][] = Array.from({ length: rows }, (_, row) =>
-    Array.from({ length: columns }, (_, column) => {
-      const roll = scramble(frame, row, column);
+  const cells: Spark[] = Array.from({ length: columns }, (_, column) => {
+    const roll = scramble(frame, 0, column);
 
-      return roll % 1000 < density
-        ? {
-            glyph: SPARKLE_GLYPHS[roll % SPARKLE_GLYPHS.length] ?? "·",
-            color: colors[(roll >>> 10) % colors.length] ?? GOLD,
-          }
-        : null;
-    }),
-  );
+    return roll % 1000 < density
+      ? {
+          glyph: SPARKLE_GLYPHS[roll % SPARKLE_GLYPHS.length] ?? "·",
+          color: colors[(roll >>> 10) % colors.length] ?? GOLD,
+        }
+      : null;
+  });
 
-  if (!isBig) {
+  if (total !== FIREWORKS_MS) {
     return cells;
   }
 
@@ -798,20 +797,10 @@ function celebrationCells(round: RoundView, elapsed: number, columns: number): S
       glyph: BURST_GLYPHS[Math.floor((age / BURST_LIFE_MS) * BURST_GLYPHS.length)] ?? "·",
       color: colors[burst % colors.length] ?? GOLD,
     };
-    // A cell is twice as tall as it is wide: the rows above and below take a ring narrower by half a row's height.
-    const ring: [number, number][] = [
-      [1, reach],
-      [0, Math.floor(reach * 0.85)],
-      [2, Math.floor(reach * 0.85)],
-    ];
 
-    for (const [row, offset] of ring) {
-      for (const column of [center - offset, center + offset]) {
-        const line = cells[row];
-
-        if (line !== undefined && column >= 0 && column < columns && (row === 1 || reach >= 2)) {
-          line[column] = spark;
-        }
+    for (const column of [center - reach, center + reach]) {
+      if (column >= 0 && column < columns) {
+        cells[column] = spark;
       }
     }
   }
@@ -819,24 +808,19 @@ function celebrationCells(round: RoundView, elapsed: number, columns: number): S
   return cells;
 }
 
-/** A win's sparkles, or a big win's fireworks, across `columns`; null when no celebration plays. */
-export function celebration(
-  ui: Ui,
-  round: RoundView | null,
-  elapsed: number | null,
-  columns: number,
-): RenderElement | null {
-  const { Box, Text } = ui;
-
-  if (round === null || elapsed === null || elapsed < 0 || elapsed >= celebrationMs(round) || columns < 1) {
-    return null;
-  }
+/**
+ * A win's sparkles, or a big win's bursts, across `columns`: one row, always drawn, blank when no
+ * celebration plays, so nothing under it moves when one starts or ends.
+ */
+export function celebration(ui: Ui, round: RoundView | null, elapsed: number | null, columns: number): RenderElement {
+  const { Text } = ui;
+  const isPlaying =
+    round !== null && elapsed !== null && elapsed >= 0 && elapsed < celebrationMs(round) && columns >= 1;
 
   return (
-    <Box flexDirection="column">
-      {celebrationCells(round, elapsed, columns).map((line, row) => (
-        <Text key={`sparkles-${row}`} wrap="truncate">
-          {line.map((cell, column) =>
+    <Text key="sparkles" wrap="truncate">
+      {isPlaying
+        ? celebrationCells(round, elapsed, columns).map((cell, column) =>
             cell === null ? (
               " "
             ) : (
@@ -844,10 +828,9 @@ export function celebration(
                 {cell.glyph}
               </Text>
             ),
-          )}
-        </Text>
-      ))}
-    </Box>
+          )
+        : " "}
+    </Text>
   );
 }
 
@@ -1119,8 +1102,11 @@ function footer(ui: Ui, snap: Snapshot, state: StateResponse, game: Game, isFocu
 
   return (
     <Box flexDirection="row" flexWrap="wrap" columnGap={2} paddingX={1}>
-      {/* The session's net counts the round in play: it waits for the wheel, the reels or the last card too. */}
-      {snap.spinElapsed === null && snap.revealed === null && sessionText(ui, snap.session, snap.remote.fetchedAt)}
+      {/* The session's net counts the round in play: it waits for the round's result too. */}
+      {snap.spinElapsed === null &&
+        snap.revealed === null &&
+        snap.heldBalance === null &&
+        sessionText(ui, snap.session, snap.remote.fetchedAt)}
       <Text color={FG6}>{`rtp ${rtp}% · 1% fee on wins`}</Text>
       <Box flexGrow={1} />
       {isFocused ? (
@@ -1158,7 +1144,7 @@ function stepper(
         <Text color={FG1}>{glyph}</Text>
       </Button>
     ) : (
-      <Button key={`held-${action.key}`} plain dimColor hotkey={action.hotkey} onPress={() => undefined}>
+      <Button key={`held-${action.key}`} plain dimColor hotkey={hotkeyOf(action)} onPress={() => undefined}>
         <Text dimColor>{glyph}</Text>
       </Button>
     );
@@ -1234,7 +1220,7 @@ function stepperValue(ui: Ui, address: string, state: StateResponse, prefs: Pref
 
 /**
  * The bet and the game's own choice (hands, mines, dice chance…) as steppers, live or waiting dim in
- * their place; none where a live key of another address (a Mines tile) takes an arrow's letter.
+ * their place; letterless where a live key of another address (a Mines tile) takes an arrow's letter.
  */
 function steppers(
   ui: Ui,
@@ -1248,7 +1234,12 @@ function steppers(
     const live = keys.find((action) => action.key === key);
     const waiting = row.find((action) => action.key === key);
 
-    return live ?? (keys.some((action) => action.hotkey === waiting?.hotkey) ? undefined : waiting);
+    return (
+      live ??
+      (waiting !== undefined && keys.some((action) => action.hotkey === waiting.hotkey)
+        ? { ...waiting, hotkey: "" }
+        : waiting)
+    );
   };
   const [left, right] = ACROSS_KEYS.map(find);
   const across = left !== undefined && right !== undefined ? ([left, right] as const) : null;
@@ -1462,7 +1453,7 @@ function aroundRows(snap: Snapshot, state: StateResponse, layout: PaneLayout): n
   const isLow = state.accountOpen && isIdle && BigInt(state.balance) < totalStake(state, snap.prefs);
   const now =
     (snap.isOnboarded ? 0 : GUIDE_ROWS) +
-    (bigWinOf(state) === null ? 0 : BANNER_ROWS) +
+    (bigWinOf(state) === null || layout.isBand ? 0 : BANNER_ROWS) +
     (isLow ? 1 : 0) +
     (state.blocked === null ? 0 : 1);
 
@@ -1526,7 +1517,7 @@ export function renderPane(
   snap: Snapshot,
   layout: PaneLayout,
   onCommand: OnCommand,
-  table: ((size: CardSize, columns: number, wheel: number | null) => RenderElement) | null,
+  table: ((size: CardSize, columns: number, wheel: number | null, isResultFirst: boolean) => RenderElement) | null,
 ): RenderElement {
   const { Box, Button, Text } = ui;
   const state = snap.remote.state;
@@ -1622,7 +1613,7 @@ export function renderPane(
   // click gave it, and deal the hands all at once when they show.
   const shownTable =
     table !== null ? (
-      table(size, gameColumns(layout), wheel)
+      table(size, gameColumns(layout), wheel, isKeysFirst)
     ) : dealing !== null ? (
       dealingTable(ui, dealing, size)
     ) : (
@@ -1639,22 +1630,35 @@ export function renderPane(
         )}
       </Box>
     );
+  const result =
+    table !== null || isResultHeld
+      ? null
+      : round !== null && resultAt !== null
+        ? resultLine(ui, round, resultAt, state.balance)
+        : outcomeLine(ui, round);
+  // A row each, always drawn: the sparkles, then what is in flight or the result. Their coming and
+  // going never moves the keys, nor the prompt under the band.
+  const slots = (
+    <Box flexDirection="column">
+      {table === null && celebration(ui, sending === null ? round : null, snap.resultElapsed, gameColumns(layout) - 1)}
+      {statusLine(ui, snap, state) ?? result ?? <Text> </Text>}
+    </Box>
+  );
   const gameColumn = (
     <Box flexDirection="column" flexGrow={1} marginTop={snap.agent.notice !== null || snap.agent.isWorking ? 1 : 0}>
-      {/* Short of room, the keys come before the guide too: a band of a few rows still shows them. */}
-      {isKeysFirst && linePlays.length > 0 && <Box marginBottom={1}>{keyArea(ui, linePlays, false, steps, true)}</Box>}
+      {/* Short of room, the keys come before the guide too: a band of a few rows still shows them,
+          and the result right under them. */}
+      {isKeysFirst && linePlays.length > 0 && keyArea(ui, linePlays, false, steps, true)}
+      {isKeysFirst && slots}
       {!snap.isOnboarded && canPlay && firstHandGuide(ui, layout.isFocused)}
       {state.blocked !== null && <Text color={RED}>{`Play paused · ${cleanText(state.blocked)}`}</Text>}
       {shownTable}
       {/* The table surface module invites clicks; where none land, the keys are recalled here. */}
       {(table === null || !layout.isClickable) && layoutHint(ui, keys, layout.isClickable)}
-      {table === null && sending === null && celebration(ui, round, snap.resultElapsed, gameColumns(layout) - 1)}
-      {table === null &&
-        !isResultHeld &&
-        (round !== null && resultAt !== null ? resultLine(ui, round, resultAt, state.balance) : outcomeLine(ui, round))}
-      {/* The banner is the shown round's, and comes with its result. */}
-      {!isResultHeld && round !== null && round === state.round && winBanner(ui, state, onCommand)}
-      {statusLine(ui, snap, state)}
+      {!isKeysFirst && slots}
+      {/* The banner is the shown round's, and comes with its result; the band leaves it out, so its
+          height stays the same in every phase of a round. */}
+      {!layout.isBand && !isResultHeld && round !== null && round === state.round && winBanner(ui, state, onCommand)}
       {lowBalanceLine(ui, snap, state)}
       {!isKeysFirst && linePlays.length > 0 && keyArea(ui, linePlays, size === "large", steps)}
     </Box>
@@ -1816,17 +1820,19 @@ export function renderBand(ui: Ui, snap: Snapshot, layout: BandLayout, onCommand
           TILT
         </Text>
         <Text color={GOLD}>{formatUsdc(shownBalance(snap, state))} USDC</Text>
-        <Text color={FG4} wrap="truncate-end">
-          {state.blocked !== null
-            ? `play paused · ${cleanText(state.blocked)}`
-            : handSummary(state, snap.prefs, snap.spinElapsed === null && snap.revealed === null)}
-        </Text>
+        {/* What is in flight takes the hand's place on its row: the band never grows a row for it. */}
+        {status ?? (
+          <Text color={FG4} wrap="truncate-end">
+            {state.blocked !== null
+              ? `play paused · ${cleanText(state.blocked)}`
+              : handSummary(state, snap.prefs, snap.spinElapsed === null && snap.revealed === null)}
+          </Text>
+        )}
         {agent}
       </Box>
       <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
         {bandSwitchKeys(state, snap.prefs).map((action) => keyButton(ui, action, onCommand))}
         {playButtons(ui, input, keys, row, onCommand).map((button) => button.element)}
-        {status}
       </Box>
       {state.sponsor !== null && sponsorLine(ui, state.sponsor, snap.remote.fetchedAt)}
     </Box>

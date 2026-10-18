@@ -331,6 +331,18 @@ export const SLOTS: StateResponse = {
   }),
 };
 
+/** The top line: a big win, 247.51 over a 1.00 stake. */
+export const SLOTS_JACKPOT: StateResponse = {
+  ...BASE,
+  balance: "259910000",
+  round: round({
+    payout: "250000000",
+    fee: "2490000",
+    net: "247510000",
+    detail: { game: "slots", reels: ["7", "7", "7"] },
+  }),
+};
+
 export const SLOTS_DRAWING: StateResponse = {
   ...BASE,
   round: round({ phase: "drawing", net: "0", detail: { game: "slots", reels: null } }),

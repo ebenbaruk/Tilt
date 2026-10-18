@@ -35,6 +35,7 @@ import {
   ROULETTE,
   ROULETTE_CHIPS,
   SLOTS,
+  SLOTS_JACKPOT,
   TOWER_BUSTED,
   TOWER_CASHED,
   TOWER_TURN,
@@ -201,19 +202,28 @@ describe("a light terminal", () => {
 
 describe("around the table", () => {
   test("a big win gets a banner and a key that copies a line to share, nothing about the work", async ($, on) => {
-    const { world } = await seat($, on, SLOTS);
+    const { world } = await seat($, on, SLOTS_JACKPOT);
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
 
-    expect(await shownText(ui)).toContain("★ BIG WIN +3.96 USDC");
+    expect(await shownText(ui)).toContain("★ BIG WIN +247.51 USDC");
     await ui.press({ key: "share" });
 
     expect(world.copied).toEqual([
-      "Won 3.96 USDC on slots with Tilt while my agent worked · presented by Northwind Cloud",
+      "Won 247.51 USDC on slots with Tilt while my agent worked · presented by Northwind Cloud",
     ]);
+    await ui.unmount();
+
+    // The band keeps its rows: no banner there.
+    expect(await shownText(await $.ui.mount({ plugin: PLUGIN, ...BAND }))).not.toContain("BIG WIN");
   });
 
-  test("a small win gets no banner", async ($, on) => {
-    await seat($, on, BLACKJACK_WIN);
+  test("a small win gets no banner: slots' ×5 neither, loud for someone coding", async ($, on) => {
+    const { show } = await moving($, on, SLOTS);
+    const slots = await $.ui.mount({ plugin: PLUGIN, ...PANE });
+
+    expect(await shownText(slots)).not.toContain("BIG WIN");
+    await slots.unmount();
+    await show(BLACKJACK_WIN);
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
 
     expect(await shownText(ui)).not.toContain("BIG WIN");
@@ -382,6 +392,23 @@ describe("tight rooms", () => {
     },
   );
 
+  test(
+    "in a short band the result comes right under the keys, over a table that scrolls: roulette",
+    { options: { layout: "bottom" } },
+    async ($, on) => {
+      await seat($, on, ROULETTE_CHIPS);
+      const band = {
+        ...BAND,
+        props: { ...BAND.props, maxRows: 12, bodyColumns: 80, scroll: { offset: 0, bodyRows: 11 } },
+      };
+      const ui = await $.ui.mount({ plugin: PLUGIN, ...band });
+      const table = textOf(await ui.drawn({ in: TABLE_KEY }));
+
+      expect(table.indexOf("2 of 3 chips win.")).toBeGreaterThan(-1);
+      expect(table.indexOf("2 of 3 chips win.")).toBeLessThan(table.indexOf("1st 12"));
+    },
+  );
+
   test("a game shown before its first round counts its whole table in a short pane", async ($, on) => {
     // The last round was blackjack: roulette and Mines have none to show, yet draw their table.
     await seat($, on, BLACKJACK_LOSS, {}, { ...LOGGED_IN, onboarded: true });
@@ -445,27 +472,24 @@ describe("spins", () => {
   test("a slots spin turns the reels, then shows the result: nothing tells it before they stop", async ($, on) => {
     const { show, clock } = await moving($, on, BASE);
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
-    const won = { ...SLOTS, balance: "16360000" };
-
     await ui.press({ key: "game-slots" });
-    await show(won);
+    await show(SLOTS_JACKPOT);
     const spinning = textOf(await ui.drawn());
 
     expect(spinning).toContain("balance 12.40 USDC");
     expect(spinning).not.toContain("BIG WIN");
-    expect(spinning).not.toContain("+3.96");
+    expect(spinning).not.toContain("+247.51");
 
     await clock.advance(SPIN_OVER_MS);
     const landed = textOf(await ui.drawn());
 
-    expect(landed).toContain("★ BIG WIN +3.96 USDC");
+    expect(landed).toContain("★ BIG WIN +247.51 USDC");
     // The header counts up with the result line.
     await clock.advance(RESULT_MS);
-    expect(textOf(await ui.drawn())).toContain("balance 16.36 USDC");
+    expect(textOf(await ui.drawn())).toContain("balance 259.91 USDC");
     // Another game's tab shows no banner of it.
     await ui.press({ key: "game-mines" });
     expect(textOf(await ui.drawn())).not.toContain("BIG WIN");
-    expect(landed).toContain("★ BIG WIN +3.96 USDC");
   });
 
   test("fast reels land in a third of the time; turbo shows the draw at once", async ($, on) => {
@@ -480,13 +504,14 @@ describe("spins", () => {
     await ui.press({ key: "game-slots" });
     await ui.press({ key: "slots-fast" });
     await show(win(901));
-    expect(textOf(await ui.drawn())).not.toContain("+3.96");
-    await clock.advance(SPIN_OVER_MS / 3);
-    expect(textOf(await ui.drawn())).toContain("+3.96");
+    expect(textOf(await ui.drawn())).not.toContain("session +3.96");
+    await clock.advance(SPIN_OVER_MS / 3 + SURFACE_LAG_MS);
+    expect(textOf(await ui.drawn())).toContain("session +3.96");
 
     await ui.press({ key: "slots-turbo" });
     await show(win(902));
-    expect(textOf(await ui.drawn())).toContain("+3.96");
+    await clock.advance(SURFACE_LAG_MS);
+    expect(textOf(await ui.drawn())).toContain("session +7.92");
   });
 
   test("the band says the pocket and the net only once the wheel lands", async ($, on) => {
@@ -997,7 +1022,9 @@ describe("the wheel", () => {
     expect(landed).not.toContain("spinning…");
     expect(hasSparkles(landed)).toBe(true);
     await clock.advance(RESULT_MS);
-    expect(textOf(await ui.drawn())).toContain("Landed on ×1.50. +0.49 · fee 0.00");
+    // A fee under a cent is not said.
+    expect(textOf(await ui.drawn())).toContain("Landed on ×1.50. +0.49");
+    expect(textOf(await ui.drawn())).not.toContain("fee 0.00");
     expect(textOf(await ui.drawn())).toContain("balance 12.89 USDC");
   });
 });

@@ -1276,8 +1276,9 @@ function depositUrlOf(rt: Runtime, state: StateResponse | null): string | null {
 /** Games whose board is its keys: on the main screen each hidden tile is the letter Button of its key. */
 const KEYED_BOARDS: ReadonlySet<Game> = new Set(["mines", "tower"]);
 
-/** The table drawn by its surface module, at a card size, `columns` wide, the Wheel drawn as `wheel`. */
-type TableRegion = (cards: CardSize, columns: number, wheel: number | null) => RenderElement;
+/** The table drawn by its surface module, at a card size, `columns` wide, the Wheel drawn as `wheel`,
+ *  its result over the table where `isResultFirst`. */
+type TableRegion = (cards: CardSize, columns: number, wheel: number | null, isResultFirst: boolean) => RenderElement;
 
 /**
  * The animated table (table.tsx) for the pane or the band, or null where the still one is drawn.
@@ -1306,21 +1307,22 @@ function tableOf(
 
   const { Client } = $.ui.resolve(e);
   const keys = tableKeys({ state, prefs: snap.prefs, isBusy: isPlayHeld(snap) });
-  const props = (cards: CardSize, columns: number, wheel: number | null): TableProps => ({
+  const props = (cards: CardSize, columns: number, wheel: number | null, isResultFirst: boolean): TableProps => ({
     state,
     prefs: snap.prefs,
     keys: keys.map(({ key, hotkey, label }) => ({ key, hotkey, label })),
     columns,
     cards,
     wheel,
+    isResultFirst,
     isLight,
     ...site,
     dealing: dealingHands(snap),
     sending: sendingRound(snap),
   });
 
-  return (cards, columns, wheel) => (
-    <Client key={TABLE_KEY} module="./table.tsx" props={props(cards, columns, wheel)} />
+  return (cards, columns, wheel, isResultFirst) => (
+    <Client key={TABLE_KEY} module="./table.tsx" props={props(cards, columns, wheel, isResultFirst)} />
   );
 }
 

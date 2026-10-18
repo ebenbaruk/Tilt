@@ -76,7 +76,7 @@ Around the table:
 - A blackjack or baccarat deal shows its cards face down at once, then turns them over as the chain deals them; a Hilo guess lays its card face down the same way, and a Mines reveal or a tower climb turns its tile from the key on. Baccarat tags the winning side `WINS` (`TIE` on a tie) and says what the bet got (`Banker wins 7 to 5: pays ×1.95.`); slots says the line hit (`7 7 7 pays ×250.`).
 - Mines, Tower and Hilo say whose move it is (`YOUR TURN`, `drawing…`) and how the round ended (`BUST` in red, `CASHED OUT ×1.4785` in gold), and keep the multiplier, what the next tile, level or guess brings (Hilo: each guess's chance too) and the cash-out on its key (`z cash out 1.28`) in view.
 - A result counts a win up and flashes gold, or flashes red and shakes the table on a loss, in every placement: the main screen's still Mines and Tower boards too.
-- A win sparkles across the table once its result shows; a win of twice the stake or more sets off fireworks and gets a banner; `w` copies a line to share.
+- A win sparkles on one row under the table once its result shows; a win of ten times the stake or more sets off bursts on that row and, in the pane, gets a banner; `w` copies a line to share. The result, what is in flight and the sparkles each keep their row, blank at rest, so the band's height never changes during a round.
 - The footer counts this session (`session +2.30 · 14 rounds · 22m`), as the mod saw rounds settle; the leaderboard says how far the next rank is.
 
 ## Local development

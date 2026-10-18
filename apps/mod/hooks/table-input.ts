@@ -28,6 +28,8 @@ export interface TableProps {
   cards: CardSize;
   /** The Wheel's disc the pane chose for the room it has (`wheelDisc`); null: the strip. */
   wheel: number | null;
+  /** The pane is short of rows (its keys come first): the result goes over the table, in view. */
+  isResultFirst: boolean;
   /** Claude Code's theme is a light one: the surface module draws with the light accents. */
   isLight: boolean;
   /** The pane holds the keyboard. A click on the table then gives it the raw keys; without the

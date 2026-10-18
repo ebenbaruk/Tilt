@@ -129,7 +129,7 @@ const cases: [string, StateResponse, string[]][] = [
     ROULETTE,
     ["No chips on the table yet.", " 17 BLACK ", "Red loses.", "−1.00", " 17 ", "chip ●", "rtp 97.30%"],
   ],
-  ["roulette, three chips settled", ROULETTE_CHIPS, [" 17 BLACK ", "2 of 3 chips win.", "+17.91", "BIG WIN"]],
+  ["roulette, three chips settled", ROULETTE_CHIPS, [" 17 BLACK ", "2 of 3 chips win.", "+17.91"]],
   [
     "baccarat, settled",
     BACCARAT,
@@ -186,11 +186,7 @@ const cases: [string, StateResponse, string[]][] = [
   ],
   ["limbo, the target reached", LIMBO_WIN, ["×3.12", "×3.12 reaches ×2.00.", "+0.99"]],
   // A new session opens on the last round's choices: three coins on heads, the round on the table.
-  [
-    "flip, three heads in a row",
-    FLIP,
-    ["(H)(H)(H)", "WIN", "3 heads in a row.", "+5.77", "BIG WIN +5.77 USDC", "flip · 0.50 · 3 × heads"],
-  ],
+  ["flip, three heads in a row", FLIP, ["(H)(H)(H)", "WIN", "3 heads in a row.", "+5.77", "flip · 0.50 · 3 × heads"]],
   ["flip, a tail", FLIP_LOSS, ["Tails on coin 2 of 2.", "−1.00"]],
   [
     "keno, three hits",
@@ -366,7 +362,11 @@ describe("the pane draws each state the api sends", () => {
       current = state;
       await clock.advance(5_000);
       const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
-      const hotkeys = (await ui.findAll({ type: "Button" })).map((button) => String(button.props.hotkey));
+      // A Button without a hotkey (a key whose letter a tile takes, drawn letterless) presses by click alone.
+      const hotkeys = (await ui.findAll({ type: "Button" }))
+        .map((button) => button.props.hotkey)
+        .filter((hotkey) => hotkey !== undefined)
+        .map(String);
 
       expect(hotkeys.length).toBeGreaterThan(0);
       expect(new Set(hotkeys).size, hotkeys.join(" ")).toBe(hotkeys.length);
