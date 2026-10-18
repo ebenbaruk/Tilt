@@ -6,7 +6,7 @@
 // Every function that takes `$` is declared at the top of this file: the engine follows `$` only
 // here, so the other modules are plain functions over data.
 import { atom, read, update } from "claude-code";
-import type { EngineInterface, Register, RenderElement, Timer } from "claude-code";
+import type { EngineInterface, Register, RenderElement, RenderInput, Timer } from "claude-code";
 
 import {
   apiBase,
@@ -1276,6 +1276,47 @@ function depositUrlOf(rt: Runtime, state: StateResponse | null): string | null {
   return state?.webUrl === undefined || rt.base === null ? null : trustedVerifyUrl(state.webUrl, rt.base);
 }
 
+/** The table drawn by its surface module, at a card size, `columns` wide, the Wheel drawn as `wheel`. */
+type TableRegion = (cards: CardSize, columns: number, wheel: number | null) => RenderElement;
+
+/**
+ * The animated table (table.tsx) for the pane or the band, or null where the still one is drawn.
+ * The fullscreen terminal hands raw keys (Space, Enter, arrows) to a clicked `Client`; the main
+ * screen never does, so there the table is drawn still and played with the letters.
+ * `isPaneFocused`: the pane holds the keyboard; the band never says, so it passes false.
+ */
+function tableOf(
+  $: EngineInterface,
+  e: RenderInput<"Pane" | "AbovePrompt">,
+  rt: Runtime,
+  snap: Snapshot,
+  isLight: boolean,
+  isPaneFocused: boolean,
+): TableRegion | null {
+  const state = snap.remote.state;
+
+  if (e.surface !== "terminal" || e.viewport?.isFullscreen !== true || state === null || rt.isTableBroken) {
+    return null;
+  }
+
+  const { Client } = $.ui.resolve(e);
+  const keys = tableKeys({ state, prefs: snap.prefs, isBusy: snap.intent !== null });
+  const props = (cards: CardSize, columns: number, wheel: number | null): TableProps => ({
+    state,
+    prefs: snap.prefs,
+    keys: keys.map(({ key, hotkey, label }) => ({ key, hotkey, label })),
+    columns,
+    cards,
+    wheel,
+    isLight,
+    isPaneFocused,
+  });
+
+  return (cards, columns, wheel) => (
+    <Client key={TABLE_KEY} module="./table.tsx" props={props(cards, columns, wheel)} />
+  );
+}
+
 // ---- hooks ----
 
 async function onSessionStart($: EngineInterface, rt: Runtime, isInteractive: boolean): Promise<void> {
@@ -1470,31 +1511,8 @@ export const register: Register = (on, options) => {
       isClickable: isClickable(e.surface, e.viewport?.isFullscreen === true),
     };
     const snap = await snapshot($, rt);
-    const state = snap.remote.state;
-    let table: ((cards: CardSize, columns: number, wheel: number | null) => RenderElement) | null = null;
 
-    // The fullscreen terminal hands raw keys (Space, Enter, arrows) to a clicked `Client`; the
-    // main screen never does, so there the table is drawn still and played with the letters.
-    if (e.surface === "terminal" && e.viewport?.isFullscreen === true && state !== null && !rt.isTableBroken) {
-      const { Client } = $.ui.resolve(e);
-      const keys = tableKeys({ state, prefs: snap.prefs, isBusy: snap.intent !== null });
-      const props = (cards: CardSize, columns: number, wheel: number | null): TableProps => ({
-        state,
-        prefs: snap.prefs,
-        keys: keys.map(({ key, hotkey, label }) => ({ key, hotkey, label })),
-        columns,
-        cards,
-        wheel,
-        isLight: look.isLight,
-        isPaneFocused: e.props.isFocused,
-      });
-
-      table = (cards, columns, wheel) => (
-        <Client key={TABLE_KEY} module="./table.tsx" props={props(cards, columns, wheel)} />
-      );
-    }
-
-    return renderPane(ui, snap, pane, commandRunner($, rt), table);
+    return renderPane(ui, snap, pane, commandRunner($, rt), tableOf($, e, rt, snap, look.isLight, e.props.isFocused));
   });
 
   on("ui.message", { element: TABLE_KEY }, async ($, e) => {
@@ -1504,7 +1522,7 @@ export const register: Register = (on, options) => {
   });
 
   on("ui.fault", { element: TABLE_KEY }, ($, e, next) => {
-    // The engine draws the pane again: without the table's `Client` from now on, the still table instead.
+    // The engine draws the pane or the band again: without the table's `Client` from now on, the still table instead.
     rt.isTableBroken = true;
     logDebug($, `table failed (${e.phase}): ${e.reason}`);
 
@@ -1537,7 +1555,7 @@ export const register: Register = (on, options) => {
         isClickable: isClickable(e.surface, e.viewport?.isFullscreen === true),
       };
 
-      return renderPane(ui, snap, band, commandRunner($, rt), null);
+      return renderPane(ui, snap, band, commandRunner($, rt), tableOf($, e, rt, snap, look.isLight, false));
     }
 
     return renderBand(ui, snap, { bodyColumns: e.props.bodyColumns }, commandRunner($, rt));

@@ -694,9 +694,10 @@ describe("the roulette layout", () => {
     expect(await ui.find({ key: "start" })).toBeUndefined();
   });
 
-  /** The whole table above the prompt of a fullscreen terminal: no table surface module there. */
-  const BOTTOM: RenderInput<"AbovePrompt"> = {
+  /** The whole table above the prompt of a fullscreen terminal: the table surface module, as in the pane. */
+  const BOTTOM: RenderInput<"AbovePrompt", "terminal"> = {
     ...BAND,
+    surface: "terminal",
     viewport: { columns: 125, rows: 60, isFullscreen: true },
     props: { ...BAND.props, maxRows: 30, bodyColumns: 120, scroll: { offset: 0, bodyRows: 30 } },
   };
@@ -710,16 +711,16 @@ describe("the roulette layout", () => {
       const ui = await $.ui.mount({ plugin: PLUGIN, ...BOTTOM });
 
       await ui.press({ key: "game-roulette" });
-      expect(await ui.find({ type: "Client" })).toBeUndefined();
-      expect(textOf(await ui.drawn())).toContain("click the layout to add a chip");
+      expect(await ui.find({ type: "Client", key: TABLE_KEY })).toBeDefined();
+      expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("click the layout to add a chip");
 
       for (const address of ["straight-17", "straight-17", "red", "dozen-1", "column-3", "straight-0"]) {
         await ui.press({ key: cell(`roulette-${address}`) });
       }
 
-      expect(textOf(await ui.drawn())).toContain("on the table 3.00 · 5 chips");
-      await ui.press({ key: "chip-undo" });
-      await ui.press({ key: "start" });
+      expect(await shownText(ui)).toContain("on the table 3.00 · 5 chips");
+      await ui.press({ key: cell("chip-undo") });
+      await ui.press({ key: cell("start") });
 
       expect(actionsOf(world.calls("POST /v1/play"))).toEqual([
         {
@@ -739,9 +740,9 @@ describe("the roulette layout", () => {
     await seat($, on, DRAWING);
     const ui = await $.ui.mount({ plugin: PLUGIN, ...BOTTOM });
 
-    expect(textOf(await ui.drawn())).toContain("1st 12");
-    expect(await ui.find({ key: cell("roulette-straight-17") })).toBeUndefined();
-    expect(await ui.find({ key: cell("roulette-red") })).toBeUndefined();
+    expect(await shownText(ui)).toContain("1st 12");
+    expect(await ui.find({ key: cell("roulette-straight-17"), in: TABLE_KEY })).toBeUndefined();
+    expect(await ui.find({ key: cell("roulette-red"), in: TABLE_KEY })).toBeUndefined();
   });
 
   test(

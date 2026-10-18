@@ -31,7 +31,7 @@ export interface TableProps {
   /** Claude Code's theme is a light one: the surface module draws with the light accents. */
   isLight: boolean;
   /** The pane holds the keyboard. A click on the table then gives it the raw keys; without the
-   *  pane's focus the table has none, whatever was clicked before. */
+   *  pane's focus the table has none, whatever was clicked before. The band never says: false. */
   isPaneFocused: boolean;
 }
 

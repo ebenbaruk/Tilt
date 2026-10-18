@@ -15,7 +15,7 @@ import {
   BLACKJACK_WIN,
   WHEEL,
 } from "./fixtures";
-import { FIRST_TICK_MS, movingTable, PANE, PANE_INLINE, PLUGIN, seat, textOf, type Answer } from "./world";
+import { BAND, FIRST_TICK_MS, movingTable, PANE, PANE_INLINE, PLUGIN, seat, textOf, type Answer } from "./world";
 
 const SUBMITTED: Answer = { status: 200, body: { intentId: "sent", status: "submitted", error: null } };
 /** The Client acts (key, pointer, post, advance) are typed on the terminal's drawing. */
@@ -269,5 +269,69 @@ describe("the table moves", () => {
     await ui.advance(EFFECT_MS);
     expect(await table()).toContain("Player 9 · banker 8.");
     expect(await table()).toContain("+0.94");
+  });
+});
+
+describe("the table in the bottom band of the fullscreen terminal", () => {
+  /** Placed at the bottom (/tilt setup), the whole table is the band above the prompt. */
+  const BOTTOM = { options: { layout: "bottom" }, timeoutMs: 30_000 };
+  const BOTTOM_BAND: RenderInput<"AbovePrompt", "terminal"> = {
+    ...BAND,
+    surface: "terminal",
+    viewport: { columns: 125, rows: 60, isFullscreen: true },
+    props: { ...BAND.props, maxRows: 30, bodyColumns: 120, scroll: { offset: 0, bodyRows: 30 } },
+  };
+
+  test("deals card by card and counts a win up once the last card is over, as the pane does", BOTTOM, async ($, on) => {
+    let current: StateResponse = BASE;
+    const { clock } = await seat($, on, BASE, { "GET /v1/state": () => ({ status: 200, body: current }) });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...BOTTOM_BAND });
+    const table = async () => textOf(await ui.drawn({ in: TABLE_KEY }));
+
+    current = BLACKJACK_SIX_TURN;
+    await clock.advance(POLL_MS);
+    expect(await table()).not.toContain("5♣");
+    await ui.advance(WHOLE_DEAL_MS);
+    expect(await table()).toContain("5♣");
+
+    current = BLACKJACK_MIXED;
+    await clock.advance(POLL_MS);
+    await ui.advance(WHOLE_DEAL_MS);
+    expect(await table()).not.toContain("+2.47");
+    await ui.advance(EFFECT_MS);
+    expect(await table()).toContain("+2.47");
+    expect(await table()).toContain("balance 12.40");
+  });
+
+  test("a wheel spin lands before the result shows", BOTTOM, async ($, on) => {
+    let current: StateResponse = { ...BASE, round: null };
+    const { clock } = await seat($, on, current, { "GET /v1/state": () => ({ status: 200, body: current }) });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...BOTTOM_BAND });
+    const table = async () => textOf(await ui.drawn({ in: TABLE_KEY }));
+
+    await ui.press({ key: "game-page" });
+    current = { ...WHEEL, balance: "12895000" };
+    await clock.advance(POLL_MS);
+    await ui.advance(WHEEL_SPIN_MS - 300);
+    expect(await table()).toContain("spinning…");
+    expect(await table()).not.toContain("Landed on");
+
+    await ui.advance(300 + EFFECT_MS);
+    expect(await table()).toContain("Landed on ×1.50.");
+  });
+
+  test("a click then Space deals; a post presses only a key the plan has right now", BOTTOM, async ($, on) => {
+    const { world } = await seat($, on, BASE, { "POST /v1/play": () => SUBMITTED });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...BOTTOM_BAND });
+
+    // The band never says it holds the keyboard: the table always says how to give it the keys.
+    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("click the table, then Space to play");
+    await ui.post({ press: "bj-hit" });
+    await ui.post({ press: "start", amount: "999000000" });
+    expect(world.calls("POST /v1/play")).toHaveLength(0);
+
+    await ui.pointer(CLICK);
+    await ui.key({ key: "space" });
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([{ type: "blackjack_bet", amount: "500000", hands: 1 }]);
   });
 });

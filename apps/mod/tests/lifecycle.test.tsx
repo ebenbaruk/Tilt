@@ -3,7 +3,20 @@ import type { On, TurnCompleteInput } from "claude-code";
 
 import type { ImpressionRequest } from "../hooks/protocol";
 import { BASE, BLACKJACK_TURN } from "./fixtures";
-import { BAND, command, FIRST_TICK_MS, LOGGED_IN, NOW, PANE, PLUGIN, seat, SESSION, textOf, worldOf } from "./world";
+import {
+  BAND,
+  command,
+  FIRST_TICK_MS,
+  LOGGED_IN,
+  NOW,
+  PANE,
+  PLUGIN,
+  seat,
+  SESSION,
+  shownText,
+  textOf,
+  worldOf,
+} from "./world";
 
 interface TurnEnd {
   reason?: "answer" | "aborted" | "error";
@@ -123,7 +136,7 @@ describe("the agent comes first", () => {
     const { world, band } = await startOver($, on, "inline", true);
 
     expect(world.opened).toEqual([]);
-    expect(textOf(await band.drawn())).toContain("DEALER");
+    expect(await shownText(band)).toContain("DEALER");
   });
 
   test("a player of the docked pane gets it back docked", async ($, on) => {
