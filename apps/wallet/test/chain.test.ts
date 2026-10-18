@@ -381,6 +381,31 @@ describe("new games' accounts", () => {
     });
   }
 
+  const noStakeMoves: GameAction[] = [
+    { type: "mines_reveal", tile: 3 },
+    { type: "mines_cashout" },
+    { type: "hilo_guess", guess: "higher" },
+    { type: "hilo_cashout" },
+    { type: "tower_climb", tile: 1 },
+    { type: "tower_cashout" },
+  ];
+
+  for (const action of noStakeMoves) {
+    it(`never opens an account for ${action.type}, refusing it without one`, async () => {
+      const { chain, player, sent } = stubbedChain({ tableOnSolana: false, rollupMisses: Infinity });
+      await expect(chain.play(player, action, record)).rejects.toMatchObject({ code: "PROGRAM_ERROR", message: "WrongState" });
+      expect(sent.solana).toHaveLength(0);
+      expect(sent.rollup).toHaveLength(0);
+    });
+  }
+
+  it("plays a move staking nothing on an account the rollup already holds", async () => {
+    const { chain, player, sent } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
+    await chain.play(player, { type: "tower_cashout" }, record);
+    expect(sent.solana).toHaveLength(0);
+    expect(sent.rollup.map(instructionNames)).toEqual([["tower_cashout"]]);
+  });
+
   it("shares one table between the one-draw games", async () => {
     const { chain, player, sent } = stubbedChain({ tableOnSolana: false, rollupMisses: 1 });
     await chain.play(player, { type: "dice_roll", amount: "1000000", target: 5_000, over: false }, record);

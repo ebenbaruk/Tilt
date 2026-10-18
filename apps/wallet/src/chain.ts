@@ -305,13 +305,14 @@ export class TiltChain {
 
   /** A round action or a withdrawal, in the rollup. Blackjack needs the player's table and the
    *  other games but baccarat, slots and single-bet roulette their own account (one-draw or
-   *  roulette table, Mines, Hilo or Tower board), opened first on the player's first move of that
-   *  game. A staking move past the player's win cap is sent again once Solana has raised the cap
-   *  from the free bankroll (the rolling win cap). */
+   *  roulette table, Mines, Hilo or Tower board), opened first on the player's first staking move
+   *  of that game. A staking move past the player's win cap is sent again once Solana has raised
+   *  the cap from the free bankroll (the rolling win cap). */
   async play(player: PublicKey, action: RollupAction, record: RecordSend): Promise<string> {
     if (!(await this.isOpen(player))) throw new IntentError("ACCOUNT_NOT_OPEN", "no account yet: deposit first");
     const gameAccount = action.type === "roulette_chips" ? "roulette" : GAME_ACCOUNT_OF[action.type.split("_")[0]];
-    if (gameAccount) await this.ensureGameAccount(player, gameAccount);
+    if (gameAccount && STAKING_MOVES.has(action.type)) await this.ensureGameAccount(player, gameAccount);
+    else if (gameAccount) await this.requireGameAccount(player, gameAccount);
     try {
       return await this.sendRollup(await this.playTransaction(player, action), record);
     } catch (e) {
@@ -405,6 +406,16 @@ export class TiltChain {
     } catch (e) {
       throw new IntentError("TABLE_NOT_READY", `${GAME_ACCOUNTS[kind].label} not ready: ${e instanceof Error ? e.message : String(e)}`);
     }
+    this.gameAccountsReady.add(key);
+  }
+
+  /** A move staking nothing plays on a round a staking move started, so on an account the rollup
+   *  already holds: it never opens one, whose rent the relayer would pay for nothing. Without
+   *  the account there is no round, the program's WrongState. */
+  private async requireGameAccount(player: PublicKey, kind: GameAccount): Promise<void> {
+    const key = `${kind}:${player.toBase58()}`;
+    if (this.gameAccountsReady.has(key)) return;
+    if (!(await this.rollupHolds(GAME_ACCOUNTS[kind].address(player)))) throw new IntentError("PROGRAM_ERROR", "WrongState");
     this.gameAccountsReady.add(key);
   }
 
