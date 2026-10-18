@@ -115,7 +115,7 @@ describe("keys send moves", () => {
 
       await ui.press({ key: "chip-add" });
       // 17 is black: 3.00 back on black and 36.00 on 17, over the 2.50 staked.
-      expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("on the table 2.50 · 2 chips · max win 36.50");
+      expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("on the table 2.50 · 2 bets · max win 36.50");
       await ui.press({ key: "start" });
       await clock.advance(PLAYED_OUT_MS);
       await ui.press({ key: "start" });

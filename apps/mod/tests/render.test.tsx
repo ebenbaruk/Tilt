@@ -129,7 +129,7 @@ const cases: [string, StateResponse, string[]][] = [
     ROULETTE,
     ["No chips on the table yet.", " 17 BLACK ", "Red loses.", "−1.00", " 17 ", "chip ●", "rtp 97.30%"],
   ],
-  ["roulette, three chips settled", ROULETTE_CHIPS, [" 17 BLACK ", "2 of 3 chips win.", "+17.91"]],
+  ["roulette, three chips settled", ROULETTE_CHIPS, [" 17 BLACK ", "2 of 3 bets win.", "+17.91"]],
   [
     "baccarat, settled",
     BACCARAT,
@@ -688,14 +688,14 @@ describe("the roulette layout", () => {
     }
 
     expect(await table()).toContain("●1");
-    expect(await table()).toContain("on the table 2.50 · 4 chips");
+    expect(await table()).toContain("on the table 2.50 · 4 bets");
     expect(JSON.stringify(await ui.find({ key: "table-roulette-straight-17", in: TABLE_KEY }))).toContain(GOLD);
     await ui.press({ key: "table-chip-undo" });
-    expect(await table()).toContain("on the table 2.00 · 3 chips");
+    expect(await table()).toContain("on the table 2.00 · 3 bets");
     await ui.press({ key: "table-start" });
     await clock.advance(3_000);
     // The chips stay for the next spin, until cleared.
-    expect(await table()).toContain("on the table 2.00 · 3 chips");
+    expect(await table()).toContain("on the table 2.00 · 3 bets");
     await ui.press({ key: "table-chip-clear" });
     expect(await table()).toContain("No chips on the table yet.");
     expect(await ui.find({ key: "table-start", in: TABLE_KEY })).toBeUndefined();
@@ -723,7 +723,7 @@ describe("the roulette layout", () => {
     }
 
     expect(textOf(await ui.drawn())).toContain("20 bets at most on one spin.");
-    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("on the table 10.00 · 20 chips");
+    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("on the table 10.00 · 20 bets");
   });
 
   test("is inert while the wheel draws: no cell takes a click", async ($, on) => {
@@ -760,7 +760,7 @@ describe("the roulette layout", () => {
     // The chip marks the number without hiding it; its stake is on the cursor's line.
     expect(await text()).toContain("●36");
     expect(await text()).toContain("on number 36 ●0.50");
-    expect(await text()).toContain("spin · 0.50 · 1 chip");
+    expect(await text()).toContain("spin · 0.50 · 1 bet");
     await ui.press({ key: "chip-remove" });
     expect(await text()).toContain("No chips on the table yet.");
     expect(await ui.find({ key: "start" })).toBeUndefined();
@@ -790,7 +790,7 @@ describe("the roulette layout", () => {
         await ui.press({ key: cell(`roulette-${address}`) });
       }
 
-      expect(await shownText(ui)).toContain("on the table 3.00 · 5 chips");
+      expect(await shownText(ui)).toContain("on the table 3.00 · 5 bets");
       await ui.press({ key: cell("chip-undo") });
       await ui.press({ key: cell("start") });
 

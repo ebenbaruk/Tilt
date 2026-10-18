@@ -317,6 +317,9 @@ export function limboAt(result: string, elapsed: number | null): string {
   return scaledDecimal(BigInt(shown), 2);
 }
 
+/** The multiplier's frame, as wide as "×10000.00" with its padding: it never grows as the value rises. */
+const LIMBO_FRAME_COLUMNS = 17;
+
 /** Limbo's win chance at a target × 100: 98 % / target, in hundredths of a percent. */
 const limboChance = (target: bigint): string => scaledDecimal(980_000n / target, 2);
 
@@ -336,7 +339,12 @@ export function limboTable(ui: Ui, round: RoundView | null, prefs: Prefs, spinEl
 
   return (
     <Box flexDirection="row" flexWrap="wrap" columnGap={3} alignItems="center">
-      <Box borderStyle="round" borderColor={current === null || isRising ? LINE3 : color} paddingX={3}>
+      <Box
+        borderStyle="round"
+        borderColor={current === null || isRising ? LINE3 : color}
+        minWidth={LIMBO_FRAME_COLUMNS}
+        justifyContent="center"
+      >
         <Text color={color} bold={current !== null}>
           {current === null ? (isRising ? "×1.00" : "×—") : `×${current}`}
         </Text>
@@ -364,7 +372,8 @@ export function limboTable(ui: Ui, round: RoundView | null, prefs: Prefs, spinEl
 const SIDE_LETTER: Record<FlipView["side"], string> = { heads: "H", tails: "T" };
 /** A coin in the air, turning over; no face shows before it lands. */
 const SPINNING_COIN = ["(|)", "(/)", "(-)", "(\\)"];
-const COIN_TURN_MS = 75;
+/** A frame of the main screen's spin clock: each one shows the coin a step on, none skipped. */
+const COIN_TURN_MS = 100;
 /** The first coin turns this long before it lands; each next one lands this much later. */
 const FLIP_FIRST_MS = 450;
 const FLIP_STEP_MS = 150;

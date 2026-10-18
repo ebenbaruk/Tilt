@@ -166,7 +166,8 @@ export function hiloTable(ui: Ui, round: RoundView | null, fx: TableFx, size: Ca
   return (
     <Box flexDirection="row" flexWrap="wrap" columnGap={3}>
       <Box flexDirection="column">
-        {handCards(ui, cards.slice(from), size, { faceDown: turning + (isDrawing ? 1 : 0) })}
+        {/* Small, the history alone: a row of small cards over it would show each card twice. */}
+        {size === "large" && handCards(ui, cards.slice(from), size, { faceDown: turning + (isDrawing ? 1 : 0) })}
         {hiloHistory(ui, detail, turning)}
       </Box>
       <Box flexDirection="column">

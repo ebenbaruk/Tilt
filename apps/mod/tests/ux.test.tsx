@@ -436,8 +436,8 @@ describe("tight rooms", () => {
       const ui = await $.ui.mount({ plugin: PLUGIN, ...band });
       const table = textOf(await ui.drawn({ in: TABLE_KEY }));
 
-      expect(table.indexOf("2 of 3 chips win.")).toBeGreaterThan(-1);
-      expect(table.indexOf("2 of 3 chips win.")).toBeLessThan(table.indexOf("1st 12"));
+      expect(table.indexOf("2 of 3 bets win.")).toBeGreaterThan(-1);
+      expect(table.indexOf("2 of 3 bets win.")).toBeLessThan(table.indexOf("1st 12"));
     },
   );
 
@@ -1242,6 +1242,19 @@ describe("the card games tag their result as blackjack does", () => {
 
     expect(textOf(await ui.drawn())).toContain("BANKER 9 WINS NATURAL");
     expect(textOf(await ui.drawn())).toContain("bet player LOSE 1.00");
+  });
+
+  test("hilo with small cards shows its history alone, each card once; the guide uses the game's verb", async ($, on) => {
+    await seat($, on, HILO_TURN, {}, { session: LOGGED_IN.session });
+    const ui = await $.ui.mount({
+      plugin: PLUGIN,
+      ...PANE_STILL,
+      props: { ...PANE_STILL.props, scroll: { offset: 0, bodyRows: 18 } },
+    });
+    const text = textOf(await ui.drawn());
+
+    expect(text.match(/Q♠/g)).toHaveLength(1);
+    expect(text).toContain("n to play");
   });
 
   test("mines in the band: a board on one line, its hidden tiles the keys, its gems shown", async ($, on) => {

@@ -315,7 +315,7 @@ describe("bets", () => {
     });
     // On 17, which has chips: x takes them off; u and q undo and clear.
     expect(keys.map((key) => key.hotkey).join("")).toBe(`${PAGE_1}rkoelgsdfhaxuqvbn`);
-    expect(keys.find((key) => key.key === "start")?.label).toBe("spin · 2.00 · 2 chips");
+    expect(keys.find((key) => key.key === "start")?.label).toBe("spin · 2.00 · 2 bets");
     expect(keys.find((key) => key.key === "roulette-red")?.isSelected).toBe(true);
     expect(keys.find((key) => key.key === "roulette-black")?.isSelected).toBe(false);
     expect(keys.find((key) => key.key === "bet-up")?.label).toBe("chip +");

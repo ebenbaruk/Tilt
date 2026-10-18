@@ -350,7 +350,7 @@ function chipsLine(ui: Ui, chips: readonly RouletteChip[]): RenderElement {
       <Text color={GOLD} bold>
         {formatUsdc(chipsTotal(chips).toString())}
       </Text>
-      {` · ${chips.length} ${chips.length === 1 ? "chip" : "chips"} · max win `}
+      {` · ${chips.length} ${chips.length === 1 ? "bet" : "bets"} · max win `}
       <Text color={FG1} bold>
         {formatUsdc(rouletteMaxGain(chips).toString())}
       </Text>

@@ -690,7 +690,7 @@ function startDetail(game: Game, prefs: Prefs): string {
     case "keno":
       return ` · ${plural(prefs.kenoPicks.length, "pick", "picks")}`;
     case "roulette":
-      return ` · ${plural(stackChips(prefs.rouletteChips).length, "chip", "chips")}`;
+      return ` · ${plural(stackChips(prefs.rouletteChips).length, "bet", "bets")}`;
     case "wheel":
       return ` · ${prefs.wheelSegments} segments · ${prefs.wheelRisk}`;
     case "tower":
@@ -711,7 +711,8 @@ function startLabel(game: Game, amount: string, prefs: Prefs): string {
   return `${START_VERB[game]} · ${stake}${startDetail(game, prefs)}`;
 }
 
-const START_VERB: Record<Game, string> = {
+/** What `n` does at each game: "deal", "spin", "roll"… */
+export const START_VERB: Record<Game, string> = {
   blackjack: "deal",
   roulette: "spin",
   baccarat: "deal",

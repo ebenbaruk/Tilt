@@ -78,6 +78,7 @@ import {
   planKeys,
   type PlanInput,
   type RowKey,
+  START_VERB,
   STEPPER_NAMES,
   stakeOn,
   tableKeys,
@@ -439,7 +440,7 @@ function outcomeText(round: RoundView): string {
 
       const won = number === null ? 0 : chips.filter((chip) => rouletteWins(chip.bet, number)).length;
 
-      return won === 0 ? "No chip wins." : `${won} of ${chips.length} chips win.`;
+      return won === 0 ? "No bet wins." : `${won} of ${chips.length} bets win.`;
     }
     case "baccarat":
       return baccaratOutcome(round.detail);
@@ -879,7 +880,7 @@ function winBanner(ui: Ui, state: StateResponse, onCommand: OnCommand): RenderEl
 }
 
 /** The first-hand guide: how to give Tilt the keys and deal, until the person makes a first move. */
-function firstHandGuide(ui: Ui, isFocused: boolean): RenderElement {
+function firstHandGuide(ui: Ui, isFocused: boolean, verb: string): RenderElement {
   const { Box, Text } = ui;
 
   return (
@@ -894,7 +895,7 @@ function firstHandGuide(ui: Ui, isFocused: boolean): RenderElement {
             <Text color={GOLD} bold>
               n
             </Text>{" "}
-            to deal,{" "}
+            {`to ${verb},`}{" "}
             <Text color={GOLD} bold>
               esc
             </Text>{" "}
@@ -910,7 +911,7 @@ function firstHandGuide(ui: Ui, isFocused: boolean): RenderElement {
             <Text color={GOLD} bold>
               n
             </Text>{" "}
-            to deal.
+            {`to ${verb}.`}
           </Text>
         )}{" "}
         Your agent keeps working meanwhile.
@@ -1676,7 +1677,7 @@ export function renderPane(
           and the result right under them. */}
       {isKeysFirst && linePlays.length > 0 && keyArea(ui, linePlays, false, steps, true)}
       {isKeysFirst && slots}
-      {!snap.isOnboarded && canPlay && firstHandGuide(ui, layout.isFocused)}
+      {!snap.isOnboarded && canPlay && firstHandGuide(ui, layout.isFocused, START_VERB[game])}
       {state.blocked !== null && <Text color={RED}>{`Play paused · ${cleanText(state.blocked)}`}</Text>}
       {shownTable}
       {/* The table surface module invites clicks; where none land, the keys are recalled here. */}
