@@ -133,7 +133,7 @@ const cases: [string, StateResponse, string[]][] = [
   [
     "baccarat, settled",
     BACCARAT,
-    ["bet banker · pays ×1.95", "PLAYER 5", "BANKER 7 WINS", "Banker wins 7 to 5: pays ×1.95.", "+0.94"],
+    ["bet banker WIN 1.00", "PLAYER 5", "BANKER 7 WINS", "Banker wins 7 to 5: pays ×1.95.", "+0.94"],
   ],
   ["slots, settled", SLOTS, ["◎", "◎ ◎ ◎ pays ×5.", "+3.96", "spin · 0.50", "rtp 96.16%"]],
   ["slots, drawing", SLOTS_DRAWING, ["drawing", "PAYS × BET"]],

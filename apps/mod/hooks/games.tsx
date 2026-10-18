@@ -1,7 +1,7 @@
 // Roulette, baccarat, slots and Mines tables, drawn still by the pane and the table surface module alike.
 import type { RenderElement } from "claude-code";
 
-import { type CardSize, faceDownCards, faceDownOf, handCards, handRow } from "./cards";
+import { type CardSize, faceDownCards, faceDownOf, handCards } from "./cards";
 import {
   cashOutPayout,
   chipsTotal,
@@ -39,6 +39,7 @@ import {
   LINE4,
   PINK,
   RED,
+  toneOf,
   type Ui,
 } from "./theme";
 
@@ -432,6 +433,27 @@ function baccaratDealOrder(detail: BaccaratView): { player: number[]; banker: nu
   };
 }
 
+/** A two-card 8 or 9: the coup ends there. */
+const NATURAL_POINTS = 8;
+/** Each side's column, as blackjack's hands: room for "BANKER 9 WINS NATURAL" and for three large
+ *  cards, so nothing moves when the points and the tags show. */
+const BACCARAT_COLUMNS = 22;
+
+/** "WIN 1.00", "LOSE 1.00", or "PUSH 1.00" for a player or banker bet on a tie, as blackjack tags a hand. */
+function baccaratVerdict(ui: Ui, round: RoundView): RenderElement {
+  const { Text } = ui;
+  const net = BigInt(round.net);
+
+  return (
+    <Text color={FG6}>
+      <Text color={toneOf(round.net)} bold>
+        {net > 0n ? "WIN" : net < 0n ? "LOSE" : "PUSH"}
+      </Text>
+      {` ${formatUsdc(round.stake)}`}
+    </Text>
+  );
+}
+
 /** `revealed`: cards turned over so far, in deal order (baccaratDealOrder); null when all are. */
 export function baccaratTable(
   ui: Ui,
@@ -464,29 +486,49 @@ export function baccaratTable(
   const banker = side(detail.banker, order.banker);
   const isShown = !isDrawing && player.faceDown === 0 && banker.faceDown === 0;
   const winner = isShown ? baccaratWinner(detail) : null;
-  const tag = (name: BaccaratBet) =>
-    winner === null || (winner !== name && winner !== "tie") ? null : (
-      <Text color={winner === "tie" ? FG1 : GOLD} bold>
-        {winner === "tie" ? " TIE" : " WINS"}
-      </Text>
-    );
+  const tag = (name: BaccaratBet, cards: readonly Card[], points: number) => (
+    <Text>
+      {winner !== null && (winner === name || winner === "tie") && (
+        <Text color={winner === "tie" ? FG1 : GOLD} bold>
+          {winner === "tie" ? " TIE" : " WINS"}
+        </Text>
+      )}
+      {isShown && cards.length === BACCARAT_FIRST_CARDS && points >= NATURAL_POINTS && (
+        <Text color={GOLD} bold>
+          {" NATURAL"}
+        </Text>
+      )}
+    </Text>
+  );
+  const column = (label: string, points: number, cards: Card[], faceDown: number, name: BaccaratBet) => (
+    <Box flexDirection={size === "large" ? "column" : "row"} width={BACCARAT_COLUMNS * (size === "large" ? 1 : 2)}>
+      <Box width={size === "large" ? undefined : BACCARAT_COLUMNS} flexShrink={0}>
+        <Text color={FG4}>
+          {label} <Text color={FG1}>{isShown ? String(points) : ""}</Text>
+          {tag(name, cards, points)}
+        </Text>
+      </Box>
+      {handCards(ui, cards, size, { faceDown })}
+    </Box>
+  );
 
   return (
     <Box flexDirection="column" gap={1}>
-      {baccaratBetLine(ui, bet)}
-      <Box flexDirection={size === "large" ? "row" : "column"} columnGap={6}>
-        {handRow(
-          ui,
-          { label: "PLAYER", total: isShown ? String(detail.playerPoints) : "", tag: tag("player") },
-          handCards(ui, player.cards, size, { faceDown: player.faceDown }),
-          size,
-        )}
-        {handRow(
-          ui,
-          { label: "BANKER", total: isShown ? String(detail.bankerPoints) : "", tag: tag("banker") },
-          handCards(ui, banker.cards, size, { faceDown: banker.faceDown }),
-          size,
-        )}
+      {/* Once the cards show, what the coup did to the bet, as blackjack tags its hands. */}
+      {isShown && round !== null && round.phase === "idle" ? (
+        <Text color={FG4}>
+          bet{" "}
+          <Text color={FG1} bold>
+            {detail.bet}
+          </Text>{" "}
+          {baccaratVerdict(ui, round)}
+        </Text>
+      ) : (
+        baccaratBetLine(ui, bet)
+      )}
+      <Box flexDirection={size === "large" ? "row" : "column"} columnGap={2}>
+        {column("PLAYER", detail.playerPoints, player.cards, player.faceDown, "player")}
+        {column("BANKER", detail.bankerPoints, banker.cards, banker.faceDown, "banker")}
       </Box>
     </Box>
   );

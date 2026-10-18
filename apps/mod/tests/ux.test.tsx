@@ -14,6 +14,7 @@ import {
 } from "../hooks/quick";
 import type { BaccaratView, FlipView, StateResponse } from "../hooks/protocol";
 import {
+  BACCARAT,
   BASE,
   BLACKJACK_LOSS,
   BLACKJACK_TURN,
@@ -1205,6 +1206,50 @@ describe("sounds", () => {
     await show(SLOTS);
 
     expect(world.played).toEqual(["sounds/deal.wav", "sounds/win.wav"]);
+  });
+});
+
+describe("the card games tag their result as blackjack does", () => {
+  test("baccarat: the bet's verdict once the cards show, NATURAL on a two-card 9", async ($, on) => {
+    const coup = (bet: BaccaratView["bet"], net: string, banker: BaccaratView["banker"], points: number) =>
+      BACCARAT.round === null
+        ? BACCARAT
+        : {
+            ...BACCARAT,
+            round: {
+              ...BACCARAT.round,
+              net,
+              detail: { ...(BACCARAT.round.detail as BaccaratView), bet, banker, bankerPoints: points },
+            },
+          };
+    await seat(
+      $,
+      on,
+      coup(
+        "player",
+        "-1000000",
+        [
+          { rank: 9, suit: "♣" },
+          { rank: 13, suit: "♦" },
+        ],
+        9,
+      ),
+    );
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_STILL });
+
+    expect(textOf(await ui.drawn())).toContain("BANKER 9 WINS NATURAL");
+    expect(textOf(await ui.drawn())).toContain("bet player LOSE 1.00");
+  });
+
+  test("blackjack: a hand's WIN or BJ waits for the dealer's hole card", async ($, on) => {
+    const { show, clock } = await moving($, on, BLACKJACK_TURN);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_STILL });
+
+    await show(BLACKJACK_WIN);
+    // The dealer's second card is still face down: no verdict on the hand yet.
+    expect(textOf(await ui.drawn())).not.toMatch(/\b(WIN|BJ|LOSE|PUSH) \d/);
+    await clock.advance(SPIN_OVER_MS);
+    expect(textOf(await ui.drawn())).toMatch(/\b(WIN|BJ) \d/);
   });
 });
 

@@ -68,6 +68,8 @@ interface HandPlace {
   index: number;
   /** Cards of this hand still face down. */
   faceDown: number;
+  /** The dealer's cards are all face up: a hand's result is known only then. */
+  isDealerShown: boolean;
   size: CardSize;
 }
 
@@ -79,7 +81,7 @@ function handColumn(
   fx: TableFx,
 ): RenderElement {
   const { Box, Text } = ui;
-  const { index, faceDown, size } = place;
+  const { index, faceDown, isDealerShown, size } = place;
   const isActive = detail.activeHand === index;
   const isTurned = faceDown === 0;
   const label = detail.hands.length === 1 ? "YOU" : `#${index + 1}`;
@@ -88,7 +90,8 @@ function handColumn(
   // Split aces take one card each and are finished: said on the hand, or it looks like a stand.
   const isSplitAces = hand.split && hand.cards[0]?.rank === ACE_RANK;
   const stake = `${formatUsdc(hand.stake)}${hand.doubled ? " doubled" : ""}${isSplitAces ? " · 1 card" : ""}`;
-  const result = hand.result === null || !isTurned ? null : RESULTS[hand.result];
+  // WIN, BJ or LOSE waits for the dealer's cards too: it would tell the hole card first.
+  const result = hand.result === null || !isTurned || !isDealerShown ? null : RESULTS[hand.result];
 
   return (
     <Box flexDirection="column" width={handColumns(hand.cards.length, size)}>
@@ -144,7 +147,12 @@ export function blackjackTable(ui: Ui, round: RoundView | null, fx: TableFx, siz
             ui,
             detail,
             hand,
-            { index, faceDown: faceDownOf(order.hands[index] ?? [], fx.revealed), size },
+            {
+              index,
+              faceDown: faceDownOf(order.hands[index] ?? [], fx.revealed),
+              isDealerShown: dealerFaceDown === 0,
+              size,
+            },
             fx,
           ),
         )}
