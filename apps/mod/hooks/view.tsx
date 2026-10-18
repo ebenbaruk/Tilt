@@ -38,6 +38,7 @@ import {
   wheelTable,
 } from "./quick";
 import {
+  baccaratOutcome,
   baccaratTable,
   minesBoardRows,
   minesTable,
@@ -394,7 +395,7 @@ function outcomeText(round: RoundView): string {
       return won === 0 ? "No chip wins." : `${won} of ${chips.length} chips win.`;
     }
     case "baccarat":
-      return `Player ${round.detail.playerPoints} · banker ${round.detail.bankerPoints}.`;
+      return baccaratOutcome(round.detail);
     case "slots":
       return "";
     case "mines":

@@ -1,7 +1,7 @@
 // Roulette, baccarat, slots and Mines tables, drawn still by the pane and the table surface module alike.
 import type { RenderElement } from "claude-code";
 
-import { type CardSize, faceDownOf, handCards, handRow } from "./cards";
+import { type CardSize, faceDownCards, faceDownOf, handCards, handRow } from "./cards";
 import {
   cashOutPayout,
   chipsTotal,
@@ -23,7 +23,7 @@ import {
   tileLetter,
 } from "./keys";
 import type { Prefs } from "./model";
-import type { BaccaratView, RouletteBet, RouletteChip, RoundView } from "./protocol";
+import type { BaccaratBet, BaccaratView, Card, RouletteBet, RouletteChip, RoundView } from "./protocol";
 import {
   FELT,
   FELT_INK,
@@ -416,6 +416,8 @@ export function rouletteTable(
 
 /** The two cards each side gets before either may draw a third. */
 const BACCARAT_FIRST_CARDS = 2;
+/** What each bet returns, times the stake, when its side wins, as `games/baccarat.rs` pays it. Mirrored here to show; the program pays. */
+const BACCARAT_PAYS: Record<BaccaratBet, string> = { player: "2", banker: "1.95", tie: "9" };
 
 /** Where each baccarat card falls in the deal: player, banker, player, banker, then the player's
  *  third card and the banker's, the order the rules draw them in. */
@@ -440,38 +442,96 @@ export function baccaratTable(
   const { Box, Text } = ui;
   const detail = round?.detail.game === "baccarat" ? round.detail : null;
   const bet = round !== null && round.phase !== "idle" && detail !== null ? detail.bet : prefs.baccarat;
-  const order = detail === null ? null : baccaratDealOrder(detail);
-  const playerFaceDown = order === null ? 0 : faceDownOf(order.player, revealed);
-  const bankerFaceDown = order === null ? 0 : faceDownOf(order.banker, revealed);
+
+  if (detail === null) {
+    return (
+      <Box flexDirection="column" gap={1}>
+        {baccaratBetLine(ui, bet)}
+        <Text color={FG6}>Pick player, banker or tie, then deal with n.</Text>
+      </Box>
+    );
+  }
+
+  // A coup being drawn: two cards each, face down, until the chain's come in.
+  const isDrawing = detail.player.length === 0;
+  const order = baccaratDealOrder(detail);
+  const side = (cards: Card[], dealtAt: number[]) =>
+    isDrawing
+      ? { cards: faceDownCards(BACCARAT_FIRST_CARDS), faceDown: BACCARAT_FIRST_CARDS }
+      : { cards, faceDown: faceDownOf(dealtAt, revealed) };
+  const player = side(detail.player, order.player);
+  const banker = side(detail.banker, order.banker);
+  const isShown = !isDrawing && player.faceDown === 0 && banker.faceDown === 0;
+  const winner = isShown ? baccaratWinner(detail) : null;
+  const tag = (name: BaccaratBet) =>
+    winner === null || (winner !== name && winner !== "tie") ? null : (
+      <Text color={winner === "tie" ? FG1 : GOLD} bold>
+        {winner === "tie" ? " TIE" : " WINS"}
+      </Text>
+    );
 
   return (
     <Box flexDirection="column" gap={1}>
-      <Text color={FG4}>
-        bet{" "}
-        <Text color={FG1} bold>
-          {bet}
-        </Text>
-      </Text>
-      {detail === null ? (
-        <Text color={FG6}>Pick player, banker or tie, then deal with n.</Text>
-      ) : (
-        <Box flexDirection={size === "large" ? "row" : "column"} columnGap={6}>
-          {handRow(
-            ui,
-            { label: "PLAYER", total: playerFaceDown > 0 ? "" : String(detail.playerPoints), tag: null },
-            handCards(ui, detail.player, size, { faceDown: playerFaceDown }),
-            size,
-          )}
-          {handRow(
-            ui,
-            { label: "BANKER", total: bankerFaceDown > 0 ? "" : String(detail.bankerPoints), tag: null },
-            handCards(ui, detail.banker, size, { faceDown: bankerFaceDown }),
-            size,
-          )}
-        </Box>
-      )}
+      {baccaratBetLine(ui, bet)}
+      <Box flexDirection={size === "large" ? "row" : "column"} columnGap={6}>
+        {handRow(
+          ui,
+          { label: "PLAYER", total: isShown ? String(detail.playerPoints) : "", tag: tag("player") },
+          handCards(ui, player.cards, size, { faceDown: player.faceDown }),
+          size,
+        )}
+        {handRow(
+          ui,
+          { label: "BANKER", total: isShown ? String(detail.bankerPoints) : "", tag: tag("banker") },
+          handCards(ui, banker.cards, size, { faceDown: banker.faceDown }),
+          size,
+        )}
+      </Box>
     </Box>
   );
+}
+
+/** "bet banker · pays ×1.95": the side backed and what it returns when it wins. */
+function baccaratBetLine(ui: Ui, bet: BaccaratBet): RenderElement {
+  const { Text } = ui;
+
+  return (
+    <Text color={FG4}>
+      bet{" "}
+      <Text color={FG1} bold>
+        {bet}
+      </Text>
+      {` · pays ×${BACCARAT_PAYS[bet]}`}
+    </Text>
+  );
+}
+
+/** Which side the coup went to, on its points. */
+function baccaratWinner(detail: BaccaratView): BaccaratBet {
+  const { playerPoints, bankerPoints } = detail;
+
+  return playerPoints === bankerPoints ? "tie" : playerPoints > bankerPoints ? "player" : "banker";
+}
+
+/**
+ * A settled coup in a sentence, short enough for the side pane: who won and what it did to the
+ * bet. "Banker wins 7 to 5: pays ×1.95.", "Player wins 6 to 3: banker bet loses.", "Tie at 5: player
+ * bet returned." (a player or banker bet pushes on a tie).
+ */
+export function baccaratOutcome(detail: BaccaratView): string {
+  const winner = baccaratWinner(detail);
+  const high = Math.max(detail.playerPoints, detail.bankerPoints);
+  const low = Math.min(detail.playerPoints, detail.bankerPoints);
+  const head =
+    winner === "tie" ? `Tie at ${high}` : `${winner === "player" ? "Player" : "Banker"} wins ${high} to ${low}`;
+  const result =
+    detail.bet === winner
+      ? `pays ×${BACCARAT_PAYS[winner]}`
+      : winner === "tie"
+        ? `${detail.bet} bet returned`
+        : `${detail.bet} bet loses`;
+
+  return `${head}: ${result}.`;
 }
 
 /**

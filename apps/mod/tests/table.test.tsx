@@ -296,7 +296,7 @@ describe("the table moves", () => {
               ...BACCARAT.round,
               detail: {
                 game: "baccarat",
-                bet: "banker",
+                bet: "player",
                 player: [
                   { rank: 2, suit: "♠" },
                   { rank: 3, suit: "♥" },
@@ -331,7 +331,7 @@ describe("the table moves", () => {
       seen.push(...fresh);
 
       if (seen.length < faces.length) {
-        expect(text).not.toContain("Player 9 · banker 8.");
+        expect(text).not.toContain("Player wins");
       }
 
       await ui.advance(50);
@@ -339,8 +339,47 @@ describe("the table moves", () => {
 
     expect(seen).toEqual(faces);
     await ui.advance(EFFECT_MS);
-    expect(await table()).toContain("Player 9 · banker 8.");
+    expect(await table()).toContain("Player wins 9 to 8: pays ×2.");
     expect(await table()).toContain("+0.94");
+  });
+
+  test("a baccarat coup lies face down from the key on and while it draws, its points unsaid", async ($, on) => {
+    const drawing: StateResponse =
+      BACCARAT.round === null
+        ? BACCARAT
+        : {
+            ...BACCARAT,
+            round: {
+              ...BACCARAT.round,
+              phase: "drawing",
+              number: BACCARAT.round.number + 1,
+              detail: { game: "baccarat", bet: "banker", player: [], banker: [], playerPoints: 0, bankerPoints: 0 },
+            },
+          };
+    let current: StateResponse = BACCARAT;
+    const { world, clock } = await seat($, on, BACCARAT, {
+      "GET /v1/state": () => ({ status: 200, body: current }),
+      "POST /v1/play": () => SUBMITTED,
+    });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+    const table = async () => textOf(await ui.drawn({ in: TABLE_KEY }));
+
+    await ui.pointer(CLICK);
+    await ui.key({ key: "space" });
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([
+      { type: "baccarat_deal", amount: "500000", bet: "banker" },
+    ]);
+
+    for (const step of ["in flight", "drawing"]) {
+      const text = await table();
+
+      // Each side two backs, the second over the first: its three rows of ░ in full.
+      expect(text.split("░░░░░").length - 1, step).toBe(2 * 3);
+      expect(text, step).not.toContain("PLAYER 0");
+      expect(text, step).not.toContain("Banker wins");
+      current = drawing;
+      await clock.advance(POLL_MS);
+    }
   });
 
   test("a hilo guess lies face down from the key on, turns over a step after it lands, and its result waits for it", async ($, on) => {

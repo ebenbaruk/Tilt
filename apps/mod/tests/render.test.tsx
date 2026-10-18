@@ -130,7 +130,11 @@ const cases: [string, StateResponse, string[]][] = [
     ["No chips on the table yet.", " 17 BLACK ", "Red loses.", "−1.00", " 17 ", "chip ●", "rtp 97.30%"],
   ],
   ["roulette, three chips settled", ROULETTE_CHIPS, [" 17 BLACK ", "2 of 3 chips win.", "+17.91", "BIG WIN"]],
-  ["baccarat, settled", BACCARAT, ["bet banker", "PLAYER 5", "BANKER 7", "Player 5 · banker 7.", "+0.94"]],
+  [
+    "baccarat, settled",
+    BACCARAT,
+    ["bet banker · pays ×1.95", "PLAYER 5", "BANKER 7 WINS", "Banker wins 7 to 5: pays ×1.95.", "+0.94"],
+  ],
   ["slots, settled", SLOTS, ["7", "★", "+3.96", "spin · 0.50", "rtp 96.16%"]],
   ["slots, drawing", SLOTS_DRAWING, ["drawing", "PAYS × BET"]],
   [

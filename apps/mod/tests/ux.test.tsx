@@ -1,7 +1,7 @@
 import type { ConfigRow, On, TurnCompleteInput } from "claude-code";
 import { describe, type Engine, expect, test } from "claude-code/testing";
 
-import { ROULETTE_SPIN_MS, TILE_FILL, wheelPosition } from "../hooks/games";
+import { baccaratOutcome, ROULETTE_SPIN_MS, TILE_FILL, wheelPosition } from "../hooks/games";
 import {
   DICE_ROLL_MS,
   flipMs,
@@ -12,7 +12,7 @@ import {
   WHEEL_SPIN_MS,
   wheelSegmentAt,
 } from "../hooks/quick";
-import type { FlipView, StateResponse } from "../hooks/protocol";
+import type { BaccaratView, FlipView, StateResponse } from "../hooks/protocol";
 import {
   BASE,
   BLACKJACK_LOSS,
@@ -1051,5 +1051,26 @@ describe("sounds", () => {
     await show(SLOTS);
 
     expect(world.played).toEqual(["sounds/deal.wav", "sounds/win.wav"]);
+  });
+});
+
+describe("the result says what won", () => {
+  const coup = (bet: BaccaratView["bet"], playerPoints: number, bankerPoints: number): BaccaratView => ({
+    game: "baccarat",
+    bet,
+    player: [],
+    banker: [],
+    playerPoints,
+    bankerPoints,
+  });
+
+  test("baccarat: the side that won, the points, and what the bet got", () => {
+    expect(baccaratOutcome(coup("banker", 5, 7))).toBe("Banker wins 7 to 5: pays ×1.95.");
+    expect(baccaratOutcome(coup("player", 9, 8))).toBe("Player wins 9 to 8: pays ×2.");
+    expect(baccaratOutcome(coup("banker", 6, 3))).toBe("Player wins 6 to 3: banker bet loses.");
+    expect(baccaratOutcome(coup("tie", 6, 3))).toBe("Player wins 6 to 3: tie bet loses.");
+    // A tie pays the tie bet, and gives a player or banker bet back.
+    expect(baccaratOutcome(coup("tie", 5, 5))).toBe("Tie at 5: pays ×9.");
+    expect(baccaratOutcome(coup("player", 5, 5))).toBe("Tie at 5: player bet returned.");
   });
 });

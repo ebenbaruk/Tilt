@@ -133,6 +133,8 @@ function sentDetail(action: PlayAction, last: RoundView["detail"] | null): Round
       return last?.game === "wheel" && last.segments === action.segments && last.risk === action.risk
         ? { ...last, segment: null }
         : null;
+    case "baccarat_deal":
+      return { game: "baccarat", bet: action.bet, player: [], banker: [], playerPoints: 0, bankerPoints: 0 };
     case "hilo_bet":
       return {
         game: "hilo",

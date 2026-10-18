@@ -451,7 +451,8 @@ describe("a move in flight", () => {
 
       // Until the last card is up, nothing tells the result: no outcome, no win.
       if (seen.length < faces.length) {
-        expect(text).not.toContain("Player 5 · banker 7.");
+        expect(text).not.toContain("Banker wins");
+        expect(text).not.toContain("WINS");
         expect(text).not.toContain("+0.94");
         expect(text).not.toMatch(SPARKLES);
       }
@@ -464,7 +465,8 @@ describe("a move in flight", () => {
     const dealt = textOf(await ui.drawn({ in: TABLE_KEY }));
 
     expect(seen).toEqual(faces);
-    expect(dealt).toContain("Player 5 · banker 7.");
+    expect(dealt).toContain("Banker wins 7 to 5: pays ×1.95.");
+    expect(dealt).toContain("BANKER 7 WINS");
     expect(dealt).toContain("+0.94");
     expect(textOf(await ui.drawn())).toContain("13.34 USDC");
   });
