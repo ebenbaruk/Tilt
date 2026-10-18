@@ -6,6 +6,7 @@ import {
   betOptions,
   clampHands,
   clampMines,
+  crossCursor,
   currentBet,
   cursorBet,
   GAMES,
@@ -82,7 +83,7 @@ describe("the key plan", () => {
         .join("");
 
     expect(hotkeysOf("blackjack")).toBe(`${PAGE_1}jkvbn`);
-    expect(hotkeysOf("roulette")).toBe(`${PAGE_1}rkoelgsdavb`);
+    expect(hotkeysOf("roulette")).toBe(`${PAGE_1}rkoelgsdfhavb`);
     expect(hotkeysOf("baccarat")).toBe(`${PAGE_1}pytvbn`);
     expect(hotkeysOf("slots")).toBe(`${PAGE_1}xftvbn`);
     expect(hotkeysOf("mines")).toBe(`${PAGE_1}jkvbn`);
@@ -235,6 +236,48 @@ describe("bets", () => {
     expect(stepCursor(36, 1)).toBe(37);
   });
 
+  test("f and h move the cursor across the felt: a row three numbers at a time, 0 and the 2:1 at its ends", () => {
+    const across = (from: RouletteBet, steps: readonly (-1 | 1)[]) =>
+      cursorBet(
+        steps.reduce(
+          (cursor, step) => crossCursor(cursor, step),
+          ROULETTE_CURSOR_CELLS.findIndex((cell) => JSON.stringify(cell) === JSON.stringify(from)),
+        ),
+      );
+    const fromZero = (number: number) => {
+      // The fastest way there with s, d, f and h, by a breadth-first walk from 0.
+      const seen = new Map<number, number>([[0, 0]]);
+      const queue = [0];
+
+      for (let cursor = queue.shift(); cursor !== undefined; cursor = queue.shift()) {
+        for (const next of [
+          stepCursor(cursor, -1),
+          stepCursor(cursor, 1),
+          crossCursor(cursor, -1),
+          crossCursor(cursor, 1),
+        ]) {
+          if (!seen.has(next)) {
+            seen.set(next, (seen.get(cursor) ?? 0) + 1);
+            queue.push(next);
+          }
+        }
+      }
+
+      return seen.get(number) ?? Infinity;
+    };
+
+    expect(across(straight(0), [1])).toEqual(straight(3));
+    expect(across(straight(17), [1, 1])).toEqual(straight(23));
+    expect(across(straight(2), [-1])).toEqual(straight(0));
+    expect(across(straight(34), [1])).toEqual({ kind: "column", column: 1 });
+    expect(across(straight(36), [1, 1])).toEqual({ kind: "column", column: 3 });
+    expect(across({ kind: "column", column: 2 }, [-1])).toEqual(straight(35));
+    expect(across({ kind: "dozen", dozen: 1 }, [1, 1, 1])).toEqual({ kind: "dozen", dozen: 3 });
+    expect(across({ kind: "dozen", dozen: 2 }, [-1, -1])).toEqual({ kind: "dozen", dozen: 1 });
+    // Any number, dozen or column within a few presses, where s and d alone take up to 21.
+    expect(Math.max(...ROULETTE_CURSOR_CELLS.map((_, cursor) => fromZero(cursor)))).toBeLessThanOrEqual(8);
+  });
+
   test("chips stack per bet in the order each bet got its first one, held to the table maximum", () => {
     const placed = [chip(RED, "1000000"), chip(straight(17), "500000"), chip(RED, "2000000")];
 
@@ -269,7 +312,7 @@ describe("bets", () => {
       chips: [chip(RED, "1500000"), chip(straight(17), "500000")],
     });
     // On 17, which has chips: x takes them off; u and q undo and clear.
-    expect(keys.map((key) => key.hotkey).join("")).toBe(`${PAGE_1}rkoelgsdaxuqvbn`);
+    expect(keys.map((key) => key.hotkey).join("")).toBe(`${PAGE_1}rkoelgsdfhaxuqvbn`);
     expect(keys.find((key) => key.key === "start")?.label).toBe("spin · 2.00 · 2 chips");
     expect(keys.find((key) => key.key === "roulette-red")?.isSelected).toBe(true);
     expect(keys.find((key) => key.key === "roulette-black")?.isSelected).toBe(false);

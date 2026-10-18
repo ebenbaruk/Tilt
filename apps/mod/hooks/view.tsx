@@ -151,10 +151,13 @@ const BIG_WIN_MULTIPLE = 2n;
 const HANDS_MAX = 6;
 /** A roulette chip, beside the chip size and the cursor's cell. */
 const CHIP_GLYPH = "●";
+/** The roulette cursor's keys across the felt, drawn `«` and `»` outside its stepper's arrows. */
+const ACROSS_KEYS = ["cursor-left", "cursor-right"] as const;
 /** The steppers' keys: drawn as `◂ value ▸` rather than as two words on the key line. */
-const STEP_KEYS = new Set(
-  ["bet", ...Object.keys(STEPPER_NAMES)].flatMap((address) => [`${address}-down`, `${address}-up`]),
-);
+const STEP_KEYS = new Set([
+  ...["bet", ...Object.keys(STEPPER_NAMES)].flatMap((address) => [`${address}-down`, `${address}-up`]),
+  ...ACROSS_KEYS,
+]);
 /** Where playButtons draws the echo of a settled move's key. */
 const ECHO_PREFIX = "echo-";
 
@@ -988,8 +991,15 @@ function footer(ui: Ui, snap: Snapshot, state: StateResponse, game: Game, isFocu
   );
 }
 
-/** One stepper: `v ◂ bet 0.50 ▸ b`, its two keys from the plan around the value. */
-function stepper(ui: Ui, down: KeyAction, up: KeyAction, value: RenderElement, onCommand: OnCommand): RenderElement {
+/** One stepper: `v ◂ bet 0.50 ▸ b`, its two keys from the plan around the value; `far`, two
+ *  more keys outside them (`f « s ◂ on number 17 ▸ d » h`). */
+function stepper(
+  ui: Ui,
+  [down, up]: readonly [KeyAction, KeyAction],
+  far: readonly [KeyAction, KeyAction] | null,
+  value: RenderElement,
+  onCommand: OnCommand,
+): RenderElement {
   const { Box, Button, Text } = ui;
   const arrow = (action: KeyAction, glyph: string) => (
     <Button key={action.key} plain hotkey={action.hotkey} onPress={() => onCommand(action.command)}>
@@ -999,9 +1009,11 @@ function stepper(ui: Ui, down: KeyAction, up: KeyAction, value: RenderElement, o
 
   return (
     <Box flexDirection="row" columnGap={1}>
+      {far !== null && arrow(far[0], "«")}
       {arrow(down, "◂")}
       {value}
       {arrow(up, "▸")}
+      {far !== null && arrow(far[1], "»")}
     </Box>
   );
 }
@@ -1067,13 +1079,17 @@ function stepperValue(ui: Ui, address: string, state: StateResponse, prefs: Pref
 /** The bet and the game's own choice (hands, mines, dice chance…) as steppers; none when their keys are not live. */
 function steppers(ui: Ui, state: StateResponse, prefs: Prefs, keys: readonly KeyAction[], onCommand: OnCommand) {
   const find = (key: string) => keys.find((action) => action.key === key);
+  const [left, right] = ACROSS_KEYS.map(find);
+  const across = left !== undefined && right !== undefined ? ([left, right] as const) : null;
 
   return ["bet", ...Object.keys(STEPPER_NAMES)].flatMap((address) => {
     const down = find(`${address}-down`);
     const up = find(`${address}-up`);
     const value = stepperValue(ui, address, state, prefs);
 
-    return down === undefined || up === undefined || value === null ? [] : [stepper(ui, down, up, value, onCommand)];
+    return down === undefined || up === undefined || value === null
+      ? []
+      : [stepper(ui, [down, up], address === "cursor" ? across : null, value, onCommand)];
   });
 }
 

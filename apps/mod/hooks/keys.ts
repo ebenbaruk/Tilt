@@ -44,6 +44,8 @@ export type Command =
   | { kind: "roulette-add"; bet: RouletteBet | null }
   /** Roulette: the cursor one cell back (-1) or on (+1), around 0 to 36, the dozens, the columns. */
   | { kind: "roulette-cursor"; step: -1 | 1 }
+  /** Roulette: the cursor one cell left (-1) or right (+1) across the felt (see crossCursor). */
+  | { kind: "roulette-across"; step: -1 | 1 }
   /** Roulette: every chip off the cursor's cell. */
   | { kind: "roulette-remove" }
   /** Roulette: the last chip placed off the table. */
@@ -360,6 +362,42 @@ export function stepCursor(cursor: number, step: -1 | 1): number {
   return (((cursor + step) % cells) + cells) % cells;
 }
 
+/** A row of the felt steps three numbers at a time: 1 4 7 … 34. */
+const FELT_ROW_STEP = 3;
+const LAST_NUMBER = ROULETTE_POCKETS - 1;
+/** Where the dozens and the columns start among the cursor's cells. */
+const FIRST_DOZEN_CELL = ROULETTE_POCKETS;
+const FIRST_COLUMN_CELL = FIRST_DOZEN_CELL + THIRDS.length;
+
+/**
+ * The cursor one cell left or right across the felt, as it is drawn: along a row of numbers three
+ * at a time, 0 left of every row, the row's `2:1` right of its last number; a dozen to the next
+ * dozen. Held at the felt's edges. Any cell is then a few presses away, where `s` and `d` alone
+ * take up to 21.
+ */
+export function crossCursor(cursor: number, step: -1 | 1): number {
+  const cell = cursorBet(cursor);
+
+  switch (cell.kind) {
+    case "straight": {
+      const next = cell.number + step * FELT_ROW_STEP;
+
+      // Past the row's last number (34, 35 or 36), its 2:1.
+      if (next > LAST_NUMBER) {
+        return FIRST_COLUMN_CELL + ((cell.number - 1) % FELT_ROW_STEP);
+      }
+
+      return Math.max(0, next);
+    }
+    case "column":
+      return step > 0 ? cursor : LAST_NUMBER - FELT_ROW_STEP + cell.column;
+    case "dozen":
+      return FIRST_DOZEN_CELL + Math.min(THIRDS.length - 1, Math.max(0, cell.dozen - 1 + step));
+    default:
+      return cursor;
+  }
+}
+
 export const sameBet = (a: RouletteBet, b: RouletteBet): boolean => rouletteBetLabel(a) === rouletteBetLabel(b);
 
 /** What the chips among `chips` on `bet` add up to; 0 when none is on it. */
@@ -462,8 +500,8 @@ function switchKeys(state: StateResponse, prefs: Prefs): KeyAction[] {
 
 /**
  * `r k o e l g` put a chip on an outside bet; `s` and `d` move the cursor over the numbers, dozens
- * and columns, `a` puts a chip under it and `x` takes its chips off; `u` takes the last chip back,
- * `q` clears the table.
+ * and columns one at a time, `f` and `h` across the felt; `a` puts a chip under it and `x` takes its
+ * chips off; `u` takes the last chip back, `q` clears the table.
  */
 function rouletteKeys(prefs: Prefs): KeyAction[] {
   const stacks = stackChips(prefs.rouletteChips);
@@ -490,6 +528,20 @@ function rouletteKeys(prefs: Prefs): KeyAction[] {
       label: "cursor +",
       isSelected: false,
       command: { kind: "roulette-cursor", step: 1 },
+    },
+    {
+      key: "cursor-left",
+      hotkey: "f",
+      label: "cursor «",
+      isSelected: false,
+      command: { kind: "roulette-across", step: -1 },
+    },
+    {
+      key: "cursor-right",
+      hotkey: "h",
+      label: "cursor »",
+      isSelected: false,
+      command: { kind: "roulette-across", step: 1 },
     },
     {
       key: "chip-add",

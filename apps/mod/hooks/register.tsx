@@ -29,6 +29,7 @@ import {
   addChip,
   type Command,
   currentBet,
+  crossCursor,
   cursorBet,
   cycle,
   DEFAULT_DICE_CHANCE,
@@ -724,6 +725,10 @@ async function runCommand($: EngineInterface, rt: Runtime, command: Command): Pr
       return;
     case "roulette-cursor":
       await setPrefs($, (value) => ({ ...value, rouletteCursor: stepCursor(value.rouletteCursor, command.step) }));
+
+      return;
+    case "roulette-across":
+      await setPrefs($, (value) => ({ ...value, rouletteCursor: crossCursor(value.rouletteCursor, command.step) }));
 
       return;
     case "roulette-remove":
