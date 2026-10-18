@@ -1,3 +1,4 @@
+import type { RenderInput } from "claude-code";
 import { describe, expect, type FoundElement, type Mounted, mock, test } from "claude-code/testing";
 
 import { TILE_FILL } from "../hooks/games";
@@ -690,6 +691,80 @@ describe("the roulette layout", () => {
     expect(await text()).toContain("No chips on the table yet.");
     expect(await ui.find({ key: "start" })).toBeUndefined();
   });
+
+  /** The whole table above the prompt of a fullscreen terminal: no table surface module there. */
+  const BOTTOM: RenderInput<"AbovePrompt"> = {
+    ...BAND,
+    viewport: { columns: 125, rows: 60, isFullscreen: true },
+    props: { ...BAND.props, maxRows: 30, bodyColumns: 120, scroll: { offset: 0, bodyRows: 30 } },
+  };
+  const cell = (address: string) => `table-${address}`;
+
+  test(
+    "takes clicks in the bottom band of the fullscreen terminal: numbers, RED, a dozen, a 2:1, then the keys spin",
+    { options: { layout: "bottom" } },
+    async ($, on) => {
+      const { world } = await seat($, on, ROULETTE, movingTable(ROULETTE, ROULETTE));
+      const ui = await $.ui.mount({ plugin: PLUGIN, ...BOTTOM });
+
+      await ui.press({ key: "game-roulette" });
+      expect(await ui.find({ type: "Client" })).toBeUndefined();
+      expect(textOf(await ui.drawn())).toContain("click the layout to add a chip");
+
+      for (const address of ["straight-17", "straight-17", "red", "dozen-1", "column-3", "straight-0"]) {
+        await ui.press({ key: cell(`roulette-${address}`) });
+      }
+
+      expect(textOf(await ui.drawn())).toContain("on the table 3.00 · 5 chips");
+      await ui.press({ key: "chip-undo" });
+      await ui.press({ key: "start" });
+
+      expect(actionsOf(world.calls("POST /v1/play"))).toEqual([
+        {
+          type: "roulette_chips",
+          chips: [
+            { bet: { kind: "straight", number: 17 }, amount: "1000000" },
+            { bet: { kind: "red" }, amount: "500000" },
+            { bet: { kind: "dozen", dozen: 1 }, amount: "500000" },
+            { bet: { kind: "column", column: 3 }, amount: "500000" },
+          ],
+        },
+      ]);
+    },
+  );
+
+  test("in the band, a cell takes no click while the wheel draws", { options: { layout: "bottom" } }, async ($, on) => {
+    await seat($, on, DRAWING);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...BOTTOM });
+
+    expect(textOf(await ui.drawn())).toContain("1st 12");
+    expect(await ui.find({ key: cell("roulette-straight-17") })).toBeUndefined();
+    expect(await ui.find({ key: cell("roulette-red") })).toBeUndefined();
+  });
+
+  test(
+    "on the main screen, which reports no clicks, the layout is no Button and says how to bet with keys",
+    { options: { layout: "bottom" } },
+    async ($, on) => {
+      await seat($, on, BASE);
+      const ui = await $.ui.mount({
+        plugin: PLUGIN,
+        ...BOTTOM,
+        viewport: { columns: 125, rows: 60, isFullscreen: false },
+      });
+
+      await ui.press({ key: "game-roulette" });
+      const text = textOf(await ui.drawn());
+
+      expect(await ui.find({ key: cell("roulette-straight-17") })).toBeUndefined();
+      expect(text).toContain("a: chip under the cursor · s d step it, f h across · r k o e l g outside bets");
+      expect(text).not.toContain("click the layout");
+      // h jumps across the felt: 0, 3, 6.
+      await ui.press({ key: "cursor-right" });
+      await ui.press({ key: "cursor-right" });
+      expect(textOf(await ui.drawn())).toContain("on number 6");
+    },
+  );
 
   test("the balance short of the chips is said before n", async ($, on) => {
     await seat($, on, { ...BASE, balance: "700000" });

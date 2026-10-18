@@ -57,6 +57,7 @@ import {
   type PlanInput,
   STEPPER_NAMES,
   stakeOn,
+  tableKeys,
   tileLetter,
   TOWER_TILE_KEY,
 } from "./keys";
@@ -484,8 +485,8 @@ export function outcomeLine(ui: Ui, round: RoundView | null, shownNet?: string):
 /**
  * The active game's table; `fx` moves the blackjack cards and hands, `STILL` draws them at rest.
  * `wheel`: the Wheel's disc for the room the table has (`wheelDisc`). `tileButton` is the Button a
- * Mines or tower tile (or, on the fullscreen table, a Keno number or a roulette cell) is pressed
- * with, where this drawing has one.
+ * Mines or tower tile (or, where the terminal reports clicks, a Keno number or a roulette cell) is
+ * pressed with, where this drawing has one.
  */
 export function gameTable(
   ui: Ui,
@@ -1180,6 +1181,9 @@ export interface PaneLayout {
   isFocused: boolean;
   /** The cards the person asked for: large ones give way to small ones where they would not fit. */
   cards: CardSize;
+  /** The surface reports clicks (not the terminal's main screen): the still table's roulette cells
+   *  and Keno numbers are Buttons. */
+  isClickable: boolean;
 }
 
 /** Everything around the table: header, agent line, outcome, status, keys and footer. */
@@ -1300,6 +1304,34 @@ function cardSizeFor(snap: Snapshot, state: StateResponse, layout: PaneLayout): 
   return layout.cards === "large" && paneRows(snap, state, layout, "large") <= layout.bodyRows ? "large" : "small";
 }
 
+/** A still table's roulette cell or Keno number Button: its key's address under this prefix, as on the table surface module. */
+const TABLE_CELL_PREFIX = "table-";
+
+/**
+ * Under the still roulette layout, while chips can be placed: click it, where clicks land; else
+ * the keys that place them (the main screen reports no clicks).
+ */
+function layoutHint(ui: Ui, keys: readonly KeyAction[], isClickable: boolean): RenderElement | null {
+  const { Text } = ui;
+
+  if (!keys.some((key) => key.key === "chip-add")) {
+    return null;
+  }
+
+  return isClickable ? (
+    <Text color={GOLD} bold>
+      click the layout to add a chip
+    </Text>
+  ) : (
+    <Text color={FG6}>
+      <Text color={GOLD} bold>
+        a
+      </Text>
+      {": chip under the cursor · s d step it, f h across · r k o e l g outside bets"}
+    </Text>
+  );
+}
+
 /** The rows a pane asks for when it opens, at the card size the person chose. */
 export const PANE_ROWS: Record<CardSize, number> = { large: 30, small: 20 };
 
@@ -1314,7 +1346,7 @@ export function renderPane(
   onCommand: OnCommand,
   table: ((size: CardSize, columns: number, wheel: number | null) => RenderElement) | null,
 ): RenderElement {
-  const { Box, Text } = ui;
+  const { Box, Button, Text } = ui;
   const state = snap.remote.state;
   const keys = state === null ? [] : planKeys({ state, prefs: snap.prefs, isBusy: snap.intent !== null });
   const intro = preamble(ui, snap);
@@ -1341,7 +1373,8 @@ export function renderPane(
   // Where even small cards overflow (the band at the bottom of a short terminal), the keys come
   // first, so the ones to press are always in view and the table scrolls instead.
   const isKeysFirst = paneRows(snap, state, layout, size) > layout.bodyRows;
-  const plays = playButtons(ui, { state, prefs: snap.prefs, isBusy: snap.intent !== null }, keys, snap.echo, onCommand);
+  const input = { state, prefs: snap.prefs, isBusy: snap.intent !== null };
+  const plays = playButtons(ui, input, keys, snap.echo, onCommand);
   const dealing = dealingHands(snap);
   // Drawn here, the Mines board and the tower are their own keys: each hidden tile is the Button of
   // its key, live or held, and the key line leaves those out. A key of a tile shown since stays on the line.
@@ -1366,6 +1399,24 @@ export function renderPane(
 
     return false;
   });
+  // Where clicks land, the still table's roulette cells and Keno numbers are Buttons too: each runs
+  // the command of the key the plan offers at its address now, so a click does what that key does.
+  const clickable = layout.isClickable && table === null ? tableKeys(input) : [];
+  const cellButton = (address: string, face: RenderElement): RenderElement | null => {
+    const tile = tileOf(address);
+
+    if (tile !== null) {
+      return tileElements.get(tile) ?? null;
+    }
+
+    const action = clickable.find((key) => key.key === address);
+
+    return action === undefined ? null : (
+      <Button key={`${TABLE_CELL_PREFIX}${address}`} plain onPress={() => onCommand(action.command)}>
+        {face}
+      </Button>
+    );
+  };
   const steps = steppers(ui, state, snap.prefs, keys, onCommand);
   const side = state.sponsor !== null || state.leaderboard.length > 0;
   const canPlay = state.accountOpen && state.blocked === null;
@@ -1381,11 +1432,7 @@ export function renderPane(
             { ...STILL, spinElapsed: snap.spinElapsed, revealed: snap.revealed, frame: snap.agent.frame },
             size,
             wheel,
-            (address) => {
-              const tile = tileOf(address);
-
-              return tile === null ? null : (tileElements.get(tile) ?? null);
-            },
+            cellButton,
           )
         : table(size, gameColumns(layout), wheel);
   const gameColumn = (
@@ -1394,6 +1441,7 @@ export function renderPane(
       {state.blocked !== null && <Text color={RED}>{`Play paused · ${cleanText(state.blocked)}`}</Text>}
       {isKeysFirst && linePlays.length > 0 && <Box marginBottom={1}>{keyArea(ui, linePlays, false, steps)}</Box>}
       {shownTable}
+      {table === null && layoutHint(ui, keys, layout.isClickable)}
       {table === null && celebration(ui, roundOf(state, game), snap.celebrating, gameColumns(layout) - 1)}
       {/* The result waits for the wheel, the reels or the last card: the text must not tell it first. */}
       {dealing === null &&

@@ -1393,6 +1393,9 @@ async function onTurnStart($: EngineInterface, rt: Runtime): Promise<void> {
   }
 }
 
+/** The terminal reports clicks only on its fullscreen screen; a desktop always does. */
+const isClickable = (surface: string, isFullscreen: boolean): boolean => surface !== "terminal" || isFullscreen;
+
 export const register: Register = (on, options) => {
   const rt: Runtime = {
     base: apiBase(options.apiUrl),
@@ -1465,6 +1468,7 @@ export const register: Register = (on, options) => {
       bodyRows: e.props.scroll.bodyRows,
       isFocused: e.props.isFocused,
       cards: rt.settings.cards,
+      isClickable: isClickable(e.surface, e.viewport?.isFullscreen === true),
     };
     const snap = await snapshot($, rt);
     const state = snap.remote.state;
@@ -1532,6 +1536,7 @@ export const register: Register = (on, options) => {
         bodyRows: e.props.scroll.bodyRows,
         isFocused: false,
         cards: rt.settings.cards,
+        isClickable: isClickable(e.surface, e.viewport?.isFullscreen === true),
       };
 
       return renderPane(ui, snap, band, commandRunner($, rt), null);
