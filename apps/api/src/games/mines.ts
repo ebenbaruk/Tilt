@@ -1,6 +1,7 @@
 // Port of `games/mines.rs`: a 5×5 board, `mines` mines, no layout drawn in advance. Each reveal
 // draws fresh randomness: with `k` tiles already revealed (all safe) the clicked tile is a mine
-// iff `below(25 − k) < mines`, which is distributed exactly like a uniformly random layout.
+// iff `below(25 − k) < mines`, which is distributed exactly like a uniformly random layout. A round
+// returns at most `MAX_MULTIPLE` × its stake.
 import { formatFixed, MULTIPLIER_DECIMALS, MULTIPLIER_SCALE } from "./decimal";
 import type { Rng } from "./rng";
 
@@ -9,6 +10,8 @@ export const MIN_MINES = 1;
 export const MAX_MINES = TILES - 1;
 /** The board's `pending` / `busted` when there is no such tile. */
 export const NO_TILE = 255;
+/** Most a round returns, × its stake. */
+export const MAX_MULTIPLE = 10_000n;
 /** House edge of 1%: the multiplier is 99/100 of the fair odds. */
 const EDGE_NUMERATOR = 99n;
 const EDGE_DENOMINATOR = 100n;
@@ -27,15 +30,12 @@ export function uncappedGross(stake: bigint, mines: number, revealed: number): b
   return (stake * EDGE_NUMERATOR * choose(TILES, revealed)) / (EDGE_DENOMINATOR * choose(safeTiles(mines), revealed));
 }
 
-/** Gain of a cleared board, before the vault's cap. */
-export function boardGain(stake: bigint, mines: number): bigint {
-  const cleared = uncappedGross(stake, mines, safeTiles(mines)) - stake;
-  return cleared > 0n ? cleared : 0n;
-}
-
-/** Largest gain of a round: the cleared board's, bounded by the vault's `max_round_gain`. */
+/** Largest gain of a round: the cleared board's, at most `MAX_MULTIPLE` × the stake, bounded by
+ *  the vault's `max_round_gain`. */
 export function maxGain(stake: bigint, mines: number, maxRoundGain: bigint): bigint {
-  const gain = boardGain(stake, mines);
+  const cleared = uncappedGross(stake, mines, safeTiles(mines));
+  const best = cleared < stake * MAX_MULTIPLE ? cleared : stake * MAX_MULTIPLE;
+  const gain = best > stake ? best - stake : 0n;
   return gain < maxRoundGain ? gain : maxRoundGain;
 }
 

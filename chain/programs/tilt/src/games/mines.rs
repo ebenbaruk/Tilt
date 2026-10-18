@@ -5,10 +5,12 @@
 //! Each reveal takes its own VRF draw instead: with `k` tiles already revealed (all safe), the
 //! clicked tile is a mine iff `rng.below(25 - k) < mines`, distributed exactly like a uniformly
 //! random layout. The multiplier after `k` safe tiles is `0.99 × C(25, k) / C(25 − mines, k)`
-//! (RTP 99.00% before Tilt's fee, at every cash-out point).
+//! (RTP 99.00% before Tilt's fee, at every cash-out point). A round returns at most
+//! `MAX_MULTIPLE` × its stake, like Limbo's highest target.
 
 use anchor_lang::prelude::*;
 
+use crate::games::gain;
 use crate::rng::Rng;
 
 pub const TILES: u8 = 25;
@@ -17,6 +19,8 @@ pub const MAX_MINES: u8 = TILES - 1;
 pub const NONE: u8 = 255;
 /// The house edge: every multiplier is the fair one times 99/100.
 const RETURN_PERCENT: u128 = 99;
+/// Most a round returns, × its stake: what it reserves of the bankroll scales with the stake.
+pub const MAX_MULTIPLE: u64 = 10_000;
 
 /// `C(n, k)`, exact for `n <= 25` (at most `C(25, 12)` = 5 200 300).
 fn choose(n: u8, k: u8) -> u128 {
@@ -34,13 +38,12 @@ pub fn gross_uncapped(stake: u64, mines: u8, k: u8) -> u128 {
     stake as u128 * RETURN_PERCENT * choose(TILES, k) / (100 * choose(TILES - mines, k))
 }
 
-/// Most a round with `mines` mines can gain: every safe tile revealed, at most
-/// `max_round_gain`. Saturates like every game's `max_gain`, so a huge stake is refused as
-/// out of range by `start_round` instead of panicking.
+/// Most a round with `mines` mines can gain: every safe tile revealed, at most `MAX_MULTIPLE`
+/// × the stake and `max_round_gain`. Saturates like every game's `max_gain`, so a huge stake
+/// is refused as out of range by `start_round` instead of panicking.
 pub fn max_gain(stake: u64, mines: u8, max_round_gain: u64) -> u64 {
     let full = gross_uncapped(stake, mines, TILES - mines);
-    let gain = full.saturating_sub(stake as u128);
-    u64::try_from(gain).unwrap_or(u64::MAX).min(max_round_gain)
+    gain(stake, full.min(stake as u128 * MAX_MULTIPLE as u128)).min(max_round_gain)
 }
 
 /// One reveal draw with `k` tiles already revealed: is the clicked tile a mine?
@@ -212,8 +215,22 @@ mod tests {
         // 24 mines: one safe tile, 24.75x.
         assert_eq!(max_gain(1_000, 24, 1_000_000), 23_750);
         assert_eq!(max_gain(1_000, 24, 10_000), 10_000);
-        // 12 mines can reach 5 148 297x: always the round limit.
+        // 12 mines can reach 5 148 297x: capped at a 10 000x return, and at the round limit.
+        assert_eq!(max_gain(1_000, 12, u64::MAX), 9_999_000);
         assert_eq!(max_gain(1_000, 12, 50_000), 50_000);
+    }
+
+    #[test]
+    fn the_max_gain_cashes_out_at_10_000x_the_stake() {
+        // 12 mines: 9 safe tiles return 0.99 × C(25, 9) / C(13, 9) = 2 828×, 10 return 11 314×.
+        let mut b = board(1_000, 12, u64::MAX);
+        for tile in 0..9 {
+            assert_eq!(reveal(&mut b, tile, randomness_for(12, tile, false)), None);
+        }
+        assert_eq!(
+            reveal(&mut b, 9, randomness_for(12, 9, false)),
+            Some(10_000_000)
+        );
     }
 
     #[test]

@@ -107,14 +107,14 @@ Référence visuelle : la maquette d'Eli (image partagée dans la conversation, 
 | Roulette | v1 | Européenne (un seul zéro). Jetons sur tout le tapis : de 1 à 20 paris par tour, chacun avec sa mise (plein, rouge/noir, pair/impair, manque/passe, douzaine, colonne), chaque mise entre les limites de la table. RTP 97,30 %. |
 | Baccarat | v1 | Punto Banco, sabot infini : joueur (1:1), banque (1:1, commission 5 %) et égalité (8:1). RTP 98,76 % / 98,94 % / ≈ 85,9 %. |
 | Slots | v1 | 3 rouleaux pondérés, table de gains publique, gain max 250×. RTP 96,16 %. |
-| Mines | v1 | Grille 5×5, 1 à 24 mines. Chaque case cliquée est tirée à l'instant par le VRF (aucune disposition stockée d'avance, lisible on-chain sinon). Multiplicateur 0,99 × C(25, k) / C(25 − mines, k) après k cases sûres, encaissement à tout moment dès une case ; gain plafonné par manche (`max_round_gain`), comme le plafond de profit de Stake. RTP 99,00 %. |
+| Mines | v1 | Grille 5×5, 1 à 24 mines. Chaque case cliquée est tirée à l'instant par le VRF (aucune disposition stockée d'avance, lisible on-chain sinon). Multiplicateur 0,99 × C(25, k) / C(25 − mines, k) après k cases sûres, encaissement à tout moment dès une case ; retour plafonné à 10 000 × la mise et par manche (`max_round_gain`), comme le plafond de profit de Stake. RTP 99,00 %. |
 | Dice | v1 | Tirage 00,00–99,99, pari au-dessus ou en dessous d'un seuil, chance de 1 % à 98 %, gain 98 / chance. RTP 98,00 %. |
 | Limbo | v1 | Multiplicateur cible de 1,01× à 10 000× ; le tirage (0,98 / U) doit l'atteindre. RTP 98,00 %. |
 | Flip | v1 | Pile ou face sur 1 à 10 pièces, toutes du côté choisi : 0,98 × 2ⁿ. RTP 98,00 %. |
 | Keno | v1 | 1 à 10 numéros sur 40, 10 tirés, table de gains publique par nombre de numéros (jusqu'à 1 000× à 10/10). RTP entre 94,90 et 95,00 % selon le nombre de numéros. |
 | Wheel | v1 | Roue de 10 à 50 segments, risque faible, moyen ou élevé, table publique. RTP 98,00 %. |
 | Hilo | v1 | Sabot infini : plus haut ou égal / plus bas ou égal que la carte suivante ; au roi, plus bas strict ; à l'as, plus haut strict (aucun pari n'est certain). 10 cartes passées au plus, encaissement dès une bonne réponse. Multiplicateur 0,98 × Π 13 / issues gagnantes ; retour plafonné à 10 000 × la mise et par `max_round_gain`. RTP 98,00 %. |
-| Tower | v1 | Dragon Tower : 9 étages, 5 difficultés (4 cases dont 3 sûres … 4 cases dont 1 sûre), chaque case tirée au clic, encaissement dès un étage, 0,98 × (cases / sûres)^étages, plafonné par `max_round_gain`. RTP 98,00 %. |
+| Tower | v1 | Dragon Tower : 9 étages, 5 difficultés (4 cases dont 3 sûres … 4 cases dont 1 sûre), chaque case tirée au clic, encaissement dès un étage, 0,98 × (cases / sûres)^étages, retour plafonné à 10 000 × la mise et par `max_round_gain`. RTP 98,00 %. |
 | Autres (crash, plinko…) | plus tard | |
 
 Chaque jeu affiche son **RTP** (taux de retour au joueur, avant les 1 % Tilt) et est **provably fair** (§6.4).

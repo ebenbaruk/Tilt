@@ -304,6 +304,21 @@ mod tests {
     }
 
     #[test]
+    fn a_small_bet_reserves_a_gain_in_proportion_to_its_stake() {
+        // Headroom far below the 50 000 000 round limit: 1 000 on 12 mines only needs 9 999 000.
+        let (mut a, mut b) = (account(), MinesBoard::default());
+        a.max_win = 9_999_000;
+        start_mines(&mut a, &mut b, 1_000, 12, &config(), 0).unwrap();
+        assert_eq!(b.max_gain, 9_999_000);
+        let (mut a, mut b) = (account(), MinesBoard::default());
+        a.max_win = 9_998_999;
+        assert_eq!(
+            start_mines(&mut a, &mut b, 1_000, 12, &config(), 0),
+            Err(TiltError::WinCapReached.into())
+        );
+    }
+
+    #[test]
     fn a_cash_out_pays_the_multiplier_minus_the_fee() {
         let (mut a, mut b) = started(1);
         assert_eq!(

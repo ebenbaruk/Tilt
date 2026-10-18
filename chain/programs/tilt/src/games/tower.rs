@@ -2,7 +2,8 @@
 //! level at a time and cashes out whenever they want. Like Mines nothing is stored ahead: each
 //! climb takes its own VRF draw and the picked tile is safe iff `rng.below(tiles) < safe`.
 //! After `L` safe levels the round returns `0.98 × (tiles / safe)^L` (RTP 98.00% at every
-//! cash-out point, before Tilt's fee).
+//! cash-out point, before Tilt's fee). A round returns at most `MAX_MULTIPLE` × its stake, like
+//! Limbo's highest target.
 
 use anchor_lang::prelude::*;
 
@@ -12,6 +13,8 @@ use crate::rng::Rng;
 pub const LEVELS: u8 = 9;
 /// `pending` / `busted` when there is no such tile.
 pub const NONE: u8 = 255;
+/// Most a round returns, × its stake: what it reserves of the bankroll scales with the stake.
+pub const MAX_MULTIPLE: u64 = 10_000;
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, InitSpace, PartialEq, Eq, Debug)]
 pub enum TowerDifficulty {
@@ -47,9 +50,11 @@ pub fn gross_uncapped(stake: u64, difficulty: TowerDifficulty, levels: u8) -> u1
     stake as u128 * 98 * (tiles as u128).pow(levels) / (100 * (safe as u128).pow(levels))
 }
 
-/// Most a round can gain: every level climbed, at most `max_round_gain`.
+/// Most a round can gain: every level climbed, at most `MAX_MULTIPLE` × the stake and
+/// `max_round_gain`.
 pub fn max_gain(stake: u64, difficulty: TowerDifficulty, max_round_gain: u64) -> u64 {
-    gain(stake, gross_uncapped(stake, difficulty, LEVELS)).min(max_round_gain)
+    let top = gross_uncapped(stake, difficulty, LEVELS);
+    gain(stake, top.min(stake as u128 * MAX_MULTIPLE as u128)).min(max_round_gain)
 }
 
 /// One climb draw: is the picked tile safe?
@@ -200,6 +205,15 @@ mod tests {
             max_gain(1_000, TowerDifficulty::Medium, u64::MAX),
             37_674 - 1_000
         );
+        // Expert (19 289×) and Master (256 901×) stop at a 10 000× return.
+        assert_eq!(
+            max_gain(1_000, TowerDifficulty::Expert, u64::MAX),
+            9_999_000
+        );
+        assert_eq!(
+            max_gain(1_000, TowerDifficulty::Master, u64::MAX),
+            9_999_000
+        );
         assert_eq!(max_gain(1_000, TowerDifficulty::Master, 50_000), 50_000);
         assert_eq!(
             max_gain(u64::MAX, TowerDifficulty::Master, u64::MAX),
@@ -252,6 +266,17 @@ mod tests {
         let mut b = board(TowerDifficulty::Hard, 2_000);
         assert_eq!(climb(&mut b, 0, true), None);
         assert_eq!(climb(&mut b, 1, true), Some(3_000));
+    }
+
+    #[test]
+    fn the_max_gain_cashes_out_at_10_000x_the_stake() {
+        // Master: 6 levels return 0.98 × 4^6 = 4 014×, 7 return 16 056×.
+        let mut b = board(TowerDifficulty::Master, u64::MAX);
+        for level in 0..6 {
+            assert_eq!(climb(&mut b, level % 4, true), None);
+        }
+        assert_eq!(climb(&mut b, 0, true), Some(10_000_000));
+        assert_eq!(b.level, 7);
     }
 
     #[test]

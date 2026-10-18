@@ -1,6 +1,7 @@
 // Port of `games/tower.rs` (Dragon Tower): 9 levels of `tiles` tiles, `safe` of them safe. Nothing
 // is drawn in advance: each climb draws fresh randomness, safe iff `below(tiles) < safe`. After L
-// safe levels a cash-out pays 0.98 × (tiles / safe)^L, capped at the round's gain.
+// safe levels a cash-out pays 0.98 × (tiles / safe)^L, capped at the round's gain (at most
+// `MAX_MULTIPLE` × the stake).
 import type { TowerDifficulty } from "@tilt/mod/protocol";
 import { MULTIPLIER_SCALE } from "./decimal";
 import type { Rng } from "./rng";
@@ -15,6 +16,8 @@ export const DIFFICULTIES: Record<TowerDifficulty, { tiles: number; safe: number
 };
 /** On-chain `TowerDifficulty` order. */
 export const DIFFICULTY_NAMES: readonly TowerDifficulty[] = ["easy", "medium", "hard", "expert", "master"];
+/** Most a round returns, × its stake. */
+export const MAX_MULTIPLE = 10_000n;
 const RTP_PERCENT = 98n;
 const HUNDRED = 100n;
 
@@ -25,10 +28,12 @@ export function uncappedGross(stake: bigint, difficulty: TowerDifficulty, levels
   return (stake * RTP_PERCENT * BigInt(tiles) ** l) / (HUNDRED * BigInt(safe) ** l);
 }
 
-/** Largest gain of a round: the top of the tower's, bounded by the vault's `max_round_gain`. */
+/** Largest gain of a round: the top of the tower's, at most `MAX_MULTIPLE` × the stake, bounded by
+ *  the vault's `max_round_gain`. */
 export function maxGain(stake: bigint, difficulty: TowerDifficulty, maxRoundGain: bigint): bigint {
-  const top = uncappedGross(stake, difficulty, LEVELS) - stake;
-  const gain = top > 0n ? top : 0n;
+  const top = uncappedGross(stake, difficulty, LEVELS);
+  const best = top < stake * MAX_MULTIPLE ? top : stake * MAX_MULTIPLE;
+  const gain = best > stake ? best - stake : 0n;
   return gain < maxRoundGain ? gain : maxRoundGain;
 }
 
