@@ -461,7 +461,7 @@ const KENO_COLUMNS = 8;
 const KENO_CELL = 4;
 /** Ten numbers are drawn, lit one after another this often. */
 const KENO_DRAWN = 10;
-const KENO_STEP_MS = 110;
+const KENO_STEP_MS = 80;
 /** How long the draw takes to light its numbers. */
 export const KENO_DRAW_MS = KENO_DRAWN * KENO_STEP_MS;
 
@@ -585,16 +585,21 @@ export function kenoTable(
   );
 }
 
-/** How long the wheel takes to slow from full speed into the drawn segment. */
-export const WHEEL_SPIN_MS = 1_500;
-/** How far it turns meanwhile, in laps: the half lap keeps the drawn segment off the pointer when the slowing starts. */
-const SPIN_LAPS = 3.5;
+/** How long the wheel takes to slow from full speed into the drawn segment: about a dice roll. */
+export const WHEEL_SPIN_MS = 1_100;
+/**
+ * Full speed, in segments a ms: under half a segment a frame of the main screen (100 ms), else
+ * the eye sees the wedges step backwards (a wagon wheel), then turn the right way as it slows.
+ */
+const TOP_SPEED = 0.4 / 100;
+/** How far the slowing turns: the cubic ease-out that starts at full speed. */
+const LANDING_TURN = (TOP_SPEED * WHEEL_SPIN_MS) / 3;
 
 /**
  * Which segment the pointer is over, `elapsed` into a spin of a wheel of `segments` (a fraction is
  * part way to the next): turning clockwise at full speed while the chain draws; once it has,
- * slowing on a cubic ease-out over a few laps to rest exactly on the drawn `segment`. The count
- * falls as the wheel turns clockwise: the segment before comes under the pointer.
+ * slowing on a cubic ease-out to rest exactly on the drawn `segment`. The count falls as the wheel
+ * turns clockwise: the segment before comes under the pointer.
  */
 export function wheelSegmentAt(
   segments: number,
@@ -603,18 +608,17 @@ export function wheelSegmentAt(
   isDrawing: boolean,
 ): number {
   const rest = segment ?? 0;
-  const turn = SPIN_LAPS * segments;
 
   if (isDrawing) {
     // The slowing's slope at its start, so landing changes the pace without a jolt.
-    return rest - ((3 * turn) / WHEEL_SPIN_MS) * (elapsed ?? 0);
+    return (rest - TOP_SPEED * (elapsed ?? 0)) % segments;
   }
 
   if (elapsed === null || elapsed >= WHEEL_SPIN_MS) {
     return rest;
   }
 
-  return rest + turn * (1 - elapsed / WHEEL_SPIN_MS) ** 3;
+  return rest + LANDING_TURN * (1 - elapsed / WHEEL_SPIN_MS) ** 3;
 }
 
 /** Multipliers under ×2 count as small wins, in cool colors; the rest are the warm big ones. */

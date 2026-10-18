@@ -52,8 +52,8 @@ const WHEEL = [
 const POCKET_COLUMNS = 4;
 const TILE_STEP = POCKET_COLUMNS + 1;
 /** How long the wheel takes to slow from full speed into the drawn pocket, and how many pockets it turns by meanwhile. */
-export const ROULETTE_SPIN_MS = 2_000;
-const SPIN_POCKETS = 28;
+export const ROULETTE_SPIN_MS = 1_200;
+const SPIN_POCKETS = 18;
 /** Full speed, in pockets a ms: the slope of the slowing's cubic ease-out at its start, so a wheel
  *  turning at it while the chain draws slows down on landing without a change of pace. */
 const FULL_SPEED = (3 * SPIN_POCKETS) / ROULETTE_SPIN_MS;
@@ -591,8 +591,8 @@ const SYMBOL_ART: Record<string, { rows: readonly [string, string, string]; colo
   "♥": { rows: ["▄█▄█▄", "▀███▀", "  ▀  "], color: () => RED },
 };
 const SYMBOLS = Object.keys(SYMBOL_ART);
-/** The reels at rest before any spin: the jackpot line, dimmed. */
-const IDLE_REELS = ["7", "7", "7"] as const;
+/** The reels at rest before any spin, dimmed: mixed, never a line that reads as a win. */
+const IDLE_REELS = ["♣", "7", "◆"] as const;
 
 /** The pay table, gross times the bet per spin, as `games/slots.rs` pays it. Mirrored here to show; the program pays. */
 const PAYS: readonly { line: string; times: number; symbol: string; pair?: true }[] = [
@@ -706,8 +706,9 @@ export function slotsTable(ui: Ui, round: RoundView | null, size: CardSize, spin
     );
   }
 
+  // The pay table drops under the machine where both do not fit side by side (a narrow side pane).
   return (
-    <Box flexDirection="row" columnGap={3}>
+    <Box flexDirection="row" flexWrap="wrap" columnGap={3} rowGap={1}>
       <Box flexDirection="row" alignItems="center" columnGap={1}>
         <Text color={GOLD} bold>
           ▸
