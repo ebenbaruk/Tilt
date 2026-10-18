@@ -72,6 +72,7 @@ import { applyTheme, isLightTheme, type Ui } from "./theme";
 import {
   bigWinOf,
   celebrationMs,
+  dealingHands,
   PANE_ROWS,
   type PaneLayout,
   renderBand,
@@ -1310,6 +1311,7 @@ function tableOf(
     wheel,
     isLight,
     isPaneFocused,
+    dealing: dealingHands(snap),
   });
 
   return (cards, columns, wheel) => (

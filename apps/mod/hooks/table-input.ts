@@ -33,6 +33,8 @@ export interface TableProps {
   /** The pane holds the keyboard. A click on the table then gives it the raw keys; without the
    *  pane's focus the table has none, whatever was clicked before. The band never says: false. */
   isPaneFocused: boolean;
+  /** The hands of a blackjack deal sent and not on the table yet (`dealingHands`): drawn face down. */
+  dealing: number | null;
 }
 
 /** What the surface module posts: press the plan's key with this address. */

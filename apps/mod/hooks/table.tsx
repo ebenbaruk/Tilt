@@ -18,7 +18,16 @@ import {
 import type { RoundView } from "./protocol";
 import { pressFor, stepperOf, type TableKey, type TableProps } from "./table-input";
 import { applyTheme, FG4, FG6, GOLD, PINK, type Ui } from "./theme";
-import { celebration, celebrationMs, gameTable, outcomeLine, roundOf, spinMs, spinProgress } from "./view";
+import {
+  celebration,
+  celebrationMs,
+  dealingTable,
+  gameTable,
+  outcomeLine,
+  roundOf,
+  spinMs,
+  spinProgress,
+} from "./view";
 
 const FRAME_MS = 33;
 const COUNT_UP_MS = 700;
@@ -505,15 +514,19 @@ export default function Table(props: TableProps, surface: ClientSurface<TableSta
     frame: Math.floor(state.now / PENDING_FRAME_MS),
   };
   const post = (press: string) => surface.post({ press });
+  // A deal sent and not on the table yet: its hands face down, nothing of the last round's result.
+  const isDealing = props.dealing !== null;
 
   return (
     <Box flexDirection="column" paddingLeft={shake}>
-      {gameTable(ui, props.state, props.prefs, props.columns, fx, props.cards, props.wheel, (address, face) =>
-        tileButton(ui, props.keys, address, face, post),
-      )}
-      {celebration(ui, round, effect?.kind === "win" ? sinceEffect : null, props.columns - 1)}
+      {props.dealing !== null
+        ? dealingTable(ui, props.dealing, props.cards)
+        : gameTable(ui, props.state, props.prefs, props.columns, fx, props.cards, props.wheel, (address, face) =>
+            tileButton(ui, props.keys, address, face, post),
+          )}
+      {!isDealing && celebration(ui, round, effect?.kind === "win" ? sinceEffect : null, props.columns - 1)}
       <Box flexDirection="column" marginTop={1}>
-        {summary(ui, state, round, spinning !== null)}
+        {!isDealing && summary(ui, state, round, spinning !== null)}
         <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
           {prompt(
             ui,

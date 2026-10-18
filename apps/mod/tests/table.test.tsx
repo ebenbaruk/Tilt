@@ -1,6 +1,7 @@
 import type { RenderInput } from "claude-code";
 import { describe, expect, test } from "claude-code/testing";
 
+import { DEAL_STEP_MS } from "../hooks/cards";
 import type { PlayRequest, StateResponse } from "../hooks/protocol";
 import { WHEEL_SPIN_MS } from "../hooks/quick";
 import { TABLE_KEY } from "../hooks/table-input";
@@ -211,6 +212,34 @@ describe("the table moves", () => {
     await ui.key({ key: "return" });
 
     expect(actionsOf(world.calls("POST /v1/play"))).toEqual([{ type: "blackjack_stand" }]);
+  });
+
+  test("a deal Space sent stays on the same table: face down until it shows, then dealt card by card", async ($, on) => {
+    let current: StateResponse = BASE;
+    const { world, clock } = await seat($, on, BASE, {
+      "GET /v1/state": () => ({ status: 200, body: current }),
+      "POST /v1/play": () => SUBMITTED,
+    });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+    const table = async () => textOf(await ui.drawn({ in: TABLE_KEY }));
+
+    await ui.pointer(CLICK);
+    await ui.key({ key: "space" });
+    expect(await table()).toContain("░░░░░");
+
+    current = BLACKJACK_TURN;
+    await clock.advance(POLL_MS);
+    await ui.advance(DEAL_STEP_MS / 2);
+    expect(await table()).toContain("3♣");
+    expect(await table()).not.toContain("8♦");
+
+    // The table kept the keys the click gave it: Space hits the hand it dealt.
+    await ui.advance(WHOLE_DEAL_MS);
+    await ui.key({ key: "space" });
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([
+      { type: "blackjack_bet", amount: "500000", hands: 1 },
+      { type: "blackjack_hit" },
+    ]);
   });
 
   test("a baccarat round is dealt card by card, the third cards last, and the outcome waits for the last", async ($, on) => {

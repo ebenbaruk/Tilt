@@ -540,7 +540,7 @@ const FACE_DOWN: readonly Card[] = [
  * A blackjack deal sent and not on the table yet: the dealer and each hand get their two cards
  * face down. Nothing about them is known; the cards turn over as the chain's state shows them.
  */
-function dealingTable(ui: Ui, hands: number, size: CardSize): RenderElement {
+export function dealingTable(ui: Ui, hands: number, size: CardSize): RenderElement {
   const { Box, Text } = ui;
   const faceDown = { faceDown: FACE_DOWN.length };
 
@@ -560,7 +560,7 @@ function dealingTable(ui: Ui, hands: number, size: CardSize): RenderElement {
 }
 
 /** The hands a blackjack deal in flight asked for; null when no deal is in flight. */
-function dealingHands(snap: Snapshot): number | null {
+export function dealingHands(snap: Pick<Snapshot, "intent">): number | null {
   const action = snap.intent?.action;
 
   return action?.type === "blackjack_bet" ? clampHands(action.hands) : null;
@@ -1428,11 +1428,14 @@ export function renderPane(
   const steps = steppers(ui, state, snap.prefs, keys, onCommand);
   const side = state.sponsor !== null || state.leaderboard.length > 0;
   const canPlay = state.accountOpen && state.blocked === null;
+  // The table surface module draws a deal in flight itself: swapped out, it would lose the keys a
+  // click gave it, and deal the hands all at once when they show.
   const shownTable =
-    dealing !== null
-      ? dealingTable(ui, dealing, size)
-      : table === null
-        ? gameTable(
+    table !== null
+      ? table(size, gameColumns(layout), wheel)
+      : dealing !== null
+        ? dealingTable(ui, dealing, size)
+        : gameTable(
             ui,
             state,
             snap.prefs,
@@ -1441,8 +1444,7 @@ export function renderPane(
             size,
             wheel,
             cellButton,
-          )
-        : table(size, gameColumns(layout), wheel);
+          );
   const gameColumn = (
     <Box flexDirection="column" flexGrow={1} marginTop={snap.agent.notice !== null || snap.agent.isWorking ? 1 : 0}>
       {/* Short of room, the keys come before the guide too: a band of a few rows still shows them. */}
