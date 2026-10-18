@@ -642,6 +642,11 @@ describe("hilo", () => {
     expect(formatFixed(hilo.scaledMultiplier(STAKE, fair, 10n ** 12n), 4)).toBe("1.8199");
     expect(formatFixed(hilo.scaledMultiplier(STAKE, 100n * hilo.FAIR_ONE, 2_000_000n), 4)).toBe("3.0000");
   });
+
+  it("caps a round at 10 000x its stake, and at the round limit", () => {
+    expect(hilo.maxGain(1_000n, 10n ** 12n)).toBe(9_999_000n);
+    expect(hilo.maxGain(1_000n, 5_000_000n)).toBe(5_000_000n);
+  });
 });
 
 describe("tower", () => {

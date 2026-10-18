@@ -2,7 +2,8 @@
 // `card / 13`), one draw each. A right higher (≥) or lower (≤) guess multiplies the fair
 // multiplier by 13 / winning ranks (fixed point ×1e6, rounded down each step); at the edges the
 // bet is strict (higher from an ace: > 1, lower from a king: < 13), so no guess is certain. A
-// cash-out pays 0.98 × fair, capped at the round's gain. Skips draw a new card and change nothing.
+// cash-out pays 0.98 × fair, capped at the round's gain (at most `MAX_MULTIPLE` × the stake). Skips
+// draw a new card and change nothing.
 import type { Card, HiloGuess } from "@tilt/mod/protocol";
 import { MULTIPLIER_SCALE } from "./decimal";
 import type { Rng } from "./rng";
@@ -17,6 +18,8 @@ export const FAIR_ONE = 1_000_000n;
 /** The board's guess codes (`HiloGuess` order on-chain), and its `pending` when none. */
 export const GUESSES: readonly HiloGuess[] = ["higher", "lower", "skip"];
 export const NO_GUESS = 255;
+/** Most a round returns, × its stake. */
+export const MAX_MULTIPLE = 10_000n;
 const RTP_PERCENT = 98n;
 const HUNDRED = 100n;
 const SUITS: readonly Card["suit"][] = ["♠", "♥", "♦", "♣"];
@@ -44,6 +47,12 @@ export const nextFair = (fair: bigint, winning: number) => (fair * BigInt(RANKS)
 
 /** `stake × 0.98 × fair`, rounded down, before any cap. */
 export const uncappedGross = (stake: bigint, fair: bigint) => (stake * RTP_PERCENT * fair) / (HUNDRED * FAIR_ONE);
+
+/** Largest gain of a round: `MAX_MULTIPLE` × the stake, bounded by the vault's `max_round_gain`. */
+export function maxGain(stake: bigint, maxRoundGain: bigint): bigint {
+  const gain = stake * (MAX_MULTIPLE - 1n);
+  return gain < maxRoundGain ? gain : maxRoundGain;
+}
 
 export const gross = (stake: bigint, fair: bigint, gain: bigint) => {
   const g = uncappedGross(stake, fair);
