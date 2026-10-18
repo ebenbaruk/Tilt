@@ -187,9 +187,10 @@ function pocketChip(ui: Ui, pocket: number): RenderElement {
 
 /** The layout's number grid as on the felt, top row first: 3 6 … 36, 2 5 … 35, 1 4 … 34; each
  *  row's `2:1` at its end bets on its column, numbered by its first number. */
+const LAYOUT_NUMBERS_ACROSS = 12;
 const LAYOUT_ROWS = ([3, 2, 1] as const).map((column) => ({
   column,
-  numbers: Array.from({ length: 12 }, (_, index) => index * 3 + column),
+  numbers: Array.from({ length: LAYOUT_NUMBERS_ACROSS }, (_, index) => index * 3 + column),
 }));
 const DOZENS = [
   { dozen: 1, label: "1st 12" },
@@ -204,26 +205,31 @@ const OUTSIDE_BETS: readonly RouletteBet[] = [
   { kind: "odd" },
   { kind: "high" },
 ];
-/** A number's cell; a `2:1` cell is one column wider, for its chip. */
-const NUMBER_CELL: Record<"wide" | "narrow", number> = { wide: 4, narrow: 3 };
+/** A number's cell: the widest of these that fits; a `2:1` cell is as wide as the widest, for its chip. */
+const NUMBER_CELLS = [4, 3] as const;
 const COLUMN_CELL = 4;
+/** The cells a layout with numbers `cell` wide takes: the 0, a row of twelve numbers, its `2:1`. */
+const layoutColumns = (cell: number): number => cell * (LAYOUT_NUMBERS_ACROSS + 1) + COLUMN_CELL;
+/** The wheel's tiles either side of the marker, at most. */
+const MAX_REACH = 6;
+/** The wheel strip's frame: a column each side. */
+const WHEEL_FRAME = 2;
 /** A chip on a cell: its stake beside it, in gold. */
 const CHIP = "●";
 
 const centered = (text: string, width: number): string =>
   text.padStart(Math.floor((width + text.length) / 2)).padEnd(width);
 
-/** A cell's line, `width` wide: its label, or with chips on it the chip and their stake, beside the
- *  label where both fit, else alone; where even that is too wide (2.5 on a narrow number), the chip on the label. */
+/** A cell's line, `width` wide: its label, or with chips on it the chip and their stake beside the
+ *  label where both fit, else the chip on the label: a number is never hidden by its chip. */
 function cellFace(label: string, stake: bigint, width: number): string {
   if (stake === 0n) {
     return ` ${centered(label, width - 1)}`;
   }
 
-  const amount = compactUsdc(stake.toString());
-  const face = [`${label} ${CHIP}${amount}`, `${CHIP}${amount}`].find((text) => text.length <= width);
+  const full = `${label} ${CHIP}${compactUsdc(stake.toString())}`;
 
-  return centered(face ?? `${CHIP}${label}`, width);
+  return centered(full.length <= width ? full : `${CHIP}${label}`, width);
 }
 
 interface LayoutMarks {
@@ -239,17 +245,17 @@ interface LayoutMarks {
  * The betting layout, as on a casino table: 0 on the left, the numbers in three rows of twelve,
  * each row's `2:1`, then the dozens and the outside bets. A cell with chips shows `●` and their
  * stake in gold; the pocket the ball landed in and the cells that won are lit gold. A cell the
- * drawing has a Button for (a click on the fullscreen table) takes a chip.
+ * drawing has a Button for (a click where the terminal reports them) takes a chip. Numbers are
+ * `width` cells wide.
  */
 function rouletteLayout(
   ui: Ui,
   chips: readonly RouletteChip[],
   marks: LayoutMarks,
-  isWide: boolean,
+  width: number,
   cellButton: TileButton,
 ): RenderElement {
   const { Box, Text } = ui;
-  const width = NUMBER_CELL[isWide ? "wide" : "narrow"];
   const cell = (cellBet: RouletteBet, lines: readonly string[], felt: string, cellWidth: number) => {
     const stake = stakeOn(chips, cellBet);
     const isLit =
@@ -327,16 +333,18 @@ function chipsLine(ui: Ui, chips: readonly RouletteChip[]): RenderElement {
 }
 
 /**
- * `spinElapsed`: how far into its spin the round on the table is; null draws it at rest.
- * `cellButton`: the Button a cell of the layout takes a chip with, where the drawing has one.
- * A spin in play shows its own chips; between spins the table shows the chips placed, which stay
- * for the next spin, and the last spin's pocket and winning cells stay lit.
+ * `columns`: the cells the table has; the wheel and the layout take the widest that fits, and under
+ * the narrowest layout the keys alone place chips. `spinElapsed`: how far into its spin the round on
+ * the table is; null draws it at rest. `cellButton`: the Button a cell of the layout takes a chip
+ * with, where the drawing has one. A spin in play shows its own chips; between spins the table
+ * shows the chips placed, which stay for the next spin, and the last spin's pocket and winning
+ * cells stay lit.
  */
 export function rouletteTable(
   ui: Ui,
   round: RoundView | null,
   prefs: Prefs,
-  isWide: boolean,
+  columns: number,
   spinElapsed: number | null,
   cellButton: TileButton,
 ): RenderElement {
@@ -353,11 +361,17 @@ export function rouletteTable(
     landed === null || detail === null
       ? []
       : detail.chips.filter((chip) => rouletteWins(chip.bet, landed)).map((chip) => chip.bet);
+  // The strip is a tile per pocket shown, less the last gap, in its frame.
+  const reach = Math.floor(((columns - WHEEL_FRAME + 1) / TILE_STEP - 1) / 2);
+  const cell = NUMBER_CELLS.find((width) => layoutColumns(width) <= columns);
 
   return (
     <Box flexDirection="column" gap={1}>
-      {rouletteWheel(ui, position, isWide ? 6 : 3, { hasBall: landed !== null, isIdle: pocket === null })}
-      <Box flexDirection="row" columnGap={2}>
+      {rouletteWheel(ui, position, Math.max(1, Math.min(MAX_REACH, reach)), {
+        hasBall: landed !== null,
+        isIdle: pocket === null,
+      })}
+      <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
         {landed !== null ? (
           pocketChip(ui, landed)
         ) : (
@@ -365,13 +379,14 @@ export function rouletteTable(
         )}
         {chipsLine(ui, chips)}
       </Box>
-      {rouletteLayout(
-        ui,
-        chips,
-        { pocket: landed, winners, cursor: isOpen ? null : cursorBet(prefs.rouletteCursor) },
-        isWide,
-        cellButton,
-      )}
+      {cell !== undefined &&
+        rouletteLayout(
+          ui,
+          chips,
+          { pocket: landed, winners, cursor: isOpen ? null : cursorBet(prefs.rouletteCursor) },
+          cell,
+          cellButton,
+        )}
     </Box>
   );
 }

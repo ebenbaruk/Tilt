@@ -22,7 +22,6 @@ export interface TableProps {
   prefs: Prefs;
   /** The plan's keys right now (planKeys), the game switches included. */
   keys: TableKey[];
-  isWide: boolean;
   /** The cells the table is laid out in. */
   columns: number;
   /** The card size the pane chose for the room it has. */

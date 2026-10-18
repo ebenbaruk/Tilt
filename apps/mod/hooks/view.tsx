@@ -142,7 +142,7 @@ export type OnCommand = (command: Command) => void;
 
 const SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
 /** Under this many body columns the sidebar (design: 260px, dropped under ~720px) goes below the game. */
-export const WIDE_MIN_COLUMNS = 90;
+const WIDE_MIN_COLUMNS = 90;
 const SIDEBAR_COLUMNS = 32;
 /** The sponsor and leaderboard column with its frame, under the header and over the footer. */
 const SIDEBAR_MIN_ROWS = 22;
@@ -483,16 +483,16 @@ export function outcomeLine(ui: Ui, round: RoundView | null, shownNet?: string):
 }
 
 /**
- * The active game's table; `fx` moves the blackjack cards and hands, `STILL` draws them at rest.
- * `wheel`: the Wheel's disc for the room the table has (`wheelDisc`). `tileButton` is the Button a
- * Mines or tower tile (or, where the terminal reports clicks, a Keno number or a roulette cell) is
- * pressed with, where this drawing has one.
+ * The active game's table, `columns` wide; `fx` moves the blackjack cards and hands, `STILL` draws
+ * them at rest. `wheel`: the Wheel's disc for the room the table has (`wheelDisc`). `tileButton`
+ * is the Button a Mines or tower tile (or, where the terminal reports clicks, a Keno number or a
+ * roulette cell) is pressed with, where this drawing has one.
  */
 export function gameTable(
   ui: Ui,
   state: StateResponse,
   prefs: Prefs,
-  isWide: boolean,
+  columns: number,
   fx: TableFx,
   size: CardSize,
   wheel: number | null,
@@ -505,7 +505,7 @@ export function gameTable(
     case "blackjack":
       return blackjackTable(ui, round, fx, size);
     case "roulette":
-      return rouletteTable(ui, round, prefs, isWide, fx.spinElapsed, tileButton);
+      return rouletteTable(ui, round, prefs, columns, fx.spinElapsed, tileButton);
     case "baccarat":
       return baccaratTable(ui, round, prefs, size, fx.revealed);
     case "slots":
@@ -1350,7 +1350,6 @@ export function renderPane(
   const state = snap.remote.state;
   const keys = state === null ? [] : planKeys({ state, prefs: snap.prefs, isBusy: snap.intent !== null });
   const intro = preamble(ui, snap);
-  const isWide = layout.bodyColumns >= WIDE_MIN_COLUMNS;
   // The engine frames the pane: the brand sits on the header bar, not on a second border.
   const frame = (body: RenderElement | null, foot: RenderElement | null = null) => (
     <Box flexDirection="column">
@@ -1428,7 +1427,7 @@ export function renderPane(
             ui,
             state,
             snap.prefs,
-            isWide,
+            gameColumns(layout),
             { ...STILL, spinElapsed: snap.spinElapsed, revealed: snap.revealed, frame: snap.agent.frame },
             size,
             wheel,

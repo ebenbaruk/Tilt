@@ -79,7 +79,6 @@ import {
   type Snapshot,
   spinMs,
   spinProgress,
-  WIDE_MIN_COLUMNS,
 } from "./view";
 
 const PANE = "tilt";
@@ -1483,7 +1482,6 @@ export const register: Register = (on, options) => {
         state,
         prefs: snap.prefs,
         keys: keys.map(({ key, hotkey, label }) => ({ key, hotkey, label })),
-        isWide: e.props.bodyColumns >= WIDE_MIN_COLUMNS,
         columns,
         cards,
         wheel,

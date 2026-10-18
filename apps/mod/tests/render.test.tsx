@@ -685,7 +685,9 @@ describe("the roulette layout", () => {
 
     expect(await text()).toContain("on number 36");
     await ui.press({ key: "chip-add" });
-    expect(await text()).toContain("●.5");
+    // The chip marks the number without hiding it; its stake is on the cursor's line.
+    expect(await text()).toContain("●36");
+    expect(await text()).toContain("on number 36 ●0.50");
     expect(await text()).toContain("spin · 0.50 · 1 chip");
     await ui.press({ key: "chip-remove" });
     expect(await text()).toContain("No chips on the table yet.");
@@ -765,6 +767,38 @@ describe("the roulette layout", () => {
       expect(textOf(await ui.drawn())).toContain("on number 6");
     },
   );
+
+  test("fits its column: wide cells and wheel, narrow ones beside the sidebar at 90 columns, keys alone under 43", async ($, on) => {
+    await seat($, on, ROULETTE_CHIPS);
+    const widths = async (bodyColumns: number) => {
+      const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN, props: { ...FULLSCREEN.props, bodyColumns } });
+
+      await ui.press({ key: "game-roulette" });
+      const number = (await ui.find({ key: "table-roulette-straight-16", in: TABLE_KEY }))?.text ?? "";
+      const texts = await ui.findAll({ type: "Text", in: TABLE_KEY });
+      // The marker stands over the middle tile: its column says how many tiles the wheel shows.
+      const marker = texts.find((text) => text.text.endsWith("▼"))?.text ?? "";
+
+      await ui.unmount();
+
+      return { number: number.length, marker: marker.length };
+    };
+
+    // 120: a game column of 85 beside the sidebar, the wheel 6 tiles each side of the marker, 66
+    // wide. 90: of 55, too few for the wide layout (56) or that wheel: 4 tiles each side, 46 wide.
+    expect(await widths(120)).toEqual({ number: 4, marker: 33 });
+    expect(await widths(90)).toEqual({ number: 3, marker: 23 });
+
+    const narrow = await $.ui.mount({
+      plugin: PLUGIN,
+      ...PANE_INLINE,
+      props: { ...PANE_INLINE.props, bodyColumns: 40 },
+    });
+
+    await narrow.press({ key: "game-roulette" });
+    expect(textOf(await narrow.drawn())).not.toContain("1st 12");
+    expect(await narrow.find({ key: "roulette-red" })).toBeDefined();
+  });
 
   test("the balance short of the chips is said before n", async ($, on) => {
     await seat($, on, { ...BASE, balance: "700000" });
