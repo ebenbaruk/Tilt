@@ -161,6 +161,8 @@ const STEP_KEYS = new Set([
   ...["bet", ...Object.keys(STEPPER_NAMES)].flatMap((address) => [`${address}-down`, `${address}-up`]),
   ...ACROSS_KEYS,
 ]);
+/** Games whose paytables return up to the rtp the api sends, not exactly it (chain/…/games/keno.rs, limbo.rs). */
+const RTP_AT_MOST: ReadonlySet<Game> = new Set(["keno", "limbo"]);
 /** Where playButtons draws the echo of a settled move's key. */
 const ECHO_PREFIX = "echo-";
 
@@ -983,12 +985,13 @@ function sessionText(ui: Ui, session: TiltSession, now: number): RenderElement |
 /** The session and the odds on the left; on the right, how to give the pane the keys while it does not hold them. */
 function footer(ui: Ui, snap: Snapshot, state: StateResponse, game: Game, isFocused: boolean): RenderElement {
   const { Box, Text } = ui;
+  const rtp = `${RTP_AT_MOST.has(game) ? "≤ " : ""}${cleanText(state.rtp[game])}`;
 
   return (
     <Box flexDirection="row" flexWrap="wrap" columnGap={2} paddingX={1}>
       {/* The session's net counts the round in play: it waits for the wheel, the reels or the last card too. */}
       {snap.spinElapsed === null && snap.revealed === null && sessionText(ui, snap.session, snap.remote.fetchedAt)}
-      <Text color={FG6}>{`rtp ${cleanText(state.rtp[game])}% · 1% fee on wins`}</Text>
+      <Text color={FG6}>{`rtp ${rtp}% · 1% fee on wins`}</Text>
       <Box flexGrow={1} />
       {isFocused ? (
         <Text color={FG6}>esc hands the keys back</Text>
