@@ -61,6 +61,7 @@ import {
   type LayoutView,
   type Prefs,
   prefsView,
+  storedPrefs,
   remoteView,
   type RemoteView,
 } from "./model";
@@ -138,6 +139,8 @@ const session = atom({ plugin: "tilt", key: "session" } as const, {
 const STORE_SESSION = "session";
 const STORE_DEVICE = "device";
 const STORE_ONBOARDED = "onboarded";
+/** The choices last made (the game shown, the bet, each game's settings), restored by the next session. */
+const STORE_PREFS = "prefs";
 
 /** The mod's own sound files, played only with the `sound` setting on. */
 const SOUND_DEAL = "sounds/deal.wav";
@@ -202,6 +205,8 @@ interface Runtime {
   isRestorePending: boolean;
   /** What the last drawing said: the fullscreen layout, where a pane docks. Null before any. */
   isFullscreen: boolean | null;
+  /** The session started with the choices a past one stored. */
+  isPrefsRestored: boolean;
 }
 
 interface StoredSession {
@@ -575,8 +580,9 @@ async function intentStep($: EngineInterface, rt: Runtime, token: string, now: n
   }
 }
 
+/** Changes the choices, and keeps them for the next sessions: the bet, the game, its settings. */
 async function setPrefs($: EngineInterface, change: (value: Prefs) => Prefs): Promise<void> {
-  await update($, prefs, (held) => change(prefsView(held)));
+  await $.store.set(STORE_PREFS, await update($, prefs, (held) => change(prefsView(held))));
 }
 
 /** Keno's random picks: the player's own choice of numbers, not an outcome, so Math.random does. */
@@ -815,10 +821,10 @@ async function pollStep($: EngineInterface, rt: Runtime, token: string, now: num
     await dropIntent($, current.id);
   }
 
-  // A new session opens on the game last played, set up as it was played.
+  // A session with no stored choices opens on the game last played, set up as it was played.
   const last = fetched.value.round;
 
-  if (held.state === null && last !== null) {
+  if (held.state === null && last !== null && !rt.isPrefsRestored) {
     await setPrefs($, (value) => choicesOf({ ...value, game: last.detail.game }, last));
   }
 
@@ -1347,6 +1353,13 @@ async function onSessionStart($: EngineInterface, rt: Runtime, isInteractive: bo
     await update($, layout, (value) => ({ ...value, isOnboarded: true }));
   }
 
+  const kept = storedPrefs(await $.store.get(STORE_PREFS));
+
+  if (kept !== null) {
+    await update($, prefs, () => kept);
+    rt.isPrefsRestored = true;
+  }
+
   if (!isInteractive) {
     return;
   }
@@ -1469,6 +1482,7 @@ export const register: Register = (on, options) => {
     rateLimitedUntil: 0,
     isRestorePending: false,
     isFullscreen: null,
+    isPrefsRestored: false,
   };
 
   on("session.start", async ($, e, next) => {

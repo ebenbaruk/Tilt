@@ -1,7 +1,7 @@
 // Typed views over the mod's `$.state` (types/index.d.ts). The contract holds api-shaped values
 // as `unknown`; these readers check them again with the protocol guards.
 import type { TiltAgent, TiltAuth, TiltIntent, TiltLayout, TiltPrefs, TiltRemote } from "../types";
-import { isKenoPicks, isPlayAction, isRouletteChip, isStateResponse } from "./guards";
+import { isGame, isKenoPicks, isPlayAction, isRouletteChip, isStateResponse } from "./guards";
 import {
   clampFlips,
   clampHands,
@@ -113,6 +113,45 @@ export const prefsView = (held: TiltPrefs): Prefs => ({
   wheelRisk: optionOr(WHEEL_RISKS, held.wheelRisk, "low"),
   towerDifficulty: optionOr(TOWER_DIFFICULTIES, held.towerDifficulty, "easy"),
 });
+
+const SLOTS_SPEEDS: readonly SlotsSpeed[] = ["normal", "fast", "turbo"];
+const BACCARAT_BETS: readonly BaccaratBet[] = ["player", "banker", "tie"];
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/**
+ * The choices a past session stored (`$.store`, which other plugins can write too): its own
+ * fields only, the ones every read needs checked here, the rest checked by `prefsView` on each
+ * read; null for anything else.
+ */
+export function storedPrefs(value: unknown): TiltPrefs | null {
+  if (!isRecord(value) || !isGame(value.game) || !Number.isInteger(value.betIndex) || !Number.isInteger(value.hands)) {
+    return null;
+  }
+
+  const number = (field: unknown): number | undefined => (typeof field === "number" ? field : undefined);
+
+  return {
+    game: value.game,
+    betIndex: Math.max(0, Number(value.betIndex)),
+    hands: Number(value.hands),
+    rouletteChips: value.rouletteChips,
+    rouletteCursor: number(value.rouletteCursor),
+    baccarat: optionOr(BACCARAT_BETS, value.baccarat as BaccaratBet, "banker"),
+    slotsSpeed: optionOr(SLOTS_SPEEDS, value.slotsSpeed as SlotsSpeed, "normal"),
+    mines: number(value.mines),
+    diceChance: number(value.diceChance),
+    diceOver: value.diceOver === true,
+    limboTarget: number(value.limboTarget),
+    flipSide: optionOr(FLIP_SIDES, value.flipSide as FlipSide, "heads"),
+    flips: number(value.flips),
+    kenoPicks: value.kenoPicks,
+    wheelSegments: number(value.wheelSegments),
+    wheelRisk: optionOr(WHEEL_RISKS, value.wheelRisk as WheelRisk, "low"),
+    towerDifficulty: optionOr(TOWER_DIFFICULTIES, value.towerDifficulty as TowerDifficulty, "easy"),
+  };
+}
 
 export const intentView = (held: TiltIntent | null): IntentView | null =>
   held !== null && isPlayAction(held.action) ? { ...held, action: held.action } : null;
