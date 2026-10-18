@@ -35,6 +35,9 @@ export interface TableProps {
   isPaneFocused: boolean;
   /** The hands of a blackjack deal sent and not on the table yet (`dealingHands`): drawn face down. */
   dealing: number | null;
+  /** The surface reports clicks: the fullscreen terminal does, its main screen neither clicks nor
+   *  hands the table keys, so there the letters of the pane's key line play it. */
+  isClickable: boolean;
 }
 
 /** What the surface module posts: press the plan's key with this address. */

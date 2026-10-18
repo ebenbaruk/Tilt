@@ -1452,7 +1452,8 @@ export function renderPane(
       {!snap.isOnboarded && canPlay && firstHandGuide(ui, layout.isFocused)}
       {state.blocked !== null && <Text color={RED}>{`Play paused · ${cleanText(state.blocked)}`}</Text>}
       {shownTable}
-      {table === null && layoutHint(ui, keys, layout.isClickable)}
+      {/* The table surface module invites clicks; where none land, the keys are recalled here. */}
+      {(table === null || !layout.isClickable) && layoutHint(ui, keys, layout.isClickable)}
       {table === null && celebration(ui, roundOf(state, game), snap.celebrating, gameColumns(layout) - 1)}
       {/* The result waits for the wheel, the reels or the last card: the text must not tell it first. */}
       {dealing === null &&

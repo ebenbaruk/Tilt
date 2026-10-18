@@ -1,5 +1,6 @@
 import { describe, expect, test } from "claude-code/testing";
 
+import { DEAL_STEP_MS } from "../hooks/cards";
 import type { PlayAction, PlayRequest } from "../hooks/protocol";
 import { TABLE_KEY } from "../hooks/table-input";
 import { BACCARAT, BASE, BLACKJACK_TURN, BLACKJACK_WIN, HILO_TURN, ROULETTE, TOWER_TURN } from "./fixtures";
@@ -21,6 +22,8 @@ import {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 /** A win's celebration on the table. */
 const SPARKLES = /[✦✧✺✹⋆]/;
+/** Past a win's count-up and balance on the table. */
+const EFFECT_MS = 1_400;
 
 const answering =
   (...answers: Answer[]): Route =>
@@ -407,21 +410,23 @@ describe("a move in flight", () => {
     slow.answer("offline");
   });
 
-  // The main screen drew a deal all at once; the fullscreen table dealt it card by card.
-  test("on the main screen a deal turns its cards over one by one, as the fullscreen table does", async ($, on) => {
+  // The main screen hands the table no click nor key, but its surface module deals there as in fullscreen.
+  test("on the main screen the table turns a deal's cards over one by one and invites no click", async ($, on) => {
     const { clock } = await seat($, on, BASE, movingTable(BASE, BLACKJACK_TURN));
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+    const table = async () => textOf(await ui.drawn({ in: TABLE_KEY }));
 
     await ui.press({ key: "start" });
     await clock.advance(FIRST_TICK_MS);
-    const dealing = textOf(await ui.drawn());
+    await ui.advance(DEAL_STEP_MS / 2);
 
     // In deal order: the first card is up, the second card of the hand not yet.
-    expect(dealing).toContain("3♣");
-    expect(dealing).not.toContain("8♦");
+    expect(await table()).toContain("3♣");
+    expect(await table()).not.toContain("8♦");
+    expect(await table()).not.toContain("click");
 
-    await clock.advance(1_000);
-    expect(textOf(await ui.drawn())).toContain("8♦");
+    await ui.advance(1_000);
+    expect(await table()).toContain("8♦");
   });
 
   test("a baccarat deal turns its cards over one at a time: player, banker, player, banker", async ($, on) => {
@@ -434,31 +439,34 @@ describe("a move in flight", () => {
     await ui.press({ key: "game-baccarat" });
     await ui.press({ key: "start" });
     await clock.advance(FIRST_TICK_MS);
+    // The balance waits for the deal: the one before it shows.
+    expect(textOf(await ui.drawn())).toContain("12.40 USDC");
 
     for (let frame = 0; frame < 30 && seen.length < faces.length; frame++) {
-      const text = textOf(await ui.drawn());
+      const text = textOf(await ui.drawn({ in: TABLE_KEY }));
       const fresh = faces.filter((face) => text.includes(face) && !seen.includes(face));
 
       expect(fresh.length).toBeLessThanOrEqual(1);
       seen.push(...fresh);
 
-      // Until the last card is up, nothing tells the result: no outcome, no win, the balance from before.
+      // Until the last card is up, nothing tells the result: no outcome, no win.
       if (seen.length < faces.length) {
         expect(text).not.toContain("Player 5 · banker 7.");
         expect(text).not.toContain("+0.94");
         expect(text).not.toMatch(SPARKLES);
-        expect(text).toContain("12.40 USDC");
       }
 
-      await clock.advance(50);
+      await ui.advance(50);
     }
 
-    const dealt = textOf(await ui.drawn());
+    await ui.advance(EFFECT_MS);
+    await clock.advance(1_000);
+    const dealt = textOf(await ui.drawn({ in: TABLE_KEY }));
 
     expect(seen).toEqual(faces);
     expect(dealt).toContain("Player 5 · banker 7.");
-    expect(dealt).toContain("13.34 USDC");
-    expect(dealt).toMatch(SPARKLES);
+    expect(dealt).toContain("+0.94");
+    expect(textOf(await ui.drawn())).toContain("13.34 USDC");
   });
 
   // On a fast chain the hand is dealt before the mashing stops: n is no key of the hand.

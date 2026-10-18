@@ -1,8 +1,9 @@
 // The table surface module: the game table drawn on the terminal's drawing thread (a `Client` in
-// the fullscreen pane). It takes raw keys once a click gives it the focus, posts the plan key each
-// one presses to the hooks module, and animates on its own frame clock: cards dealt one by one,
-// the active hand pulsing, a win counted up, a loss shaken. The clock stops once nothing moves,
-// and no animation ever holds a key back.
+// the pane or the bottom band). In fullscreen it takes raw keys once a click gives it the focus and
+// posts the plan key each one presses to the hooks module; on the main screen it takes neither. It
+// animates on its own frame clock everywhere: cards dealt one by one, the active hand pulsing, a
+// win counted up, a loss shaken. The clock stops once nothing moves, and no animation ever holds a
+// key back.
 import type { ClientSurface, RenderElement } from "claude-code";
 
 import { DEAL_STEP_MS, dealtCards } from "./cards";
@@ -516,35 +517,39 @@ export default function Table(props: TableProps, surface: ClientSurface<TableSta
   const post = (press: string) => surface.post({ press });
   // A deal sent and not on the table yet: its hands face down, nothing of the last round's result.
   const isDealing = props.dealing !== null;
+  // Where nothing is clicked (the main screen), the table has no Buttons and invites no click: the
+  // letters of the pane's key line play it.
+  const isClickable = props.isClickable;
 
   return (
     <Box flexDirection="column" paddingLeft={shake}>
       {props.dealing !== null
         ? dealingTable(ui, props.dealing, props.cards)
         : gameTable(ui, props.state, props.prefs, props.columns, fx, props.cards, props.wheel, (address, face) =>
-            tileButton(ui, props.keys, address, face, post),
+            isClickable ? tileButton(ui, props.keys, address, face, post) : null,
           )}
       {!isDealing && celebration(ui, round, effect?.kind === "win" ? sinceEffect : null, props.columns - 1)}
       <Box flexDirection="column" marginTop={1}>
         {!isDealing && summary(ui, state, round, spinning !== null)}
         <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-          {prompt(
-            ui,
-            props.keys,
-            {
-              isFocused: state.isFocused && props.isPaneFocused,
-              isSettled: round?.phase === "idle",
-              isPulseOn,
-            },
-            post,
-          )}
+          {isClickable &&
+            prompt(
+              ui,
+              props.keys,
+              {
+                isFocused: state.isFocused && props.isPaneFocused,
+                isSettled: round?.phase === "idle",
+                isPulseOn,
+              },
+              post,
+            )}
           {state.streak >= STREAK_SHOWN_FROM && (
             <Text color={GOLD} bold>
               {`${state.streak} wins in a row`}
             </Text>
           )}
         </Box>
-        {rouletteButtons(ui, props.keys, state.isFocused && props.isPaneFocused, post)}
+        {isClickable && rouletteButtons(ui, props.keys, state.isFocused && props.isPaneFocused, post)}
       </Box>
     </Box>
   );

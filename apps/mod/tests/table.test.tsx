@@ -34,7 +34,7 @@ const renumbered = (state: StateResponse, number: number): StateResponse =>
   state.round === null ? state : { ...state, round: { ...state.round, number } };
 
 describe("the table in the fullscreen pane", () => {
-  test("is a surface module there, led by how to give it the keys; inline it is the still table and the letters", async ($, on) => {
+  test("is a surface module there, led by how to give it the keys; inline it invites no click, the letters play it", async ($, on) => {
     await seat($, on, BASE);
     const full = await $.ui.mount({ plugin: PLUGIN, ...UNFOCUSED });
 
@@ -45,9 +45,15 @@ describe("the table in the fullscreen pane", () => {
     const inline = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE, props: UNFOCUSED.props });
     const text = textOf(await inline.drawn());
 
-    expect(await inline.find({ type: "Client" })).toBeUndefined();
+    // The main screen hands the table neither clicks nor keys: it animates, and says nothing of either.
+    expect(await inline.find({ type: "Client", key: TABLE_KEY })).toBeDefined();
+    expect(textOf(await inline.drawn({ in: TABLE_KEY }))).not.toContain("click");
     expect(text).toContain("ctrl+x tab");
     expect(text).toContain("deal · 0.50");
+
+    // Mines and Tower keep the still board there: its hidden tiles are the Buttons of their letters.
+    await inline.press({ key: "game-mines" });
+    expect(await inline.find({ type: "Client" })).toBeUndefined();
   });
 
   test("a click, then → raises the bet, ↑ adds a hand and Space deals them", async ($, on) => {
@@ -363,4 +369,45 @@ describe("the table in the bottom band of the fullscreen terminal", () => {
     await ui.key({ key: "space" });
     expect(actionsOf(world.calls("POST /v1/play"))).toEqual([{ type: "blackjack_bet", amount: "500000", hands: 1 }]);
   });
+});
+
+describe("the table on the main screen", () => {
+  test("spins the wheel, then counts the win up, as in fullscreen", { timeoutMs: 30_000 }, async ($, on) => {
+    let current: StateResponse = { ...BASE, round: null };
+    const { clock } = await seat($, on, current, { "GET /v1/state": () => ({ status: 200, body: current }) });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+    const table = async () => textOf(await ui.drawn({ in: TABLE_KEY }));
+
+    await ui.press({ key: "game-page" });
+    current = { ...WHEEL, balance: "12895000" };
+    await clock.advance(POLL_MS);
+    await ui.advance(WHEEL_SPIN_MS - 300);
+    expect(await table()).toContain("spinning…");
+
+    // Landed: the result shows, its net still counting up.
+    await ui.advance(400);
+    expect(await table()).toContain("Landed on ×1.50.");
+    expect(await table()).not.toContain("+0.49");
+
+    await ui.advance(EFFECT_MS);
+    expect(await table()).toContain("+0.49");
+    expect(await table()).toContain("balance 12.89");
+  });
+
+  test(
+    "the band at the bottom animates there too, and invites no click",
+    { options: { layout: "bottom" } },
+    async ($, on) => {
+      await seat($, on, BLACKJACK_TURN);
+      const band = await $.ui.mount({
+        plugin: PLUGIN,
+        ...BAND,
+        props: { ...BAND.props, maxRows: 30, bodyColumns: 120, scroll: { offset: 0, bodyRows: 30 } },
+      });
+
+      expect(await band.find({ type: "Client", key: TABLE_KEY })).toBeDefined();
+      expect(textOf(await band.drawn({ in: TABLE_KEY }))).toContain("DEALER");
+      expect(textOf(await band.drawn({ in: TABLE_KEY }))).not.toContain("click");
+    },
+  );
 });

@@ -64,7 +64,7 @@ import {
   remoteView,
   type RemoteView,
 } from "./model";
-import type { IntentResponse, PlayAction, RouletteBet, RoundView, StateResponse } from "./protocol";
+import type { Game, IntentResponse, PlayAction, RouletteBet, RoundView, StateResponse } from "./protocol";
 import { type Settings, SETTING_FIELDS, settingsOf } from "./settings";
 import { renderSetup, SETUP_ROWS } from "./setup";
 import { isTablePost, TABLE_KEY, type TableProps } from "./table-input";
@@ -1277,14 +1277,17 @@ function depositUrlOf(rt: Runtime, state: StateResponse | null): string | null {
   return state?.webUrl === undefined || rt.base === null ? null : trustedVerifyUrl(state.webUrl, rt.base);
 }
 
+/** Games whose board is its keys: on the main screen each hidden tile is the letter Button of its key. */
+const KEYED_BOARDS: ReadonlySet<Game> = new Set(["mines", "tower"]);
+
 /** The table drawn by its surface module, at a card size, `columns` wide, the Wheel drawn as `wheel`. */
 type TableRegion = (cards: CardSize, columns: number, wheel: number | null) => RenderElement;
 
 /**
  * The animated table (table.tsx) for the pane or the band, or null where the still one is drawn.
  * The fullscreen terminal hands raw keys (Space, Enter, arrows) to a clicked `Client`; the main
- * screen never does, so there the table is drawn still and played with the letters.
- * `isPaneFocused`: the pane holds the keyboard; the band never says, so it passes false.
+ * screen hands it neither clicks nor keys, but runs its frame clock: there it deals, spins and
+ * counts up, and the letters play it. `site.isPaneFocused`: the band never says, so false there.
  */
 function tableOf(
   $: EngineInterface,
@@ -1292,11 +1295,16 @@ function tableOf(
   rt: Runtime,
   snap: Snapshot,
   isLight: boolean,
-  isPaneFocused: boolean,
+  site: Pick<TableProps, "isPaneFocused" | "isClickable">,
 ): TableRegion | null {
   const state = snap.remote.state;
 
-  if (e.surface !== "terminal" || e.viewport?.isFullscreen !== true || state === null || rt.isTableBroken) {
+  if (e.surface !== "terminal" || state === null || rt.isTableBroken) {
+    return null;
+  }
+
+  // A `Client` arms no hotkey: where nothing is clicked, a board whose tiles are its keys stays still.
+  if (!site.isClickable && KEYED_BOARDS.has(activeGame(state, snap.prefs))) {
     return null;
   }
 
@@ -1310,7 +1318,7 @@ function tableOf(
     cards,
     wheel,
     isLight,
-    isPaneFocused,
+    ...site,
     dealing: dealingHands(snap),
   });
 
@@ -1514,7 +1522,13 @@ export const register: Register = (on, options) => {
     };
     const snap = await snapshot($, rt);
 
-    return renderPane(ui, snap, pane, commandRunner($, rt), tableOf($, e, rt, snap, look.isLight, e.props.isFocused));
+    return renderPane(
+      ui,
+      snap,
+      pane,
+      commandRunner($, rt),
+      tableOf($, e, rt, snap, look.isLight, { isPaneFocused: e.props.isFocused, isClickable: pane.isClickable }),
+    );
   });
 
   on("ui.message", { element: TABLE_KEY }, async ($, e) => {
@@ -1557,7 +1571,13 @@ export const register: Register = (on, options) => {
         isClickable: isClickable(e.surface, e.viewport?.isFullscreen === true),
       };
 
-      return renderPane(ui, snap, band, commandRunner($, rt), tableOf($, e, rt, snap, look.isLight, false));
+      return renderPane(
+        ui,
+        snap,
+        band,
+        commandRunner($, rt),
+        tableOf($, e, rt, snap, look.isLight, { isPaneFocused: false, isClickable: band.isClickable }),
+      );
     }
 
     return renderBand(ui, snap, { bodyColumns: e.props.bodyColumns }, commandRunner($, rt));

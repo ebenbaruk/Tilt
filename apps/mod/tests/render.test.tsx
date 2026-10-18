@@ -668,11 +668,12 @@ describe("the roulette layout", () => {
   test("on the main screen s and d move the cursor, a puts a chip under it and x takes it off", async ($, on) => {
     await seat($, on, BASE);
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
-    const text = async () => textOf(await ui.drawn());
+    const text = async () => shownText(ui);
 
     await ui.press({ key: "game-roulette" });
     expect((await ui.find({ key: "cursor-up" }))?.props.hotkey).toBe("d");
-    expect(await ui.find({ key: "roulette-straight-17" })).toBeUndefined();
+    // No cell is a Button where no click lands.
+    expect(await ui.find({ key: "table-roulette-straight-17", in: TABLE_KEY })).toBeUndefined();
     await ui.press({ key: "cursor-up" });
     expect(await text()).toContain("on number 1");
     await ui.press({ key: "cursor-down" });

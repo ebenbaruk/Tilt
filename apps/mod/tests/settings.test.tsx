@@ -79,7 +79,7 @@ describe("where the table sits", () => {
       await $.command.run(command());
 
       expect(world.opened).toEqual([]);
-      const band = textOf(await (await $.ui.mount({ plugin: PLUGIN, ...BAND_ROOMY })).drawn());
+      const band = await shownText(await $.ui.mount({ plugin: PLUGIN, ...BAND_ROOMY }));
 
       for (const part of ["DEALER 9 + ?", "▶ YOU 11", "LEADERBOARD", "rtp 99.00%"]) {
         expect(band, part).toContain(part);

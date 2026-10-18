@@ -21,7 +21,20 @@ import {
   TOWER_TURN,
   WHEEL,
 } from "./fixtures";
-import { BAND, command, later, LOGGED_IN, PANE, PANE_INLINE, PLUGIN, seat, shownText, textOf } from "./world";
+import { TABLE_KEY } from "../hooks/table-input";
+import {
+  BAND,
+  command,
+  later,
+  LOGGED_IN,
+  PANE,
+  PANE_INLINE,
+  PANE_STILL,
+  PLUGIN,
+  seat,
+  shownText,
+  textOf,
+} from "./world";
 
 const POLL_MS = 5_000;
 /** Past the longest spin: the wheel and the reels have landed. */
@@ -51,6 +64,9 @@ const themeRow = (value: string): ConfigRow => ({
   isLocked: false,
 });
 
+/** Where the table surface module's region sits in a drawing's tree. */
+const TABLE_REGION = '"type":"Client"';
+
 const BAND_ROOMY = {
   ...BAND,
   props: { ...BAND.props, maxRows: 30, bodyColumns: 120, scroll: { offset: 0, bodyRows: 29 } },
@@ -79,7 +95,7 @@ describe("the table stays when the agent finishes", () => {
     await $.turn.complete(turnEnd);
 
     expect(world.closed).toEqual([]);
-    const pane = textOf(await (await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE })).drawn());
+    const pane = await shownText(await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE }));
 
     expect(pane).toContain("✓ agent finished in 6m 14s · your hand is saved");
     expect(pane).toContain("DEALER");
@@ -235,7 +251,7 @@ describe("around the table", () => {
     await clock.advance(POLL_MS);
     await clock.advance(POLL_MS);
 
-    const text = textOf(await ui.drawn());
+    const text = await shownText(ui);
 
     expect(text).toContain("YOU 19");
     expect(text).not.toContain("session ");
@@ -260,11 +276,11 @@ describe("around the table", () => {
   test("a deposit page off the api's site is not shown", async ($, on) => {
     await seat($, on, { ...BASE, balance: "100000", webUrl: "https://evil.example" });
 
-    // Inline, so no table surface module carries the whole state in its props.
-    const drawn = JSON.stringify(await (await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE })).drawn());
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
 
-    expect(drawn).toContain("Balance too low");
-    expect(drawn).not.toContain("evil.example");
+    expect(await shownText(ui)).toContain("Balance too low");
+    expect(JSON.stringify(await ui.findAll({ type: "Link" }))).not.toContain("evil.example");
+    expect(await shownText(ui)).not.toContain("evil.example");
   });
 
   test("a deal in flight draws the hands face down at once, and nothing else about them", async ($, on) => {
@@ -275,7 +291,7 @@ describe("around the table", () => {
 
     await ui.press({ key: "hands-up" });
     await ui.press({ key: "start" });
-    const text = textOf(await ui.drawn());
+    const text = await shownText(ui);
 
     expect(text).toContain("#1");
     expect(text).toContain("#2");
@@ -294,10 +310,12 @@ describe("tight rooms", () => {
         ...BAND,
         props: { ...BAND.props, maxRows: 12, bodyColumns: 120, scroll: { offset: 0, bodyRows: 11 } },
       };
-      const text = textOf(await (await $.ui.mount({ plugin: PLUGIN, ...band })).drawn());
+      const ui = await $.ui.mount({ plugin: PLUGIN, ...band });
+      const tree = JSON.stringify(await ui.drawn());
 
-      expect(text.indexOf("hit")).toBeGreaterThan(-1);
-      expect(text.indexOf("hit")).toBeLessThan(text.indexOf("DEALER"));
+      expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("DEALER");
+      expect(tree.indexOf('"hit"')).toBeGreaterThan(-1);
+      expect(tree.indexOf('"hit"')).toBeLessThan(tree.indexOf(TABLE_REGION));
     },
   );
 
@@ -317,12 +335,14 @@ describe("tight rooms", () => {
       );
 
     await ui.press({ key: "game-roulette" });
-    const text = textOf(await ui.drawn());
+    const tree = JSON.stringify(await ui.drawn());
+    const table = textOf(await ui.drawn({ in: TABLE_KEY }));
 
     // The keys come first, and the wheel is a row of tiles under the marker, not a framed strip.
-    expect(text.indexOf("chip on number 0")).toBeGreaterThan(-1);
-    expect(text.indexOf("chip on number 0")).toBeLessThan(text.indexOf("1st 12"));
-    expect(text).not.toContain("▲");
+    expect(table).toContain("1st 12");
+    expect(tree.indexOf("chip on number 0")).toBeGreaterThan(-1);
+    expect(tree.indexOf("chip on number 0")).toBeLessThan(tree.indexOf(TABLE_REGION));
+    expect(table).not.toContain("▲");
 
     // Large tiles would push the keys out: the board draws small ones.
     await ui.press({ key: "game-mines" });
@@ -350,10 +370,11 @@ describe("tight rooms", () => {
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
 
     await ui.press({ key: "game-roulette" });
-    const text = textOf(await ui.drawn());
+    const tree = JSON.stringify(await ui.drawn());
 
-    expect(text).toContain("▲");
-    expect(text.indexOf("1st 12")).toBeLessThan(text.indexOf("chip on number 0"));
+    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("▲");
+    expect(tree.indexOf(TABLE_REGION)).toBeGreaterThan(-1);
+    expect(tree.indexOf(TABLE_REGION)).toBeLessThan(tree.indexOf("chip on number 0"));
   });
 });
 
@@ -416,7 +437,7 @@ describe("spins", () => {
 
   test("a roulette spin lands the ball, then names the pocket", async ($, on) => {
     const { show, clock } = await moving($, on, { ...BASE, round: null });
-    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_STILL });
 
     await ui.press({ key: "game-roulette" });
     await show(ROULETTE);
@@ -465,8 +486,7 @@ describe("spins", () => {
       ...SLOTS,
       round: SLOTS.round === null ? null : { ...SLOTS.round, detail: { game: "slots", reels: ["7", "7", "7"] } },
     });
-    const drawn = await (await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE })).drawn();
-    const text = textOf(drawn);
+    const text = await shownText(await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE }));
 
     expect(text).toContain("PAYS × BET");
     expect(text).toContain("7 7 7");
@@ -563,7 +583,7 @@ describe("the wheel", () => {
 
   test("a disc of colored wedges in a gold rim, the pointer over it, the landed wedge under the pointer", async ($, on) => {
     await seat($, on, WHEEL);
-    const drawn = await (await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE })).drawn();
+    const drawn = await (await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE })).drawn({ in: TABLE_KEY });
     const [pointer, ...disc] = wheelRowsOf(drawn);
     const text = textOf(drawn);
 
@@ -599,7 +619,7 @@ describe("the wheel", () => {
       await ui.press({ key });
     }
 
-    const drawn = await ui.drawn();
+    const drawn = await ui.drawn({ in: TABLE_KEY });
     const [, ...disc] = wheelRowsOf(drawn);
 
     expect(disc).toHaveLength(DISC_ROWS);
@@ -618,7 +638,7 @@ describe("the wheel", () => {
       const discRows = async (bodyColumns: number, bodyRows: number) => {
         const pane = { ...PANE_INLINE, props: { ...PANE_INLINE.props, bodyColumns, scroll: { offset: 0, bodyRows } } };
         const ui = await $.ui.mount({ plugin: PLUGIN, ...pane });
-        const rows = wheelLines(await ui.drawn()).length - 1;
+        const rows = wheelLines(await ui.drawn({ in: TABLE_KEY })).length - 1;
 
         await ui.unmount();
 
@@ -641,7 +661,7 @@ describe("the wheel", () => {
       ...PANE_INLINE,
       props: { ...PANE_INLINE.props, bodyColumns: 70, scroll: { offset: 0, bodyRows: 20 } },
     };
-    const lines = wheelLines(await (await $.ui.mount({ plugin: PLUGIN, ...pane })).drawn());
+    const lines = wheelLines(await (await $.ui.mount({ plugin: PLUGIN, ...pane })).drawn({ in: TABLE_KEY }));
     const at = lines[0]?.indexOf("▼") ?? -1;
 
     expect(lines).toHaveLength(2);
@@ -675,7 +695,7 @@ describe("the wheel", () => {
 
   test("a spin lands before the result, the balance and the celebration show, and the result says it once", async ($, on) => {
     const { show, clock } = await moving($, on, { ...BASE, round: null });
-    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_STILL });
     const untold = (text: string) => {
       expect(text).toContain("spinning…");
       expect(text).toContain("10 segments · low risk");
@@ -719,7 +739,7 @@ describe("a win celebrates", () => {
 
   test("fireworks once the reels land on a big win, then the table rests", async ($, on) => {
     const { show, clock } = await moving($, on, BASE);
-    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_STILL });
 
     await ui.press({ key: "game-slots" });
     await show({ ...SLOTS, balance: "16360000" });
@@ -768,7 +788,7 @@ describe("a win celebrates", () => {
   test("the new games celebrate their wins as soon as they show: a dice roll, a tower cash-out", async ($, on) => {
     // Each show is one poll later: a small win's sparkles are over by the next one.
     const { show } = await moving($, on, BASE);
-    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_STILL });
     const renumbered = (state: StateResponse, number: number): StateResponse =>
       state.round === null ? state : { ...state, round: { ...state.round, number } };
 
