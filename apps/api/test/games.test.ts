@@ -1031,6 +1031,44 @@ describe("replay (GET /verify)", () => {
       if (hilo.rank(hilo.drawCard(Rng.fromVrf(seed))) === r) return seed;
     }
   };
+  /** `n` cards, the ten skips first (the search tries them last), then right guesses, cashed out. */
+  const skipsFirst = (n: number): ReplayInput => {
+    const ranks = Array.from({ length: n }, (_, i) => 1 + ((i * 5) % 13));
+    const draws = ranks.map(rankSeed);
+    const guesses = ranks
+      .slice(1)
+      .map((next, i): HiloGuess =>
+        i < hilo.MAX_SKIPS ? "skip" : hilo.isRight("higher", ranks[i], next) ? "higher" : "lower",
+      );
+    const gain = hilo.maxGain(STAKE, 1n << 64n);
+    const played = hilo.play(
+      STAKE,
+      gain,
+      ranks.map((r) => r - 1),
+      guesses,
+    );
+    if (!played || played.ended !== null) throw new Error("a cash-out expected");
+    return {
+      game: "hilo",
+      stake: STAKE,
+      onChain: settle(STAKE, hilo.gross(STAKE, played.fair, gain)),
+      draws,
+      snapshot: null,
+    };
+  };
+
+  it("replays a hilo round without a board whose skips come first", () => {
+    expect(replay(skipsFirst(20)).matches).toBe(true);
+  });
+
+  it("bounds the work of a long hilo round without a board", () => {
+    // The search used to replay every card for each of 100 000 boards: ~1 s here, blocking the api.
+    const input = skipsFirst(30);
+    const started = performance.now();
+    replay(input);
+    replay({ ...input, onChain: { payout: 0n, fee: 0n } });
+    expect(performance.now() - started).toBeLessThan(200);
+  });
 
   it("shows a hilo round with draws missing without failing", () => {
     // The snapshot has two guesses but only the first card was indexed.
