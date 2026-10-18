@@ -6,12 +6,14 @@ const NOTION_VERSION = "2026-03-11";
 const MAX_EMAIL_LENGTH = 254;
 // Deliberately loose: one "@", no spaces, a dot in the domain. The confirmation is the real check.
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// The list gets exported to spreadsheets, where a cell starting with one of these runs as a formula.
+const FORMULA_START = /^[=+\-@]/;
 
 /** The normalized email, or null when it isn't a plausible address. */
 export function parseEmail(input: unknown): string | null {
   if (typeof input !== "string") return null;
   const email = input.trim().toLowerCase();
-  if (email.length > MAX_EMAIL_LENGTH || !EMAIL_PATTERN.test(email)) return null;
+  if (email.length > MAX_EMAIL_LENGTH || !EMAIL_PATTERN.test(email) || FORMULA_START.test(email)) return null;
   return email;
 }
 
@@ -61,14 +63,18 @@ export async function addToWaitlist(email: string, config: NotionConfig, fetchFn
   );
 }
 
-/** Fixed-window limit per key, in memory: per server instance, enough to slow down a script. */
-export function createRateLimiter(limit: number, windowMs: number, now: () => number = Date.now) {
+/** Fixed-window limit per key, in memory: per server instance, enough to slow down a script. A full
+ *  table drops expired keys and otherwise refuses new ones, so flooding it never resets anyone's count. */
+export function createRateLimiter(limit: number, windowMs: number, now: () => number = Date.now, maxKeys = 10_000) {
   const hits = new Map<string, { count: number; resetAt: number }>();
   return function allow(key: string): boolean {
     const time = now();
     const entry = hits.get(key);
     if (!entry || entry.resetAt <= time) {
-      if (hits.size > 10_000) hits.clear();
+      if (!entry && hits.size >= maxKeys) {
+        for (const [k, e] of hits) if (e.resetAt <= time) hits.delete(k);
+        if (hits.size >= maxKeys) return false;
+      }
       hits.set(key, { count: 1, resetAt: time + windowMs });
       return true;
     }

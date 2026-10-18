@@ -51,6 +51,10 @@ export function proxy(request: NextRequest) {
   if (landingOnly && !LANDING_PATHS.test(request.nextUrl.pathname)) {
     return NextResponse.redirect(new URL("/", request.url));
   }
+  // Prefetches go through for the gate above, but get no nonce: it would not match the page's.
+  if (request.headers.get("next-router-prefetch") || request.headers.get("purpose") === "prefetch") {
+    return NextResponse.next();
+  }
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const csp = contentSecurityPolicy(nonce);
   // Next reads the nonce from the request's CSP header while rendering.
@@ -62,13 +66,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    {
-      source: "/((?!_next/static|_next/image|favicon.ico).*)",
-      missing: [
-        { type: "header", key: "next-router-prefetch" },
-        { type: "header", key: "purpose", value: "prefetch" },
-      ],
-    },
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

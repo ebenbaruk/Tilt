@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { POST } from "@/app/api/waitlist/route";
 import { addToWaitlist, createRateLimiter, parseEmail } from "@/lib/waitlist";
 
 const CONFIG = { token: "secret_test", dataSourceId: "ds-1" };
@@ -12,12 +13,19 @@ describe("parseEmail", () => {
     expect(parseEmail("  Ada@Example.COM ")).toBe("ada@example.com");
   });
 
-  it.each([undefined, 42, "", "ada", "ada@example", "a b@example.com", `${"a".repeat(250)}@x.io`])(
-    "rejects %s",
-    (input) => {
-      expect(parseEmail(input)).toBeNull();
-    },
-  );
+  it.each([
+    undefined,
+    42,
+    "",
+    "ada",
+    "ada@example",
+    "a b@example.com",
+    `${"a".repeat(250)}@x.io`,
+    "=cmd@example.com",
+    "+1@example.com",
+  ])("rejects %s", (input) => {
+    expect(parseEmail(input)).toBeNull();
+  });
 });
 
 describe("addToWaitlist", () => {
@@ -57,5 +65,35 @@ describe("createRateLimiter", () => {
     expect([allow("ip"), allow("ip"), allow("ip"), allow("other")]).toEqual([true, true, false, true]);
     time = 1000;
     expect(allow("ip")).toBe(true);
+  });
+});
+
+describe("createRateLimiter when its table is full", () => {
+  it("drops expired keys, refuses new ones otherwise, and never resets a known key", () => {
+    let time = 0;
+    const allow = createRateLimiter(1, 1000, () => time, 2);
+    expect([allow("a"), allow("b"), allow("c")]).toEqual([true, true, false]);
+    expect(allow("a")).toBe(false);
+    time = 1000;
+    expect(allow("c")).toBe(true);
+  });
+});
+
+describe("POST /api/waitlist", () => {
+  const post = (headers: Record<string, string>) =>
+    POST(
+      new Request("https://tilt.test/api/waitlist", { method: "POST", headers, body: JSON.stringify({ email: "x" }) }),
+    );
+
+  it.each<Record<string, string>>([
+    { "content-type": "application/json" },
+    { origin: "https://evil.test", "content-type": "application/json" },
+    { origin: "https://tilt.test", "content-type": "text/plain" },
+  ])("refuses a request not sent by our own form: %o", async (headers) => {
+    expect((await post(headers)).status).toBe(403);
+  });
+
+  it("accepts our own form's request", async () => {
+    expect((await post({ origin: "https://tilt.test", "content-type": "application/json" })).status).toBe(400);
   });
 });
