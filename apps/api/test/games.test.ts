@@ -19,6 +19,7 @@ import * as roulette from "../src/games/roulette";
 import { settle } from "../src/games/settlement";
 import * as slots from "../src/games/slots";
 import * as tower from "../src/games/tower";
+import { buildRoundView } from "../src/games/view";
 import * as wheel from "../src/games/wheel";
 import { PlayActionSchema } from "../src/schemas";
 import vectors from "./fixtures/rust-vectors.json";
@@ -1020,6 +1021,46 @@ describe("replay (GET /verify)", () => {
     expect(cash).toMatchObject({ matches: true, gross: BigInt(cashedOut.gross), outcome: { cards: cashedOut.cards } });
     const bust = replay({ ...multiInput("hilo", busted), snapshot: null });
     expect(bust).toMatchObject({ matches: true, gross: 0n, outcome: { busted: true, cards: busted.cards } });
+  });
+
+  /** A VRF output whose card has rank `r`. */
+  const rankSeed = (r: number) => {
+    for (let i = 0; ; i++) {
+      const seed = new Uint8Array(32);
+      new DataView(seed.buffer).setUint32(0, i, true);
+      if (hilo.rank(hilo.drawCard(Rng.fromVrf(seed))) === r) return seed;
+    }
+  };
+
+  it("shows a hilo round with draws missing without failing", () => {
+    // The snapshot has two guesses but only the first card was indexed.
+    const snapshot: Outcome = {
+      game: "hilo",
+      cards: [3, 20, 7],
+      guesses: ["higher", "skip"],
+      pending: null,
+      busted: false,
+      maxGain: "1000000",
+    };
+    const result = replay({
+      game: "hilo",
+      stake: STAKE,
+      onChain: { payout: 0n, fee: 0n },
+      draws: [rankSeed(4)],
+      snapshot,
+    });
+    expect(result).toMatchObject({ matches: false, outcome: { guesses: [] } });
+    const view = buildRoundView({
+      player: "11111111111111111111111111111111",
+      number: 2,
+      status: { kind: "idle" },
+      stake: STAKE,
+      payout: result.settlement.payout,
+      fee: result.settlement.fee,
+      outcome: result.outcome,
+      settledSignature: "x",
+    });
+    expect(view.detail).toMatchObject({ game: "hilo", guesses: [] });
   });
 
   it("does not match a hilo round with a draw missing or after the round ended, or other guesses", () => {

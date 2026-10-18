@@ -321,14 +321,16 @@ const MAX_HILO_STATES = 100_000;
 const UNCAPPED = (1n << 64n) - 1n;
 
 /** Plays `guesses` on the cards the draws give. A cash-out (the round did not end by itself)
- *  needs a right guess. */
+ *  needs a right guess. An impossible candidate is still shown, so it keeps only guesses these
+ *  cards can play. */
 function hiloCandidate(cards: number[], guesses: HiloGuess[], stake: bigint, gain: bigint): Candidate {
   const played = guesses.length === cards.length - 1 ? hilo.play(stake, gain, cards, guesses) : null;
   const gross = played ? (played.ended ?? hilo.gross(stake, played.fair, gain)) : 0n;
+  const prefix = guesses.slice(0, cards.length - 1);
   const outcome: HiloOutcome = {
     game: "hilo",
     cards,
-    guesses,
+    guesses: played || hilo.play(stake, gain, cards, prefix) ? prefix : [],
     pending: null,
     busted: played?.busted ?? false,
     maxGain: gain.toString(),
