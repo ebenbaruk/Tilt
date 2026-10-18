@@ -324,12 +324,26 @@ export class TiltChain {
     }
   }
 
-  /** Raises the player's win cap on Solana by `amount`, then waits for the rollup to see it.
-   *  A bankroll too small to cover it is the program's VaultTooSmall. */
-  private async raiseWinCap(player: PublicKey, amount: bigint): Promise<void> {
+  /** Brings the player's win cap to what the refused move needs, `short` above the cap the rollup
+   *  checked it against, then waits for the rollup to see it. Solana is raised only by what its
+   *  own cap lacks: after a raise the rollup has not seen yet, the shortfall includes it, and it
+   *  is not reserved twice. A bankroll too small to cover it is the program's VaultTooSmall. */
+  private async raiseWinCap(player: PublicKey, short: bigint): Promise<void> {
     const ledger = await this.fetchLedger(player);
-    if (!ledger) throw new IntentError("ACCOUNT_NOT_OPEN", "no account yet: deposit first");
-    const target = BigInt(ledger.maxWin.toString()) + amount;
+    const seen = await this.rollupProgram.account.ledger.fetchNullable(ledgerAddress(player));
+    if (!ledger || !seen) throw new IntentError("ACCOUNT_NOT_OPEN", "no account yet: deposit first");
+    const target = BigInt(seen.maxWin.toString()) + short;
+    const amount = target - BigInt(ledger.maxWin.toString());
+    if (amount > 0n) await this.sendRaiseWinCap(player, amount);
+    for (const end = Date.now() + WIN_CAP_READY_MS; Date.now() < end; await sleep(TABLE_POLL_MS)) {
+      const latest = await this.rollupProgram.account.ledger.fetchNullable(ledgerAddress(player));
+      if (latest && BigInt(latest.maxWin.toString()) >= target) return;
+    }
+    // Fail closed: the move would only be refused again. A retry finds the raise on Solana.
+    throw new IntentError("NETWORK_ERROR", "the rollup has not seen the raised win cap yet");
+  }
+
+  private async sendRaiseWinCap(player: PublicKey, amount: bigint): Promise<void> {
     const tx = await this.program.methods.raiseWinCap(new BN(amount.toString()))
       .accountsPartial({ relayer: this.relayer.publicKey, vault: this.vault, vaultToken: vaultTokenAddress(), ledger: ledgerAddress(player) })
       .transaction();
@@ -339,10 +353,6 @@ export class TiltChain {
       // Nothing of the player's move went out; a raise that landed anyway only reserves bankroll.
       if (e instanceof UnconfirmedError) throw new IntentError("NETWORK_ERROR", `win cap raise unconfirmed: ${e.message}`);
       throw e;
-    }
-    for (const end = Date.now() + WIN_CAP_READY_MS; Date.now() < end; await sleep(TABLE_POLL_MS)) {
-      const seen = await this.rollupProgram.account.ledger.fetchNullable(ledgerAddress(player));
-      if (seen && BigInt(seen.maxWin.toString()) >= target) return;
     }
   }
 
