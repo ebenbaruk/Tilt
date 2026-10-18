@@ -173,11 +173,6 @@ export function hiloChance(guess: "higher" | "lower", rank: number): number {
   return Math.round((winning * 100) / RANKS);
 }
 
-/** "A♠ 10♥", for one-line summaries. */
-export function cardsInline(cards: readonly Card[]): string {
-  return cards.map(cardFace).join(" ");
-}
-
 const RED_POCKETS = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
 
 export function pocketColor(pocket: number): "green" | "red" | "black" {

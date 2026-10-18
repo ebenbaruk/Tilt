@@ -106,6 +106,10 @@ const BAND_ROOMY = {
   props: { ...BAND.props, maxRows: 30, bodyColumns: 120, scroll: { offset: 0, bodyRows: 29 } },
 };
 
+/** The same round under another number: a new round for the table. */
+const numbered = (state: StateResponse, number: number): StateResponse =>
+  state.round === null ? state : { ...state, round: { ...state.round, number } };
+
 /** A logged-in session whose state the test changes as it goes, polled every `POLL_MS`. */
 async function moving($: Engine, on: On, first: StateResponse) {
   let current = first;
@@ -713,8 +717,6 @@ describe("one draw plays out before the result shows", () => {
   });
 
   const hasSparkles = (text: string) => /[✦✧✺✹⋆]/.test(text);
-  const numbered = (state: StateResponse, number: number): StateResponse =>
-    state.round === null ? state : { ...state, round: { ...state.round, number } };
 
   test("a dice roll tumbles, rests on the roll, then the verdict, the balance and the sparkles show", async ($, on) => {
     const { show, clock } = await moving($, on, { ...BASE, round: null });
@@ -1295,6 +1297,37 @@ describe("the result says what won", () => {
     expect(slotsOutcome(["♥", "★", "♥"])).toBe("Two ♥ pay ×4.");
     expect(slotsOutcome(["♥", "♥", "♥"])).toBe("♥ ♥ ♥ pays ×10.");
     expect(slotsOutcome(["7", "7", "★"])).toBe("No line.");
+  });
+});
+
+describe("the compact band follows the round as the table plays it", () => {
+  test("a rise moves, a deal says nothing of its cards, then each says its result and verdict", async ($, on) => {
+    const { show, clock } = await moving($, on, { ...BASE, round: null });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...BAND });
+    const band = async () => textOf(await ui.drawn());
+
+    expect(await band()).toContain("blackjack · no hand yet");
+    await ui.press({ key: "game-limbo" });
+    expect(await band()).toContain("limbo · no round yet");
+    await show(LIMBO);
+    expect(await band()).toMatch(/limbo · ×1\.\d\d…/);
+    await clock.advance(SPIN_OVER_MS);
+    expect(await band()).toContain("×1.53 · −1.00 LOSE");
+  });
+
+  test("a baccarat deal says nothing of its cards, then the points, who won and the verdict", async ($, on) => {
+    let current: StateResponse = { ...BASE, round: null };
+    const { clock } = await seat($, on, current, { "GET /v1/state": () => ({ status: 200, body: current }) });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...BAND });
+    const band = async () => textOf(await ui.drawn());
+
+    await ui.press({ key: "game-baccarat" });
+    current = BACCARAT;
+    await clock.advance(POLL_MS);
+    expect(await band()).toContain("baccarat · dealing…");
+    expect(await band()).not.toContain("player 5");
+    await clock.advance(SPIN_OVER_MS);
+    expect(await band()).toContain("baccarat · banker · player 5 · banker 7 WINS · +0.94 WIN");
   });
 });
 

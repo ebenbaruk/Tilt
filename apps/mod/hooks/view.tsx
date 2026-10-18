@@ -6,7 +6,6 @@ import { blackjackOutcome, blackjackSummary, blackjackTable, handColumns, STILL,
 import { type CardSize, DEAL_STEP_MS, faceDownCards, handCards, handRow, LARGE_CARD_ROWS } from "./cards";
 import {
   cardFace,
-  cardsInline,
   chipsTotal,
   cleanText,
   formatCountdown,
@@ -30,12 +29,16 @@ import {
   KENO_DRAW_MS,
   kenoTable,
   LIMBO_RISE_MS,
+  limboAt,
   limboTable,
+  litAt,
+  rollAt,
   rollText,
   sentRound,
   WHEEL_SPIN_MS,
   wheelDisc,
   wheelRows,
+  wheelSegmentAt,
   wheelTable,
 } from "./quick";
 import {
@@ -44,6 +47,8 @@ import {
   minesBoardRows,
   MINE_GLYPH,
   minesTable,
+  pocketUnder,
+  reelsAt,
   rouletteChip,
   rouletteRows,
   ROULETTE_SPIN_MS,
@@ -53,6 +58,7 @@ import {
   slotsOutcome,
   slotsTable,
   type TileButton,
+  wheelPosition,
 } from "./games";
 import {
   activeGame,
@@ -64,6 +70,7 @@ import {
   cursorBet,
   GAME_LABELS,
   heldKeys,
+  KENO_DRAWN,
   type KeyAction,
   keyRow,
   MINES_COLUMNS,
@@ -1721,35 +1728,75 @@ export function renderPane(
   );
 }
 
+/** A spin's bets in a word: "red", or "3 bets". */
+function rouletteBets(detail: Extract<RoundView["detail"], { game: "roulette" }>): string {
+  const [only] = detail.chips;
+
+  return detail.chips.length === 1 && only !== undefined ? rouletteBetLabel(only.bet) : `${detail.chips.length} bets`;
+}
+
+/** What a game calls a round not played yet: "no roll yet", "no spin yet". */
+const NOT_YET: Partial<Record<Game, string>> = {
+  dice: "no roll yet",
+  flip: "no flip yet",
+  roulette: "no spin yet",
+  slots: "no spin yet",
+  wheel: "no spin yet",
+  keno: "no draw yet",
+  limbo: "no round yet",
+  mines: "no board yet",
+  tower: "no climb yet",
+};
+
+/** How the band names a settled round's verdict, as the tables tag it. */
+const verdictWord = (net: string): string => (BigInt(net) > 0n ? "WIN" : BigInt(net) < 0n ? "LOSE" : "PUSH");
+
+/** What moves on the table while a round plays out, as the band follows it: null at rest. */
+export type BandMotion = Pick<Snapshot, "spinElapsed" | "revealed">;
+
 /**
- * The current hand in a few words, for the band. `isLanded`: the spin or the cards have played
- * out; until then the draw (the ball, the reels, the roll…) and the net are left out, as the table
- * holds them back.
+ * The current hand in a few words, for the band. While the spin or the cards play out it moves as
+ * the table does (the pocket under the marker, the reels, the roll, the rise, the numbers lit, a
+ * deal's cards unsaid); the draw's result and the net wait for them, as the table holds them back.
  */
-export function handSummary(state: StateResponse, prefs: Prefs, isLanded: boolean): string {
+export function handSummary(state: StateResponse, prefs: Prefs, motion: BandMotion): string {
   const game = activeGame(state, prefs);
   const round = roundOf(state, game);
   const label = GAME_LABELS[game].toLowerCase();
+  const isLanded = motion.spinElapsed === null && motion.revealed === null;
 
   if (round === null) {
-    return `${label} · no hand yet`;
+    return `${label} · ${NOT_YET[game] ?? "no hand yet"}`;
   }
 
-  const net = round.phase === "idle" && isLanded ? `${SEPARATOR}${formatSigned(round.net)}` : "";
+  const net =
+    round.phase === "idle" && isLanded ? `${SEPARATOR}${formatSigned(round.net)} ${verdictWord(round.net)}` : "";
+  const moving = isLanded ? null : movingSummary(round, motion);
+
+  if (moving !== null) {
+    return `${label} · ${moving}`;
+  }
+
   const detail = isLanded ? round.detail : undrawn(round.detail);
 
   switch (detail.game) {
     case "blackjack":
       return `${label} · ${blackjackSummary(detail)}${net}`;
-    case "roulette": {
-      const [only] = detail.chips;
-      const bets =
-        detail.chips.length === 1 && only !== undefined ? rouletteBetLabel(only.bet) : `${detail.chips.length} chips`;
+    case "roulette":
+      return `${label} · ${rouletteBets(detail)}${detail.number === null ? "" : ` · ball ${detail.number}`}${net}`;
+    case "baccarat": {
+      const winner =
+        detail.playerPoints === detail.bankerPoints
+          ? "tie"
+          : detail.playerPoints > detail.bankerPoints
+            ? "player"
+            : "banker";
+      const tag = (side: "player" | "banker") => (winner === side ? " WINS" : winner === "tie" ? " TIE" : "");
 
-      return `${label} · ${bets}${detail.number === null ? "" : ` · ball ${detail.number}`}${net}`;
+      return detail.player.length === 0
+        ? `${label} · ${detail.bet} · dealing…`
+        : `${label} · ${detail.bet} · player ${detail.playerPoints}${tag("player")} · banker ${detail.bankerPoints}${tag("banker")}${net}`;
     }
-    case "baccarat":
-      return `${label} · ${detail.bet} · ${cardsInline(detail.player)} vs ${cardsInline(detail.banker)}${net}`;
     case "slots":
       return `${label}${detail.reels === null ? "" : ` · ${detail.reels.map(cleanText).join(" ")}`}${net}`;
     case "mines":
@@ -1783,6 +1830,51 @@ export function handSummary(state: StateResponse, prefs: Prefs, isLanded: boolea
     }
     case "tower":
       return `${label} · ${detail.difficulty} · level ${detail.climbed.length} · ×${detail.multiplier}${net}`;
+  }
+}
+
+/**
+ * The band's words for a round still playing out on the table, each frame a step as the table's;
+ * null where there is nothing moving to follow (a hand waiting on the player).
+ */
+function movingSummary(round: RoundView, motion: BandMotion): string | null {
+  const detail = round.detail;
+  const elapsed = motion.spinElapsed;
+  const isDrawing = round.phase === "drawing";
+
+  // A deal's cards turn one by one on the table: their faces and totals are not said before.
+  if (motion.revealed !== null) {
+    return detail.game === "hilo" ? "drawing…" : "dealing…";
+  }
+
+  switch (detail.game) {
+    case "roulette":
+      return `${rouletteBets(detail)} · ⟳ ${pocketUnder(wheelPosition(detail.number, elapsed, isDrawing))}`;
+    case "slots":
+      return detail.reels === null ? "spinning…" : `${reelsAt(detail.reels, elapsed).map(cleanText).join(" ")} …`;
+    case "dice": {
+      const roll = rollAt(detail.roll, elapsed);
+
+      return roll === null ? "rolling…" : `roll ${rollText(roll)}…`;
+    }
+    case "limbo":
+      return detail.result === null ? "drawing…" : `×${limboAt(detail.result, elapsed)}…`;
+    case "flip":
+      return "flipping…";
+    case "keno": {
+      const lit = litAt(detail.drawn, elapsed);
+      const hits = lit.filter((number) => detail.picks.includes(number)).length;
+
+      return `${lit.length}/${KENO_DRAWN} drawn · ${hits} ${hits === 1 ? "hit" : "hits"}`;
+    }
+    case "wheel": {
+      const under = Math.round(wheelSegmentAt(detail.segments, detail.segment, elapsed, isDrawing));
+      const pays = detail.multipliers[((under % detail.segments) + detail.segments) % detail.segments];
+
+      return pays === undefined ? "spinning…" : `⟳ ×${pays}`;
+    }
+    default:
+      return null;
   }
 }
 
@@ -1876,7 +1968,7 @@ export function renderBand(ui: Ui, snap: Snapshot, layout: BandLayout, onCommand
           <Text color={FG4} wrap="truncate-end">
             {state.blocked !== null
               ? `play paused · ${cleanText(state.blocked)}`
-              : handSummary(state, snap.prefs, snap.spinElapsed === null && snap.revealed === null)}
+              : handSummary(state, snap.prefs, snap)}
           </Text>
         )}
         {agent}

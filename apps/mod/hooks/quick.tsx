@@ -466,7 +466,7 @@ const KENO_STEP_MS = 80;
 export const KENO_DRAW_MS = KENO_DRAWN * KENO_STEP_MS;
 
 /** The drawn numbers lit `elapsed` into the draw, in the order drawn; a null `elapsed` lights them all. */
-function litAt(drawn: readonly number[] | null, elapsed: number | null): readonly number[] {
+export function litAt(drawn: readonly number[] | null, elapsed: number | null): readonly number[] {
   if (drawn === null) {
     return [];
   }

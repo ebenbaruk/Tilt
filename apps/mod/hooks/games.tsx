@@ -60,6 +60,9 @@ const FULL_SPEED = (3 * SPIN_POCKETS) / ROULETTE_SPIN_MS;
 
 const wheelAt = (index: number): number => WHEEL[((index % WHEEL.length) + WHEEL.length) % WHEEL.length] ?? 0;
 
+/** The pocket under the marker with the wheel at `position` (`wheelPosition`). */
+export const pocketUnder = (position: number): number => wheelAt(Math.round(position));
+
 /**
  * Where the wheel stands under the marker, in pockets around it from 0 (a fraction is part way to
  * the next), `elapsed` into a spin: at full speed, steadily, while the chain draws; once it has,
@@ -623,6 +626,10 @@ function reelSymbol(symbol: string, reel: number, elapsed: number | null): { sym
 
   return { symbol: passing, isMoving: true };
 }
+
+/** The symbols the reels show `elapsed` into a spin onto `reels`. */
+export const reelsAt = (reels: readonly string[], elapsed: number | null): string[] =>
+  reels.map((symbol, reel) => reelSymbol(symbol, reel, elapsed).symbol);
 
 /** The pay line the reels landed on, if they pay: three of a kind, or two cherries. */
 function paidLine(reels: readonly string[]): (typeof PAYS)[number] | null {
