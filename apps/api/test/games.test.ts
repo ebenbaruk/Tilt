@@ -79,8 +79,18 @@ describe("settlement", () => {
     expect(settle(1_000_000n, 2_000_000n)).toEqual({ payout: 1_990_000n, fee: 10_000n });
     expect(settle(1_000_000n, 1_000_000n)).toEqual({ payout: 1_000_000n, fee: 0n });
     expect(settle(1_000_000n, 0n)).toEqual({ payout: 0n, fee: 0n });
-    expect(settle(1_000n, 1_199n).fee).toBe(1n);
-    expect(settle(1_000n, 1_099n).fee).toBe(0n);
+    expect(settle(1_000n, 1_299n).fee).toBe(2n);
+  });
+
+  it("takes at least 1 unit of a win, never more than its gain", () => {
+    expect(settle(1_000n, 1_099n).fee).toBe(1n);
+    expect(settle(1_000n, 1_001n)).toEqual({ payout: 1_000n, fee: 1n });
+    fc.assert(
+      fc.property(fc.bigInt(1n, 10n ** 12n), fc.bigInt(1n, 10n ** 6n), (stake, gain) => {
+        const { payout, fee } = settle(stake, stake + gain);
+        return fee >= 1n && payout >= stake && payout + fee === stake + gain;
+      }),
+    );
   });
 });
 

@@ -9941,7 +9941,7 @@ export type Tilt = {
           {
             "name": "minBet",
             "docs": [
-              "Smallest stake; below it the 1% fee would round to nothing while Tilt still pays the round."
+              "Smallest stake. Whatever a round gains, a win pays Tilt at least `MIN_FEE` (`settle`)."
             ],
             "type": "u64"
           },

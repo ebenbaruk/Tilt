@@ -52,7 +52,7 @@ scripts/
 
 Les jeux à un tirage refusent (`RoundGainTooHigh`) un choix dont le gain max dépasse `max_round_gain`, sans jamais le plafonner (ce qui changerait le RTP). Mines, Hilo et Tower plafonnent le gain et s'encaissent seuls au plafond.
 
-Chaque tirage a un identifiant de requête (`round.request_id`) transmis avec la requête VRF : seule la réponse à la requête en cours peut jouer la manche, une réponse tardive est refusée. À la fin de chaque manche, l'événement `RoundSettled` (jeu, mise, gain, frais, aléa) est émis dans le rollup ; en rejouant l'aléa dans les règles des jeux, on retrouve le résultat. Les 1 % Tilt sont pris sur le gain de chaque manche gagnante, jamais sur la mise ni sur une perte ou une égalité.
+Chaque tirage a un identifiant de requête (`round.request_id`) transmis avec la requête VRF : seule la réponse à la requête en cours peut jouer la manche, une réponse tardive est refusée. À la fin de chaque manche, l'événement `RoundSettled` (jeu, mise, gain, frais, aléa) est émis dans le rollup ; en rejouant l'aléa dans les règles des jeux, on retrouve le résultat. Les 1 % Tilt sont pris sur le gain de chaque manche gagnante (arrondis vers le bas, au moins 1 unité : un gain de moins de 100 unités paie 1 unité), jamais sur la mise ni sur une perte ou une égalité.
 
 ## Parcours
 
