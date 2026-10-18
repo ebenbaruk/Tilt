@@ -1,7 +1,7 @@
 import type { ConfigRow, On, TurnCompleteInput } from "claude-code";
 import { describe, type Engine, expect, test } from "claude-code/testing";
 
-import { baccaratOutcome, ROULETTE_SPIN_MS, TILE_FILL, wheelPosition } from "../hooks/games";
+import { baccaratOutcome, ROULETTE_SPIN_MS, slotsOutcome, TILE_FILL, wheelPosition } from "../hooks/games";
 import {
   DICE_ROLL_MS,
   flipMs,
@@ -1072,5 +1072,12 @@ describe("the result says what won", () => {
     // A tie pays the tie bet, and gives a player or banker bet back.
     expect(baccaratOutcome(coup("tie", 5, 5))).toBe("Tie at 5: pays ×9.");
     expect(baccaratOutcome(coup("player", 5, 5))).toBe("Tie at 5: player bet returned.");
+  });
+
+  test("slots: the line the reels hit and what it pays", () => {
+    expect(slotsOutcome(["7", "7", "7"])).toBe("7 7 7 pays ×250.");
+    expect(slotsOutcome(["♥", "★", "♥"])).toBe("Two ♥ pay ×4.");
+    expect(slotsOutcome(["♥", "♥", "♥"])).toBe("♥ ♥ ♥ pays ×10.");
+    expect(slotsOutcome(["7", "7", "★"])).toBe("No line.");
   });
 });

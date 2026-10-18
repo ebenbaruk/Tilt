@@ -327,7 +327,7 @@ export const SLOTS: StateResponse = {
     payout: "5000000",
     fee: "40000",
     net: "3960000",
-    detail: { game: "slots", reels: ["7", "7", "★"] },
+    detail: { game: "slots", reels: ["◎", "◎", "◎"] },
   }),
 };
 

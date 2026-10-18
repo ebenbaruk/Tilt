@@ -17,6 +17,7 @@ import {
   DICE,
   HILO_TURN,
   KENO,
+  SLOTS,
   WHEEL,
 } from "./fixtures";
 import { BAND, FIRST_TICK_MS, movingTable, PANE, PANE_INLINE, PLUGIN, seat, textOf, type Answer } from "./world";
@@ -380,6 +381,18 @@ describe("the table moves", () => {
       current = drawing;
       await clock.advance(POLL_MS);
     }
+  });
+
+  test("a slots spin turns the reels from the key on: the last spin's line goes", async ($, on) => {
+    const { world } = await seat($, on, SLOTS, { "POST /v1/play": () => SUBMITTED });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+    const table = async () => textOf(await ui.drawn({ in: TABLE_KEY }));
+
+    expect(await table()).toContain("◎ ◎ ◎ pays ×5.");
+    await ui.pointer(CLICK);
+    await ui.key({ key: "space" });
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([{ type: "slots_spin", amount: "500000" }]);
+    expect(await table()).not.toContain("pays ×5.");
   });
 
   test("a hilo guess lies face down from the key on, turns over a step after it lands, and its result waits for it", async ($, on) => {

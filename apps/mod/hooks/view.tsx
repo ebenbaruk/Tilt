@@ -47,6 +47,7 @@ import {
   ROULETTE_SPIN_MS,
   rouletteTable,
   SLOTS_SPIN_MS,
+  slotsOutcome,
   slotsTable,
   type TileButton,
 } from "./games";
@@ -397,7 +398,7 @@ function outcomeText(round: RoundView): string {
     case "baccarat":
       return baccaratOutcome(round.detail);
     case "slots":
-      return "";
+      return round.detail.reels === null ? "" : slotsOutcome(round.detail.reels);
     case "mines":
       return minesOutcome(round.detail);
     case "dice":

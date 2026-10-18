@@ -582,14 +582,25 @@ function reelSymbol(symbol: string, reel: number, elapsed: number | null): { sym
 }
 
 /** The pay line the reels landed on, if they pay: three of a kind, or two cherries. */
-function paidLine(reels: readonly string[]): string | null {
+function paidLine(reels: readonly string[]): (typeof PAYS)[number] | null {
   const [a, b, c] = reels;
 
   if (a === b && b === c) {
-    return PAYS.find((pay) => !pay.pair && pay.symbol === a)?.line ?? null;
+    return PAYS.find((pay) => !pay.pair && pay.symbol === a) ?? null;
   }
 
-  return reels.filter((symbol) => symbol === "♥").length === 2 ? "♥ ♥ ·" : null;
+  return reels.filter((symbol) => symbol === "♥").length === 2 ? (PAYS.find((pay) => pay.pair) ?? null) : null;
+}
+
+/** A landed spin in a sentence: the line it hit and what that pays, "7 7 7 pays ×250.", "Two ♥ pay ×4.", or "No line." */
+export function slotsOutcome(reels: readonly string[]): string {
+  const pay = paidLine(reels);
+
+  if (pay === null) {
+    return "No line.";
+  }
+
+  return pay.pair === true ? `Two ${pay.symbol} pay ×${pay.times}.` : `${pay.line} pays ×${pay.times}.`;
 }
 
 function reelWindow(ui: Ui, symbol: string, isLit: boolean, isMoving: boolean, isIdle: boolean): RenderElement {
@@ -636,7 +647,7 @@ export function slotsTable(ui: Ui, round: RoundView | null, size: CardSize, spin
   const isIdle = reels === null;
   const shown = (reels ?? IDLE_REELS).map((symbol, reel) => reelSymbol(symbol, reel, spinElapsed));
   const isSpinning = shown.some((reel) => reel.isMoving);
-  const lit = isIdle || isSpinning ? null : paidLine(reels);
+  const lit = isIdle || isSpinning ? null : (paidLine(reels)?.line ?? null);
 
   if (size === "small") {
     return (
