@@ -803,12 +803,12 @@ describe("the twelve games", () => {
     }
   });
 
-  test("hilo in turn: h higher and l lower at what a right guess pays, s skip, z cash out", () => {
+  test("hilo in turn: h higher and l lower, named as the table names them, at what a right guess pays, s skip, z cash out", () => {
     expect(
       plays(fixtures.HILO_TURN)
         .map((key) => `${key.hotkey} ${key.label}`)
         .join(" | "),
-    ).toBe("h higher ×2.2151 | l lower ×3.9871 | s skip · 10 left | z cash out · 1.53");
+    ).toBe("h higher or same ×2.2151 | l lower or same ×3.9871 | s skip · 10 left | z cash out · 1.53");
     expect(keyOf(fixtures.HILO_TURN, "hilo-higher")?.command).toEqual({
       kind: "play",
       action: { type: "hilo_guess", guess: "higher" },
@@ -820,11 +820,11 @@ describe("the twelve games", () => {
     // An ace: higher is strict, so offered at ×13/12; no skip left; no right guess to cash out yet.
     expect(plays(fixtures.HILO_ACE).map((key) => `${key.hotkey} ${key.label}`)).toEqual([
       "h higher ×1.0616",
-      "l lower ×12.7400",
+      "l lower or same ×12.7400",
     ]);
     // A king: lower is strict.
     expect(plays(fixtures.HILO_KING).map((key) => `${key.hotkey} ${key.label}`)).toEqual([
-      "h higher ×12.7400",
+      "h higher or same ×12.7400",
       "l lower ×1.0616",
     ]);
     // A card being drawn holds the guesses.

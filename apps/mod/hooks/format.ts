@@ -142,6 +142,29 @@ export function cardFace(card: Card): string {
   return `${rankLabel(card.rank)}${card.suit}`;
 }
 
+/** The ranks the api sends for an ace and a king, and how many ranks there are. */
+const ACE_RANK = 1;
+const KING_RANK = 13;
+const RANKS = 13;
+
+/**
+ * A Hilo guess as the program plays it on the current card's rank: "higher or same" and "lower or
+ * same", but a strict "higher" on an ace and a strict "lower" on a king (chain/…/games/hilo.rs).
+ */
+export function hiloGuessName(guess: "higher" | "lower", rank: number): string {
+  const isStrict = guess === "higher" ? rank === ACE_RANK : rank === KING_RANK;
+
+  return isStrict ? guess : `${guess} or same`;
+}
+
+/** The chance a Hilo guess is right on the current card's rank, in whole percent: the ranks that win of the 13. */
+export function hiloChance(guess: "higher" | "lower", rank: number): number {
+  const winning =
+    guess === "higher" ? (rank === ACE_RANK ? RANKS - 1 : RANKS + 1 - rank) : rank === KING_RANK ? RANKS - 1 : rank;
+
+  return Math.round((winning * 100) / RANKS);
+}
+
 /** "A♠ 10♥", for one-line summaries. */
 export function cardsInline(cards: readonly Card[]): string {
   return cards.map(cardFace).join(" ");

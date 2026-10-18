@@ -10,6 +10,8 @@ import {
   formatSigned,
   formatUsdc,
   cashOutPayout,
+  hiloChance,
+  hiloGuessName,
   diceMultiplier,
   flipMultiplier,
   scaledDecimal,
@@ -108,6 +110,18 @@ describe("time", () => {
 describe("cards and pockets", () => {
   test("face cards and aces by letter, the rest by number", () => {
     expect([1, 11, 12, 13, 7].map(rankLabel)).toEqual(["A", "J", "Q", "K", "7"]);
+  });
+
+  test("a hilo guess is or-same, strict higher on an ace and strict lower on a king, at the ranks that win of 13", () => {
+    expect(hiloGuessName("higher", 9)).toBe("higher or same");
+    expect(hiloGuessName("lower", 9)).toBe("lower or same");
+    expect(hiloGuessName("higher", 1)).toBe("higher");
+    expect(hiloGuessName("lower", 13)).toBe("lower");
+    expect(hiloGuessName("lower", 1)).toBe("lower or same");
+    // 9 to K is 5 ranks, A to 9 is 9; an ace's higher is the 12 others, a king's lower too.
+    expect([hiloChance("higher", 9), hiloChance("lower", 9)]).toEqual([38, 69]);
+    expect([hiloChance("higher", 1), hiloChance("lower", 1)]).toEqual([92, 8]);
+    expect([hiloChance("higher", 13), hiloChance("lower", 13)]).toEqual([8, 92]);
   });
 
   test("european wheel colors", () => {

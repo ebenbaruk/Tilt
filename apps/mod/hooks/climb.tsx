@@ -2,8 +2,9 @@
 // and the table surface module alike.
 import type { RenderElement } from "claude-code";
 
-import { type CardSize, handCards } from "./cards";
-import { cardFace, cashOutPayout, formatUsdc, towerMultiplier } from "./format";
+import type { TableFx } from "./blackjack";
+import { type CardSize, faceDownCards, faceDownOf, handCards } from "./cards";
+import { cardFace, cashOutPayout, formatUsdc, hiloChance, hiloGuessName, towerMultiplier } from "./format";
 import {
   MINE_GLYPH,
   pendingLook,
@@ -18,36 +19,124 @@ import {
 import { TOWER_LEVELS, TOWER_SHAPES, TOWER_TILE_KEY, tileLetter } from "./keys";
 import type { Prefs } from "./model";
 import type { HiloGuess, HiloView, RoundView, TowerView } from "./protocol";
-import { FG1, FG4, FG6, GOLD, PINK, RED, type Ui } from "./theme";
+import { FG1, FG4, FG6, GOLD, GREEN, PINK, RED, type Ui } from "./theme";
 
 const isOpen = (round: RoundView): boolean => round.phase !== "idle";
 
-/** Cards on the table: the last ones drawn, the trail under them says the guesses. */
+/** Large cards on the table: the last ones drawn, the current one last. */
 const HILO_SHOWN = 8;
+/** Cards the history under them recalls, the guess that drew each before it. */
+const HILO_HISTORY = 12;
 const GUESS_GLYPHS: Record<HiloGuess, string> = { higher: "▲", lower: "▼", skip: "⇥" };
-/** The ranks the api sends for an ace and a king: there, higher and lower are strict bets. */
-const ACE_RANK = 1;
-const KING_RANK = 13;
+/** A card in the history not turned over yet. */
+const HIDDEN_FACE = "▒▒";
 
 /** Right guesses so far: every guess but the skips, and the wrong one that busted. */
 export function hiloRight(detail: HiloView): number {
   return detail.guesses.filter((guess) => guess !== "skip").length - (detail.busted ? 1 : 0);
 }
 
-/** "K♠ ▼ 9♥ ▲ Q♦": the cards shown, each after the guess that drew it. */
-function hiloTrail(detail: HiloView, from: number): string {
-  const cards = detail.cards.slice(from).map((card, index) => {
-    const guess = detail.guesses[from + index - 1];
+/**
+ * "K♠ ▼ 9♥ ▲ Q♦ ▲ ▒▒": the last cards drawn, each after the guess that drew it, a right guess in
+ * green, the wrong one in red; a card face down or on its way shows its back.
+ */
+function hiloHistory(ui: Ui, detail: HiloView, faceDown: number): RenderElement {
+  const { Text } = ui;
+  const from = Math.max(0, detail.cards.length - HILO_HISTORY);
+  const firstHidden = detail.cards.length - faceDown;
+  // A guess whose card is not turned over yet stays grey: its colour would tell the card first.
+  const glyph = (guess: HiloGuess, isHidden: boolean, isWrong: boolean) => (
+    <Text color={guess === "skip" || isHidden ? FG6 : isWrong ? RED : GREEN} bold={isWrong}>
+      {`${GUESS_GLYPHS[guess]} `}
+    </Text>
+  );
+  const cards = detail.cards.slice(from).map((card, offset) => {
+    const index = from + offset;
+    const guess = offset === 0 ? undefined : detail.guesses[index - 1];
+    const isHidden = index >= firstHidden;
+    const isWrong = detail.busted && index === detail.cards.length - 1 && !isHidden;
 
-    return guess === undefined ? cardFace(card) : `${GUESS_GLYPHS[guess]} ${cardFace(card)}`;
+    return (
+      <Text>
+        {offset > 0 && " "}
+        {guess !== undefined && glyph(guess, isHidden, isWrong)}
+        <Text color={isHidden ? FG6 : FG4}>{isHidden ? HIDDEN_FACE : cardFace(card)}</Text>
+      </Text>
+    );
   });
-  const pending = detail.pending === null ? "" : ` ${GUESS_GLYPHS[detail.pending]} …`;
 
-  return `${cards.join(" ")}${pending}`;
+  return (
+    <Text color={FG6}>
+      {from > 0 && `+${from} · `}
+      {cards}
+      {detail.pending !== null && (
+        <Text>
+          {detail.cards.length > 0 && " "}
+          {glyph(detail.pending, true, false)}
+          {HIDDEN_FACE}
+        </Text>
+      )}
+    </Text>
+  );
 }
 
-/** The last cards drawn, the current one last, the multipliers the next guess would bring beside them. */
-export function hiloTable(ui: Ui, round: RoundView | null, size: CardSize): RenderElement {
+/** A guess the player can make: what it is called on this card, its chance and what it pays. */
+function hiloOffer(ui: Ui, guess: "higher" | "lower", rank: number, multiplier: string | null): RenderElement | null {
+  const { Text } = ui;
+
+  if (multiplier === null) {
+    return null;
+  }
+
+  return (
+    <Text color={FG4}>
+      {`${GUESS_GLYPHS[guess]} ${hiloGuessName(guess, rank)} `}
+      <Text color={FG6}>{`${hiloChance(guess, rank)}% `}</Text>
+      <Text color={FG1} bold>
+        {`×${multiplier}`}
+      </Text>
+    </Text>
+  );
+}
+
+/** Whose move it is: the player's, a card on its way, or how the round ended once its last card shows. */
+function hiloState(ui: Ui, round: RoundView, detail: HiloView, isTurning: boolean, isPulseOn: boolean): RenderElement {
+  const { Text } = ui;
+
+  if (isTurning) {
+    const pending = detail.pending;
+    const rank = detail.cards.at(-1)?.rank ?? 0;
+    const name = pending === null || pending === "skip" ? pending : hiloGuessName(pending, rank);
+
+    return <Text color={FG4}>{`drawing…${pending === null ? "" : ` ${GUESS_GLYPHS[pending]} ${name}`}`}</Text>;
+  }
+
+  if (round.phase === "player_turn") {
+    return (
+      <Text color={isPulseOn ? PINK : GOLD} bold>
+        YOUR TURN
+      </Text>
+    );
+  }
+
+  return detail.busted ? (
+    <Text color={RED} bold>
+      WRONG GUESS
+    </Text>
+  ) : (
+    <Text color={GOLD} bold>
+      {`CASHED OUT ×${detail.multiplier}`}
+    </Text>
+  );
+}
+
+/**
+ * The last cards drawn, the current one last, and a back where the next is on its way; the
+ * round's history under them. Beside them the multiplier, whose move it is, and on the player's
+ * turn each guess at its chance and what it pays, and the cash-out. A new card lies face down a
+ * step before it turns over, as blackjack deals (`fx.revealed`): until then nothing it decides shows.
+ */
+export function hiloTable(ui: Ui, round: RoundView | null, fx: TableFx, size: CardSize): RenderElement {
   const { Box, Text } = ui;
   const detail = round?.detail.game === "hilo" ? round.detail : null;
 
@@ -59,53 +148,44 @@ export function hiloTable(ui: Ui, round: RoundView | null, size: CardSize): Rend
     );
   }
 
-  const open = isOpen(round);
-  const from = Math.max(0, detail.cards.length - HILO_SHOWN);
+  const turning = faceDownOf(
+    detail.cards.map((_, index) => index),
+    fx.revealed,
+  );
+  const isDrawing = detail.pending !== null || (round.phase === "drawing" && detail.cards.length === 0);
+  const isTurning = isDrawing || turning > 0;
+  const cards = [...detail.cards, ...faceDownCards(isDrawing ? 1 : 0)];
+  const from = Math.max(0, cards.length - HILO_SHOWN);
+  const rank = detail.cards.at(-1)?.rank ?? 0;
+  const isTurn = round.phase === "player_turn" && !isTurning;
   const right = hiloRight(detail);
-  const rank = detail.cards.at(-1)?.rank;
-  const odds = (label: string, multiplier: string | null) =>
-    open &&
-    multiplier !== null && (
-      <Text color={FG4}>
-        {`${label} `}
-        <Text color={FG1}>{`×${multiplier}`}</Text>
-      </Text>
-    );
 
   return (
     <Box flexDirection="row" flexWrap="wrap" columnGap={3}>
       <Box flexDirection="column">
-        {detail.cards.length === 0 ? (
-          <Text color={FG6}>drawing the first card…</Text>
-        ) : (
-          handCards(ui, detail.cards.slice(from), size)
-        )}
-        <Text color={detail.busted ? RED : FG6}>{hiloTrail(detail, from)}</Text>
+        {handCards(ui, cards.slice(from), size, { faceDown: turning + (isDrawing ? 1 : 0) })}
+        {hiloHistory(ui, detail, turning)}
       </Box>
       <Box flexDirection="column">
         <Text color={FG4}>
           multiplier{" "}
           <Text color={FG1} bold>
-            {`×${detail.multiplier}`}
+            {turning > 0 ? "×…" : `×${detail.multiplier}`}
           </Text>
         </Text>
-        {odds(rank === ACE_RANK ? "higher" : "higher or same", detail.higherMultiplier)}
-        {odds(rank === KING_RANK ? "lower" : "lower or same", detail.lowerMultiplier)}
-        {open && <Text color={FG6}>{`${detail.skipsLeft} ${detail.skipsLeft === 1 ? "skip" : "skips"} left`}</Text>}
-        {open && detail.canCashOut && (
+        {hiloState(ui, round, detail, isTurning, fx.isPulseOn)}
+        {isTurn && hiloOffer(ui, "higher", rank, detail.higherMultiplier)}
+        {isTurn && hiloOffer(ui, "lower", rank, detail.lowerMultiplier)}
+        {isTurn && <Text color={FG6}>{`${GUESS_GLYPHS.skip} skip · ${detail.skipsLeft} left`}</Text>}
+        {isOpen(round) && right > 0 && turning === 0 && (
           <Text color={FG4}>
             cash out{" "}
-            <Text color={GOLD} bold>
+            <Text color={detail.canCashOut ? GOLD : FG6} bold>
               {formatUsdc(cashOutPayout(round.stake, detail.multiplier))}
             </Text>
           </Text>
         )}
-        {detail.busted && (
-          <Text color={RED} bold>
-            wrong guess
-          </Text>
-        )}
-        <Text color={FG6}>{`${right} right`}</Text>
+        {turning === 0 && <Text color={FG6}>{`${right} right`}</Text>}
       </Box>
     </Box>
   );

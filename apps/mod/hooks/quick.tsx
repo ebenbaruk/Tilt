@@ -68,13 +68,27 @@ function shownRound<G extends RoundView["detail"]["game"]>(
     : null;
 }
 
+/** Hilo's multiplier before any right guess: the 98% the round returns. */
+const HILO_FIRST_MULTIPLIER = "0.9800";
+
 /**
- * The round a one-draw start in flight opens, drawn as drawing until the chain's shows, as a
- * blackjack deal in flight is drawn face down: the choices sent, nothing drawn. Keno's paytable and
- * the wheel's segments come with the round: the `last` one's, when it was played the same way.
- * Null for any other move, and for a wheel spun another way than the last.
+ * The round a start in flight opens, or a draw in flight leaves, drawn as drawing until the
+ * chain's shows, as a blackjack deal in flight is drawn face down: the choices sent, nothing
+ * drawn. Keno's paytable and the wheel's segments come with the round: the `last` one's, when it
+ * was played the same way. A Hilo guess draws its card face down. Null for any other move, and
+ * for a wheel spun another way than the last.
  */
 export function sentRound(action: PlayAction, last: RoundView | null): RoundView | null {
+  if (action.type === "hilo_guess") {
+    return last?.phase === "player_turn" && last.detail.game === "hilo"
+      ? {
+          ...last,
+          phase: "drawing",
+          detail: { ...last.detail, pending: action.guess, canGuess: false, canCashOut: false },
+        }
+      : null;
+  }
+
   const detail = sentDetail(action, last?.detail ?? null);
 
   if (detail === null || !("amount" in action)) {
@@ -119,6 +133,20 @@ function sentDetail(action: PlayAction, last: RoundView["detail"] | null): Round
       return last?.game === "wheel" && last.segments === action.segments && last.risk === action.risk
         ? { ...last, segment: null }
         : null;
+    case "hilo_bet":
+      return {
+        game: "hilo",
+        cards: [],
+        guesses: [],
+        pending: null,
+        multiplier: HILO_FIRST_MULTIPLIER,
+        higherMultiplier: null,
+        lowerMultiplier: null,
+        skipsLeft: 0,
+        canGuess: false,
+        canCashOut: false,
+        busted: false,
+      };
     default:
       return null;
   }

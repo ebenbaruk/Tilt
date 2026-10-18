@@ -15,6 +15,7 @@ import {
   BLACKJACK_TURN,
   BLACKJACK_WIN,
   DICE,
+  HILO_TURN,
   KENO,
   WHEEL,
 } from "./fixtures";
@@ -340,6 +341,54 @@ describe("the table moves", () => {
     await ui.advance(EFFECT_MS);
     expect(await table()).toContain("Player 9 · banker 8.");
     expect(await table()).toContain("+0.94");
+  });
+
+  test("a hilo guess lies face down from the key on, turns over a step after it lands, and its result waits for it", async ($, on) => {
+    const turn = HILO_TURN.round;
+    const busted: StateResponse =
+      turn === null || turn.detail.game !== "hilo"
+        ? HILO_TURN
+        : {
+            ...HILO_TURN,
+            round: {
+              ...turn,
+              phase: "idle",
+              net: "-500000",
+              detail: {
+                ...turn.detail,
+                cards: [...turn.detail.cards, { rank: 11, suit: "♦" }],
+                guesses: [...turn.detail.guesses, "lower"],
+                busted: true,
+                canGuess: false,
+                canCashOut: false,
+              },
+            },
+          };
+    let current: StateResponse = HILO_TURN;
+    const { world, clock } = await seat($, on, HILO_TURN, {
+      "GET /v1/state": () => ({ status: 200, body: current }),
+      "POST /v1/play": () => SUBMITTED,
+    });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+    const table = async () => textOf(await ui.drawn({ in: TABLE_KEY }));
+
+    await ui.pointer(CLICK);
+    await ui.key({ key: "l" });
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([{ type: "hilo_guess", guess: "lower" }]);
+    expect(await table()).toContain("░░░░░");
+    expect(await table()).toContain("drawing… ▼ lower or same");
+
+    current = busted;
+    await clock.advance(POLL_MS);
+    await ui.advance(DEAL_STEP_MS / 2);
+    expect(await table()).toContain("░░░░░");
+    expect(await table()).not.toContain("J♦");
+    expect(await table()).not.toContain("Wrong guess");
+
+    await ui.advance(DEAL_STEP_MS * 2);
+    expect(await table()).toContain("5♦ ▼ J♦");
+    expect(await table()).toContain("WRONG GUESS");
+    expect(await table()).toContain("Wrong guess after 2 right.");
   });
 });
 

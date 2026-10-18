@@ -594,6 +594,16 @@ export const HILO_DRAWING: StateResponse = {
   }),
 };
 
+/** A round just started: its first card on its way. */
+export const HILO_FIRST_DRAWING: StateResponse = {
+  ...BASE,
+  round: round({
+    phase: "drawing",
+    net: "0",
+    detail: hiloBoard({ cards: [], guesses: [], multiplier: "0.9800" }),
+  }),
+};
+
 /** Lower from 9♥, and a J♦ came. */
 export const HILO_BUSTED: StateResponse = {
   ...BASE,

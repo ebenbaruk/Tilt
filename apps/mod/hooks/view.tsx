@@ -3,8 +3,7 @@
 import type { RenderElement } from "claude-code";
 
 import { blackjackOutcome, blackjackSummary, blackjackTable, handColumns, STILL, type TableFx } from "./blackjack";
-import { type Card } from "./protocol";
-import { type CardSize, handCards, handRow, LARGE_CARD_ROWS } from "./cards";
+import { type CardSize, faceDownCards, handCards, handRow, LARGE_CARD_ROWS } from "./cards";
 import {
   cardFace,
   cardsInline,
@@ -564,17 +563,14 @@ export function gameTable(
     case "wheel":
       return wheelTable(ui, round, prefs, wheel, fx.spinElapsed);
     case "hilo":
-      return hiloTable(ui, round, size);
+      return hiloTable(ui, round, fx, size);
     case "tower":
       return towerTable(ui, round, prefs, fx.frame, size, tileButton);
   }
 }
 
-/** Placeholder cards: what a deal in flight draws face down until the chain's cards come in. */
-const FACE_DOWN: readonly Card[] = [
-  { rank: 1, suit: "♠" },
-  { rank: 1, suit: "♠" },
-];
+/** What a deal in flight draws face down until the chain's cards come in: two cards a hand. */
+const FACE_DOWN = faceDownCards(2);
 
 /**
  * A blackjack deal sent and not on the table yet: the dealer and each hand get their two cards
@@ -1314,8 +1310,9 @@ function tableRows(
     case "wheel":
       return wheelRows(wheel);
     case "hilo":
-      // The cards and their trail beside the multipliers, skips and cash-out; before any, a line on how to play.
-      return detail?.game === "hilo" ? Math.max((size === "large" ? cardRows : 1) + 1, 6) : 2;
+      // The cards and their history beside the multiplier, whose turn, the guesses, the cash-out and the
+      // right guesses; before any, a line on how to play.
+      return detail?.game === "hilo" ? Math.max((size === "large" ? cardRows : 1) + 1, 7) : 2;
     case "tower":
       return 9;
   }

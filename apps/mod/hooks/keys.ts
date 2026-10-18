@@ -1,6 +1,14 @@
 // Which keys a drawing offers, as data: the panel and the band render the same plan, and the
 // tests check it is conflict-free without drawing anything.
-import { cashOutPayout, chipsTotal, formatUsdc, hundredths, rouletteBetLabel, scaledDecimal } from "./format";
+import {
+  cashOutPayout,
+  chipsTotal,
+  formatUsdc,
+  hiloGuessName,
+  hundredths,
+  rouletteBetLabel,
+  scaledDecimal,
+} from "./format";
 import type { Prefs, SlotsSpeed } from "./model";
 import type {
   BaccaratBet,
@@ -748,11 +756,15 @@ function towerTurnKeys(detail: TowerView, stake: string): KeyAction[] {
 
 const HILO_KEYS: Record<HiloGuess, string> = { higher: "h", lower: "l", skip: "s" };
 
-/** Higher and lower at what a right guess brings, unless refused; skip while skips are left; `z` cashes out. */
+/** Higher and lower, named as the table names them, at what a right guess brings, unless refused;
+ * skip while skips are left; `z` cashes out. */
 function hiloTurnKeys(detail: HiloView, stake: string): KeyAction[] {
+  const rank = detail.cards.at(-1)?.rank ?? 0;
+  const guess = (name: "higher" | "lower", multiplier: string | null) =>
+    multiplier === null ? null : `${hiloGuessName(name, rank)} ×${multiplier}`;
   const offers: { guess: HiloGuess; label: string | null }[] = [
-    { guess: "higher", label: detail.higherMultiplier === null ? null : `higher ×${detail.higherMultiplier}` },
-    { guess: "lower", label: detail.lowerMultiplier === null ? null : `lower ×${detail.lowerMultiplier}` },
+    { guess: "higher", label: guess("higher", detail.higherMultiplier) },
+    { guess: "lower", label: guess("lower", detail.lowerMultiplier) },
     { guess: "skip", label: detail.skipsLeft > 0 ? `skip · ${detail.skipsLeft} left` : null },
   ];
   const keys: KeyAction[] = detail.canGuess

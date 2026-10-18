@@ -34,7 +34,7 @@ export function revealedAt(from: number, total: number, elapsed: number): number
   return revealed >= total ? null : revealed;
 }
 
-/** The cards on a blackjack or baccarat table, all hands together; 0 for the other games. */
+/** The cards on a blackjack, baccarat or Hilo table, all hands together; 0 for the other games. */
 export function dealtCards(round: RoundView | null): number {
   const detail = round?.detail;
 
@@ -43,10 +43,16 @@ export function dealtCards(round: RoundView | null): number {
       return detail.hands.reduce((sum, hand) => sum + hand.cards.length, detail.dealer.length);
     case "baccarat":
       return detail.player.length + detail.banker.length;
+    case "hilo":
+      return detail.cards.length;
     default:
       return 0;
   }
 }
+
+/** Cards not drawn yet, to lay face down (`faceDown`) where they will fall: their faces are never shown. */
+export const faceDownCards = (count: number): Card[] =>
+  Array.from({ length: count }, (): Card => ({ rank: 1, suit: "♠" }));
 
 /** How many of a hand's cards, dealt at these places in the deal, are still face down. */
 export const faceDownOf = (order: readonly number[], revealed: number | null): number =>
