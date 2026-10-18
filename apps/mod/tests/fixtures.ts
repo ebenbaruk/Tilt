@@ -415,6 +415,16 @@ export const DICE_LOSS: StateResponse = {
   round: round({ detail: { game: "dice", target: 7500, over: true, roll: 1200, multiplier: "3.9200" } }),
 };
 
+/** Over 2.00 (98% to win), rolled 57.00: a win at ×1, the stake back. */
+export const DICE_PUSH: StateResponse = {
+  ...BASE,
+  round: round({
+    payout: "1000000",
+    net: "0",
+    detail: { game: "dice", target: 200, over: true, roll: 5700, multiplier: "1.0000" },
+  }),
+};
+
 export const DICE_DRAWING: StateResponse = {
   ...BASE,
   round: round({

@@ -19,6 +19,7 @@ import {
   DICE,
   DICE_DRAWING,
   DICE_LOSS,
+  DICE_PUSH,
   FLIP,
   FLIP_LOSS,
   HILO_ACE,
@@ -154,6 +155,7 @@ const cases: [string, StateResponse, string[]][] = [
     ],
   ],
   ["dice, a loss over the target", DICE_LOSS, ["Rolled 12.00: over 75.00 loses.", "−1.00"]],
+  ["dice, a winning roll at ×1 is a push", DICE_PUSH, ["Rolled 57.00: over 2.00 wins ×1.0000, a push. 0.00"]],
   ["dice, rolling", DICE_DRAWING, ["rolling…", "drawing"]],
   [
     "limbo, short of the target",

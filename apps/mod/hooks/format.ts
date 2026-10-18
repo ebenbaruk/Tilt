@@ -61,6 +61,9 @@ export function cashOutPayout(stake: string, multiplier: string): string {
   return ((BigInt(stake) * scaled) / MULTIPLIER_SCALE).toString();
 }
 
+/** "1.53" (2 decimals, as the api sends multipliers) in hundredths: 153n. */
+export const hundredths = (multiplier: string): bigint => BigInt(multiplier.replace(".", ""));
+
 /** A whole number of 10^-decimals as a decimal string: (19600n, 4) → "1.9600", (742n, 2) → "7.42". */
 export function scaledDecimal(value: bigint, decimals: number): string {
   const scale = 10n ** BigInt(decimals);

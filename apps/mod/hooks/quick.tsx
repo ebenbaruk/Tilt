@@ -3,7 +3,7 @@
 // choices; once a choice changes, the table shows the next round's instead.
 import type { RenderElement } from "claude-code";
 
-import { diceMultiplier, flipMultiplier, scaledDecimal } from "./format";
+import { diceMultiplier, flipMultiplier, hundredths, scaledDecimal } from "./format";
 import type { TileButton } from "./games";
 import { diceTarget, DICE_ROLLS, KENO_NUMBERS, KENO_PICK_KEY } from "./keys";
 import type { Prefs } from "./model";
@@ -11,9 +11,6 @@ import type { DiceView, FlipView, KenoView, LimboView, RoundView, WheelView } fr
 import { BLUE, CARD_FACE, FG1, FG4, FG6, GOLD, GREEN, INK, LINE3, LINE4, PINK, RED, TEAL, type Ui } from "./theme";
 
 const isOpen = (round: RoundView | null): boolean => round !== null && round.phase !== "idle";
-
-/** "1.53" (2 decimals, as the api sends them) in hundredths: 153n. */
-const hundredths = (multiplier: string): bigint => BigInt(multiplier.replace(".", ""));
 
 const isWin = (round: RoundView): boolean => BigInt(round.net) > 0n;
 

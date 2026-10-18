@@ -14,6 +14,7 @@ import {
   formatDuration,
   formatSigned,
   formatUsdc,
+  hundredths,
   rouletteBetLabel,
   rouletteWins,
   scaledDecimal,
@@ -375,7 +376,11 @@ function outcomeText(round: RoundView): string {
     case "limbo": {
       const { result, target } = round.detail;
 
-      return result === null ? "" : `×${result} ${BigInt(round.net) > 0n ? "reaches" : "falls short of"} ×${target}.`;
+      if (result === null) {
+        return "";
+      }
+
+      return `×${result} ${hundredths(result) >= hundredths(target) ? "reaches" : "falls short of"} ×${target}.`;
     }
     case "flip":
       return flipOutcome(round.detail);
@@ -403,15 +408,21 @@ function minesOutcome(detail: MinesView): string {
     : `Mine on ${tileLetter(detail.busted)}${after}.`;
 }
 
-/** "Rolled 37.42: under 49.00 wins." */
+/**
+ * "Rolled 37.42: under 49.00 wins." A winning roll at ×1 (98% to win) gives the stake back: a
+ * push, never a loss. Over wins from the target up, under below it (chain/…/games/dice.rs).
+ */
 function diceOutcome(detail: DiceView, net: string): string {
-  if (detail.roll === null) {
+  const { roll, target, over } = detail;
+
+  if (roll === null) {
     return "";
   }
 
-  const bet = `${detail.over ? "over" : "under"} ${rollText(detail.target)}`;
+  const isWon = over ? roll >= target : roll < target;
+  const result = !isWon ? "loses" : BigInt(net) > 0n ? "wins" : `wins ×${detail.multiplier}, a push`;
 
-  return `Rolled ${rollText(detail.roll)}: ${bet} ${BigInt(net) > 0n ? "wins" : "loses"}.`;
+  return `Rolled ${rollText(roll)}: ${over ? "over" : "under"} ${rollText(target)} ${result}.`;
 }
 
 /** "3 heads in a row.", or "Tails on coin 2 of 3." */
