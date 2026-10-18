@@ -97,6 +97,8 @@ const GAMES = [
   {
     name: "Limbo",
     rtp: "98.00%",
+    // The drawn multiplier rounds down, in the house's favour.
+    upTo: true,
     rules: "Set a target from 1.01× to 10,000×. If the drawn multiplier reaches it, you win your target.",
     tone: styles.toneSky,
     art: <LimboCurve />,
@@ -111,6 +113,8 @@ const GAMES = [
   {
     name: "Keno",
     rtp: "95.00%",
+    // 94.98% to 95.00% depending on how many numbers are picked.
+    upTo: true,
     rules: "Pick 1 to 10 numbers out of 40, then 10 are drawn. More hits pay more, up to 1,000× for 10 of 10.",
     tone: styles.toneGreen,
     art: <KenoCard />,
@@ -308,6 +312,7 @@ export default function Landing() {
                 <div className={styles.gameArt}>{game.art}</div>
                 <h3 className={styles.gameName}>{game.name}</h3>
                 <p className={styles.rtp}>
+                  {game.upTo && "Up to "}
                   <span className={styles.rtpValue}>{game.rtp}</span> RTP
                 </p>
                 <p>{game.rules}</p>
