@@ -9,7 +9,7 @@ import { diceMultiplier, flipMultiplier, hundredths, scaledDecimal } from "./for
 import type { TileButton } from "./games";
 import { diceTarget, DICE_ROLLS, KENO_NUMBERS, KENO_PICK_KEY } from "./keys";
 import type { Prefs } from "./model";
-import type { FlipView, RoundView, WheelView } from "./protocol";
+import type { FlipView, PlayAction, RoundView, WheelView } from "./protocol";
 import {
   BLUE,
   CARD_FACE,
@@ -66,6 +66,62 @@ function shownRound<G extends RoundView["detail"]["game"]>(
   return round !== null && round.detail.game === game && isRoundShown(round, prefs)
     ? (round as RoundView & { detail: Extract<RoundView["detail"], { game: G }> })
     : null;
+}
+
+/**
+ * The round a one-draw start in flight opens, drawn as drawing until the chain's shows, as a
+ * blackjack deal in flight is drawn face down: the choices sent, nothing drawn. Keno's paytable and
+ * the wheel's segments come with the round: the `last` one's, when it was played the same way.
+ * Null for any other move, and for a wheel spun another way than the last.
+ */
+export function sentRound(action: PlayAction, last: RoundView | null): RoundView | null {
+  const detail = sentDetail(action, last?.detail ?? null);
+
+  if (detail === null || !("amount" in action)) {
+    return null;
+  }
+
+  return {
+    phase: "drawing",
+    stake: action.amount,
+    payout: "0",
+    fee: "0",
+    net: "0",
+    number: (last?.number ?? 0) + 1,
+    settledSignature: null,
+    detail,
+  };
+}
+
+function sentDetail(action: PlayAction, last: RoundView["detail"] | null): RoundView["detail"] | null {
+  switch (action.type) {
+    case "dice_roll": {
+      const chance = action.over ? DICE_ROLLS - action.target : action.target;
+
+      return { game: "dice", target: action.target, over: action.over, roll: null, multiplier: diceMultiplier(chance) };
+    }
+    case "limbo_play":
+      return { game: "limbo", target: scaledDecimal(BigInt(action.target), 2), result: null };
+    case "flip_play":
+      return {
+        game: "flip",
+        side: action.side,
+        flips: action.flips,
+        results: null,
+        multiplier: flipMultiplier(action.flips),
+      };
+    case "keno_play": {
+      const isSame = last?.game === "keno" && last.picks.length === action.picks.length;
+
+      return { game: "keno", picks: action.picks, drawn: null, hits: null, paytable: isSame ? last.paytable : [] };
+    }
+    case "wheel_spin":
+      return last?.game === "wheel" && last.segments === action.segments && last.risk === action.risk
+        ? { ...last, segment: null }
+        : null;
+    default:
+      return null;
+  }
 }
 
 /** A settled round's verdict, as blackjack tags its hands: WIN in gold, LOSE in red, PUSH in grey. */

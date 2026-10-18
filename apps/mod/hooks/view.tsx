@@ -32,6 +32,7 @@ import {
   LIMBO_RISE_MS,
   limboTable,
   rollText,
+  sentRound,
   WHEEL_SPIN_MS,
   wheelDisc,
   wheelRows,
@@ -596,6 +597,13 @@ export function dealingTable(ui: Ui, hands: number, size: CardSize): RenderEleme
       </Box>
     </Box>
   );
+}
+
+/** The one-draw round a start in flight opens (`sentRound`), drawn until the chain's shows; null when none is in flight. */
+export function sendingRound(snap: Pick<Snapshot, "intent" | "remote">): RoundView | null {
+  const action = snap.intent?.action;
+
+  return action === undefined ? null : sentRound(action, snap.remote.state?.round ?? null);
 }
 
 /** The hands a blackjack deal in flight asked for; null when no deal is in flight. */
@@ -1424,6 +1432,7 @@ export function renderPane(
   const input = { state, prefs: snap.prefs, isBusy: snap.intent !== null };
   const plays = playButtons(ui, input, keys, snap.echo, onCommand);
   const dealing = dealingHands(snap);
+  const sending = sendingRound(snap);
   // Drawn here, the Mines board and the tower are their own keys: each hidden tile is the Button of
   // its key, live or held, and the key line leaves those out. A key of a tile shown since stays on the line.
   const board = roundOf(state, game)?.detail;
@@ -1477,7 +1486,7 @@ export function renderPane(
         ? dealingTable(ui, dealing, size)
         : gameTable(
             ui,
-            state,
+            sending === null ? state : { ...state, round: sending },
             snap.prefs,
             gameColumns(layout),
             { ...STILL, spinElapsed: snap.spinElapsed, revealed: snap.revealed, frame: snap.agent.frame },
@@ -1494,14 +1503,21 @@ export function renderPane(
       {shownTable}
       {/* The table surface module invites clicks; where none land, the keys are recalled here. */}
       {(table === null || !layout.isClickable) && layoutHint(ui, keys, layout.isClickable)}
-      {table === null && celebration(ui, tableRound(state, snap.prefs), snap.celebrating, gameColumns(layout) - 1)}
+      {table === null &&
+        sending === null &&
+        celebration(ui, tableRound(state, snap.prefs), snap.celebrating, gameColumns(layout) - 1)}
       {/* The result waits for the wheel, the reels or the last card: the text must not tell it first. */}
       {dealing === null &&
+        sending === null &&
         table === null &&
         snap.spinElapsed === null &&
         snap.revealed === null &&
         outcomeLine(ui, tableRound(state, snap.prefs))}
-      {dealing === null && snap.spinElapsed === null && snap.revealed === null && winBanner(ui, state, onCommand)}
+      {dealing === null &&
+        sending === null &&
+        snap.spinElapsed === null &&
+        snap.revealed === null &&
+        winBanner(ui, state, onCommand)}
       {statusLine(ui, snap, state)}
       {lowBalanceLine(ui, snap, state)}
       {!isKeysFirst && linePlays.length > 0 && keyArea(ui, linePlays, size === "large", steps)}

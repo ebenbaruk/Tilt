@@ -322,6 +322,39 @@ describe("around the table", () => {
   });
 });
 
+describe("a one-draw round in flight", () => {
+  test("draws its draw to come at once, nothing of the last round's result", async ($, on) => {
+    const { route } = later();
+
+    await seat($, on, DICE, { "POST /v1/play": route });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+
+    expect(await shownText(ui)).toContain("Rolled 37.42");
+    await ui.press({ key: "start" });
+    const text = await shownText(ui);
+
+    expect(text).toContain("rolling…");
+    expect(text).toContain("roll under 49.00");
+    expect(text).not.toContain("37.42");
+    expect(text).not.toContain("+0.99 · fee");
+  });
+
+  test("keeps the last paytable while the same count of Keno picks is sent", async ($, on) => {
+    const { route } = later();
+
+    await seat($, on, KENO, { "POST /v1/play": route });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+
+    await ui.press({ key: "keno-random" });
+    await ui.press({ key: "start" });
+    const text = await shownText(ui);
+
+    expect(text).toContain("drawing…");
+    expect(text).toContain("3 ×4.00");
+    expect(text).not.toContain("3 hits");
+  });
+});
+
 describe("tight rooms", () => {
   test(
     "the band at the bottom of a short terminal puts the keys before the table",

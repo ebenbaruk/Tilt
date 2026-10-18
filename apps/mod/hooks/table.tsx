@@ -508,8 +508,10 @@ export default function Table(props: TableProps, surface: ClientSurface<TableSta
     frame: Math.floor(state.now / PENDING_FRAME_MS),
   };
   const post = (press: string) => surface.post({ press });
-  // A deal sent and not on the table yet: its hands face down, nothing of the last round's result.
-  const isDealing = props.dealing !== null;
+  // A deal or a one-draw round sent and not on the table yet: its hands face down or its draw to
+  // come, nothing of the last round's result.
+  const isDealing = props.dealing !== null || props.sending !== null;
+  const shown = props.sending === null ? props.state : { ...props.state, round: props.sending };
   // Where nothing is clicked (the main screen), the table has no Buttons and invites no click: the
   // letters of the pane's key line play it.
   const isClickable = props.isClickable;
@@ -518,7 +520,7 @@ export default function Table(props: TableProps, surface: ClientSurface<TableSta
     <Box flexDirection="column" paddingLeft={shake}>
       {props.dealing !== null
         ? dealingTable(ui, props.dealing, props.cards)
-        : gameTable(ui, props.state, props.prefs, props.columns, fx, props.cards, props.wheel, (address, face) =>
+        : gameTable(ui, shown, props.prefs, props.columns, fx, props.cards, props.wheel, (address, face) =>
             isClickable ? tileButton(ui, props.keys, address, face, post) : null,
           )}
       {!isDealing && celebration(ui, round, effect?.kind === "win" ? sinceEffect : null, props.columns - 1)}

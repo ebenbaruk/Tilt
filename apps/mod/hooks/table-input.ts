@@ -6,7 +6,7 @@ import type { ClientKeyEvent } from "claude-code";
 
 import type { CardSize } from "./cards";
 import type { Prefs } from "./model";
-import type { StateResponse } from "./protocol";
+import type { RoundView, StateResponse } from "./protocol";
 
 /** The Client's key: what `ui.message` matches its posts on. */
 export const TABLE_KEY = "table";
@@ -35,6 +35,8 @@ export interface TableProps {
   isPaneFocused: boolean;
   /** The hands of a blackjack deal sent and not on the table yet (`dealingHands`): drawn face down. */
   dealing: number | null;
+  /** A one-draw round sent and not on the table yet (`sendingRound`): drawn as drawing. */
+  sending: RoundView | null;
   /** The surface reports clicks: the fullscreen terminal does, its main screen neither clicks nor
    *  hands the table keys, so there the letters of the pane's key line play it. */
   isClickable: boolean;

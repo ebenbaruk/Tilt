@@ -78,6 +78,7 @@ import {
   type PaneLayout,
   renderBand,
   renderPane,
+  sendingRound,
   type Snapshot,
   spinMs,
   spinProgress,
@@ -1321,6 +1322,7 @@ function tableOf(
     isLight,
     ...site,
     dealing: dealingHands(snap),
+    sending: sendingRound(snap),
   });
 
   return (cards, columns, wheel) => (
