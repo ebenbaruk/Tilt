@@ -1107,11 +1107,38 @@ function sessionText(ui: Ui, session: TiltSession, now: number): RenderElement |
   );
 }
 
-/** The session and the odds on the left; on the right, how to give the pane the keys while it does
- * not hold them, or how to hand them back. The band never says whether it holds them: both, there. */
-function footer(ui: Ui, snap: Snapshot, state: StateResponse, game: Game, layout: PaneLayout): RenderElement {
+/** How to get the keys, or hand them back: its first words in gold, then the rest. */
+type KeysHint = readonly [string, string];
+
+/**
+ * The right of the footer: how to give the pane the keys while it does not hold them, or how to hand
+ * them back. Neither the band nor a table a click gives the keys to (`hasClickTable`) can tell
+ * whether it holds them (the engine never says when Esc takes them back): both, there.
+ */
+function keysHint(layout: PaneLayout, hasClickTable: boolean): KeysHint {
+  if (layout.isBand) {
+    return ["ctrl+x tab", " keys · esc hands them back"];
+  }
+
+  if (layout.isFocused) {
+    return ["", "esc hands the keys back"];
+  }
+
+  return hasClickTable ? ["click the table", " for keys · esc hands them back"] : ["ctrl+x tab", " to use keys"];
+}
+
+/** The session and the odds on the left; on the right, the keys (`keysHint`). */
+function footer(
+  ui: Ui,
+  snap: Snapshot,
+  state: StateResponse,
+  game: Game,
+  layout: PaneLayout,
+  hasClickTable: boolean,
+): RenderElement {
   const { Box, Text } = ui;
   const rtp = `${RTP_AT_MOST.has(game) ? "≤ " : ""}${cleanText(state.rtp[game])}`;
+  const [lead, rest] = keysHint(layout, hasClickTable);
 
   return (
     <Box flexDirection="row" flexWrap="wrap" columnGap={2} paddingX={1}>
@@ -1122,23 +1149,14 @@ function footer(ui: Ui, snap: Snapshot, state: StateResponse, game: Game, layout
         sessionText(ui, snap.session, snap.remote.fetchedAt)}
       <Text color={FG6}>{`rtp ${rtp}% · 1% fee on wins`}</Text>
       <Box flexGrow={1} />
-      {layout.isBand ? (
-        <Text color={FG6}>
+      <Text color={FG6}>
+        {lead !== "" && (
           <Text color={GOLD} bold>
-            ctrl+x tab
-          </Text>{" "}
-          keys · esc hands them back
-        </Text>
-      ) : layout.isFocused ? (
-        <Text color={FG6}>esc hands the keys back</Text>
-      ) : (
-        <Text color={FG6}>
-          <Text color={GOLD} bold>
-            ctrl+x tab
-          </Text>{" "}
-          to use keys
-        </Text>
-      )}
+            {lead}
+          </Text>
+        )}
+        {rest}
+      </Text>
     </Box>
   );
 }
@@ -1696,7 +1714,7 @@ export function renderPane(
   const foot = (
     <Box flexDirection="column" marginTop={1}>
       <Text color={LINE3}>{"─".repeat(Math.max(0, layout.bodyColumns))}</Text>
-      {footer(ui, snap, state, game, layout)}
+      {footer(ui, snap, state, game, layout, table !== null && layout.isClickable)}
     </Box>
   );
 
