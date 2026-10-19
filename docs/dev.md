@@ -24,7 +24,8 @@ pnpm refuse les paquets publiés il y a moins d'un jour (règle de la chaîne d'
 
 ```sh
 docker run -d --name tilt-pg -e POSTGRES_PASSWORD=tilt -e POSTGRES_DB=tilt_test -p 55432:5432 postgres:17
-docker exec tilt-pg psql -U postgres -c "create database tilt_api_test" -c "create database tilt_api" -c "create database tilt"
+docker exec tilt-pg psql -U postgres -c "create database tilt_api_test" -c "create database tilt_api" -c "create database tilt" \
+  -c "create database tilt_stack_relay" -c "create database tilt_stack_api"   # bases du e2e api (étape 3)
 ```
 
 ## 2. Stack Solana + rollup + VRF
