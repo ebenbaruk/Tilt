@@ -407,6 +407,11 @@ describe("mines", () => {
     expect(mines.maxGain(1_000n, 24, 1_000_000n)).toBe(23_750n);
     expect(mines.maxGain(1_000n, 24, 10_000n)).toBe(10_000n);
     expect(mines.maxGain(1_000n, 12, 50_000n)).toBe(50_000n);
+    // 12 mines can reach 5 148 297x: capped at a 10 000x return, so the board cashes out at it.
+    expect(mines.maxGain(1_000n, 12, 10n ** 12n)).toBe(9_999_000n);
+    expect(mines.canRevealMore(1_000n, 12, 9, 9_999_000n)).toBe(true);
+    expect(mines.canRevealMore(1_000n, 12, 10, 9_999_000n)).toBe(false);
+    expect(mines.gross(1_000n, 12, 10, 9_999_000n)).toBe(10_000_000n);
     expect(mines.gross(1_000n, 12, 13, 2_000n)).toBe(3_000n);
     expect(mines.canRevealMore(1_000n, 24, 1, 23_750n)).toBe(false);
     expect(mines.canRevealMore(1_000n, 3, 1, 1_000_000n)).toBe(true);
@@ -693,6 +698,11 @@ describe("tower", () => {
     expect(tower.uncappedGross(STAKE, "hard", 9)).toBe(501_760_000n);
     expect(tower.uncappedGross(STAKE, "master", 9)).toBe(256_901_120_000n);
     expect(tower.maxGain(STAKE, "hard", 10n ** 12n)).toBe(500_760_000n);
+    // Expert (19 289x) and Master (256 901x) stop at a 10 000x return: Master cashes out at level 7.
+    expect(tower.maxGain(1_000n, "expert", 10n ** 12n)).toBe(9_999_000n);
+    expect(tower.maxGain(1_000n, "master", 10n ** 12n)).toBe(9_999_000n);
+    expect(tower.canClimbMore(1_000n, "master", 6, 9_999_000n)).toBe(true);
+    expect(tower.canClimbMore(1_000n, "master", 7, 9_999_000n)).toBe(false);
     expect(tower.canClimbMore(STAKE, "easy", 9, 10n ** 12n)).toBe(false);
     expect(tower.canClimbMore(STAKE, "easy", 8, 10n ** 12n)).toBe(true);
     expect(formatFixed(tower.scaledMultiplier(STAKE, "easy", 0, 10n ** 12n), 4)).toBe("1.0000");

@@ -381,6 +381,31 @@ describe("new games' accounts", () => {
     });
   }
 
+  const noStakeMoves: GameAction[] = [
+    { type: "mines_reveal", tile: 3 },
+    { type: "mines_cashout" },
+    { type: "hilo_guess", guess: "higher" },
+    { type: "hilo_cashout" },
+    { type: "tower_climb", tile: 1 },
+    { type: "tower_cashout" },
+  ];
+
+  for (const action of noStakeMoves) {
+    it(`never opens an account for ${action.type}, refusing it without one`, async () => {
+      const { chain, player, sent } = stubbedChain({ tableOnSolana: false, rollupMisses: Infinity });
+      await expect(chain.play(player, action, record)).rejects.toMatchObject({ code: "PROGRAM_ERROR", message: "WrongState" });
+      expect(sent.solana).toHaveLength(0);
+      expect(sent.rollup).toHaveLength(0);
+    });
+  }
+
+  it("plays a move staking nothing on an account the rollup already holds", async () => {
+    const { chain, player, sent } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
+    await chain.play(player, { type: "tower_cashout" }, record);
+    expect(sent.solana).toHaveLength(0);
+    expect(sent.rollup.map(instructionNames)).toEqual([["tower_cashout"]]);
+  });
+
   it("shares one table between the one-draw games", async () => {
     const { chain, player, sent } = stubbedChain({ tableOnSolana: false, rollupMisses: 1 });
     await chain.play(player, { type: "dice_roll", amount: "1000000", target: 5_000, over: false }, record);
@@ -419,19 +444,28 @@ describe("rolling win cap", () => {
     expect(winCapShortfall(["Program log: Error Code: InsufficientBalance."])).toBeUndefined();
   });
 
-  it("raises the cap on Solana by exactly the shortfall, waits for the rollup, then sends the move again", async () => {
+  const spin: Action = { type: "slots_spin", amount: "1000000" };
+  const ledgerInfo = async (player: PublicKey, maxWin: number) => ({ ...accountInfo(PROGRAM_ID), data: await ledgerData(player, maxWin) });
+
+  /** The ledger on Solana and the rollup's copies of it, read in turn (the last one repeats);
+   *  the first spin is refused 248 000 000 past the cap. */
+  async function refusedSpin(solanaMaxWin: number, rollupMaxWins: number[]) {
     const { chain, player, sent } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
-    const spin: Action = { type: "slots_spin", amount: "1000000" };
-    const atOpening = { ...accountInfo(PROGRAM_ID), data: await ledgerData(player, 2_000_000) };
-    const raised = { ...accountInfo(PROGRAM_ID), data: await ledgerData(player, 250_000_000) };
-    vi.mocked(chain.base.getAccountInfo).mockImplementation(async (address) => (address.equals(ledgerAddress(player)) ? atOpening : null));
+    const onSolana = await ledgerInfo(player, solanaMaxWin);
+    vi.mocked(chain.base.getAccountInfo).mockImplementation(async (address) => (address.equals(ledgerAddress(player)) ? onSolana : null));
     // Anchor reads accounts with their context.
-    vi.spyOn(chain.base, "getAccountInfoAndContext").mockResolvedValue({ context: { slot: 1 }, value: atOpening });
-    vi.spyOn(chain.rollup, "getAccountInfoAndContext").mockResolvedValue({ context: { slot: 1 }, value: raised });
+    vi.spyOn(chain.base, "getAccountInfoAndContext").mockResolvedValue({ context: { slot: 1 }, value: onSolana });
+    const copies = await Promise.all(rollupMaxWins.map((maxWin) => ledgerInfo(player, maxWin)));
+    vi.spyOn(chain.rollup, "getAccountInfoAndContext").mockImplementation(async () => ({ context: { slot: 1 }, value: copies.length > 1 ? copies.shift()! : copies[0] }));
     vi.mocked(chain.rollup.simulateTransaction).mockImplementationOnce(async (tx) => {
       if (!("version" in tx)) sent.rollup.push(tx);
       return { context: { slot: 1 }, value: { err: { InstructionError: [0, { Custom: 6008 }] }, logs: SHORT_LOGS, accounts: null, unitsConsumed: 0, returnData: null } };
     });
+    return { chain, player, sent };
+  }
+
+  it("raises the cap on Solana by exactly the shortfall, waits for the rollup, then sends the move again", async () => {
+    const { chain, player, sent } = await refusedSpin(2_000_000, [2_000_000, 2_000_000, 250_000_000]);
 
     await chain.play(player, spin, record);
 
@@ -439,6 +473,38 @@ describe("rolling win cap", () => {
     const raise = coder.decode(sent.solana[0].instructions[0].data)?.data;
     expect(raise && "amount" in raise ? String(raise.amount) : undefined).toBe("248000000");
     expect(sent.rollup.map(instructionNames)).toEqual([["slots_spin"], ["slots_spin"]]);
+  });
+
+  it("refuses the move, retryable, when the rollup never sees the raised cap", async () => {
+    const { chain, player, sent } = await refusedSpin(2_000_000, [2_000_000]);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.mocked(chain.rollup.getAccountInfoAndContext).mockImplementation(async () => {
+      vi.setSystemTime(Date.now() + 10_000);
+      return { context: { slot: 1 }, value: await ledgerInfo(player, 2_000_000) };
+    });
+
+    await expect(chain.play(player, spin, record)).rejects.toMatchObject({ code: "NETWORK_ERROR" });
+    expect(sent.solana.map(instructionNames)).toEqual([["raise_win_cap"]]);
+    expect(sent.rollup.map(instructionNames)).toEqual([["slots_spin"]]);
+  });
+
+  it("never raises the cap again for a raise the rollup has not seen yet", async () => {
+    // A retry after the case above: Solana already holds 250 000 000, the rollup still checks 2 000 000.
+    const { chain, player, sent } = await refusedSpin(250_000_000, [2_000_000, 2_000_000, 250_000_000]);
+
+    await chain.play(player, spin, record);
+
+    expect(sent.solana).toHaveLength(0);
+    expect(sent.rollup.map(instructionNames)).toEqual([["slots_spin"], ["slots_spin"]]);
+  });
+
+  it("raises only what Solana's cap lacks when the rollup lags a smaller raise", async () => {
+    const { chain, player, sent } = await refusedSpin(100_000_000, [2_000_000, 250_000_000]);
+
+    await chain.play(player, spin, record);
+
+    const raise = coder.decode(sent.solana[0].instructions[0].data)?.data;
+    expect(raise && "amount" in raise ? String(raise.amount) : undefined).toBe("150000000");
   });
 
   it("never raises the cap for a move that stakes nothing", async () => {

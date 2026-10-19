@@ -200,7 +200,7 @@ type MinesOutcome = Extract<Outcome, { game: "mines" }>;
 /** Plays the reveals of a board with `count` mines; impossible when a draw comes after the
  *  round ended (bust, cleared board or cap reached). */
 function minesCandidate(draws: Uint8Array[], stake: bigint, count: number, snapshot: MinesOutcome | null): Candidate {
-  const gain = snapshot ? BigInt(snapshot.maxGain) : mines.boardGain(stake, count);
+  const gain = snapshot ? BigInt(snapshot.maxGain) : mines.maxGain(stake, count, UNCAPPED);
   let revealed = 0;
   let busted = false;
   let possible = true;
