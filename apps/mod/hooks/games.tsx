@@ -247,15 +247,17 @@ const centered = (text: string, width: number): string =>
   text.padStart(Math.floor((width + text.length) / 2)).padEnd(width);
 
 /** A cell's line, `width` wide: its label, or with chips on it the chip and their stake beside the
- *  label where both fit, else the chip on the label: a number is never hidden by its chip. */
+ *  label where both fit and leave a blank column before the next cell (`EVEN ●.5`, else `EVEN●.5`),
+ *  else the chip on the label: a number is never hidden by its chip. */
 function cellFace(label: string, stake: bigint, width: number): string {
   if (stake === 0n) {
     return ` ${centered(label, width - 1)}`;
   }
 
-  const full = `${label} ${CHIP}${compactUsdc(stake.toString())}`;
+  const chip = `${CHIP}${compactUsdc(stake.toString())}`;
+  const full = [`${label} ${chip}`, `${label}${chip}`].find((face) => face.length < width);
 
-  return centered(full.length <= width ? full : `${CHIP}${label}`, width);
+  return centered(full ?? `${CHIP}${label}`, width);
 }
 
 interface LayoutMarks {

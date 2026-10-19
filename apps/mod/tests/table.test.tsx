@@ -17,6 +17,7 @@ import {
   DICE,
   HILO_TURN,
   KENO,
+  MINES_TURN,
   SLOTS,
   WHEEL,
 } from "./fixtures";
@@ -82,23 +83,70 @@ describe("the table in the fullscreen pane", () => {
     expect(actionsOf(world.calls("POST /v1/play"))).toEqual([{ type: "blackjack_bet", amount: "1000000", hands: 2 }]);
   });
 
-  test("once the keyboard leaves the pane, the table asks for a click again before Space", async ($, on) => {
+  test("a click gives the table the keys, as it says, until ctrl+x tab hands them to the pane", async ($, on) => {
     await seat($, on, BASE);
-    const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+    // A click takes the keyboard from the pane too: the engine says the pane does not hold it.
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...UNFOCUSED });
     const table = async () => textOf(await ui.drawn({ in: TABLE_KEY }));
 
     await ui.pointer(CLICK);
     expect(await table()).toContain("Space · play");
 
-    // The prompt (or the agents view) took the keys: ← there is Claude Code's, not the table's.
-    await ui.redraw(UNFOCUSED.props);
-    expect(await table()).toContain("click the table, then Space to play");
-
-    // ctrl+x tab gives the pane the keys back, but not the table: Space still needs a click.
+    // ctrl+x tab gives the pane the keys: its letters press the key line, Space goes to the prompt.
     await ui.redraw(FULLSCREEN.props);
+    expect(await table()).toContain("click the table for Space · until then it types in the prompt");
+
+    // Esc hands them to the prompt: the table still needs a click.
+    await ui.redraw(UNFOCUSED.props);
     expect(await table()).toContain("click the table, then Space to play");
     await ui.pointer(CLICK);
     expect(await table()).toContain("Space · play");
+  });
+
+  test("the footer never says the keys are elsewhere while a click may have given them to the table", async ($, on) => {
+    await seat($, on, BASE);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...UNFOCUSED });
+
+    expect(textOf(await ui.drawn())).toContain("click the table for keys · esc hands them back");
+    expect(textOf(await ui.drawn())).not.toContain("ctrl+x tab to use keys");
+
+    // Beside the still Mines board a click reveals a tile: the footer says ctrl+x tab.
+    await ui.press({ key: "game-mines" });
+    expect(textOf(await ui.drawn())).toContain("ctrl+x tab keys · esc hands them back");
+  });
+
+  test("a key the table holds no click for plays nothing: none yet, or since the pane took the keys", async ($, on) => {
+    const { world } = await seat($, on, BASE, { "POST /v1/play": () => SUBMITTED });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...UNFOCUSED });
+
+    await ui.key({ key: "space" });
+    expect(world.calls("POST /v1/play")).toHaveLength(0);
+
+    await ui.pointer(CLICK);
+    await ui.redraw(FULLSCREEN.props);
+    await ui.key({ key: "space" });
+    await ui.key({ key: "return" });
+    expect(world.calls("POST /v1/play")).toHaveLength(0);
+  });
+
+  test("a clicked table keeps the keys on the still Mines board: Space plays it, its letters reveal", async ($, on) => {
+    const { world, clock } = await seat($, on, BASE, movingTable(BASE, MINES_TURN));
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...UNFOCUSED });
+
+    await ui.pointer(CLICK);
+    await ui.key({ key: "5" });
+    // The pane draws the board; the table, still under its key, draws nothing and holds the keys.
+    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toBe("");
+    expect(textOf(await ui.drawn())).toContain("3 mines");
+
+    await ui.key({ key: "space" });
+    await clock.advance(FIRST_TICK_MS + 1_000);
+    await ui.key({ key: "y" });
+
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([
+      { type: "mines_bet", amount: "500000", mines: 3 },
+      { type: "mines_reveal", tile: 24 },
+    ]);
   });
 
   test("in a blackjack turn Space hits, Enter stands and d doubles", async ($, on) => {
@@ -156,7 +204,7 @@ describe("the table moves", () => {
     async ($, on) => {
       let current: StateResponse = BASE;
       const { clock } = await seat($, on, BASE, { "GET /v1/state": () => ({ status: 200, body: current }) });
-      const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+      const ui = await $.ui.mount({ plugin: PLUGIN, ...UNFOCUSED });
       const table = async () => textOf(await ui.drawn({ in: TABLE_KEY }));
       const show = async (state: StateResponse) => {
         current = state;
@@ -463,8 +511,8 @@ describe("the table in the bottom band of the fullscreen terminal", () => {
   const BOTTOM_BAND: RenderInput<"AbovePrompt", "terminal"> = {
     ...BAND,
     surface: "terminal",
-    viewport: { columns: 125, rows: 60, isFullscreen: true },
-    props: { ...BAND.props, maxRows: 30, bodyColumns: 120, scroll: { offset: 0, bodyRows: 30 } },
+    viewport: { columns: 125, rows: 90, isFullscreen: true },
+    props: { ...BAND.props, maxRows: 40, bodyColumns: 120, scroll: { offset: 0, bodyRows: 39 } },
   };
 
   test("deals card by card and counts a win up once the last card is over, as the pane does", BOTTOM, async ($, on) => {
@@ -509,16 +557,38 @@ describe("the table in the bottom band of the fullscreen terminal", () => {
     const { world } = await seat($, on, BASE, { "POST /v1/play": () => SUBMITTED });
     const ui = await $.ui.mount({ plugin: PLUGIN, ...BOTTOM_BAND });
 
-    // The band never says it holds the keyboard: the table always says how to give it the keys.
+    // The band never says it holds the keyboard: the table goes by its own click.
     expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("click the table, then Space to play");
     await ui.post({ press: "bj-hit" });
     await ui.post({ press: "start", amount: "999000000" });
+    await ui.key({ key: "space" });
     expect(world.calls("POST /v1/play")).toHaveLength(0);
 
     await ui.pointer(CLICK);
+    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("Space · play");
     await ui.key({ key: "space" });
     expect(actionsOf(world.calls("POST /v1/play"))).toEqual([{ type: "blackjack_bet", amount: "500000", hands: 1 }]);
   });
+
+  test(
+    "the clicked table takes the band's game keys: m steps to the next game, a digit does not",
+    BOTTOM,
+    async ($, on) => {
+      const { world } = await seat($, on, BASE, { "POST /v1/play": () => SUBMITTED });
+      const ui = await $.ui.mount({ plugin: PLUGIN, ...BOTTOM_BAND });
+      const table = async () => textOf(await ui.drawn({ in: TABLE_KEY }));
+
+      await ui.pointer(CLICK);
+      await ui.key({ key: "3" });
+      expect(await table()).toContain("No hand yet.");
+
+      // m is the band's next game, also once the table holds the keys: the next n is roulette's, with no chips to spin.
+      await ui.key({ key: "m" });
+      expect(await table()).toContain("No chips on the table yet.");
+      await ui.key({ key: "n" });
+      expect(world.calls("POST /v1/play")).toHaveLength(0);
+    },
+  );
 });
 
 describe("the table on the main screen", () => {

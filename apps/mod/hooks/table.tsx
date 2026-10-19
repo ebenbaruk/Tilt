@@ -66,9 +66,9 @@ interface TableState {
   streak: number;
   /** The last change or key: the pulses run for a while after it. */
   wokeAt: number;
-  /** Clicked or keyed since the pane last took the keyboard: the raw keys are the table's. */
+  /** Clicked since the pane last took the keyboard: the raw keys are the table's. */
   isFocused: boolean;
-  /** The pane's focus at the last props, to notice it leave. */
+  /** The pane's focus at the last props, to notice it taken. */
   wasPaneFocused: boolean;
 }
 
@@ -114,10 +114,11 @@ function observe(props: TableProps, state: TableState): TableState {
   const speed = props.prefs.slotsSpeed;
   let next = state;
 
-  // The keyboard left the pane (the prompt, another pane, the agents view): the table has to be
-  // clicked again before Space and the arrows are its own.
+  // ctrl+x tab gave the pane the keyboard, away from the table: it has to be clicked again before
+  // Space and the arrows are its own. The pane losing the keyboard says nothing: a click on the
+  // table takes it from the pane too, and the engine never says when Esc takes it from the table.
   if (state.wasPaneFocused !== props.isPaneFocused) {
-    next = { ...next, wasPaneFocused: props.isPaneFocused, isFocused: next.isFocused && props.isPaneFocused };
+    next = { ...next, wasPaneFocused: props.isPaneFocused, isFocused: next.isFocused && !props.isPaneFocused };
   }
 
   // A round that lands after drawing restarts its spin, so the reels stop one by one on the result.
@@ -224,7 +225,7 @@ function startClock(surface: ClientSurface<TableState>, rt: Runtime): void {
   }
 }
 
-/** A click or a key: the table holds the raw keys while the pane keeps the keyboard. */
+/** A click gives the table the raw keys; a key then wakes its pulses. */
 function focus(surface: ClientSurface<TableState>, rt: Runtime): void {
   const state = surface.state;
 
@@ -241,6 +242,12 @@ function listen(surface: ClientSurface<TableState>, rt: Runtime): void {
     }
   });
   surface.onKey((event) => {
+    // The engine hands keys only after a click; a key the table holds no click for (none yet, or
+    // ctrl+x tab gave the pane the keyboard since) plays nothing, should any reach it.
+    if (surface.state?.isFocused !== true) {
+      return;
+    }
+
     const press = pressFor(event, rt.props.keys);
 
     focus(surface, rt);
@@ -271,7 +278,10 @@ function summary(ui: Ui, state: TableState, round: RoundView | null, isSpinning:
 }
 
 interface PromptView {
+  /** A click gave the table the raw keys (the engine never says when Esc takes them back). */
   isFocused: boolean;
+  /** The pane holds the keyboard (ctrl+x tab), which hands the table no Space: it goes to the prompt. */
+  isPaneFocused: boolean;
   /** The shown game's last round is settled: Space plays it again. */
   isSettled: boolean;
   isPulseOn: boolean;
@@ -301,7 +311,7 @@ function prompt(ui: Ui, keys: readonly TableKey[], view: PromptView): RenderElem
         <Text color={GOLD} bold>
           click the table
         </Text>
-        {`, then Space to ${again}`}
+        {view.isPaneFocused ? " for Space · until then it types in the prompt" : `, then Space to ${again}`}
       </Text>
     );
   }
@@ -425,6 +435,11 @@ export default function Table(props: TableProps, surface: ClientSurface<TableSta
     surface.setState(state);
   }
 
+  // A still board is the pane's to draw: the table only keeps the keys.
+  if (props.isKeysOnly) {
+    return <Box />;
+  }
+
   if (isAnimating(state, props)) {
     startClock(surface, rt);
   }
@@ -464,7 +479,8 @@ export default function Table(props: TableProps, surface: ClientSurface<TableSta
   // when one comes or goes.
   const invite = isClickable
     ? prompt(ui, props.keys, {
-        isFocused: state.isFocused && props.isPaneFocused,
+        isFocused: state.isFocused,
+        isPaneFocused: props.isPaneFocused,
         isSettled: round?.phase === "idle",
         isPulseOn,
       })
@@ -484,7 +500,7 @@ export default function Table(props: TableProps, surface: ClientSurface<TableSta
         )}
         {invite === null && !isStreakShown && <Text> </Text>}
       </Box>
-      {isClickable && rouletteButtons(ui, props.keys, state.isFocused && props.isPaneFocused, post)}
+      {isClickable && rouletteButtons(ui, props.keys, state.isFocused, post)}
     </Box>
   );
 

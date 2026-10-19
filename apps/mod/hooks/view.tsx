@@ -1086,57 +1086,118 @@ function aheadLine(ui: Ui, state: StateResponse): RenderElement | null {
   );
 }
 
-/** This session's play as the mod saw it settle: "session +2.30 · 14 rounds · 22m". */
-function sessionText(ui: Ui, session: TiltSession, now: number): RenderElement | null {
-  const { Text } = ui;
-
+/** This session's play as the mod saw it settle: its net, then " · 14 rounds · 22m"; null before any. */
+function sessionParts(session: TiltSession, now: number): { net: string; rest: string } | null {
   if (session.rounds === 0 || session.startedAt === null) {
     return null;
   }
 
   const rounds = `${session.rounds} ${session.rounds === 1 ? "round" : "rounds"}`;
 
+  return {
+    net: formatSigned(session.net),
+    rest: `${SEPARATOR}${rounds}${SEPARATOR}${formatDuration(Math.max(0, now - session.startedAt))}`,
+  };
+}
+
+const SESSION_LEAD = "session ";
+
+/** "session +2.30 · 14 rounds · 22m". */
+function sessionText(ui: Ui, session: TiltSession, parts: { net: string; rest: string }): RenderElement {
+  const { Text } = ui;
+
   return (
     <Text color={FG6}>
-      {"session "}
+      {SESSION_LEAD}
       <Text color={toneOf(session.net)} bold>
-        {formatSigned(session.net)}
+        {parts.net}
       </Text>
-      {`${SEPARATOR}${rounds}${SEPARATOR}${formatDuration(Math.max(0, now - session.startedAt))}`}
+      {parts.rest}
     </Text>
   );
 }
 
-/** The session and the odds on the left; on the right, how to give the pane the keys while it does
- * not hold them, or how to hand them back. The band never says whether it holds them: both, there. */
-function footer(ui: Ui, snap: Snapshot, state: StateResponse, game: Game, layout: PaneLayout): RenderElement {
+/** How to get the keys, or hand them back: its first words in gold, then the rest. */
+type KeysHint = readonly [string, string];
+
+/** Where clicks land, the table surface module that takes the keys a click gives it: drawn, or kept
+ *  drawing nothing beside a still board (it takes no click there: a click reveals a tile). */
+type ClickTable = "drawn" | "kept" | null;
+
+/**
+ * The right of the footer, longest first: how to give the pane the keys while it does not hold them,
+ * or how to hand them back. Neither the band nor a table a click gives the keys to can tell whether
+ * it holds them (the engine never says when Esc takes them back): both, there.
+ */
+function keysHints(layout: PaneLayout, table: ClickTable): readonly KeysHint[] {
+  if (layout.isBand || (!layout.isFocused && table === "kept")) {
+    return [
+      ["ctrl+x tab", " keys · esc hands them back"],
+      ["ctrl+x tab", " keys"],
+    ];
+  }
+
+  if (layout.isFocused) {
+    return [
+      ["", "esc hands the keys back"],
+      ["esc", " hands back"],
+    ];
+  }
+
+  return table === "drawn"
+    ? [
+        ["click the table", " for keys · esc hands them back"],
+        ["click the table", " for keys"],
+      ]
+    : [
+        ["ctrl+x tab", " to use keys"],
+        ["ctrl+x tab", " keys"],
+      ];
+}
+
+const FOOTER_GAP = 2;
+const FOOTER_PADDING = 1;
+
+/** The cells a row of texts takes, a gap between each. */
+const rowWidth = (texts: readonly string[]): number =>
+  texts.reduce((sum, text) => sum + text.length, 0) + FOOTER_GAP * (texts.length - 1);
+
+/**
+ * The session and the odds on the left; on the right, the keys (`keysHints`), on one line: the
+ * longest hint that fits beside them, none where none does, so the footer never grows a row.
+ */
+function footer(
+  ui: Ui,
+  snap: Snapshot,
+  state: StateResponse,
+  game: Game,
+  layout: PaneLayout,
+  table: ClickTable,
+): RenderElement {
   const { Box, Text } = ui;
-  const rtp = `${RTP_AT_MOST.has(game) ? "≤ " : ""}${cleanText(state.rtp[game])}`;
+  const odds = `rtp ${RTP_AT_MOST.has(game) ? "≤ " : ""}${cleanText(state.rtp[game])}% · 1% fee on wins`;
+  // The session's net counts the round in play: it waits for the round's result too.
+  const isSessionShown = snap.spinElapsed === null && snap.revealed === null && snap.heldBalance === null;
+  const session = isSessionShown ? sessionParts(snap.session, snap.remote.fetchedAt) : null;
+  const left = session === null ? [odds] : [`${SESSION_LEAD}${session.net}${session.rest}`, odds];
+  // The spacer between them is an item of the row too: a gap each side of it.
+  const hint = keysHints(layout, table).find(
+    ([lead, rest]) => rowWidth([...left, "", `${lead}${rest}`]) <= layout.bodyColumns - FOOTER_PADDING * 2,
+  );
 
   return (
-    <Box flexDirection="row" flexWrap="wrap" columnGap={2} paddingX={1}>
-      {/* The session's net counts the round in play: it waits for the round's result too. */}
-      {snap.spinElapsed === null &&
-        snap.revealed === null &&
-        snap.heldBalance === null &&
-        sessionText(ui, snap.session, snap.remote.fetchedAt)}
-      <Text color={FG6}>{`rtp ${rtp}% · 1% fee on wins`}</Text>
+    <Box flexDirection="row" flexWrap="wrap" columnGap={FOOTER_GAP} paddingX={FOOTER_PADDING}>
+      {session !== null && sessionText(ui, snap.session, session)}
+      <Text color={FG6}>{odds}</Text>
       <Box flexGrow={1} />
-      {layout.isBand ? (
+      {hint !== undefined && (
         <Text color={FG6}>
-          <Text color={GOLD} bold>
-            ctrl+x tab
-          </Text>{" "}
-          keys · esc hands them back
-        </Text>
-      ) : layout.isFocused ? (
-        <Text color={FG6}>esc hands the keys back</Text>
-      ) : (
-        <Text color={FG6}>
-          <Text color={GOLD} bold>
-            ctrl+x tab
-          </Text>{" "}
-          to use keys
+          {hint[0] !== "" && (
+            <Text color={GOLD} bold>
+              {hint[0]}
+            </Text>
+          )}
+          {hint[1]}
         </Text>
       )}
     </Box>
@@ -1374,8 +1435,10 @@ export interface PaneLayout {
   isBand: boolean;
 }
 
-/** Everything around the table: header, agent line, outcome, status, keys and footer. */
+/** Everything around the table: header, agent line, outcome, status, keys (framed, as with large cards) and footer. */
 const CHROME_ROWS = 16;
+/** What small cards save there: the moves on the key line, not in keycaps three rows tall. */
+const KEYCAP_ROWS = 2;
 /** The first-hand guide in its frame, and its margin. */
 const GUIDE_ROWS = 4;
 /** The big-win banner in its frame. */
@@ -1487,7 +1550,8 @@ const wheelIn = (snap: Snapshot, state: StateResponse, layout: PaneLayout): numb
 /** The rows the whole pane takes with cards at `size`: what is around the table, then the table. */
 function paneRows(snap: Snapshot, state: StateResponse, layout: PaneLayout, size: CardSize): number {
   return (
-    aroundRows(snap, state, layout) +
+    aroundRows(snap, state, layout) -
+    (size === "small" ? KEYCAP_ROWS : 0) +
     tableRows(state, snap.prefs, dealingHands(snap), size, gameColumns(layout), wheelIn(snap, state, layout))
   );
 }
@@ -1537,7 +1601,8 @@ export const PANE_ROWS: Record<CardSize, number> = { large: 30, small: 20 };
 
 /**
  * `table` is the table surface module's region (fullscreen terminal), drawn in place of the still
- * table at a card size, `columns` wide, the Wheel drawn as `wheel`.
+ * table at a card size, `columns` wide, the Wheel drawn as `wheel`. `keeper`: that module drawing
+ * nothing beside a still table, where the table would be: the engine keeps its keys only there.
  */
 export function renderPane(
   ui: Ui,
@@ -1545,6 +1610,7 @@ export function renderPane(
   layout: PaneLayout,
   onCommand: OnCommand,
   table: ((size: CardSize, columns: number, wheel: number | null, isResultFirst: boolean) => RenderElement) | null,
+  keeper: RenderElement | null = null,
 ): RenderElement {
   const { Box, Button, Text } = ui;
   const state = snap.remote.state;
@@ -1680,6 +1746,7 @@ export function renderPane(
       {!snap.isOnboarded && canPlay && firstHandGuide(ui, layout.isFocused, START_VERB[game])}
       {state.blocked !== null && <Text color={RED}>{`Play paused · ${cleanText(state.blocked)}`}</Text>}
       {shownTable}
+      {table === null && keeper}
       {/* The table surface module invites clicks; where none land, the keys are recalled here. */}
       {(table === null || !layout.isClickable) && layoutHint(ui, keys, layout.isClickable)}
       {!isKeysFirst && slots}
@@ -1693,7 +1760,14 @@ export function renderPane(
   const foot = (
     <Box flexDirection="column" marginTop={1}>
       <Text color={LINE3}>{"─".repeat(Math.max(0, layout.bodyColumns))}</Text>
-      {footer(ui, snap, state, game, layout)}
+      {footer(
+        ui,
+        snap,
+        state,
+        game,
+        layout,
+        !layout.isClickable ? null : table !== null ? "drawn" : keeper !== null ? "kept" : null,
+      )}
     </Box>
   );
 
@@ -1824,13 +1898,17 @@ export function handSummary(state: StateResponse, prefs: Prefs, motion: BandMoti
     }
     case "hilo": {
       const current = detail.cards[detail.cards.length - 1];
-
-      const standing = detail.busted ? "wrong guess" : `×${shortMultiplier(detail.multiplier)}`;
+      // Before a right guess there is no multiplier to cash out yet, as the table says.
+      const standing = detail.busted
+        ? "wrong guess"
+        : hiloRight(detail) === 0
+          ? "×—"
+          : `×${shortMultiplier(detail.multiplier)}`;
 
       return `${label}${current === undefined ? "" : ` · ${cardFace(current)}`} · ${standing}${net}`;
     }
     case "tower":
-      return `${label} · ${detail.difficulty} · level ${detail.climbed.length} · ×${detail.multiplier}${net}`;
+      return `${label} · ${detail.difficulty} · level ${detail.climbed.length} · ${detail.busted === null ? `×${detail.multiplier}` : "bust"}${net}`;
   }
 }
 

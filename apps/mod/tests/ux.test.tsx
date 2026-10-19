@@ -286,6 +286,21 @@ describe("around the table", () => {
     expect(textOf(await ui.drawn())).toContain("session +3.96 · 1 round");
   });
 
+  test("once the session line shows, the footer keeps to one line: the keys' hint shortens", async ($, on) => {
+    const { show, clock } = await moving($, on, BLACKJACK_WIN);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE, props: { ...PANE.props, bodyColumns: 80 } });
+
+    expect(textOf(await ui.drawn())).toContain("esc hands the keys back");
+
+    await show({ ...SLOTS, round: SLOTS.round === null ? null : { ...SLOTS.round, number: 8 } });
+    await clock.advance(SPIN_OVER_MS);
+    const text = textOf(await ui.drawn());
+
+    expect(text).toContain("session +3.96 · 1 round");
+    expect(text).not.toContain("esc hands the keys back");
+    expect(text).toContain("esc hands back");
+  });
+
   test("a logout starts the next account's session from zero, its last round not counted", async ($, on) => {
     let current: StateResponse = BASE;
     const { clock } = await seat($, on, BASE, {
@@ -405,39 +420,58 @@ describe("a one-draw round in flight", () => {
 
 describe("tight rooms", () => {
   test(
-    "the band at the bottom of a short terminal puts the keys before the table",
+    "a fullscreen band too short for the table gives way to the compact band, its sponsor in view",
     { options: { layout: "bottom" } },
     async ($, on) => {
       await seat($, on, BLACKJACK_TURN);
+      // 100x30 fullscreen: the bottom slot leaves the band about ten rows.
       const band = {
         ...BAND,
-        viewport: { columns: 125, rows: 24, isFullscreen: true },
-        props: { ...BAND.props, maxRows: 12, bodyColumns: 120, scroll: { offset: 0, bodyRows: 11 } },
+        viewport: { columns: 100, rows: 30, isFullscreen: true },
+        props: { ...BAND.props, maxRows: 10, bodyColumns: 95, scroll: { offset: 0, bodyRows: 9 } },
       };
       const ui = await $.ui.mount({ plugin: PLUGIN, ...band });
-      const tree = JSON.stringify(await ui.drawn());
+      const text = textOf(await ui.drawn());
 
-      expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("DEALER");
-      expect(tree.indexOf('"hit"')).toBeGreaterThan(-1);
-      expect(tree.indexOf('"hit"')).toBeLessThan(tree.indexOf(TABLE_REGION));
+      expect(await ui.find({ type: "Client" })).toBeUndefined();
+      expect(text).toContain("blackjack · you 11 · dealer 9");
+      expect(text).toContain("PRESENTED BY Northwind Cloud");
     },
   );
 
   test(
-    "in a short band the result comes right under the keys, over a table that scrolls: roulette",
+    "a band short of rows for the framed keys draws them on a line before giving way to the compact band",
     { options: { layout: "bottom" } },
     async ($, on) => {
-      await seat($, on, ROULETTE_CHIPS);
+      await seat($, on, BASE, {}, { ...LOGGED_IN, onboarded: true });
       const band = {
         ...BAND,
-        viewport: { columns: 85, rows: 24, isFullscreen: true },
-        props: { ...BAND.props, maxRows: 12, bodyColumns: 80, scroll: { offset: 0, bodyRows: 11 } },
+        viewport: { columns: 160, rows: 48, isFullscreen: true },
+        props: { ...BAND.props, maxRows: 18, bodyColumns: 155, scroll: { offset: 0, bodyRows: 17 } },
       };
       const ui = await $.ui.mount({ plugin: PLUGIN, ...band });
-      const table = textOf(await ui.drawn({ in: TABLE_KEY }));
 
-      expect(table.indexOf("2 of 3 bets win.")).toBeGreaterThan(-1);
-      expect(table.indexOf("2 of 3 bets win.")).toBeLessThan(table.indexOf("1st 12"));
+      expect(await ui.find({ type: "Client" })).toBeDefined();
+      expect(textOf(await ui.drawn())).not.toContain("╭");
+      expect(textOf(await ui.drawn())).toContain("PRESENTED BY Northwind Cloud");
+    },
+  );
+
+  test(
+    "on the main screen the Wheel takes its strip in half the terminal rather than the compact band",
+    { options: { layout: "bottom" } },
+    async ($, on) => {
+      await seat($, on, WHEEL);
+      // The band may take the terminal's height there: half of it fits the strip, not a disc.
+      const band = {
+        ...BAND,
+        viewport: { columns: 125, rows: 54, isFullscreen: false },
+        props: { ...BAND.props, maxRows: 54, bodyColumns: 120, scroll: { offset: 0, bodyRows: 53 } },
+      };
+      const ui = await $.ui.mount({ plugin: PLUGIN, ...band });
+
+      expect(wheelLines(await ui.drawn({ in: TABLE_KEY }))).toHaveLength(2);
+      expect(textOf(await ui.drawn())).toContain("Northwind Cloud");
     },
   );
 
@@ -470,23 +504,6 @@ describe("tight rooms", () => {
     await ui.press({ key: "game-mines" });
     expect(await tileWidths()).toEqual(new Set([4]));
   });
-
-  test(
-    "a band of a few rows shows the keys before the first-hand guide",
-    { options: { layout: "bottom" } },
-    async ($, on) => {
-      await seat($, on, BASE);
-      const band = {
-        ...BAND,
-        viewport: { columns: 80, rows: 12, isFullscreen: true },
-        props: { ...BAND.props, maxRows: 6, bodyColumns: 75, scroll: { offset: 0, bodyRows: 6 } },
-      };
-      const text = textOf(await (await $.ui.mount({ plugin: PLUGIN, ...band })).drawn());
-
-      expect(text.indexOf("deal · 0.50")).toBeGreaterThan(-1);
-      expect(text.indexOf("deal · 0.50")).toBeLessThan(text.indexOf("First hand?"));
-    },
-  );
 
   test("with room, the roulette table keeps its framed wheel and the keys under it", async ($, on) => {
     await seat($, on, BASE);
@@ -1273,6 +1290,21 @@ describe("the card games tag their result as blackjack does", () => {
     expect(band).not.toContain("×1.06");
   });
 
+  test("hilo before a right guess says ×— in the band, as the table does, never ×0.98", async ($, on) => {
+    await seat($, on, HILO_ACE);
+    const band = textOf(await (await $.ui.mount({ plugin: PLUGIN, ...BAND })).drawn());
+
+    expect(band).toContain("hilo · A♣ · ×—");
+    expect(band).not.toContain("×0.98");
+  });
+
+  test("tower: a bust says so in the band, never the multiplier of the levels climbed", async ($, on) => {
+    await seat($, on, TOWER_BUSTED);
+    const band = textOf(await (await $.ui.mount({ plugin: PLUGIN, ...BAND })).drawn());
+
+    expect(band).toMatch(/tower · easy · level \d+ · bust · −1\.00 LOSE/);
+  });
+
   test("blackjack: a hand's WIN or BJ waits for the dealer's hole card", async ($, on) => {
     const { show, clock } = await moving($, on, BLACKJACK_TURN);
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_STILL });
@@ -1361,6 +1393,19 @@ describe("the band never takes what is typed in the prompt", () => {
     const pane = await $.ui.mount({ plugin: PLUGIN, ...PANE });
 
     expect((await pane.find({ key: "game-baccarat" }))?.props.hotkey).toBe("3");
+  });
+
+  test("in a Mines round m reveals tile m: the next game then takes a click only", async ($, on) => {
+    const round = MINES_TURN.round;
+    const hidingM = round?.detail.game === "mines" ? { ...round, detail: { ...round.detail, revealed: [6] } } : null;
+
+    await seat($, on, { ...MINES_TURN, round: hidingM });
+    const band = await $.ui.mount({ plugin: PLUGIN, ...BAND });
+
+    expect((await band.find({ key: "mines-tile-12" }))?.props.hotkey).toBe("m");
+    expect((await band.find({ key: "game-next" }))?.props.hotkey ?? "").toBe("");
+    await band.press({ key: "game-next" });
+    expect(textOf(await band.drawn())).toContain("Finish this Mines round before switching game.");
   });
 });
 

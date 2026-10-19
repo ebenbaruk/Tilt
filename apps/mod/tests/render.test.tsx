@@ -478,8 +478,9 @@ describe("the Mines board", () => {
     const { world, clock } = await seat($, on, MINES_TURN, movingTable(MINES_TURN, MINES_TURN));
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE, surface: "terminal" });
 
-    // The tiles' letters are on the board, not twenty-five blank keys on the key line.
-    expect(await ui.find({ type: "Client" })).toBeUndefined();
+    // The tiles' letters are on the board, not twenty-five blank keys on the key line: the table
+    // surface module draws nothing there, it only keeps the keys a click gave it.
+    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toBe("");
     expect((await ui.find({ key: "mines-tile-24" }))?.props.hotkey).toBe("y");
     await ui.press({ key: "mines-tile-24" });
     await clock.advance(1_000);
@@ -573,7 +574,7 @@ describe("the Tower, Hilo and Keno boards", () => {
     const { world, clock } = await seat($, on, TOWER_TURN, movingTable(TOWER_TURN, TOWER_TURN));
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE, surface: "terminal" });
 
-    expect(await ui.find({ type: "Client" })).toBeUndefined();
+    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toBe("");
     await ui.press({ key: "tower-tile-1" });
     await clock.advance(1_000);
     await ui.press({ key: "tower-cashout" });
@@ -766,12 +767,13 @@ describe("the roulette layout", () => {
     expect(await ui.find({ key: "start" })).toBeUndefined();
   });
 
-  /** The whole table above the prompt of a fullscreen terminal: the table surface module, as in the pane. */
+  /** The whole table above the prompt of a fullscreen terminal tall enough for the roulette table:
+   *  the table surface module, as in the pane. */
   const BOTTOM: RenderInput<"AbovePrompt", "terminal"> = {
     ...BAND,
     surface: "terminal",
-    viewport: { columns: 125, rows: 60, isFullscreen: true },
-    props: { ...BAND.props, maxRows: 30, bodyColumns: 120, scroll: { offset: 0, bodyRows: 30 } },
+    viewport: { columns: 125, rows: 90, isFullscreen: true },
+    props: { ...BAND.props, maxRows: 40, bodyColumns: 120, scroll: { offset: 0, bodyRows: 39 } },
   };
   const cell = (address: string) => `table-${address}`;
 
@@ -840,6 +842,22 @@ describe("the roulette layout", () => {
       expect(textOf(await ui.drawn())).toContain("on number 6");
     },
   );
+
+  test("an outside bet's stake leaves a blank column before the next cell's label", async ($, on) => {
+    await seat($, on, BASE);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+    const face = async (bet: string) => (await ui.find({ key: `table-roulette-${bet}`, in: TABLE_KEY }))?.text;
+
+    await ui.press({ key: "game-roulette" });
+    await ui.press({ key: "roulette-even" });
+    await ui.press({ key: "roulette-red" });
+    await ui.press({ key: "roulette-black" });
+
+    expect(await face("red")).toBe("RED ●.5 ");
+    expect(await face("even")).toBe("EVEN●.5 ");
+    // No room for both and the blank column: the chip marks the label alone.
+    expect(await face("black")).toBe(" ●BLACK ");
+  });
 
   test("fits its column: wide cells and wheel, narrow ones beside the sidebar at 90 columns, keys alone under 43", async ($, on) => {
     await seat($, on, ROULETTE_CHIPS);
