@@ -1,56 +1,106 @@
-/* Waitlist form, brand v2: sits on the landing's paper card. */
+/* Waitlist form, terminal look: a prompt line and the page's one solid button. */
 
 .form {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-4);
 }
 
 .label {
-  font-size: 13px;
-  font-weight: 700;
+  color: var(--fg-6);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
 }
 
 .row {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--space-4);
+}
+
+.field {
+  flex: 1 1 240px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: 0 var(--space-7);
+  background: var(--surface-terminal);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-md);
+}
+
+.field:focus-within {
+  border-color: var(--border-brand);
+}
+
+.prompt {
+  color: var(--tilt-pink);
+  font-weight: var(--weight-bold);
 }
 
 .input {
-  flex: 1 1 220px;
+  flex: 1;
   min-width: 0;
-  padding: 14px 20px;
-  border: 2px solid var(--ink);
-  border-radius: 999px;
-  background: #fff;
-  color: var(--ink-deep);
+  padding: 13px 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg-1);
   font: inherit;
+  font-size: 15px;
+  caret-color: var(--tilt-pink);
+}
+
+.input::placeholder {
+  color: var(--fg-7);
+}
+
+/* The field shows focus on its frame; the gold ring stays for keyboard users. */
+.input:focus {
+  outline: none;
+}
+
+.field:has(.input:focus-visible) {
+  outline: var(--ring-focus);
+  outline-offset: 2px;
 }
 
 .input[aria-invalid="true"] {
-  border-color: var(--orange);
+  color: var(--tilt-red);
 }
 
 .button {
   flex: 0 0 auto;
-  padding: 14px 28px;
-  border: 2px solid var(--orange);
-  border-radius: 999px;
-  background: var(--orange);
-  color: var(--ink-deep);
-  font-family: var(--font-archivo);
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-5);
+  padding: 13px var(--space-9);
+  border: 1px solid var(--tilt-pink);
+  border-radius: var(--radius-md);
+  background: var(--tilt-pink);
+  color: var(--ink-0);
+  font: inherit;
+  font-size: 15px;
+  font-weight: var(--weight-black);
   cursor: pointer;
 }
 
+.button:hover {
+  background: var(--tilt-gold);
+  border-color: var(--tilt-gold);
+}
+
 .button:disabled {
-  opacity: 0.6;
+  background: transparent;
+  color: var(--fg-4);
+  border-color: var(--line-3);
   cursor: progress;
+}
+
+.key {
+  font-weight: var(--weight-regular);
 }
 
 .honeypot {
@@ -62,17 +112,25 @@
 }
 
 .error {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--ink-deep);
+  color: var(--tilt-red);
 }
 
 .done {
-  margin: 0;
-  padding: 18px 22px;
-  border-radius: 16px;
-  background: var(--mint);
-  color: var(--ink-deep);
-  font-weight: 700;
+  padding: 13px var(--space-7);
+  border: 1px solid var(--border-success);
+  border-radius: var(--radius-md);
+  background: var(--surface-success-tint);
+  color: var(--tilt-green-fg);
+  font-size: 15px;
+}
+
+.check {
+  color: var(--tilt-green);
+  font-weight: var(--weight-bold);
+}
+
+@media (max-width: 480px) {
+  .button {
+    flex: 1 1 100%;
+  }
 }

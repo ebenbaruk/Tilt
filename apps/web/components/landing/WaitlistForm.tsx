@@ -1,11 +1,14 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import styles from "./WaitlistForm.module.css";
+import terminal from "./WaitlistForm.module.css";
+import paper from "./WaitlistFormPaper.module.css";
 
 type State = { status: "idle" | "sending" | "done" } | { status: "error"; message: string };
 
-export function WaitlistForm() {
+/** `look`: the terminal landing's, or "paper" for the archived first landing. */
+export function WaitlistForm({ look = "terminal" }: { look?: "terminal" | "paper" }) {
+  const styles = look === "paper" ? paper : terminal;
   const [state, setState] = useState<State>({ status: "idle" });
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -29,6 +32,9 @@ export function WaitlistForm() {
   if (state.status === "done") {
     return (
       <p className={styles.done} role="status">
+        <span className={styles.check} aria-hidden="true">
+          ✓{" "}
+        </span>
         You&apos;re on the list. We&apos;ll email you when the tables open.
       </p>
     );
@@ -40,19 +46,27 @@ export function WaitlistForm() {
         Email
       </label>
       <div className={styles.row}>
-        <input
-          id="waitlist-email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          placeholder="you@example.com"
-          required
-          maxLength={254}
-          className={styles.input}
-          aria-invalid={state.status === "error" ? true : undefined}
-          aria-describedby={state.status === "error" ? "waitlist-error" : undefined}
-        />
+        <span className={styles.field}>
+          <span className={styles.prompt} aria-hidden="true">
+            ›
+          </span>
+          <input
+            id="waitlist-email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            placeholder="you@example.com"
+            required
+            maxLength={254}
+            className={styles.input}
+            aria-invalid={state.status === "error" ? true : undefined}
+            aria-describedby={state.status === "error" ? "waitlist-error" : undefined}
+          />
+        </span>
         <button type="submit" className={styles.button} disabled={state.status === "sending"}>
+          <span className={styles.key} aria-hidden="true">
+            ⏎
+          </span>
           {state.status === "sending" ? "Joining…" : "Join the waitlist"}
         </button>
       </div>

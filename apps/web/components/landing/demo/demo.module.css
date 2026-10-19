@@ -1,0 +1,636 @@
+/* The demo tables, drawn as the mod draws them in the terminal. Sizes are in em and ch, so a
+   table scales with the font its screen picks for the room it has. */
+
+/* ---- screen: the table, the line under it, the keys ---- */
+
+.stage {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.screen {
+  /* As large as the design's 13.5px, smaller where the widest table (roulette's felt, about
+     27em) would not fit. */
+  font-size: min(var(--demo-cap, 13.5px), calc(100cqi / 27));
+  line-height: var(--leading-body);
+  color: var(--fg-2);
+  display: flex;
+  flex-direction: column;
+  gap: 1em;
+}
+
+.table {
+  min-height: var(--demo-rows, 17.5em);
+}
+
+/* A small screen centres its table in the room every card keeps, so the grid stays even. */
+.compact .table {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.line {
+  min-height: 1.55em;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Small, the result may take two lines rather than lose its net. */
+.compact .line {
+  min-height: 3.1em;
+  white-space: normal;
+}
+
+.keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 0.45em;
+  min-height: 3.9em;
+}
+
+.key {
+  display: inline-flex;
+  gap: 0.55em;
+  padding: 0.1em 0.65em;
+  border: 1px solid var(--line-3);
+  border-radius: var(--radius-xs);
+  color: var(--fg-6);
+  white-space: nowrap;
+}
+
+.keyLetter {
+  color: var(--tilt-gold);
+  font-weight: var(--weight-bold);
+  opacity: 0.45;
+}
+
+.keyLive {
+  border-color: var(--line-4);
+  color: var(--fg-1);
+}
+
+.keyLive .keyLetter {
+  opacity: 1;
+}
+
+.keySelected {
+  color: var(--tilt-gold);
+  font-weight: var(--weight-bold);
+}
+
+.keyPressed {
+  background: var(--tilt-gold);
+  border-color: var(--tilt-gold);
+  color: var(--ink-0);
+}
+
+.keyPressed .keyLetter {
+  color: var(--ink-0);
+  opacity: 1;
+}
+
+/* ---- tones ---- */
+
+.fg1 {
+  color: var(--fg-1);
+}
+
+.fg2 {
+  color: var(--fg-2);
+}
+
+.fg4 {
+  color: var(--fg-4);
+}
+
+.fg6 {
+  color: var(--fg-6);
+}
+
+.pink {
+  color: var(--tilt-pink);
+}
+
+.gold {
+  color: var(--tilt-gold);
+}
+
+.green {
+  color: var(--tilt-green);
+}
+
+.red {
+  color: var(--tilt-red);
+}
+
+.b {
+  font-weight: var(--weight-bold);
+}
+
+.dim {
+  opacity: 0.4;
+}
+
+.moving {
+  color: var(--line-4);
+}
+
+/* Holds its row while it has nothing to say: nothing on the table moves when it shows. */
+.ghost {
+  visibility: hidden;
+}
+
+/* ---- layout ---- */
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8em;
+  min-width: 0;
+}
+
+.hand {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+}
+
+.split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8em 3em;
+}
+
+.beside {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 1em 2.4em;
+}
+
+.side {
+  display: flex;
+  flex-direction: column;
+  min-width: 14em;
+}
+
+.wrapRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2em 1.4em;
+}
+
+/* ---- cards ---- */
+
+.card,
+.cardRed,
+.cardBack {
+  flex: none;
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 3.7em;
+  height: 4.7em;
+  padding: 0.3em 0.4em;
+  border: 1px solid currentColor;
+  border-radius: 0.4em;
+  background: var(--surface-terminal);
+  line-height: 1.15;
+}
+
+.card {
+  color: var(--fg-1);
+}
+
+.cardRed {
+  color: var(--tilt-red);
+}
+
+.cardBack {
+  color: var(--fg-6);
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  line-height: 1.05;
+}
+
+/* Where a card will land, before the deal. */
+.cardSlot {
+  flex: none;
+  width: 3.7em;
+  height: 4.7em;
+  border: 1px dashed var(--line-3);
+  border-radius: 0.4em;
+}
+
+.cardSuit {
+  align-self: center;
+  font-size: 1.2em;
+}
+
+.cardEnd {
+  align-self: flex-end;
+}
+
+/* Each card lies over the last, its corner still showing: ten fit where three would. */
+.stack {
+  display: flex;
+  min-height: 4.7em;
+}
+
+.stack > * + * {
+  margin-left: -1.3em;
+}
+
+.small,
+.smallRed,
+.smallBack {
+  padding: 0 0.3em;
+  font-weight: var(--weight-bold);
+}
+
+.small {
+  background: var(--fg-1);
+  color: var(--ink-2);
+}
+
+.smallRed {
+  background: var(--fg-1);
+  color: #c4302b;
+}
+
+.smallBack {
+  background: var(--line-4);
+  color: var(--fg-6);
+}
+
+.history {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  white-space: pre;
+}
+
+/* ---- roulette ---- */
+
+.strip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: max-content;
+  line-height: 1.25;
+}
+
+.stripWindow {
+  position: relative;
+  width: 34ch;
+  height: 3em;
+  box-sizing: content-box;
+  padding: 0 0.6ch;
+  overflow: hidden;
+  border: 1px solid var(--line-3);
+  border-radius: 0.4em;
+}
+
+.pocket {
+  position: absolute;
+  top: 0.3em;
+  bottom: 0.3em;
+  margin-left: 0.6ch;
+  width: 4ch;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-2);
+  line-height: 1.05;
+}
+
+.pocketLit {
+  color: #fff;
+  font-weight: var(--weight-bold);
+}
+
+.ball {
+  font-size: 0.7em;
+  white-space: pre;
+}
+
+.feltRed {
+  background: var(--felt-red);
+}
+
+.feltBlack {
+  background: var(--felt-black);
+}
+
+.feltGreen {
+  background: var(--felt-green);
+}
+
+.chip {
+  padding: 0 0.55em;
+  color: #fff;
+  font-weight: var(--weight-bold);
+}
+
+.felt {
+  display: grid;
+  grid-template-columns: 2.15em repeat(12, 2.15em) 2.6em;
+  gap: 1px;
+  width: max-content;
+  padding: 1px;
+  background: var(--ink-0);
+  border-radius: 0.3em;
+  font-size: 0.86em;
+  line-height: 1.65;
+}
+
+.cell {
+  color: #fff;
+  text-align: center;
+  font-weight: var(--weight-bold);
+  white-space: nowrap;
+}
+
+.zero {
+  grid-row: span 3;
+  display: grid;
+  place-items: center;
+}
+
+.afterZero {
+  grid-column-start: 2;
+}
+
+.dozen {
+  grid-column-end: span 4;
+}
+
+.outside {
+  grid-column-end: span 2;
+}
+
+.cellLit {
+  background: var(--tilt-gold);
+  color: var(--ink-0);
+}
+
+.cellCursor {
+  outline: 1px solid var(--fg-1);
+  outline-offset: -2px;
+}
+
+/* ---- wheel ---- */
+
+.discBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2em;
+  line-height: 1;
+}
+
+.disc {
+  width: 10.5em;
+  height: 10.5em;
+  image-rendering: pixelated;
+}
+
+.payChip {
+  align-self: flex-start;
+  margin-top: 0.5em;
+  padding: 0.85em 1.6em;
+  color: var(--ink-0);
+  font-size: 1.15em;
+  font-weight: var(--weight-black);
+}
+
+/* ---- slots ---- */
+
+.machineRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.machine {
+  display: flex;
+  gap: 0.5em;
+  padding: 0.5em;
+  border: 1px solid var(--line-3);
+  border-radius: 0.4em;
+}
+
+.reel {
+  display: grid;
+  place-items: center;
+  width: 3.6em;
+  height: 3.9em;
+  border: 1px solid var(--line-4);
+  border-radius: 0.3em;
+  background: var(--ink-well);
+}
+
+.machineLit {
+  border-color: var(--tilt-gold);
+}
+
+.symbol {
+  font-size: 2.4em;
+  line-height: 1;
+}
+
+.paytable {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.4;
+  white-space: pre;
+}
+
+/* ---- dice ---- */
+
+.track {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2em;
+  width: 40ch;
+  max-width: 100%;
+}
+
+.trackMarker {
+  height: 1.3em;
+  line-height: 1.3em;
+  white-space: pre;
+}
+
+.trackBar {
+  display: flex;
+  gap: 2px;
+  height: 0.45em;
+  align-items: center;
+}
+
+.trackBar > span {
+  flex: 1;
+  height: 100%;
+}
+
+.trackWin {
+  background: var(--tilt-green);
+}
+
+.trackLose {
+  background: var(--tilt-red);
+}
+
+.trackBar > .trackTarget {
+  height: 1.3em;
+  flex: 0 0 3px;
+  background: var(--fg-1);
+}
+
+.trackScale {
+  display: flex;
+  justify-content: space-between;
+}
+
+/* ---- limbo ---- */
+
+.limbo {
+  display: grid;
+  place-items: center;
+  min-width: 7.5ch;
+  padding: 0.35em 0.9em;
+  border: 1px solid var(--line-3);
+  border-radius: 0.2em;
+  font-size: 2.2em;
+  line-height: 1.2;
+}
+
+.limboLit {
+  border-color: var(--tilt-gold);
+}
+
+/* ---- flip ---- */
+
+.coins {
+  display: flex;
+  gap: 0.8em;
+  font-size: 2.2em;
+  line-height: 1.3;
+  white-space: pre;
+}
+
+/* ---- keno ---- */
+
+.keno {
+  display: grid;
+  grid-template-columns: repeat(8, 4ch);
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.chipGold {
+  background: var(--tilt-gold);
+  color: var(--ink-0);
+}
+
+.chipGrey {
+  background: var(--line-4);
+  color: var(--fg-1);
+}
+
+/* ---- mines and tower: Stake's tiles, dark on any ground ---- */
+
+.mines {
+  display: grid;
+  grid-template-columns: repeat(5, 2.7em);
+  gap: 0.3em;
+}
+
+.mineTile,
+.towerTile {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border-radius: 0.25em;
+  color: #fff;
+  font-weight: var(--weight-bold);
+  line-height: 1;
+}
+
+.mineTile {
+  height: 1.95em;
+  box-shadow: inset 0 -0.25em 0 rgb(0 0 0 / 0.35);
+}
+
+.tileLetter {
+  position: absolute;
+  top: 0.15em;
+  left: 0.35em;
+  font-size: 0.8em;
+  font-weight: var(--weight-regular);
+  color: #9a9a9a;
+}
+
+.tileHidden {
+  background: #444;
+}
+
+.tileLit {
+  background: #5f8787;
+}
+
+.tileDark {
+  background: #303030;
+}
+
+.tileSafe {
+  background: #626262;
+  color: #00ff87;
+}
+
+.tileMine {
+  background: #af0000;
+}
+
+.tilePending {
+  background: #4e4e4e;
+}
+
+.tilePendingAlt {
+  background: #767676;
+}
+
+.tower {
+  display: flex;
+  flex-direction: column;
+  gap: 0.22em;
+}
+
+.towerRow {
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+  line-height: 1.2;
+}
+
+.towerPay {
+  width: 8ch;
+  margin-right: 0.4em;
+  text-align: right;
+  white-space: pre;
+}
+
+.towerTile {
+  width: 3.5em;
+  height: 1.3em;
+}
+
+.towerAlt.tileHidden {
+  background: #3a3a3a;
+}

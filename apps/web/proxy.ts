@@ -4,10 +4,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 const isDev = process.env.NODE_ENV === "development";
-// Waitlist deployment: only the landing, the legal pages and the signup route exist; the app pages
-// need the api, which isn't public yet.
+// Waitlist deployment: only the landing (and its archived first version), the legal pages and the
+// signup route exist; the app pages need the api, which isn't public yet.
 const landingOnly = process.env.LANDING_ONLY === "true";
-const LANDING_PATHS = /^\/(legal\/[a-z-]+|api\/waitlist)?$/;
+const LANDING_PATHS = /^\/(legal\/[a-z-]+|api\/waitlist|archive\/landing-v1)?$/;
 
 /** Origin only: CSP sources must not carry a path. */
 function origin(url: string | undefined): string {
