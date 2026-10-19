@@ -286,6 +286,21 @@ describe("around the table", () => {
     expect(textOf(await ui.drawn())).toContain("session +3.96 · 1 round");
   });
 
+  test("once the session line shows, the footer keeps to one line: the keys' hint shortens", async ($, on) => {
+    const { show, clock } = await moving($, on, BLACKJACK_WIN);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE, props: { ...PANE.props, bodyColumns: 80 } });
+
+    expect(textOf(await ui.drawn())).toContain("esc hands the keys back");
+
+    await show({ ...SLOTS, round: SLOTS.round === null ? null : { ...SLOTS.round, number: 8 } });
+    await clock.advance(SPIN_OVER_MS);
+    const text = textOf(await ui.drawn());
+
+    expect(text).toContain("session +3.96 · 1 round");
+    expect(text).not.toContain("esc hands the keys back");
+    expect(text).toContain("esc hands back");
+  });
+
   test("a logout starts the next account's session from zero, its last round not counted", async ($, on) => {
     let current: StateResponse = BASE;
     const { clock } = await seat($, on, BASE, {
