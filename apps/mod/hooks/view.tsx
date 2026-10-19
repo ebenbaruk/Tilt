@@ -1374,8 +1374,10 @@ export interface PaneLayout {
   isBand: boolean;
 }
 
-/** Everything around the table: header, agent line, outcome, status, keys and footer. */
+/** Everything around the table: header, agent line, outcome, status, keys (framed, as with large cards) and footer. */
 const CHROME_ROWS = 16;
+/** What small cards save there: the moves on the key line, not in keycaps three rows tall. */
+const KEYCAP_ROWS = 2;
 /** The first-hand guide in its frame, and its margin. */
 const GUIDE_ROWS = 4;
 /** The big-win banner in its frame. */
@@ -1487,7 +1489,8 @@ const wheelIn = (snap: Snapshot, state: StateResponse, layout: PaneLayout): numb
 /** The rows the whole pane takes with cards at `size`: what is around the table, then the table. */
 function paneRows(snap: Snapshot, state: StateResponse, layout: PaneLayout, size: CardSize): number {
   return (
-    aroundRows(snap, state, layout) +
+    aroundRows(snap, state, layout) -
+    (size === "small" ? KEYCAP_ROWS : 0) +
     tableRows(state, snap.prefs, dealingHands(snap), size, gameColumns(layout), wheelIn(snap, state, layout))
   );
 }

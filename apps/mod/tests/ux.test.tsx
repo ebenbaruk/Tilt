@@ -425,6 +425,24 @@ describe("tight rooms", () => {
   );
 
   test(
+    "a band short of rows for the framed keys draws them on a line before giving way to the compact band",
+    { options: { layout: "bottom" } },
+    async ($, on) => {
+      await seat($, on, BASE, {}, { ...LOGGED_IN, onboarded: true });
+      const band = {
+        ...BAND,
+        viewport: { columns: 160, rows: 48, isFullscreen: true },
+        props: { ...BAND.props, maxRows: 18, bodyColumns: 155, scroll: { offset: 0, bodyRows: 17 } },
+      };
+      const ui = await $.ui.mount({ plugin: PLUGIN, ...band });
+
+      expect(await ui.find({ type: "Client" })).toBeDefined();
+      expect(textOf(await ui.drawn())).not.toContain("╭");
+      expect(textOf(await ui.drawn())).toContain("PRESENTED BY Northwind Cloud");
+    },
+  );
+
+  test(
     "on the main screen the Wheel takes its strip in half the terminal rather than the compact band",
     { options: { layout: "bottom" } },
     async ($, on) => {
