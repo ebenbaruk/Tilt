@@ -843,6 +843,22 @@ describe("the roulette layout", () => {
     },
   );
 
+  test("an outside bet's stake leaves a blank column before the next cell's label", async ($, on) => {
+    await seat($, on, BASE);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+    const face = async (bet: string) => (await ui.find({ key: `table-roulette-${bet}`, in: TABLE_KEY }))?.text;
+
+    await ui.press({ key: "game-roulette" });
+    await ui.press({ key: "roulette-even" });
+    await ui.press({ key: "roulette-red" });
+    await ui.press({ key: "roulette-black" });
+
+    expect(await face("red")).toBe("RED ●.5 ");
+    expect(await face("even")).toBe("EVEN●.5 ");
+    // No room for both and the blank column: the chip marks the label alone.
+    expect(await face("black")).toBe(" ●BLACK ");
+  });
+
   test("fits its column: wide cells and wheel, narrow ones beside the sidebar at 90 columns, keys alone under 43", async ($, on) => {
     await seat($, on, ROULETTE_CHIPS);
     const widths = async (bodyColumns: number) => {
