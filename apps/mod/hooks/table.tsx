@@ -225,7 +225,7 @@ function startClock(surface: ClientSurface<TableState>, rt: Runtime): void {
   }
 }
 
-/** A click or a key: the table holds the raw keys while the pane keeps the keyboard. */
+/** A click gives the table the raw keys; a key then wakes its pulses. */
 function focus(surface: ClientSurface<TableState>, rt: Runtime): void {
   const state = surface.state;
 
@@ -242,6 +242,12 @@ function listen(surface: ClientSurface<TableState>, rt: Runtime): void {
     }
   });
   surface.onKey((event) => {
+    // The engine hands keys only after a click; a key the table holds no click for (none yet, or
+    // ctrl+x tab gave the pane the keyboard since) plays nothing, should any reach it.
+    if (surface.state?.isFocused !== true) {
+      return;
+    }
+
     const press = pressFor(event, rt.props.keys);
 
     focus(surface, rt);

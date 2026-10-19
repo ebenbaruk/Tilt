@@ -114,6 +114,20 @@ describe("the table in the fullscreen pane", () => {
     expect(textOf(await ui.drawn())).toContain("ctrl+x tab to use keys");
   });
 
+  test("a key the table holds no click for plays nothing: none yet, or since the pane took the keys", async ($, on) => {
+    const { world } = await seat($, on, BASE, { "POST /v1/play": () => SUBMITTED });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...UNFOCUSED });
+
+    await ui.key({ key: "space" });
+    expect(world.calls("POST /v1/play")).toHaveLength(0);
+
+    await ui.pointer(CLICK);
+    await ui.redraw(FULLSCREEN.props);
+    await ui.key({ key: "space" });
+    await ui.key({ key: "return" });
+    expect(world.calls("POST /v1/play")).toHaveLength(0);
+  });
+
   test("in a blackjack turn Space hits, Enter stands and d doubles", async ($, on) => {
     const { world, clock } = await seat($, on, BLACKJACK_TURN, movingTable(BLACKJACK_TURN, BLACKJACK_TURN));
     const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
@@ -526,6 +540,7 @@ describe("the table in the bottom band of the fullscreen terminal", () => {
     expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("click the table, then Space to play");
     await ui.post({ press: "bj-hit" });
     await ui.post({ press: "start", amount: "999000000" });
+    await ui.key({ key: "space" });
     expect(world.calls("POST /v1/play")).toHaveLength(0);
 
     await ui.pointer(CLICK);
