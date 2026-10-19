@@ -1346,6 +1346,19 @@ describe("the band never takes what is typed in the prompt", () => {
 
     expect((await pane.find({ key: "game-baccarat" }))?.props.hotkey).toBe("3");
   });
+
+  test("in a Mines round m reveals tile m: the next game then takes a click only", async ($, on) => {
+    const round = MINES_TURN.round;
+    const hidingM = round?.detail.game === "mines" ? { ...round, detail: { ...round.detail, revealed: [6] } } : null;
+
+    await seat($, on, { ...MINES_TURN, round: hidingM });
+    const band = await $.ui.mount({ plugin: PLUGIN, ...BAND });
+
+    expect((await band.find({ key: "mines-tile-12" }))?.props.hotkey).toBe("m");
+    expect((await band.find({ key: "game-next" }))?.props.hotkey ?? "").toBe("");
+    await band.press({ key: "game-next" });
+    expect(textOf(await band.drawn())).toContain("Finish this Mines round before switching game.");
+  });
 });
 
 describe("the key row keeps its keys in place", () => {

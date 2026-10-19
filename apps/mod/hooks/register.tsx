@@ -27,6 +27,7 @@ import { isPlayAction } from "./guards";
 import {
   activeGame,
   addChip,
+  bandTableKeys,
   choicesOf,
   type Command,
   currentBet,
@@ -40,6 +41,8 @@ import {
   DEFAULT_WHEEL_SEGMENTS,
   GAME_LABELS,
   isRoundOpen,
+  type KeyAction,
+  type PlanInput,
   randomPicks,
   type RandomBelow,
   sameBet,
@@ -747,8 +750,12 @@ function commandRunner($: EngineInterface, rt: Runtime): (command: Command) => v
   };
 }
 
+/** The table surface module's keys where it is drawn: the band's game keys there (`bandTableKeys`). */
+const tableKeysIn = (isBand: boolean, input: PlanInput): KeyAction[] =>
+  isBand ? bandTableKeys(input) : tableKeys(input);
+
 /** A key the table surface module pressed: checked, then run as that key of the plan, if it has it now. */
-async function onTablePost($: EngineInterface, rt: Runtime, data: unknown): Promise<void> {
+async function onTablePost($: EngineInterface, rt: Runtime, data: unknown, isBand: boolean): Promise<void> {
   if (!isTablePost(data)) {
     logDebug($, "ignored a malformed post from the table");
 
@@ -760,7 +767,9 @@ async function onTablePost($: EngineInterface, rt: Runtime, data: unknown): Prom
   const action =
     state === null
       ? undefined
-      : tableKeys({ state, prefs: snap.prefs, isBusy: isPlayHeld(snap) }).find((key) => key.key === data.press);
+      : tableKeysIn(isBand, { state, prefs: snap.prefs, isBusy: isPlayHeld(snap) }).find(
+          (key) => key.key === data.press,
+        );
 
   if (action !== undefined) {
     commandRunner($, rt)(action.command);
@@ -1314,7 +1323,7 @@ function tableOf(
   }
 
   const { Client } = $.ui.resolve(e);
-  const keys = tableKeys({ state, prefs: snap.prefs, isBusy: isPlayHeld(snap) });
+  const keys = tableKeysIn(e.component === "AbovePrompt", { state, prefs: snap.prefs, isBusy: isPlayHeld(snap) });
   const props = (cards: CardSize, columns: number, wheel: number | null, isResultFirst: boolean): TableProps => ({
     state,
     prefs: snap.prefs,
@@ -1548,7 +1557,7 @@ export const register: Register = (on, options) => {
   });
 
   on("ui.message", { element: TABLE_KEY }, async ($, e) => {
-    await onTablePost($, rt, e.data);
+    await onTablePost($, rt, e.data, e.component === "AbovePrompt");
 
     return {};
   });

@@ -463,8 +463,8 @@ describe("the table in the bottom band of the fullscreen terminal", () => {
   const BOTTOM_BAND: RenderInput<"AbovePrompt", "terminal"> = {
     ...BAND,
     surface: "terminal",
-    viewport: { columns: 125, rows: 60, isFullscreen: true },
-    props: { ...BAND.props, maxRows: 30, bodyColumns: 120, scroll: { offset: 0, bodyRows: 30 } },
+    viewport: { columns: 125, rows: 90, isFullscreen: true },
+    props: { ...BAND.props, maxRows: 40, bodyColumns: 120, scroll: { offset: 0, bodyRows: 39 } },
   };
 
   test("deals card by card and counts a win up once the last card is over, as the pane does", BOTTOM, async ($, on) => {
@@ -519,6 +519,26 @@ describe("the table in the bottom band of the fullscreen terminal", () => {
     await ui.key({ key: "space" });
     expect(actionsOf(world.calls("POST /v1/play"))).toEqual([{ type: "blackjack_bet", amount: "500000", hands: 1 }]);
   });
+
+  test(
+    "the clicked table takes the band's game keys: m steps to the next game, a digit does not",
+    BOTTOM,
+    async ($, on) => {
+      const { world } = await seat($, on, BASE, { "POST /v1/play": () => SUBMITTED });
+      const ui = await $.ui.mount({ plugin: PLUGIN, ...BOTTOM_BAND });
+      const table = async () => textOf(await ui.drawn({ in: TABLE_KEY }));
+
+      await ui.pointer(CLICK);
+      await ui.key({ key: "3" });
+      expect(await table()).toContain("No hand yet.");
+
+      // m is the band's next game, also once the table holds the keys: the next n is roulette's, with no chips to spin.
+      await ui.key({ key: "m" });
+      expect(await table()).toContain("No chips on the table yet.");
+      await ui.key({ key: "n" });
+      expect(world.calls("POST /v1/play")).toHaveLength(0);
+    },
+  );
 });
 
 describe("the table on the main screen", () => {

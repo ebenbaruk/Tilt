@@ -537,7 +537,8 @@ export const NEXT_GAME_HOTKEY = "m";
  * The game keys of the band above the prompt. A bare digit typed first in an empty prompt presses a
  * band Button whether the band has the keys or not ("2 bugs" would switch to Roulette and lose its
  * 2), so there the tabs take clicks only, and `m`, which only a band with the keys gets, steps to
- * the next game.
+ * the next game. A round in play pins its game, and its board may hold `m` (Mines tile 12): `m` is
+ * then the board's, and the next game takes a click only, saying why it does not switch.
  */
 export function bandSwitchKeys(state: StateResponse, prefs: Prefs): KeyAction[] {
   const shown = activeGame(state, prefs);
@@ -547,11 +548,19 @@ export function bandSwitchKeys(state: StateResponse, prefs: Prefs): KeyAction[] 
     ...switchKeys(state, prefs).map((key) => ({ ...key, hotkey: "" })),
     {
       key: "game-next",
-      hotkey: NEXT_GAME_HOTKEY,
+      hotkey: isRoundOpen(state) ? "" : NEXT_GAME_HOTKEY,
       label: "next game",
       isSelected: false,
       command: { kind: "switch", game: next },
     },
+  ];
+}
+
+/** The band's table surface keys: the table's, with the band's game keys in place of the digits. */
+export function bandTableKeys(input: PlanInput): KeyAction[] {
+  return [
+    ...tableKeys(input).filter((key) => key.command.kind !== "switch"),
+    ...bandSwitchKeys(input.state, input.prefs),
   ];
 }
 
