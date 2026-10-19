@@ -18,10 +18,18 @@ export default function PrivacyPage() {
         <li>Your country as derived from your IP, to apply regional restrictions.</li>
         <li>Identity verification data, held by the verification provider, when required.</li>
       </ul>
+      <h2>Waitlist</h2>
+      <p>
+        If you join the waitlist, we keep your email only to tell you when Tilt opens. Reply to that email to be
+        removed.
+      </p>
       <h2>What is public</h2>
       <p>Bets, outcomes and payouts are Solana transactions: they are public and permanent by design.</p>
       <h2>Processors</h2>
-      <p>Privy (login and wallets), card onramp providers, the hosting provider and the identity provider.</p>
+      <p>
+        Privy (login and wallets), card onramp providers, the hosting provider, the identity provider and Notion
+        (waitlist).
+      </p>
       <h2>To be completed</h2>
       <p>Controller identity, legal bases, retention periods, transfers and your rights (GDPR): pending counsel.</p>
     </LegalPage>

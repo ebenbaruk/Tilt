@@ -1,0 +1,76 @@
+.box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-9) var(--space-10);
+  background: var(--surface-terminal);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-window);
+  min-width: 0;
+}
+
+.command {
+  margin-bottom: var(--space-4);
+  color: var(--fg-1);
+  font-weight: var(--weight-bold);
+}
+
+.prompt {
+  color: var(--tilt-pink);
+}
+
+.line,
+.hidden {
+  display: grid;
+  grid-template-columns: 1.4em 7.5em minmax(0, 1fr) auto;
+  gap: var(--space-4);
+  align-items: baseline;
+}
+
+/* A line not printed yet keeps its row: the box never grows while it prints. */
+.hidden {
+  visibility: hidden;
+}
+
+.bullet {
+  color: var(--tilt-green);
+}
+
+.label {
+  color: var(--fg-4);
+}
+
+.value {
+  color: var(--fg-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.check {
+  color: var(--tilt-green-fg);
+  white-space: nowrap;
+}
+
+.result {
+  margin-top: var(--space-4);
+  color: var(--tilt-green-fg);
+  font-weight: var(--weight-bold);
+}
+
+@media (max-width: 560px) {
+  .box {
+    padding: var(--space-7) var(--space-6);
+    font-size: 12px;
+  }
+
+  .line,
+  .hidden {
+    grid-template-columns: 1.4em minmax(0, 1fr) auto;
+  }
+
+  .label {
+    display: none;
+  }
+}

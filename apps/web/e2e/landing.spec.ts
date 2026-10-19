@@ -1,55 +1,88 @@
-import { expect, test } from "./fixtures";
+import { expect, json, test } from "./fixtures";
 
-test("landing shows the pitch, install commands and key sections", async ({ page }) => {
+const GAMES = [
+  ["Blackjack", "≈ 99.2%"],
+  ["Roulette", "97.30%"],
+  ["Baccarat", "98.94%"],
+  ["Slots", "96.16%"],
+  ["Mines", "99.00%"],
+  ["Dice", "98.00%"],
+  ["Limbo", "≤ 98.00%"],
+  ["Flip", "98.00%"],
+  ["Keno", "94.90–95.00%"],
+  ["Wheel", "98.00%"],
+  ["Hilo", "98.00%"],
+  ["Tower", "98.00%"],
+] as const;
+
+test("landing shows the pitch, the waitlist and key sections", async ({ page }) => {
   const response = await page.goto("/");
   expect(response?.headers()["content-security-policy"]).toContain("frame-ancestors 'none'");
   expect(response?.headers()["x-content-type-options"]).toBe("nosniff");
 
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("The casino you play while your agent codes");
 
-  const install = page.getByLabel("Install commands");
-  await expect(install).toContainText("/plugin marketplace add ebenbaruk/Tilt");
-  await expect(install).toContainText("/plugin install tilt");
-  await expect(install).toContainText("/tilt login");
+  await expect(page.getByLabel("Email")).toBeVisible();
 
   for (const name of [
     "The most fun way to wait on your agent.",
-    "Three lines to install",
-    "How it works",
     "The games",
+    "How it works",
     "Provably fair",
     "Be the name next to the prize pool.",
     "Questions",
     "Play with what you can afford to lose.",
+    "Get in early",
   ]) {
     await expect(page.getByRole("heading", { name, level: 2 })).toBeVisible();
   }
-  for (const [game, rtp] of [
-    ["Blackjack", "99.00%"],
-    ["Roulette", "97.30%"],
-    ["Baccarat", "98.94%"],
-    ["Slots", "96.16%"],
-    ["Mines", "99.00%"],
-    ["Dice", "98.00%"],
-    ["Limbo", "Up to 98.00%"],
-    ["Flip", "98.00%"],
-    ["Keno", "Up to 95.00%"],
-    ["Wheel", "98.00%"],
-    ["Hilo", "98.00%"],
-    ["Tower", "98.00%"],
-  ]) {
-    await expect(page.locator("#games li", { hasText: game })).toContainText(rtp);
-  }
   await expect(page.getByText("1% of the gain, on winning rounds only")).toBeVisible();
-  const panel = page.getByRole("region", { name: "Tilt panel" });
-  await expect(panel).toContainText("[5] Mines");
-  await expect(panel).toContainText("[9] Keno");
-  await expect(panel).toContainText("[0] more 1/2");
-  await expect(panel).toContainText("Hit, stand or double.");
-  // The mock must stay monospace whatever font the landing uses.
-  expect(await panel.evaluate((el) => getComputedStyle(el).fontFamily)).toMatch(/JetBrains|mono/i);
-  await expect(page.getByRole("link", { name: "Verify a round" })).toHaveAttribute("href", "/verify");
+  await expect(page.getByText("Wins are capped at 10,000× the stake.")).toBeVisible();
+  // Waitlist mode: no way into the app pages from the landing.
+  for (const path of ["/account", "/verify", "/leaderboard"]) {
+    await expect(page.locator(`a[href="${path}"]`)).toHaveCount(0);
+  }
   await expect(page.locator("#responsible")).toContainText("United Kingdom, France");
+});
+
+test("previews all twelve games with their rtp", async ({ page }) => {
+  await page.goto("/");
+  const games = page.locator("#games");
+  await expect(games.getByRole("tab")).toHaveCount(GAMES.length);
+  const cards = games.getByRole("listitem");
+  await expect(cards).toHaveCount(GAMES.length);
+  for (const [i, [name, rtp]] of GAMES.entries()) {
+    const card = cards.nth(i);
+    await expect(card.getByRole("heading", { name, level: 3 })).toBeVisible();
+    await expect(card).toContainText(rtp);
+    // Each card draws its game's table (decorative) next to the text alternative.
+    await expect(card.locator('[aria-hidden="true"]').first()).toBeAttached();
+    await expect(card).toContainText("Demo round:");
+  }
+  // The demos stay monospace whatever font the titles use.
+  expect(await page.locator("#showcase").evaluate((el) => getComputedStyle(el).fontFamily)).toMatch(/JetBrains|mono/i);
+});
+
+test("switches games in the showcase with the keyboard and the grid", async ({ page }) => {
+  await page.goto("/");
+  const tabs = page.locator("#games").getByRole("tab");
+  await tabs.first().focus();
+  await page.keyboard.press("3");
+  await expect(page.getByRole("tab", { name: "Baccarat" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "Baccarat" })).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("tab", { name: "Slots" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tabpanel")).toContainText("Top win 250×");
+  await page.getByRole("button", { name: "Play Tower in the big terminal" }).click();
+  await expect(page.getByRole("tab", { name: "Tower" })).toHaveAttribute("aria-selected", "true");
+});
+
+test("the first landing stays reachable as an archive", async ({ page }) => {
+  await page.goto("/archive/landing-v1");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("The casino you play while your agent codes");
+  await expect(page.getByRole("heading", { name: "Get in early", level: 2 })).toBeVisible();
+  await expect(page.getByLabel("Email")).toBeVisible();
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
 });
 
 test("header links reach their sections", async ({ page }) => {
@@ -65,14 +98,25 @@ test("header links reach their sections", async ({ page }) => {
   }
 });
 
-test("copies the install commands", async ({ page, context }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+test("joins the waitlist", async ({ page }) => {
+  let sent: unknown;
+  await page.route("**/api/waitlist", (route) => {
+    sent = route.request().postDataJSON();
+    return json(route, 200, {});
+  });
   await page.goto("/");
-  await page.getByRole("button", { name: "copy" }).click();
-  await expect(page.getByRole("button", { name: "✓ copied" })).toBeVisible();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
-    "/plugin marketplace add ebenbaruk/Tilt\n/plugin install tilt\n/tilt login",
-  );
+  await page.getByLabel("Email").fill("ada@example.com");
+  await page.getByRole("button", { name: "Join the waitlist" }).click();
+  await expect(page.getByRole("status")).toContainText("You're on the list.");
+  expect(sent).toEqual({ email: "ada@example.com", website: "" });
+});
+
+test("shows the waitlist error", async ({ page }) => {
+  await page.route("**/api/waitlist", (route) => json(route, 400, { error: "Enter a valid email." }));
+  await page.goto("/");
+  await page.getByLabel("Email").fill("nope");
+  await page.getByRole("button", { name: "Join the waitlist" }).click();
+  await expect(page.getByText("Enter a valid email.")).toHaveAttribute("role", "alert");
 });
 
 test("faq answers open with the keyboard", async ({ page }) => {
@@ -84,10 +128,12 @@ test("faq answers open with the keyboard", async ({ page }) => {
 });
 
 test("no horizontal scroll on a phone", async ({ page }) => {
-  await page.setViewportSize({ width: 375, height: 800 });
-  await page.goto("/");
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-  expect(overflow).toBe(0);
+  for (const width of [375, 390]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto("/");
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow).toBe(0);
+  }
 });
 
 test("legal pages are marked as drafts", async ({ page }) => {

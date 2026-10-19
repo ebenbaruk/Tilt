@@ -3,8 +3,9 @@ import styles from "./Badge.module.css";
 
 const RING = "FOR CLAUDE CODE  ·  TWELVE GAMES  ·  USDC ON SOLANA  ·  PROVABLY FAIR  ·  ";
 
-/** Round sticker: the mascot inside a slowly turning ring of text. Decorative. */
-export function Badge({ className }: { className?: string }) {
+/** Round sticker: the mascot inside a slowly turning ring of text. Decorative. `text` is sized to
+ *  run about once around the ring (textLength stretches it the rest of the way). */
+export function Badge({ className, text = RING }: { className?: string; text?: string }) {
   return (
     <div className={`${styles.badge} ${className ?? ""}`} aria-hidden="true">
       <svg viewBox="0 0 300 300" className={styles.ring}>
@@ -13,7 +14,7 @@ export function Badge({ className }: { className?: string }) {
         </defs>
         <text className={styles.ringText} xmlSpace="preserve">
           <textPath href="#badge-ring" textLength="740">
-            {RING}
+            {text}
           </textPath>
         </text>
       </svg>
