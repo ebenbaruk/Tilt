@@ -2,7 +2,7 @@
 // by the relayer. The program stays the arbiter: everything is re-checked on-chain.
 import anchor from "@coral-xyz/anchor";
 import type { IdlAccounts, IdlTypes, Program as ProgramT } from "@coral-xyz/anchor";
-import { createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { createAssociatedTokenAccountIdempotentInstruction, getAccount, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Connection, Keypair, PublicKey, Transaction, type TransactionInstruction } from "@solana/web3.js";
 import {
   type Action,
@@ -19,6 +19,7 @@ import {
   promoPayoutAddress,
   promoTokenAddress,
   quickTableAddress,
+  riskPoolAddress,
   type RouletteBet,
   rouletteTableAddress,
   tableAddress,
@@ -36,32 +37,14 @@ import type { PlayerWallet, PlayerWallets } from "./players";
 const { BN, Program } = anchor;
 const { bs58 } = anchor.utils.bytes;
 export type PlayerAccount = IdlAccounts<Tilt>["playerAccount"];
-type Vault = IdlAccounts<Tilt>["vault"];
+export type Vault = IdlAccounts<Tilt>["vault"];
+export type RiskPool = IdlAccounts<Tilt>["riskPool"];
 export type Ledger = IdlAccounts<Tilt>["ledger"];
 type ProgramRouletteBet = IdlTypes<Tilt>["rouletteBet"];
 type ProgramBaccaratBet = IdlTypes<Tilt>["baccaratBet"];
 type RollupAction = Exclude<Action, { type: "open_account" | "deposit" }>;
 
 const isBlackjack = (action: RollupAction) => action.type.startsWith("blackjack_");
-
-/** Moves that put a stake down: the only ones the program checks against the win cap, so the
- *  only ones whose refusal may raise it. */
-const STAKING_MOVES: ReadonlySet<RollupAction["type"]> = new Set<RollupAction["type"]>([
-  "blackjack_bet",
-  "blackjack_split",
-  "roulette_spin",
-  "roulette_chips",
-  "baccarat_deal",
-  "slots_spin",
-  "mines_bet",
-  "dice_roll",
-  "limbo_play",
-  "flip_play",
-  "keno_play",
-  "wheel_spin",
-  "hilo_bet",
-  "tower_bet",
-]);
 
 /** Per-player game accounts the rollup must hold before that game's first move: opened and
  *  delegated on Solana by the relayer, never closed. */
@@ -123,13 +106,19 @@ export class UnconfirmedError extends Error {
   }
 }
 
-/** By how much a move refused `WinCapReached` passes the player's cap, as the program logs it. */
-export function winCapShortfall(logs: readonly string[]): bigint | undefined {
-  for (const line of logs) {
-    const match = /Win cap short by (\d+)/.exec(line);
-    if (match) return BigInt(match[1]);
+/** The bets a move opening a round puts down; undefined for a move playing on an open round
+ *  (a blackjack split adds a hand to a round its table already holds). */
+function newRoundBets(action: RollupAction): bigint[] | undefined {
+  switch (action.type) {
+    case "blackjack_bet":
+      return Array.from({ length: action.hands }, () => BigInt(action.amount));
+    case "roulette_chips":
+      return action.chips.map((chip) => BigInt(chip.amount));
+    case "withdraw":
+      return undefined;
+    default:
+      return "amount" in action ? [BigInt(action.amount)] : undefined;
   }
-  return undefined;
 }
 
 /** Anchor's error name from transaction logs ("Error Code: InsufficientBalance."). */
@@ -176,8 +165,6 @@ const ROLLUP_POLL_MS = 50;
  *  that lag each other behind a load balancer (height read on one, status on another). */
 const EXPIRY_MARGIN_BLOCKS = 150;
 const RPC_TIMEOUT_MS = 30_000;
-/** How long the rollup gets to see a win cap just raised on Solana. */
-const WIN_CAP_READY_MS = 20_000;
 /** How long the rollup gets to see a table or board just opened and delegated on Solana. */
 const TABLE_READY_MS = 20_000;
 const TABLE_POLL_MS = 250;
@@ -223,6 +210,8 @@ export class TiltChain {
   private readonly vault = vaultAddress();
   /** Game accounts (`kind:player`) the rollup already holds: never closed, so no need to look again. */
   private readonly gameAccountsReady = new Set<string>();
+  /** The rollup holds the risk pool: delegated once, never closed. */
+  private riskPoolReady = false;
 
   constructor(options: ChainOptions) {
     this.relayer = options.relayer;
@@ -255,17 +244,47 @@ export class TiltChain {
     return this.rollupProgram.account.playerAccount.fetchNullable(playerAccountAddress(player));
   }
 
+  /** The house's risk pool as the rollup holds it. */
+  fetchRiskPool(): Promise<RiskPool> {
+    return this.rollupProgram.account.riskPool.fetch(riskPoolAddress());
+  }
+
+  /** USDC the vault holds on Solana. */
+  async fetchVaultBalance(): Promise<bigint> {
+    return (await getAccount(this.base, vaultTokenAddress())).amount;
+  }
+
+  /** Makes sure the rollup holds the risk pool: opened and delegated once, by the relayer, on
+   *  a fresh deployment. Idempotent, like `ensureGameAccount`. */
+  async ensureRiskPool(): Promise<void> {
+    const address = riskPoolAddress();
+    if (this.riskPoolReady || (await this.rollupHolds(address))) {
+      this.riskPoolReady = true;
+      return;
+    }
+    if ((await this.base.getAccountInfo(address)) === null) {
+      const accounts = { vault: this.vault, payer: this.relayer.publicKey, riskPool: address };
+      const open = await this.program.methods.openRiskPool().accountsPartial(accounts).instruction();
+      const delegate = await this.program.methods.delegateRiskPool().accountsPartial(accounts).instruction();
+      await this.sendBase(new Transaction().add(open, delegate), withoutRecord);
+    }
+    await this.waitForRollup(address);
+    this.riskPoolReady = true;
+  }
+
+  /** Solana, relay cron: grants the risk pool `amount` more of the free bankroll. */
+  async fundRiskPool(amount: bigint): Promise<string> {
+    const tx = await this.program.methods.fundRiskPool(new BN(amount.toString()))
+      .accountsPartial({ relayer: this.relayer.publicKey, vault: this.vault, vaultToken: vaultTokenAddress() })
+      .transaction();
+    return this.sendBase(tx, withoutRecord);
+  }
+
   /** First deposit: opens the account and the blackjack table and moves both into the rollup,
    *  in one transaction. */
   async openAccount(wallet: PlayerWallet, amount: bigint, players: PlayerWallets, record: RecordSend): Promise<string> {
     if (await this.isOpen(wallet.address)) throw new IntentError("ACCOUNT_ALREADY_OPEN", "account already open");
     const vault = await this.fetchVault();
-    const config = vault.config;
-    const credited = amount - BigInt(config.onboardingFee.toString());
-    // The largest win cap the program accepts for this deposit.
-    const maxWin = credited > 0n
-      ? [BigInt(config.maxPlayerWin.toString()), credited * BigInt(config.maxWinMultiple.toString())].reduce((a, b) => (a < b ? a : b))
-      : 0n;
     const player = wallet.address;
     const accounts = {
       vault: this.vault,
@@ -278,7 +297,7 @@ export class TiltChain {
       account: playerAccountAddress(player),
       ledger: ledgerAddress(player),
     };
-    const open = await this.program.methods.openAccount(new BN(amount.toString()), new BN(maxWin.toString())).accountsPartial(accounts).instruction();
+    const open = await this.program.methods.openAccount(new BN(amount.toString())).accountsPartial(accounts).instruction();
     const delegate = await this.program.methods.delegateAccount()
       .accountsPartial({ vault: this.vault, payer: this.relayer.publicKey, player, ledger: accounts.ledger, account: accounts.account })
       .instruction();
@@ -306,55 +325,15 @@ export class TiltChain {
   /** A round action or a withdrawal, in the rollup. Blackjack needs the player's table and the
    *  other games but baccarat, slots and single-bet roulette their own account (one-draw or
    *  roulette table, Mines, Hilo or Tower board), opened first on the player's first staking move
-   *  of that game. A staking move past the player's win cap is sent again once Solana has raised
-   *  the cap from the free bankroll (the rolling win cap). */
+   *  of that game. A bet the risk pool cannot cover right now is the program's RiskPoolFull: the
+   *  cron grants the pool more of the free bankroll (`sweep`). */
   async play(player: PublicKey, action: RollupAction, record: RecordSend): Promise<string> {
     if (!(await this.isOpen(player))) throw new IntentError("ACCOUNT_NOT_OPEN", "no account yet: deposit first");
     const gameAccount = action.type === "roulette_chips" ? "roulette" : GAME_ACCOUNT_OF[action.type.split("_")[0]];
-    if (gameAccount && STAKING_MOVES.has(action.type)) await this.ensureGameAccount(player, gameAccount);
+    const bets = newRoundBets(action);
+    if (gameAccount && bets) await this.ensureGameAccount(player, gameAccount, bets);
     else if (gameAccount) await this.requireGameAccount(player, gameAccount);
-    try {
-      return await this.sendRollup(await this.playTransaction(player, action), record);
-    } catch (e) {
-      // A program refusal comes from the simulation: nothing was sent, so sending again is safe.
-      const short = e instanceof IntentError && e.message === "WinCapReached" ? winCapShortfall(e.logs) : undefined;
-      // Fail closed: a move staking nothing never reserves bankroll.
-      if (short === undefined || !STAKING_MOVES.has(action.type)) throw e;
-      await this.raiseWinCap(player, short);
-      return this.sendRollup(await this.playTransaction(player, action), record);
-    }
-  }
-
-  /** Brings the player's win cap to what the refused move needs, `short` above the cap the rollup
-   *  checked it against, then waits for the rollup to see it. Solana is raised only by what its
-   *  own cap lacks: after a raise the rollup has not seen yet, the shortfall includes it, and it
-   *  is not reserved twice. A bankroll too small to cover it is the program's VaultTooSmall. */
-  private async raiseWinCap(player: PublicKey, short: bigint): Promise<void> {
-    const ledger = await this.fetchLedger(player);
-    const seen = await this.rollupProgram.account.ledger.fetchNullable(ledgerAddress(player));
-    if (!ledger || !seen) throw new IntentError("ACCOUNT_NOT_OPEN", "no account yet: deposit first");
-    const target = BigInt(seen.maxWin.toString()) + short;
-    const amount = target - BigInt(ledger.maxWin.toString());
-    if (amount > 0n) await this.sendRaiseWinCap(player, amount);
-    for (const end = Date.now() + WIN_CAP_READY_MS; Date.now() < end; await sleep(TABLE_POLL_MS)) {
-      const latest = await this.rollupProgram.account.ledger.fetchNullable(ledgerAddress(player));
-      if (latest && BigInt(latest.maxWin.toString()) >= target) return;
-    }
-    // Fail closed: the move would only be refused again. A retry finds the raise on Solana.
-    throw new IntentError("NETWORK_ERROR", "the rollup has not seen the raised win cap yet");
-  }
-
-  private async sendRaiseWinCap(player: PublicKey, amount: bigint): Promise<void> {
-    const tx = await this.program.methods.raiseWinCap(new BN(amount.toString()))
-      .accountsPartial({ relayer: this.relayer.publicKey, vault: this.vault, vaultToken: vaultTokenAddress(), ledger: ledgerAddress(player) })
-      .transaction();
-    try {
-      await this.sendBase(tx, withoutRecord);
-    } catch (e) {
-      // Nothing of the player's move went out; a raise that landed anyway only reserves bankroll.
-      if (e instanceof UnconfirmedError) throw new IntentError("NETWORK_ERROR", `win cap raise unconfirmed: ${e.message}`);
-      throw e;
-    }
+    return this.sendRollup(await this.playTransaction(player, action), record);
   }
 
   /** Relay cron: requests again the draw of a round stuck waiting for it. A blackjack draw
@@ -388,12 +367,15 @@ export class TiltChain {
     return this.sendRollup(tx, withoutRecord);
   }
 
-  /** Makes sure the rollup holds the player's game account. Idempotent: an account already on
-   *  Solana is not opened again, only waited for. Nothing of the player's moves in here, so any
+  /** Makes sure the rollup holds the player's game account, for a move opening a round of
+   *  `bets`. Idempotent: an account already on Solana is not opened again, only waited for.
+   *  The move is checked first, so the relayer never pays an account's rent for a move the
+   *  program would refuse anyway. Past that, nothing of the player's moves in here, so any
    *  failure is TABLE_NOT_READY and the action can simply be sent again. */
-  async ensureGameAccount(player: PublicKey, kind: GameAccount): Promise<void> {
+  async ensureGameAccount(player: PublicKey, kind: GameAccount, bets: readonly bigint[]): Promise<void> {
     const key = `${kind}:${player.toBase58()}`;
     if (this.gameAccountsReady.has(key)) return;
+    await this.checkCanStart(player, bets);
     const address = GAME_ACCOUNTS[kind].address(player);
     try {
       if (!(await this.rollupHolds(address))) {
@@ -407,6 +389,23 @@ export class TiltChain {
       throw new IntentError("TABLE_NOT_READY", `${GAME_ACCOUNTS[kind].label} not ready: ${e instanceof Error ? e.message : String(e)}`);
     }
     this.gameAccountsReady.add(key);
+  }
+
+  /** The program's own refusals of a new round (`start_round`), from the accounts as they
+   *  stand: pause, a round already open, bet limits, balance. Deposits Solana recorded count
+   *  even before the rollup credits them, so a player who can play is never refused here; the
+   *  program checks everything again. */
+  private async checkCanStart(player: PublicKey, bets: readonly bigint[]): Promise<void> {
+    const [vault, account, ledger] = await Promise.all([this.fetchVault(), this.fetchPlayerAccount(player), this.fetchLedger(player)]);
+    if (!account || !ledger) throw new IntentError("ACCOUNT_NOT_OPEN", "no account yet: deposit first");
+    const { config } = vault;
+    if (config.betsPaused) throw new IntentError("PROGRAM_ERROR", "Paused");
+    if (!("idle" in account.round.status)) throw new IntentError("PROGRAM_ERROR", "RoundInProgress");
+    const [minBet, maxBet] = [BigInt(config.minBet.toString()), BigInt(config.maxBet.toString())];
+    if (bets.length === 0 || bets.some((bet) => bet < minBet || bet > maxBet)) throw new IntentError("PROGRAM_ERROR", "AmountOutOfRange");
+    const uncredited = BigInt(ledger.deposited.toString()) - BigInt(account.credited.toString());
+    const balance = BigInt(account.balance.toString()) + (uncredited > 0n ? uncredited : 0n);
+    if (bets.reduce((stake, bet) => stake + bet, 0n) > balance) throw new IntentError("PROGRAM_ERROR", "InsufficientBalance");
   }
 
   /** A move staking nothing plays on a round a staking move started, so on an account the rollup
@@ -468,6 +467,7 @@ export class TiltChain {
       ledger: ledgerAddress(player),
       // Other games pass no table (Anchor puts the program id in the optional slot).
       table: blackjack ? tableAddress(player) : null,
+      riskPool: riskPoolAddress(),
       oracleQueue: this.vrfQueue,
     };
   }
@@ -481,6 +481,7 @@ export class TiltChain {
       account: playerAccountAddress(player),
       ledger: ledgerAddress(player),
       board: GAME_ACCOUNTS[kind].address(player),
+      riskPool: riskPoolAddress(),
       oracleQueue: this.vrfQueue,
     };
   }
@@ -493,6 +494,7 @@ export class TiltChain {
       account: playerAccountAddress(player),
       ledger: ledgerAddress(player),
       quick: quickTableAddress(player),
+      riskPool: riskPoolAddress(),
       oracleQueue: this.vrfQueue,
     };
   }
@@ -505,6 +507,7 @@ export class TiltChain {
       account: playerAccountAddress(player),
       ledger: ledgerAddress(player),
       roulette: rouletteTableAddress(player),
+      riskPool: riskPoolAddress(),
       oracleQueue: this.vrfQueue,
     };
   }
@@ -621,6 +624,7 @@ export class TiltChain {
             playerToken: getAssociatedTokenAddressSync(vault.mint, player),
             mint: vault.mint,
             tokenProgram: TOKEN_PROGRAM_ID,
+            riskPool: riskPoolAddress(),
           })
           .transaction();
       }

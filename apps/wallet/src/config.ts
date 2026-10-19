@@ -70,6 +70,9 @@ const Env = z.object({
   CHECKPOINT_MIN_LOSS: UsdcAmount.default(1_000_000n),
   /** Minimum delay between two checkpoints of the same player. */
   CHECKPOINT_INTERVAL_MS: z.coerce.number().int().positive().default(3_600_000),
+  /** What the house's risk pool should keep free for new rounds (USDC base units): the cron
+   *  grants it more of the free bankroll below this. Bets past it are refused RiskPoolFull. */
+  RISK_POOL_TARGET: UsdcAmount.default(1_000_000_000n),
   /** Monitoring: alert below these (lamports, lamports, USDC base units). */
   MIN_RELAYER_LAMPORTS: z.coerce.bigint().default(500_000_000n),
   MIN_ESCROW_LAMPORTS: z.coerce.bigint().default(2_000_000n),

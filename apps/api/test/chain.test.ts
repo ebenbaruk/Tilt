@@ -37,6 +37,7 @@ const base: RoundData = {
   roulette: null,
   baccarat: null,
   slots: { reels: [0, 0, 0] },
+  pooled: { gain: new BN(0), stake: new BN(0) },
 };
 
 const player = new PublicKey("7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU");
@@ -329,9 +330,11 @@ describe("RpcChainReader.playerAccount", () => {
   const info = (data: Buffer): AccountInfo<Buffer> => ({ data, owner: PROGRAM_ID, executable: false, lamports: 1 });
   const account = {
     player,
-    maxWin: new BN(0),
     credited: new BN(10_000_000),
     forfeited: new BN(0),
+    winReserved: new BN(0),
+    winReleased: new BN(0),
+    uncovered: new BN(0),
     withdrawn: new BN(0),
     balance: new BN(6_000_000),
     rounds: 4,

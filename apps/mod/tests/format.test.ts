@@ -116,11 +116,11 @@ describe("time", () => {
 
   test("the finish notice, and neutral words when the turn did not answer", () => {
     expect(finishNotice("answer", 374_000)).toEqual({
-      text: "✓ agent finished in 6m 14s · your hand is saved",
+      text: "✓ agent finished in 6m 14s · your hand is saved for 6 hours",
       tone: "success",
     });
-    expect(finishNotice("aborted", 31_000)?.text).toBe("agent stopped after 31s · your hand is saved");
-    expect(finishNotice("error", 5_000)?.text).toBe("agent turn ended after 5s · your hand is saved");
+    expect(finishNotice("aborted", 31_000)?.text).toBe("agent stopped after 31s · your hand is saved for 6 hours");
+    expect(finishNotice("error", 5_000)?.text).toBe("agent turn ended after 5s · your hand is saved for 6 hours");
     expect(finishNotice("refusal", 5_000)?.tone).toBe("neutral");
   });
 });
@@ -156,7 +156,7 @@ describe("boundaries", () => {
 
   test("a refusal of the program reads as a sentence, anything else as sent", () => {
     expect(moveFailure("VaultTooSmall")).toBe("The casino cannot cover a bet this size right now: try a smaller one.");
-    expect(moveFailure("WinCapReached")).not.toContain("WinCapReached");
+    expect(moveFailure("RiskPoolFull")).not.toContain("RiskPoolFull");
     expect(moveFailure("network error, try again")).toBe("network error, try again");
   });
 

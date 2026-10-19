@@ -9,7 +9,7 @@ Le relais (`apps/wallet`) écrit une ligne JSON `{"level":"alert","code":…}` �
 | Code | Gravité | Ce que ça veut dire | Action |
 | --- | --- | --- | --- |
 | `INSOLVENT` | critique | Le coffre détient moins que ce qu'il peut devoir (`vault.reserved`). Ne doit jamais arriver. | `pause all`, puis enquête (bug du programme ou incident rollup). Ne rien reprendre avant d'avoir compris. |
-| `LOW_FREE_BANKROLL` | avertissement | Peu de bankroll libre : les nouveaux comptes et les gros plafonds de gains vont être refusés (`VaultTooSmall`). | Alimenter le coffre (`fund_vault`) ou baisser `max_player_win`. |
+| `LOW_FREE_BANKROLL` | avertissement | Peu de bankroll libre : le relais ne peut plus accorder de ligne au pool de risque, donc les mises vont être refusées (`RiskPoolFull`) une fois la ligne utilisée. | Alimenter le coffre (`fund_vault`) ou baisser `max_round_gain` (la réserve exigée en dépend). |
 | `LOW_RELAYER_SOL` | critique | Le relais paie les frais et les rents : sans SOL, plus rien ne passe. | Envoyer du SOL à l'adresse du relayer (`status`). |
 | `LOW_ESCROW` | critique | L'escrow MagicBlock du relayer paie les Magic Actions : sans lui, retraits et checkpoints restent bloqués. | Recharger l'escrow (`createTopUpEscrowInstruction` du SDK MagicBlock, voir `scripts/e2e.ts`). |
 | `STUCK_INTENTS` | avertissement | Des intentions sont `pending` depuis plus de 10 min : la réconciliation n'arrive pas à trancher. | Regarder les signatures en base (`intents`) sur l'explorateur ; vérifier les RPC. |

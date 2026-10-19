@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
 
+use crate::constants::MIN_BET_FLOOR;
 use crate::errors::TiltError;
 use crate::games::{
     baccarat::BaccaratCoup,
@@ -7,21 +8,21 @@ use crate::games::{
     roulette::RouletteSpin,
     slots::SlotsSpin,
 };
+use crate::risk::{Pooled, RiskPool};
 use crate::rng::Rng;
 use crate::settlement::Settlement;
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, InitSpace, PartialEq, Eq, Debug)]
 pub struct Config {
-    /// Smallest stake. Whatever a round gains, a win pays Tilt at least `MIN_FEE` (`settle`).
+    /// Smallest stake, at least `MIN_BET_FLOOR`. Whatever a round gains, a win pays Tilt at
+    /// least `MIN_FEE` (`settle`).
     pub min_bet: u64,
-    /// Largest stake for one round, in USDC base units.
+    /// Largest stake of one bet, in USDC base units: a blackjack hand, a roulette chip (a
+    /// `roulette_chips` spin stakes up to `MAX_CHIPS` of them), the bet of any other round.
     pub max_bet: u64,
     /// Largest gain one round may produce (caps e.g. straight-up roulette and slot jackpots).
+    /// Also the most one round can take from the risk pool (`risk::required_reserve`).
     pub max_round_gain: u64,
-    /// Largest lifetime net win reserved for one player.
-    pub max_player_win: u64,
-    /// A player's reserved max win may not exceed this multiple of their first deposit.
-    pub max_win_multiple: u64,
     /// What Tilt advances in SOL to open an account, kept in USDC from the first deposit.
     pub onboarding_fee: u64,
     /// Smallest deposit after the first one. At least `min_withdrawal`, so a dust deposit
@@ -53,15 +54,15 @@ impl Config {
     /// Refuses settings that would silently break play or payouts.
     pub fn validate(&self) -> Result<()> {
         require!(
-            self.min_bet > 0
+            // Every move costs Tilt a VRF draw and a transaction: a dust stake would make
+            // spamming rounds (or parking one forever) nearly free.
+            self.min_bet >= MIN_BET_FLOOR
                 && self.min_bet <= self.max_bet
                 // Settlement multiplies stakes by up to the slots jackpot; a doubled blackjack
                 // stake only returns 2x, well within this.
                 && self.max_bet.checked_mul(crate::games::slots::MAX_MULTIPLE).is_some()
                 // Even-money bets gain their stake: below this no bet could ever start.
                 && self.max_round_gain >= self.min_bet
-                && self.max_player_win >= self.min_bet
-                && self.max_win_multiple > 0
                 && self.min_deposit >= self.min_withdrawal
                 && self.min_deposit > 0
                 // Otherwise every withdrawal would be held, like a silent payout pause.
@@ -91,12 +92,18 @@ pub struct Vault {
     pub treasury: Pubkey,
     pub bump: u8,
     pub token_bump: u8,
-    /// What the vault may owe in the worst case: for every player,
-    /// deposited - forfeited - withdrawn_paid + max_win.
+    /// What the vault may owe in the worst case: for every player, deposited - forfeited -
+    /// withdrawn_paid + their secured wins, plus what is left of the risk pool's line
+    /// (pool_line - pool_transferred).
     pub reserved: u64,
     pub config: Config,
     pub window_start: i64,
     pub window_paid: u64,
+    /// Bankroll granted to the risk pool so far (`fund_risk_pool`), reserved; never decreases.
+    pub pool_line: u64,
+    /// Part of `pool_line` moved to players' secured wins (`Ledger::win_reserved`), as the
+    /// rollup's `RiskPool::transferred` reports it; never decreases.
+    pub pool_transferred: u64,
 }
 
 /// Solana's own record of a player, never written by the rollup. Claims coming back
@@ -110,38 +117,20 @@ pub struct Ledger {
     pub withdrawn_paid: u64,
     /// Player losses released from the reservation (see `checkpoint`).
     pub forfeited: u64,
-    /// The player's win cap: set at the first deposit, raised by `raise_win_cap` as they win.
-    pub max_win: u64,
+    /// House money reserved for the player's wins, moved from the risk pool's line when a
+    /// withdrawal needs it; never decreases.
+    pub win_reserved: u64,
+    /// Part of `win_reserved` given back to the house by `checkpoint` once the player lost
+    /// it again; never decreases.
+    pub win_released: u64,
     pub window_start: i64,
     pub window_paid: u64,
 }
 
 impl Ledger {
-    /// The rolling win cap: raises the player's cap by `amount`, reserved from the free
-    /// bankroll `free`, so the vault still covers every player's worst case and a withdrawal
-    /// is still checked against the cap. At most one round's largest gain at a time, and not
-    /// while bets are paused.
-    pub fn raise_win_cap(
-        &mut self,
-        reserved: &mut u64,
-        free: u64,
-        amount: u64,
-        config: &Config,
-    ) -> Result<()> {
-        require!(!config.bets_paused, TiltError::Paused);
-        require!(
-            amount > 0 && amount <= config.max_round_gain,
-            TiltError::AmountOutOfRange
-        );
-        require!(amount <= free, TiltError::VaultTooSmall);
-        *reserved = reserved
-            .checked_add(amount)
-            .ok_or(TiltError::AmountOutOfRange)?;
-        self.max_win = self
-            .max_win
-            .checked_add(amount)
-            .ok_or(TiltError::AmountOutOfRange)?;
-        Ok(())
+    /// House money Solana holds for the player's wins.
+    pub fn secured(&self) -> u64 {
+        self.win_reserved - self.win_released
     }
 }
 
@@ -244,6 +233,8 @@ pub struct Round {
     pub roulette: Option<RouletteSpin>,
     pub baccarat: Option<BaccaratCoup>,
     pub slots: SlotsSpin,
+    /// What the round puts on the risk pool until it settles.
+    pub pooled: Pooled,
 }
 
 impl Default for Round {
@@ -260,6 +251,7 @@ impl Default for Round {
             roulette: None,
             baccarat: None,
             slots: SlotsSpin::default(),
+            pooled: Pooled::default(),
         }
     }
 }
@@ -328,13 +320,21 @@ impl Round {
 #[derive(InitSpace, Default)]
 pub struct PlayerAccount {
     pub player: Pubkey,
-    pub max_win: u64,
     /// Deposits already credited from the ledger; never decreases.
     pub credited: u64,
     /// Losses released from the vault reservation by `checkpoint`; never decreases.
     pub forfeited: u64,
     /// Total ever withdrawn; never decreases.
     pub withdrawn: u64,
+    /// House money moved from the risk pool to Solana for this player's wins (`secure_wins`,
+    /// before a withdrawal); never decreases. Solana mirrors it in `Ledger::win_reserved`.
+    pub win_reserved: u64,
+    /// Part of `win_reserved` given back to the house once lost again (`checkpoint`); never
+    /// decreases.
+    pub win_released: u64,
+    /// Net wins beyond the secured ones: the risk pool pays them until a withdrawal secures
+    /// them (its share of `RiskPool::uncovered`).
+    pub uncovered: u64,
     pub balance: u64,
     pub rounds: u32,
     /// Tilt's 1% fees taken from this player's winning rounds.
@@ -342,34 +342,39 @@ pub struct PlayerAccount {
     pub round: Round,
 }
 
-/// Logged before a `WinCapReached` refusal, then the shortfall in USDC base units: the relay
-/// raises the cap by exactly that (`raise_win_cap`), no more bankroll than the move needs.
-pub const WIN_CAP_SHORT_LOG: &str = "Win cap short by ";
+/// What a round answers to beyond the player: the limits, and the risk pool with the bankroll
+/// Solana granted it.
+pub struct Bankroll<'a> {
+    pub config: &'a Config,
+    pub pool: &'a mut RiskPool,
+    /// `Vault::pool_line` as the rollup sees it: a stale copy only lags a raise.
+    pub line: u64,
+}
 
 impl PlayerAccount {
-    /// Takes what Solana recorded since the last move: deposits (credited at most once) and a
-    /// raised win cap. A stale ledger copy can never make either go back.
+    /// Takes the deposits Solana recorded since the last move, credited at most once: a stale
+    /// ledger copy can never take one back.
     pub fn sync_ledger(&mut self, ledger: &Ledger) {
         if ledger.deposited > self.credited {
             self.balance += ledger.deposited - self.credited;
             self.credited = ledger.deposited;
         }
-        self.max_win = self.max_win.max(ledger.max_win);
-    }
-
-    /// Refuses a round whose worst case, from `start_balance` up by `max_gain`, passes the cap.
-    fn check_win_cap(&self, start_balance: u64, max_gain: u64) -> Result<()> {
-        let short = self.net_win(start_balance + max_gain) - self.max_win as i128;
-        if short > 0 {
-            msg!("{}{}", WIN_CAP_SHORT_LOG, short);
-            return err!(TiltError::WinCapReached);
-        }
-        Ok(())
     }
 
     /// Net win so far if the balance were `balance`; losses already forfeited are not counted.
     pub fn net_win(&self, balance: u64) -> i128 {
         balance as i128 + self.withdrawn as i128 - (self.credited as i128 - self.forfeited as i128)
+    }
+
+    /// House money Solana holds for this player's wins.
+    pub fn secured(&self) -> u64 {
+        self.win_reserved - self.win_released
+    }
+
+    /// Net wins at `balance` beyond the secured ones.
+    fn uncovered_at(&self, balance: u64) -> u64 {
+        let beyond = self.net_win(balance) - self.secured() as i128;
+        u64::try_from(beyond.max(0)).expect("net win exceeds u64")
     }
 
     /// Takes a new round's stake, `bets` equal bets of `bet` (blackjack hands; 1 for other
@@ -381,18 +386,18 @@ impl PlayerAccount {
         bet: u64,
         bets: u8,
         max_gain: u64,
-        config: &Config,
+        bank: &mut Bankroll,
         now: i64,
     ) -> Result<()> {
-        self.check_can_start(config)?;
+        self.check_can_start(bank.config)?;
         require!(
-            bet >= config.min_bet && bet <= config.max_bet && bets > 0,
+            bet >= bank.config.min_bet && bet <= bank.config.max_bet && bets > 0,
             TiltError::AmountOutOfRange
         );
         let stake = bet
             .checked_mul(bets.into())
             .ok_or(TiltError::AmountOutOfRange)?;
-        self.take_stake(game, stake, max_gain, config, now)
+        self.take_stake(game, stake, max_gain, bank, now)
     }
 
     /// Like `start_round` for bets of their own sizes (roulette chips): bet limits apply to
@@ -402,14 +407,14 @@ impl PlayerAccount {
         game: Game,
         bets: impl IntoIterator<Item = u64>,
         max_gain: u64,
-        config: &Config,
+        bank: &mut Bankroll,
         now: i64,
     ) -> Result<()> {
-        self.check_can_start(config)?;
+        self.check_can_start(bank.config)?;
         let mut stake: Option<u64> = None;
         for bet in bets {
             require!(
-                bet >= config.min_bet && bet <= config.max_bet,
+                bet >= bank.config.min_bet && bet <= bank.config.max_bet,
                 TiltError::AmountOutOfRange
             );
             stake = Some(
@@ -420,7 +425,7 @@ impl PlayerAccount {
             );
         }
         let stake = stake.ok_or(TiltError::AmountOutOfRange)?;
-        self.take_stake(game, stake, max_gain, config, now)
+        self.take_stake(game, stake, max_gain, bank, now)
     }
 
     fn check_can_start(&self, config: &Config) -> Result<()> {
@@ -433,58 +438,133 @@ impl PlayerAccount {
     }
 
     /// Debits `stake` for a new round of `game` whose worst case gains `max_gain`, once the
-    /// round limit, the balance and the win cap allow it.
+    /// round limit, the balance and the risk pool allow it.
     fn take_stake(
         &mut self,
         game: Game,
         stake: u64,
         max_gain: u64,
-        config: &Config,
+        bank: &mut Bankroll,
         now: i64,
     ) -> Result<()> {
         require!(
-            max_gain <= config.max_round_gain,
+            max_gain <= bank.config.max_round_gain,
             TiltError::RoundGainTooHigh
         );
         require!(self.balance >= stake, TiltError::InsufficientBalance);
-        self.check_win_cap(self.balance, max_gain)?;
+        let pooled = self.pool_share(self.balance, max_gain, stake, Pooled::default(), bank)?;
         self.balance -= stake;
         self.round = Round {
             game,
             stake,
             last_action: now,
             request_id: self.round.request_id,
+            pooled,
             ..Round::default()
         };
         Ok(())
     }
 
+    /// Puts the round on the risk pool in place of its `old` share: what its worst case,
+    /// `max_gain` above `start_balance`, could add to the player's wins beyond what is
+    /// secured or already uncovered. A round the secured wins fully cover puts nothing.
+    fn pool_share(
+        &self,
+        start_balance: u64,
+        max_gain: u64,
+        stake: u64,
+        old: Pooled,
+        bank: &mut Bankroll,
+    ) -> Result<Pooled> {
+        let best = start_balance
+            .checked_add(max_gain)
+            .ok_or(TiltError::AmountOutOfRange)?;
+        let gain = self.uncovered_at(best) - self.uncovered_at(start_balance);
+        let share = if gain == 0 {
+            Pooled::default()
+        } else {
+            Pooled { gain, stake }
+        };
+        bank.pool
+            .reprice(old, share, bank.line, bank.config.max_round_gain)?;
+        Ok(share)
+    }
+
     /// Takes one more blackjack base bet `bet` mid-round (a split) after re-checking the
     /// round like `start_round` does, now with `hands` hands of `bet`: the worst case
-    /// (every hand doubled and won) must stay within the round gain limit and the win cap.
-    /// Nothing is reserved ahead for splits, so a split the limits cannot cover is refused.
-    pub fn take_split(&mut self, bet: u64, hands: u8, config: &Config) -> Result<()> {
+    /// (every hand doubled and won) must stay within the round gain limit and the risk pool.
+    /// Nothing is held ahead for splits, so a split the limits cannot cover is refused.
+    pub fn take_split(&mut self, bet: u64, hands: u8, bank: &mut Bankroll) -> Result<()> {
         let max_gain = crate::games::blackjack::max_gain(bet.saturating_mul(hands.into()));
         require!(
-            max_gain <= config.max_round_gain,
+            max_gain <= bank.config.max_round_gain,
             TiltError::RoundGainTooHigh
         );
         require!(self.balance >= bet, TiltError::InsufficientBalance);
         // The balance the round started from: what it has staked so far comes back to it.
         let start_balance = self.balance + self.round.stake;
-        self.check_win_cap(start_balance, max_gain)?;
+        let stake = self.round.stake + bet;
+        self.round.pooled =
+            self.pool_share(start_balance, max_gain, stake, self.round.pooled, bank)?;
         self.balance -= bet;
-        self.round.stake += bet;
+        self.round.stake = stake;
         Ok(())
     }
 
-    pub fn finish_round(&mut self, settlement: Settlement) {
+    /// Doubles a blackjack hand: `extra` more stake. The round's worst case already counted
+    /// every hand doubled, so only its stake on the risk pool grows.
+    pub fn take_double(&mut self, extra: u64, bank: &mut Bankroll) -> Result<()> {
+        require!(self.balance >= extra, TiltError::InsufficientBalance);
+        let old = self.round.pooled;
+        if old.gain > 0 {
+            let new = Pooled {
+                gain: old.gain,
+                stake: old.stake + extra,
+            };
+            bank.pool
+                .reprice(old, new, bank.line, bank.config.max_round_gain)?;
+            self.round.pooled = new;
+        }
+        self.balance -= extra;
+        self.round.stake += extra;
+        Ok(())
+    }
+
+    /// Pays the round out, takes its share off the risk pool and updates what the pool now
+    /// pays of the player's wins.
+    pub fn finish_round(&mut self, settlement: Settlement, pool: &mut RiskPool) {
         self.balance += settlement.payout;
         self.fees += settlement.fee;
         self.rounds += 1;
         self.round.payout = settlement.payout;
         self.round.fee = settlement.fee;
         self.round.status = RoundStatus::Idle;
+        pool.close(self.round.pooled);
+        self.round.pooled = Pooled::default();
+        let uncovered = self.uncovered_at(self.balance);
+        pool.recover(self.uncovered, uncovered);
+        self.uncovered = uncovered;
+    }
+
+    /// After a withdrawal: moves from the risk pool to Solana the part of the player's wins
+    /// the withdrawn total takes beyond their own money, which Solana then reserves from the
+    /// pool's line (`apply_secured_wins`). Refused while that line, as the rollup sees it,
+    /// cannot take it: the relay grants the pool more and the withdrawal is sent again.
+    pub fn secure_withdrawn_wins(&mut self, pool: &mut RiskPool, line: u64) -> Result<()> {
+        let needed = self.withdrawn as i128
+            - (self.credited as i128 - self.forfeited as i128)
+            - self.secured() as i128;
+        let amount = u64::try_from(needed.max(0)).expect("withdrawn total exceeds u64");
+        // The balance came from those wins: they are uncovered or already secured.
+        require!(amount <= self.uncovered, TiltError::FraudSuspected);
+        require!(
+            pool.transferred as u128 + amount as u128 <= line as u128,
+            TiltError::RiskPoolFull
+        );
+        pool.secure(amount);
+        self.win_reserved += amount;
+        self.uncovered -= amount;
+        Ok(())
     }
 
     /// Losses not yet released from the reservation. Only meaningful between rounds.
@@ -495,6 +575,13 @@ impl PlayerAccount {
         } else {
             0
         }
+    }
+
+    /// Secured wins the player has lost again since: the house can take them back. Only
+    /// meaningful between rounds, after the losses are forfeited.
+    pub fn unneeded_secured_wins(&self) -> u64 {
+        let net = u64::try_from(self.net_win(self.balance).max(0)).expect("net win exceeds u64");
+        self.secured().saturating_sub(net)
     }
 }
 
@@ -508,8 +595,6 @@ mod tests {
             min_bet: 106,
             max_bet: 1_000,
             max_round_gain: 50_000,
-            max_player_win: 10_000,
-            max_win_multiple: 10,
             onboarding_fee: 0,
             min_deposit: 2,
             min_withdrawal: 1,
@@ -525,82 +610,91 @@ mod tests {
         }
     }
 
+    /// `config()` scaled up to stakes `Config::validate` accepts.
+    fn valid_config() -> Config {
+        Config {
+            min_bet: MIN_BET_FLOOR,
+            max_bet: 10 * MIN_BET_FLOOR,
+            max_round_gain: 500 * MIN_BET_FLOOR,
+            ..config()
+        }
+    }
+
     #[test]
     fn config_validation_refuses_settings_that_break_play() {
-        assert!(config().validate().is_ok());
+        let valid = valid_config();
+        assert!(valid.validate().is_ok());
         for broken in [
             Config {
                 min_bet: 0,
-                ..config()
+                ..valid_config()
+            },
+            Config {
+                min_bet: MIN_BET_FLOOR - 1,
+                ..valid_config()
             },
             Config {
                 max_bet: u64::MAX / 200,
                 max_round_gain: u64::MAX,
-                max_player_win: u64::MAX,
-                ..config()
+                ..valid_config()
             },
             Config {
-                min_bet: 2_000,
-                ..config()
+                min_bet: valid.max_bet + 1,
+                ..valid_config()
             },
             Config {
                 round_timeout_secs: 0,
-                ..config()
+                ..valid_config()
             },
             Config {
                 validator: Pubkey::default(),
-                ..config()
+                ..valid_config()
             },
             Config {
                 vrf_queue: Pubkey::default(),
-                ..config()
+                ..valid_config()
             },
             Config {
                 min_withdrawal: 3,
                 min_deposit: 3,
-                ..config()
+                ..valid_config()
             },
             Config {
                 min_withdrawal: 0,
                 max_withdrawal: 0,
-                ..config()
+                ..valid_config()
             },
             Config {
                 player_daily_cap: 1,
-                ..config()
+                ..valid_config()
             },
             Config {
                 daily_cap: 1,
-                ..config()
+                ..valid_config()
             },
             Config {
                 min_deposit: 0,
                 min_withdrawal: 0,
-                ..config()
+                ..valid_config()
             },
             Config {
                 min_deposit: 1,
                 min_withdrawal: 2,
-                ..config()
+                ..valid_config()
             },
             Config {
-                max_round_gain: 99,
-                ..config()
-            },
-            Config {
-                max_player_win: 99,
-                ..config()
+                max_round_gain: MIN_BET_FLOOR - 1,
+                ..valid_config()
             },
         ] {
             assert!(broken.validate().is_err(), "{broken:?}");
         }
     }
 
-    fn account(credited: u64, max_win: u64) -> PlayerAccount {
+    fn account(credited: u64) -> PlayerAccount {
         PlayerAccount {
             credited,
             balance: credited,
-            max_win,
             ..Default::default()
         }
     }
@@ -611,15 +705,21 @@ mod tests {
             deposited,
             withdrawn_paid: 0,
             forfeited: 0,
-            max_win: 0,
+            win_reserved: 0,
+            win_released: 0,
             window_start: 0,
             window_paid: 0,
         }
     }
 
+    /// `config` with a risk pool that can hold `line`.
+    fn bank<'a>(config: &'a Config, pool: &'a mut RiskPool, line: u64) -> Bankroll<'a> {
+        Bankroll { config, pool, line }
+    }
+
     #[test]
     fn deposits_are_credited_once_even_from_a_stale_ledger() {
-        let mut a = account(0, 0);
+        let mut a = account(0);
         a.sync_ledger(&ledger(500));
         a.sync_ledger(&ledger(300)); // stale copy
         a.sync_ledger(&ledger(500));
@@ -627,143 +727,284 @@ mod tests {
     }
 
     #[test]
-    fn a_raised_win_cap_is_taken_and_a_stale_copy_never_lowers_it() {
-        let mut a = account(0, 1_000);
-        a.sync_ledger(&Ledger {
-            max_win: 3_000,
-            ..ledger(0)
-        });
-        a.sync_ledger(&Ledger {
-            max_win: 1_000,
-            ..ledger(0)
-        }); // stale copy
-        assert_eq!(a.max_win, 3_000);
-    }
-
-    #[test]
-    fn a_raise_reserves_what_it_adds_to_the_cap_within_the_free_bankroll() {
-        let mut l = Ledger {
-            max_win: 1_000,
-            ..ledger(0)
-        };
-        let mut reserved = 5_000;
-        l.raise_win_cap(&mut reserved, 2_000, 2_000, &config())
-            .unwrap();
+    fn a_round_puts_on_the_pool_only_what_could_take_wins_past_the_secured_ones() {
+        let c = config();
+        // Fresh account: the whole worst case.
+        let mut pool = RiskPool::default();
+        let mut a = account(1_000);
+        a.start_round(
+            Game::Slots,
+            200,
+            1,
+            500,
+            &mut bank(&c, &mut pool, u64::MAX),
+            0,
+        )
+        .unwrap();
         assert_eq!(
-            (l.max_win, reserved),
-            (3_000, 7_000),
-            "cap and reservation move together"
+            a.round.pooled,
+            Pooled {
+                gain: 500,
+                stake: 200
+            }
         );
+        // 400 lost and not yet forfeited: the deposit still covers the first 400 of a win.
+        let mut pool = RiskPool::default();
+        let mut a = account(1_000);
+        a.balance = 600;
+        a.start_round(
+            Game::Slots,
+            200,
+            1,
+            500,
+            &mut bank(&c, &mut pool, u64::MAX),
+            0,
+        )
+        .unwrap();
+        assert_eq!(a.round.pooled.gain, 100);
+        // 300 secured but lost again since: they cover the first 300 of a win.
+        let mut pool = RiskPool::default();
+        let mut a = PlayerAccount {
+            win_reserved: 300,
+            ..account(1_000)
+        };
+        a.start_round(
+            Game::Slots,
+            200,
+            1,
+            500,
+            &mut bank(&c, &mut pool, u64::MAX),
+            0,
+        )
+        .unwrap();
+        assert_eq!(a.round.pooled.gain, 200);
+        // Fully covered: nothing at all on the pool.
+        let mut pool = RiskPool::default();
+        let mut a = PlayerAccount {
+            win_reserved: 500,
+            ..account(1_000)
+        };
+        a.start_round(Game::Slots, 200, 1, 500, &mut bank(&c, &mut pool, 0), 0)
+            .unwrap();
+        assert_eq!((a.round.pooled, pool.stakes), (Pooled::default(), 0));
+    }
 
-        let refused = [
-            (2_000, 2_001, config(), TiltError::VaultTooSmall),
-            (u64::MAX, 50_001, config(), TiltError::AmountOutOfRange),
-            (u64::MAX, 0, config(), TiltError::AmountOutOfRange),
-            (
-                u64::MAX,
-                1,
-                Config {
-                    bets_paused: true,
-                    ..config()
-                },
-                TiltError::Paused,
-            ),
-        ];
-        for (free, amount, config, error) in refused {
+    #[test]
+    fn settling_frees_the_round_and_leaves_its_win_on_the_pool_until_secured() {
+        let c = config();
+        let mut pool = RiskPool::default();
+        let mut a = account(1_000);
+        a.start_round(
+            Game::Slots,
+            200,
+            1,
+            500,
+            &mut bank(&c, &mut pool, u64::MAX),
+            0,
+        )
+        .unwrap();
+        assert_eq!((pool.gains, pool.stakes), (500, 200));
+        a.finish_round(settle(200, 400), &mut pool); // won 200, fee 2
+        assert_eq!((pool.gains, pool.stakes, pool.exposure), (0, 0, 0));
+        assert_eq!((a.uncovered, pool.uncovered), (198, 198));
+        // A loss gives the pool its part back.
+        a.start_round(
+            Game::Slots,
+            200,
+            1,
+            500,
+            &mut bank(&c, &mut pool, u64::MAX),
+            0,
+        )
+        .unwrap();
+        a.finish_round(settle(200, 0), &mut pool);
+        assert_eq!((a.uncovered, pool.uncovered), (0, 0));
+    }
+
+    #[test]
+    fn the_pool_always_holds_exactly_what_open_rounds_and_uncovered_wins_put_on_it() {
+        let c = config();
+        let mut rng = crate::rng::Rng::from_vrf([7; 32]);
+        let mut pool = RiskPool::default();
+        let mut players = [account(10_000), account(10_000), account(10_000)];
+        for _ in 0..10_000 {
+            let a = &mut players[rng.below(3) as usize];
+            if a.round.status == RoundStatus::Idle {
+                let bet = 106 + rng.below(895);
+                let max_gain = bet * (1 + rng.below(40));
+                let mut b = bank(&c, &mut pool, 200_000);
+                if a.start_round(Game::Slots, bet, 1, max_gain, &mut b, 0)
+                    .is_ok()
+                {
+                    a.round.status = RoundStatus::AwaitingDraw(Draw::Spin);
+                }
+            } else {
+                let gross = if rng.below(4) == 0 {
+                    a.round.stake + a.round.pooled.gain.max(1) / 2
+                } else {
+                    0
+                };
+                a.finish_round(settle(a.round.stake, gross), &mut pool);
+            }
+            if rng.below(50) == 0 && a.round.status == RoundStatus::Idle && a.balance > 0 {
+                let amount = 1 + rng.below(a.balance);
+                a.balance -= amount;
+                a.withdrawn += amount;
+                // A refusal leaves the withdrawal unsent: put it back.
+                if a.secure_withdrawn_wins(&mut pool, 200_000).is_err() {
+                    a.balance += amount;
+                    a.withdrawn -= amount;
+                }
+            }
+            let open = players.iter().map(|p| p.round.pooled);
+            assert_eq!(pool.gains, open.clone().map(|p| p.gain as u128).sum());
+            assert_eq!(pool.stakes, open.map(|p| p.stake as u128).sum());
             assert_eq!(
-                l.raise_win_cap(&mut reserved, free, amount, &config),
-                Err(error.into())
+                pool.uncovered,
+                players.iter().map(|p| p.uncovered).sum::<u64>()
             );
-            assert_eq!(
-                (l.max_win, reserved),
-                (3_000, 7_000),
-                "nothing moves on a refusal"
-            );
+            for p in &players {
+                if p.round.status == RoundStatus::Idle {
+                    assert_eq!(p.uncovered, p.uncovered_at(p.balance));
+                }
+            }
         }
     }
 
     #[test]
-    fn raises_never_reserve_more_than_the_vault_holds() {
-        let mut rng = crate::rng::Rng::from_vrf([7; 32]);
-        let held = 1_000_000;
-        let mut reserved = 400_000;
-        let mut ledgers = [ledger(0), ledger(0), ledger(0)];
-        for _ in 0..10_000 {
-            let player = &mut ledgers[rng.below(3) as usize];
-            let amount = rng.below(60_000);
-            let before = (reserved, player.max_win);
-            let free = held - reserved;
-            match player.raise_win_cap(&mut reserved, free, amount, &config()) {
-                Ok(()) => assert_eq!(reserved - before.0, player.max_win - before.1),
-                Err(_) => assert_eq!((reserved, player.max_win), before),
-            }
-            assert!(reserved <= held, "the vault covers every reservation");
-        }
-        let caps: u64 = ledgers.iter().map(|l| l.max_win).sum();
-        assert_eq!(reserved, 400_000 + caps, "every raise is reserved");
+    fn a_withdrawal_secures_only_the_wins_it_takes() {
+        let mut pool = RiskPool {
+            uncovered: 500,
+            ..RiskPool::default()
+        };
+        // Deposited 1 000, now 1 500: 500 uncovered wins.
+        let mut a = PlayerAccount {
+            uncovered: 500,
+            balance: 1_500,
+            ..account(1_000)
+        };
+        // Its own money first: nothing secured.
+        a.balance -= 1_000;
+        a.withdrawn += 1_000;
+        a.secure_withdrawn_wins(&mut pool, 0).unwrap();
+        assert_eq!((a.win_reserved, pool.transferred), (0, 0));
+        // Then 300 of the wins: refused while the line cannot take them.
+        a.balance -= 300;
+        a.withdrawn += 300;
+        assert_eq!(
+            a.secure_withdrawn_wins(&mut pool, 299),
+            Err(TiltError::RiskPoolFull.into())
+        );
+        a.secure_withdrawn_wins(&mut pool, 300).unwrap();
+        assert_eq!((a.win_reserved, a.uncovered), (300, 200));
+        assert_eq!((pool.transferred, pool.uncovered), (300, 200));
+    }
+
+    #[test]
+    fn secured_wins_lost_again_are_the_houses_once_losses_are_forfeited() {
+        let a = PlayerAccount {
+            win_reserved: 500,
+            win_released: 100,
+            ..account(1_000)
+        };
+        // Net 0: the 400 still secured are not needed.
+        assert_eq!(a.unneeded_secured_wins(), 400);
+        let winning = PlayerAccount {
+            balance: 1_250,
+            ..a.clone()
+        };
+        assert_eq!(winning.unneeded_secured_wins(), 150);
     }
 
     #[test]
     fn a_round_takes_the_stake_and_settlement_returns_the_payout() {
-        let mut a = account(1_000, 1_000);
-        a.start_round(Game::Slots, 200, 1, 200, &config(), 0)
-            .unwrap();
+        let (c, mut pool) = (config(), RiskPool::default());
+        let mut a = account(1_000);
+        a.start_round(
+            Game::Slots,
+            200,
+            1,
+            200,
+            &mut bank(&c, &mut pool, u64::MAX),
+            0,
+        )
+        .unwrap();
         assert_eq!(a.balance, 800);
-        a.finish_round(settle(200, 400));
+        a.finish_round(settle(200, 400), &mut pool);
         assert_eq!((a.balance, a.fees, a.rounds), (1_198, 2, 1));
         assert_eq!(a.round.status, RoundStatus::Idle);
     }
 
     #[test]
     fn limits_are_enforced_when_a_round_starts() {
-        let mut a = account(1_000, 1_000);
+        let (c, mut pool) = (config(), RiskPool::default());
+        let mut a = account(1_000);
+        let mut start = |a: &mut PlayerAccount, bet, max_gain, config: &Config| {
+            a.start_round(
+                Game::Slots,
+                bet,
+                1,
+                max_gain,
+                &mut bank(config, &mut pool, u64::MAX),
+                0,
+            )
+        };
+        assert!(start(&mut a, 105, 0, &c).is_err(), "below min bet");
+        assert!(start(&mut a, 1_001, 0, &c).is_err(), "above max bet");
         assert!(
-            a.start_round(Game::Slots, 105, 1, 0, &config(), 0).is_err(),
-            "below min bet"
-        );
-        assert!(
-            a.start_round(Game::Slots, 1_001, 1, 0, &config(), 0)
-                .is_err(),
-            "above max bet"
-        );
-        assert!(
-            a.start_round(Game::Slots, 106, 1, 50_001, &config(), 0)
-                .is_err(),
+            start(&mut a, 106, 50_001, &c).is_err(),
             "round gain too high"
         );
         let paused = Config {
             bets_paused: true,
             ..config()
         };
-        assert!(
-            a.start_round(Game::Slots, 106, 1, 0, &paused, 0).is_err(),
-            "bets paused"
-        );
-        a.start_round(Game::Slots, 106, 1, 0, &config(), 0).unwrap();
+        assert!(start(&mut a, 106, 0, &paused).is_err(), "bets paused");
+        start(&mut a, 106, 0, &c).unwrap();
         a.round.status = RoundStatus::AwaitingDraw(Draw::Spin); // as request_draw does
-        assert!(
-            a.start_round(Game::Slots, 106, 1, 0, &config(), 0).is_err(),
-            "round in progress"
-        );
+        assert!(start(&mut a, 106, 0, &c).is_err(), "round in progress");
     }
 
     #[test]
     fn bet_limits_apply_per_hand_and_the_round_gain_to_the_total() {
         use crate::games::blackjack::{max_gain, MAX_HANDS};
         let hands = MAX_HANDS as u8;
-        let mut a = account(10_000, 12_000);
+        let (c, mut pool) = (config(), RiskPool::default());
+        let mut a = account(10_000);
         // 6 hands of 1 000 stake 6 000, above max_bet: each hand is within it.
-        a.start_round(Game::Blackjack, 1_000, hands, max_gain(6_000), &config(), 0)
-            .unwrap();
+        a.start_round(
+            Game::Blackjack,
+            1_000,
+            hands,
+            max_gain(6_000),
+            &mut bank(&c, &mut pool, 12_000),
+            0,
+        )
+        .unwrap();
         assert_eq!((a.balance, a.round.stake), (4_000, 6_000));
-        let mut a = account(10_000, 11_999);
+        let mut a = account(10_000);
+        let mut pool = RiskPool::default();
         assert_eq!(
-            a.start_round(Game::Blackjack, 105, hands, max_gain(630), &config(), 0),
+            a.start_round(
+                Game::Blackjack,
+                105,
+                hands,
+                max_gain(630),
+                &mut bank(&c, &mut pool, u64::MAX),
+                0
+            ),
             Err(TiltError::AmountOutOfRange.into()),
             "each hand must reach min bet"
         );
         assert_eq!(
-            a.start_round(Game::Blackjack, 1_000, 0, 0, &config(), 0),
+            a.start_round(
+                Game::Blackjack,
+                1_000,
+                0,
+                0,
+                &mut bank(&c, &mut pool, u64::MAX),
+                0
+            ),
             Err(TiltError::AmountOutOfRange.into()),
             "no hand"
         );
@@ -772,27 +1013,47 @@ mod tests {
             ..config()
         };
         assert_eq!(
-            a.start_round(Game::Blackjack, 1_000, hands, max_gain(6_000), &low_gain, 0),
+            a.start_round(
+                Game::Blackjack,
+                1_000,
+                hands,
+                max_gain(6_000),
+                &mut bank(&low_gain, &mut pool, u64::MAX),
+                0
+            ),
             Err(TiltError::RoundGainTooHigh.into()),
-            "every hand doubled and won is reserved"
+            "every hand doubled and won is counted"
         );
         assert_eq!(
-            a.start_round(Game::Blackjack, 1_000, hands, max_gain(6_000), &config(), 0),
-            Err(TiltError::WinCapReached.into()),
-            "the 12 000 worst case exceeds the 11 999 lifetime cap"
+            a.start_round(
+                Game::Blackjack,
+                1_000,
+                hands,
+                max_gain(6_000),
+                &mut bank(&c, &mut pool, 11_999),
+                0
+            ),
+            Err(TiltError::RiskPoolFull.into()),
+            "the 12 000 worst case exceeds an 11 999 line"
+        );
+        assert_eq!(
+            (pool.gains, pool.stakes),
+            (0, 0),
+            "a refused round holds nothing"
         );
     }
 
     #[test]
-    fn player_account_layout_is_unchanged() {
-        // Delegated accounts and withdrawals deserialize this layout: never change it.
-        assert_eq!(PlayerAccount::INIT_SPACE, 187);
+    fn player_account_size_is_pinned() {
+        // Delegated accounts cannot be resized: a change needs fresh accounts.
+        assert_eq!(PlayerAccount::INIT_SPACE, 219);
     }
 
     #[test]
     fn a_huge_stake_is_out_of_range_not_a_panic() {
         use crate::games::{baccarat::BaccaratBet, blackjack, roulette::RouletteBet, slots};
-        let mut a = account(1_000, 1_000);
+        let (c, mut pool) = (config(), RiskPool::default());
+        let mut a = account(1_000);
         for max_gain in [
             blackjack::max_gain(u64::MAX),
             RouletteBet::Straight(0).max_gain(u64::MAX),
@@ -800,47 +1061,66 @@ mod tests {
             slots::max_gain(u64::MAX),
         ] {
             assert_eq!(
-                a.start_round(Game::Slots, u64::MAX, 1, max_gain, &config(), 0),
+                a.start_round(
+                    Game::Slots,
+                    u64::MAX,
+                    1,
+                    max_gain,
+                    &mut bank(&c, &mut pool, u64::MAX),
+                    0
+                ),
                 Err(TiltError::AmountOutOfRange.into())
             );
         }
     }
 
     #[test]
-    fn win_cap_counts_the_worst_case_including_a_double() {
-        // Lifetime win cap 1 000: a 500 bet can win 2 x 500 when doubled, which reaches exactly the cap.
-        let mut a = account(1_000, 1_000);
+    fn uncovered_wins_and_open_rounds_share_the_line() {
+        // Line 1 000: a 500 bet can win 2 x 500 when doubled, exactly the line.
+        let (c, mut pool) = (config(), RiskPool::default());
+        let mut a = account(1_000);
+        let worst = crate::games::blackjack::max_gain(500);
         a.start_round(
             Game::Blackjack,
             500,
             1,
-            crate::games::blackjack::max_gain(500),
-            &config(),
+            worst,
+            &mut bank(&c, &mut pool, 1_000),
             0,
         )
         .unwrap();
-        a.finish_round(settle(500, 1_000)); // won 500 (fee 5)
-        assert!(a
-            .start_round(
+        a.finish_round(settle(500, 1_000), &mut pool); // won 500 (fee 5): 495 uncovered
+        assert_eq!(
+            a.start_round(
                 Game::Blackjack,
                 500,
                 1,
-                crate::games::blackjack::max_gain(500),
-                &config(),
+                worst,
+                &mut bank(&c, &mut pool, 1_000),
                 0
-            )
-            .is_err());
+            ),
+            Err(TiltError::RiskPoolFull.into())
+        );
+        a.start_round(
+            Game::Blackjack,
+            500,
+            1,
+            worst,
+            &mut bank(&c, &mut pool, 1_495),
+            0,
+        )
+        .unwrap();
     }
 
     /// A one-hand round of 1 000 from a 10 000 balance, as `blackjack_bet` starts it.
-    fn one_hand_of_1_000(max_win: u64) -> PlayerAccount {
-        let mut a = account(10_000, max_win);
+    fn one_hand_of_1_000(pool: &mut RiskPool) -> PlayerAccount {
+        let mut a = account(10_000);
         a.start_round(
             Game::Blackjack,
             1_000,
             1,
             crate::games::blackjack::max_gain(1_000),
-            &config(),
+            &mut bank(&config(), pool, u64::MAX),
             0,
         )
         .unwrap();
@@ -849,39 +1129,59 @@ mod tests {
 
     #[test]
     fn a_split_takes_one_base_bet() {
-        let mut a = one_hand_of_1_000(10_000);
-        a.take_split(1_000, 2, &config()).unwrap();
+        let (c, mut pool) = (config(), RiskPool::default());
+        let mut a = one_hand_of_1_000(&mut pool);
+        a.take_split(1_000, 2, &mut bank(&c, &mut pool, u64::MAX))
+            .unwrap();
         assert_eq!((a.balance, a.round.stake), (8_000, 2_000));
-        let mut broke = account(1_000, 10_000);
+        let mut broke = account(1_000);
         broke
-            .start_round(Game::Blackjack, 1_000, 1, 2_000, &config(), 0)
+            .start_round(
+                Game::Blackjack,
+                1_000,
+                1,
+                2_000,
+                &mut bank(&c, &mut pool, u64::MAX),
+                0,
+            )
             .unwrap();
         assert_eq!(
-            broke.take_split(1_000, 2, &config()),
+            broke.take_split(1_000, 2, &mut bank(&c, &mut pool, u64::MAX)),
             Err(TiltError::InsufficientBalance.into())
         );
         assert_eq!((broke.balance, broke.round.stake), (0, 1_000));
     }
 
     #[test]
-    fn a_split_is_refused_once_its_worst_case_passes_the_win_cap() {
-        // Two hands of 1 000 doubled and won gain 4 000: exactly the cap.
-        let mut a = one_hand_of_1_000(4_000);
-        // A double before the split does not eat the headroom: its stake comes back too.
-        a.balance -= 1_000;
-        a.round.stake += 1_000;
-        a.take_split(1_000, 2, &config()).unwrap();
+    fn a_split_replaces_the_rounds_share_and_is_refused_past_the_line() {
+        // Two hands of 1 000 doubled and won gain 4 000: exactly the line.
+        let c = config();
+        let mut pool = RiskPool::default();
+        let mut a = one_hand_of_1_000(&mut pool);
+        // A double before the split does not use up the line: its stake comes back too.
+        a.take_double(1_000, &mut bank(&c, &mut pool, 4_000))
+            .unwrap();
+        a.take_split(1_000, 2, &mut bank(&c, &mut pool, 4_000))
+            .unwrap();
         assert_eq!((a.balance, a.round.stake), (7_000, 3_000));
-        // Worst case actually played: the second hand doubled too, both won.
-        a.balance -= 1_000;
-        a.round.stake += 1_000;
-        a.finish_round(settle(4_000, 8_000));
-        assert!(a.net_win(a.balance) <= a.max_win as i128);
-
-        let mut a = one_hand_of_1_000(3_999);
         assert_eq!(
-            a.take_split(1_000, 2, &config()),
-            Err(TiltError::WinCapReached.into())
+            a.round.pooled,
+            Pooled {
+                gain: 4_000,
+                stake: 3_000
+            }
+        );
+        assert_eq!(
+            (pool.gains, pool.stakes),
+            (4_000, 3_000),
+            "one share, replaced"
+        );
+
+        let mut pool = RiskPool::default();
+        let mut a = one_hand_of_1_000(&mut pool);
+        assert_eq!(
+            a.take_split(1_000, 2, &mut bank(&c, &mut pool, 3_999)),
+            Err(TiltError::RiskPoolFull.into())
         );
         assert_eq!((a.balance, a.round.stake), (9_000, 1_000), "nothing taken");
     }
@@ -892,22 +1192,28 @@ mod tests {
             max_round_gain: 4_000,
             ..config()
         };
-        one_hand_of_1_000(10_000)
-            .take_split(1_000, 2, &at_limit)
+        let mut pool = RiskPool::default();
+        one_hand_of_1_000(&mut pool)
+            .take_split(1_000, 2, &mut bank(&at_limit, &mut pool, u64::MAX))
             .unwrap();
         let below = Config {
             max_round_gain: 3_999,
             ..config()
         };
+        let mut pool = RiskPool::default();
         assert_eq!(
-            one_hand_of_1_000(10_000).take_split(1_000, 2, &below),
+            one_hand_of_1_000(&mut pool).take_split(
+                1_000,
+                2,
+                &mut bank(&below, &mut pool, u64::MAX)
+            ),
             Err(TiltError::RoundGainTooHigh.into())
         );
     }
 
     #[test]
     fn withdrawals_and_forfeits_do_not_change_net_win() {
-        let mut a = account(1_000, 1_000);
+        let mut a = account(1_000);
         a.balance = 600; // lost 400
         assert_eq!(a.net_win(a.balance), -400);
         a.balance -= 100;
@@ -954,26 +1260,35 @@ mod tests {
 
     #[test]
     fn bets_of_their_own_sizes_are_each_limited_and_staked_together() {
-        let mut a = account(10_000, 10_000);
+        let (c, mut pool) = (config(), RiskPool::default());
+        let mut a = account(10_000);
+        let mut start = |a: &mut PlayerAccount, bets: &[u64], max_gain, now| {
+            a.start_round_of(
+                Game::Roulette,
+                bets.iter().copied(),
+                max_gain,
+                &mut bank(&c, &mut pool, u64::MAX),
+                now,
+            )
+        };
         for bets in [vec![], vec![106, 1_001], vec![105]] {
             assert_eq!(
-                a.start_round_of(Game::Roulette, bets.clone(), 0, &config(), 0),
+                start(&mut a, &bets, 0, 0),
                 Err(TiltError::AmountOutOfRange.into()),
                 "{bets:?}"
             );
         }
         assert_eq!(
-            a.start_round_of(Game::Roulette, [1_000, 106], 50_001, &config(), 0),
+            start(&mut a, &[1_000, 106], 50_001, 0),
             Err(TiltError::RoundGainTooHigh.into())
         );
         assert_eq!(a.balance, 10_000);
-        a.start_round_of(Game::Roulette, [1_000, 106, 500], 3_000, &config(), 7)
-            .unwrap();
+        start(&mut a, &[1_000, 106, 500], 3_000, 7).unwrap();
         assert_eq!((a.balance, a.round.stake), (10_000 - 1_606, 1_606));
         assert_eq!((a.round.game, a.round.last_action), (Game::Roulette, 7));
         a.round.status = RoundStatus::AwaitingDraw(Draw::Spin);
         assert_eq!(
-            a.start_round_of(Game::Roulette, [106], 0, &config(), 8),
+            start(&mut a, &[106], 0, 8),
             Err(TiltError::RoundInProgress.into())
         );
     }

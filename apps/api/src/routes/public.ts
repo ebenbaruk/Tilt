@@ -20,7 +20,7 @@ const MULTI_DRAW: ReadonlySet<Game> = new Set(["blackjack", "mines", "hilo", "to
 /** VRF outputs of a round in request order. Multi-draw games need every draw since the
  *  previous round settled; without that bound (previous round not indexed) only the last one is
  *  known. A cash-out settles without a draw (zero randomness in the event): its last draw is
- *  the last move's. */
+ *  the last move's, and a Mines or Tower board the relay closed before any move has none. */
 async function roundDraws(deps: AppDeps, round: IndexedRound): Promise<{ draws: Buffer[]; complete: boolean }> {
   const settledByDraw = !isCashout(round);
   if (!MULTI_DRAW.has(round.game)) return { draws: [round.randomness], complete: true };
@@ -37,7 +37,10 @@ async function verify(deps: AppDeps, signature: string): Promise<VerifyResponse>
   const round = await findRound(deps.db, signature);
   if (!round) throw new ApiError("NOT_FOUND", "round not indexed (yet)");
   const { draws, complete } = await roundDraws(deps, round);
-  if (draws.length === 0) throw new ApiError("NOT_FOUND", "round draws not indexed (yet)");
+  // Only a Mines or Tower cash-out whose draws are all known can have none: a board the relay
+  // closed before any move.
+  const drawless = complete && isCashout(round) && (round.game === "mines" || round.game === "tower");
+  if (draws.length === 0 && !drawless) throw new ApiError("NOT_FOUND", "round draws not indexed (yet)");
   const result = replay({
     game: round.game,
     stake: round.stake,

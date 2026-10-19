@@ -234,9 +234,10 @@ const isStoredDevice = (value: unknown): value is StoredDevice =>
   typeof value.expiresAt === "number" &&
   typeof value.intervalMs === "number";
 
-/** "✓ agent finished in 6m 14s · your hand is saved"; interrupted or failed turns get neutral words. */
+/** "✓ agent finished in 6m 14s · your hand is saved for 6 hours" (after 6 hours without a move,
+ *  the relay closes the round: stand or cash-out); interrupted or failed turns get neutral words. */
 export function finishNotice(reason: string, durationMs: number): AgentView["notice"] {
-  const saved = `${SEPARATOR}your hand is saved`;
+  const saved = `${SEPARATOR}your hand is saved for 6 hours`;
 
   if (reason === "answer") {
     return { text: `✓ agent finished in ${formatDuration(durationMs)}${saved}`, tone: "success" };

@@ -15,6 +15,7 @@ pub mod constants;
 pub mod errors;
 pub mod games;
 pub mod instructions;
+pub mod risk;
 pub mod rng;
 pub mod settlement;
 pub mod state;
@@ -63,8 +64,8 @@ pub mod tilt {
 
     // Player accounts, on Solana.
 
-    pub fn open_account(ctx: Context<OpenAccount>, amount: u64, max_win: u64) -> Result<()> {
-        instructions::account::open_account(ctx, amount, max_win)
+    pub fn open_account(ctx: Context<OpenAccount>, amount: u64) -> Result<()> {
+        instructions::account::open_account(ctx, amount)
     }
 
     pub fn delegate_account(ctx: Context<DelegateAccount>) -> Result<()> {
@@ -75,8 +76,16 @@ pub mod tilt {
         instructions::account::deposit(ctx, amount)
     }
 
-    pub fn raise_win_cap(ctx: Context<RaiseWinCap>, amount: u64) -> Result<()> {
-        instructions::account::raise_win_cap(ctx, amount)
+    pub fn open_risk_pool(ctx: Context<OpenRiskPool>) -> Result<()> {
+        instructions::pool::open_risk_pool(ctx)
+    }
+
+    pub fn delegate_risk_pool(ctx: Context<DelegateRiskPool>) -> Result<()> {
+        instructions::pool::delegate_risk_pool(ctx)
+    }
+
+    pub fn fund_risk_pool(ctx: Context<FundRiskPool>, amount: u64) -> Result<()> {
+        instructions::pool::fund_risk_pool(ctx, amount)
     }
 
     pub fn open_table(ctx: Context<OpenTable>) -> Result<()> {

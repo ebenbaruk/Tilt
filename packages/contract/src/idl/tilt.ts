@@ -229,6 +229,28 @@ export type Tilt = {
           }
         },
         {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -407,6 +429,28 @@ export type Tilt = {
                 "kind": "account",
                 "path": "account.player",
                 "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -591,6 +635,28 @@ export type Tilt = {
           }
         },
         {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -757,6 +823,28 @@ export type Tilt = {
                 "kind": "account",
                 "path": "account.player",
                 "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -933,6 +1021,28 @@ export type Tilt = {
           }
         },
         {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -1099,6 +1209,28 @@ export type Tilt = {
                 "kind": "account",
                 "path": "account.player",
                 "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -1317,6 +1449,28 @@ export type Tilt = {
               }
             ]
           }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -1406,6 +1560,28 @@ export type Tilt = {
               }
             ]
           }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -1492,6 +1668,28 @@ export type Tilt = {
                 "kind": "account",
                 "path": "account.player",
                 "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -1591,6 +1789,28 @@ export type Tilt = {
               }
             ]
           }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -1683,6 +1903,28 @@ export type Tilt = {
               }
             ]
           }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -1769,6 +2011,28 @@ export type Tilt = {
                 "kind": "account",
                 "path": "account.player",
                 "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -2638,6 +2902,209 @@ export type Tilt = {
       "args": []
     },
     {
+      "name": "delegateRiskPool",
+      "discriminator": [
+        139,
+        10,
+        122,
+        135,
+        85,
+        99,
+        226,
+        193
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "bufferRiskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  102,
+                  102,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "riskPool"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                24,
+                12,
+                135,
+                51,
+                234,
+                253,
+                132,
+                42,
+                23,
+                91,
+                143,
+                100,
+                117,
+                247,
+                92,
+                216,
+                69,
+                90,
+                227,
+                83,
+                114,
+                248,
+                108,
+                194,
+                137,
+                171,
+                145,
+                243,
+                105,
+                204,
+                132,
+                234
+              ]
+            }
+          }
+        },
+        {
+          "name": "delegationRecordRiskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "riskPool"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegationProgram"
+            }
+          }
+        },
+        {
+          "name": "delegationMetadataRiskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  109,
+                  101,
+                  116,
+                  97,
+                  100,
+                  97,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "riskPool"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegationProgram"
+            }
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "ownerProgram",
+          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+        },
+        {
+          "name": "delegationProgram",
+          "address": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "delegateRouletteTable",
       "discriminator": [
         254,
@@ -3480,6 +3947,28 @@ export type Tilt = {
           }
         },
         {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -3655,6 +4144,28 @@ export type Tilt = {
           }
         },
         {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -3814,6 +4325,28 @@ export type Tilt = {
                 "kind": "account",
                 "path": "account.player",
                 "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -3983,6 +4516,28 @@ export type Tilt = {
           }
         },
         {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -4145,6 +4700,28 @@ export type Tilt = {
                 "kind": "account",
                 "path": "account.player",
                 "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -4321,6 +4898,28 @@ export type Tilt = {
           }
         },
         {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -4480,6 +5079,28 @@ export type Tilt = {
                 "kind": "account",
                 "path": "account.player",
                 "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -4649,6 +5270,28 @@ export type Tilt = {
           }
         },
         {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -4801,6 +5444,72 @@ export type Tilt = {
         {
           "name": "tokenProgram",
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "fundRiskPool",
+      "discriminator": [
+        231,
+        167,
+        50,
+        246,
+        96,
+        115,
+        103,
+        21
+      ],
+      "accounts": [
+        {
+          "name": "relayer",
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vaultToken",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -5005,6 +5714,28 @@ export type Tilt = {
           }
         },
         {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -5172,6 +5903,28 @@ export type Tilt = {
           }
         },
         {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -5320,6 +6073,28 @@ export type Tilt = {
                 "kind": "account",
                 "path": "account.player",
                 "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -5706,6 +6481,28 @@ export type Tilt = {
           }
         },
         {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -5873,6 +6670,28 @@ export type Tilt = {
                 "kind": "account",
                 "path": "account.player",
                 "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -6050,6 +6869,28 @@ export type Tilt = {
           }
         },
         {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -6213,6 +7054,28 @@ export type Tilt = {
           }
         },
         {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -6362,6 +7225,28 @@ export type Tilt = {
                 "kind": "account",
                 "path": "account.player",
                 "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -6562,10 +7447,6 @@ export type Tilt = {
       "args": [
         {
           "name": "amount",
-          "type": "u64"
-        },
-        {
-          "name": "maxWin",
           "type": "u64"
         }
       ]
@@ -6843,6 +7724,73 @@ export type Tilt = {
               {
                 "kind": "account",
                 "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "openRiskPool",
+      "discriminator": [
+        63,
+        125,
+        127,
+        255,
+        173,
+        96,
+        42,
+        40
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The relay: pays the rent."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -7528,96 +8476,6 @@ export type Tilt = {
       ]
     },
     {
-      "name": "raiseWinCap",
-      "discriminator": [
-        65,
-        167,
-        19,
-        207,
-        172,
-        97,
-        6,
-        209
-      ],
-      "accounts": [
-        {
-          "name": "relayer",
-          "signer": true
-        },
-        {
-          "name": "vault",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  118,
-                  97,
-                  117,
-                  108,
-                  116
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "vaultToken",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  118,
-                  97,
-                  117,
-                  108,
-                  116,
-                  95,
-                  116,
-                  111,
-                  107,
-                  101,
-                  110
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "ledger",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  108,
-                  101,
-                  100,
-                  103,
-                  101,
-                  114
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "ledger.player",
-                "account": "ledger"
-              }
-            ]
-          }
-        }
-      ],
-      "args": [
-        {
-          "name": "amount",
-          "type": "u64"
-        }
-      ]
-    },
-    {
       "name": "releaseWithdrawals",
       "discriminator": [
         187,
@@ -7863,6 +8721,28 @@ export type Tilt = {
           }
         },
         {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -8039,6 +8919,28 @@ export type Tilt = {
                 "kind": "account",
                 "path": "account.player",
                 "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -8394,6 +9296,28 @@ export type Tilt = {
           }
         },
         {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -8557,6 +9481,28 @@ export type Tilt = {
                 "kind": "account",
                 "path": "account.player",
                 "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -8729,6 +9675,28 @@ export type Tilt = {
           }
         },
         {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -8878,6 +9846,28 @@ export type Tilt = {
                 "kind": "account",
                 "path": "account.player",
                 "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -9051,6 +10041,28 @@ export type Tilt = {
           }
         },
         {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -9197,6 +10209,28 @@ export type Tilt = {
                 "kind": "account",
                 "path": "account.player",
                 "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -9526,6 +10560,19 @@ export type Tilt = {
       ]
     },
     {
+      "name": "riskPool",
+      "discriminator": [
+        101,
+        46,
+        90,
+        100,
+        248,
+        9,
+        6,
+        213
+      ]
+    },
+    {
       "name": "rouletteTable",
       "discriminator": [
         176,
@@ -9606,6 +10653,19 @@ export type Tilt = {
       ]
     },
     {
+      "name": "winsReleased",
+      "discriminator": [
+        200,
+        218,
+        6,
+        169,
+        223,
+        22,
+        124,
+        244
+      ]
+    },
+    {
       "name": "withdrawalHeld",
       "discriminator": [
         180,
@@ -9675,8 +10735,8 @@ export type Tilt = {
     },
     {
       "code": 6008,
-      "name": "winCapReached",
-      "msg": "Lifetime win cap reached"
+      "name": "riskPoolFull",
+      "msg": "The house's risk pool cannot cover this bet right now"
     },
     {
       "code": 6009,
@@ -9705,46 +10765,41 @@ export type Tilt = {
     },
     {
       "code": 6014,
-      "name": "maxWinTooHigh",
-      "msg": "Max win above the allowed limit"
-    },
-    {
-      "code": 6015,
       "name": "withdrawalTooSmall",
       "msg": "Withdrawal below the minimum"
     },
     {
-      "code": 6016,
+      "code": 6015,
       "name": "nothingToCheckpoint",
-      "msg": "No loss to release"
+      "msg": "No loss or secured win to release"
     },
     {
-      "code": 6017,
+      "code": 6016,
       "name": "staleRandomness",
       "msg": "Randomness does not answer the pending request"
     },
     {
-      "code": 6018,
+      "code": 6017,
       "name": "invalidConfig",
       "msg": "Invalid configuration"
     },
     {
-      "code": 6019,
+      "code": 6018,
       "name": "promoCapReached",
       "msg": "Promo payout above the pool's limits"
     },
     {
-      "code": 6020,
+      "code": 6019,
       "name": "missingTable",
       "msg": "Blackjack needs the player's table account"
     },
     {
-      "code": 6021,
+      "code": 6020,
       "name": "invalidTile",
       "msg": "Mines tile already revealed or off the board"
     },
     {
-      "code": 6022,
+      "code": 6021,
       "name": "invalidChoice",
       "msg": "Choice outside the game's rules"
     }
@@ -9941,35 +10996,24 @@ export type Tilt = {
           {
             "name": "minBet",
             "docs": [
-              "Smallest stake. Whatever a round gains, a win pays Tilt at least `MIN_FEE` (`settle`)."
+              "Smallest stake, at least `MIN_BET_FLOOR`. Whatever a round gains, a win pays Tilt at",
+              "least `MIN_FEE` (`settle`)."
             ],
             "type": "u64"
           },
           {
             "name": "maxBet",
             "docs": [
-              "Largest stake for one round, in USDC base units."
+              "Largest stake of one bet, in USDC base units: a blackjack hand, a roulette chip (a",
+              "`roulette_chips` spin stakes up to `MAX_CHIPS` of them), the bet of any other round."
             ],
             "type": "u64"
           },
           {
             "name": "maxRoundGain",
             "docs": [
-              "Largest gain one round may produce (caps e.g. straight-up roulette and slot jackpots)."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "maxPlayerWin",
-            "docs": [
-              "Largest lifetime net win reserved for one player."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "maxWinMultiple",
-            "docs": [
-              "A player's reserved max win may not exceed this multiple of their first deposit."
+              "Largest gain one round may produce (caps e.g. straight-up roulette and slot jackpots).",
+              "Also the most one round can take from the risk pool (`risk::required_reserve`)."
             ],
             "type": "u64"
           },
@@ -10269,9 +11313,18 @@ export type Tilt = {
             "type": "u64"
           },
           {
-            "name": "maxWin",
+            "name": "winReserved",
             "docs": [
-              "The player's win cap: set at the first deposit, raised by `raise_win_cap` as they win."
+              "House money reserved for the player's wins, moved from the risk pool's line when a",
+              "withdrawal needs it; never decreases."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "winReleased",
+            "docs": [
+              "Part of `win_reserved` given back to the house by `checkpoint` once the player lost",
+              "it again; never decreases."
             ],
             "type": "u64"
           },
@@ -10387,10 +11440,6 @@ export type Tilt = {
             "type": "pubkey"
           },
           {
-            "name": "maxWin",
-            "type": "u64"
-          },
-          {
             "name": "credited",
             "docs": [
               "Deposits already credited from the ledger; never decreases."
@@ -10408,6 +11457,30 @@ export type Tilt = {
             "name": "withdrawn",
             "docs": [
               "Total ever withdrawn; never decreases."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "winReserved",
+            "docs": [
+              "House money moved from the risk pool to Solana for this player's wins (`secure_wins`,",
+              "before a withdrawal); never decreases. Solana mirrors it in `Ledger::win_reserved`."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "winReleased",
+            "docs": [
+              "Part of `win_reserved` given back to the house once lost again (`checkpoint`); never",
+              "decreases."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "uncovered",
+            "docs": [
+              "Net wins beyond the secured ones: the risk pool pays them until a withdrawal secures",
+              "them (its share of `RiskPool::uncovered`)."
             ],
             "type": "u64"
           },
@@ -10433,6 +11506,26 @@ export type Tilt = {
                 "name": "round"
               }
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "pooled",
+      "docs": [
+        "What an open round puts on the pool: the part of its worst case the player's secured wins",
+        "do not already cover (`gain`), and its stake. `gain` is at most `max_round_gain`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "gain",
+            "type": "u64"
+          },
+          {
+            "name": "stake",
+            "type": "u64"
           }
         ]
       }
@@ -10699,6 +11792,53 @@ export type Tilt = {
       }
     },
     {
+      "name": "riskPool",
+      "docs": [
+        "Lives in the rollup (delegated once), next to the player accounts. Every round that puts",
+        "something on the pool reprices it at its start (`reprice`) and takes it off at its end",
+        "(`close`): the bankroll it needed is free again at once."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "gains",
+            "docs": [
+              "Open rounds: Σ `gain`, Σ `stake` and Σ `gain × stake`."
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "stakes",
+            "type": "u128"
+          },
+          {
+            "name": "exposure",
+            "type": "u128"
+          },
+          {
+            "name": "uncovered",
+            "docs": [
+              "Players' net wins the pool pays and Solana has not secured yet (Σ their `uncovered`)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "transferred",
+            "docs": [
+              "Total moved from the pool to players' secured wins (`secure`); never decreases.",
+              "Solana mirrors it in `Vault::pool_transferred`."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "rouletteBet",
       "type": {
         "kind": "enum",
@@ -10918,6 +12058,17 @@ export type Tilt = {
             "type": {
               "defined": {
                 "name": "slotsSpin"
+              }
+            }
+          },
+          {
+            "name": "pooled",
+            "docs": [
+              "What the round puts on the risk pool until it settles."
+            ],
+            "type": {
+              "defined": {
+                "name": "pooled"
               }
             }
           }
@@ -11186,8 +12337,9 @@ export type Tilt = {
           {
             "name": "reserved",
             "docs": [
-              "What the vault may owe in the worst case: for every player,",
-              "deposited - forfeited - withdrawn_paid + max_win."
+              "What the vault may owe in the worst case: for every player, deposited - forfeited -",
+              "withdrawn_paid + their secured wins, plus what is left of the risk pool's line",
+              "(pool_line - pool_transferred)."
             ],
             "type": "u64"
           },
@@ -11206,6 +12358,21 @@ export type Tilt = {
           {
             "name": "windowPaid",
             "type": "u64"
+          },
+          {
+            "name": "poolLine",
+            "docs": [
+              "Bankroll granted to the risk pool so far (`fund_risk_pool`), reserved; never decreases."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "poolTransferred",
+            "docs": [
+              "Part of `pool_line` moved to players' secured wins (`Ledger::win_reserved`), as the",
+              "rollup's `RiskPool::transferred` reports it; never decreases."
+            ],
+            "type": "u64"
           }
         ]
       }
@@ -11223,6 +12390,29 @@ export type Tilt = {
           },
           {
             "name": "high"
+          }
+        ]
+      }
+    },
+    {
+      "name": "winsReleased",
+      "docs": [
+        "Secured wins the player lost again, back to the house."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "player",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "releasedTotal",
+            "type": "u64"
           }
         ]
       }

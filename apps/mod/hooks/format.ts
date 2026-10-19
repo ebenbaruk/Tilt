@@ -278,7 +278,7 @@ export function cleanText(text: string): string {
 /** The program's refusals a player can meet, in words; the api sends their Anchor names. */
 const REFUSALS: Record<string, string> = {
   VaultTooSmall: "The casino cannot cover a bet this size right now: try a smaller one.",
-  WinCapReached: "Your win limit is being raised: try again in a moment.",
+  RiskPoolFull: "The casino is busy covering other tables: try again in a moment, or bet smaller.",
   RoundGainTooHigh: "This bet could win more than one round allows: lower it.",
   InsufficientBalance: "Not enough balance for this bet.",
   AmountOutOfRange: "This bet is outside the table limits.",

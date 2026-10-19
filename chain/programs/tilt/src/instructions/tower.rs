@@ -6,14 +6,15 @@ use anchor_lang::prelude::*;
 use ephemeral_rollups_sdk::anchor::{delegate, vrf, vrf_callback};
 use ephemeral_rollups_sdk::cpi::DelegateConfig;
 
-use crate::constants::{ACCOUNT_SEED, LEDGER_SEED, TOWER_SEED, VAULT_SEED};
+use crate::constants::{ACCOUNT_SEED, LEDGER_SEED, RISK_POOL_SEED, TOWER_SEED, VAULT_SEED};
 use crate::errors::TiltError;
 use crate::games::tower::{self, TowerBoard, TowerDifficulty, NONE};
 use crate::instructions::play::{
-    callback_account, draw_request, expired_draw, now, pending_draw, settle_round,
+    callback_account, draw_request, expiry, now, pending_draw, settle_round, Expiry,
 };
+use crate::risk::RiskPool;
 use crate::rng::Rng;
-use crate::state::{Config, Draw, Game, Ledger, PlayerAccount, Round, RoundStatus, Vault};
+use crate::state::{Bankroll, Draw, Game, Ledger, PlayerAccount, Round, RoundStatus, Vault};
 
 #[derive(Accounts)]
 pub struct OpenTowerBoard<'info> {
@@ -87,6 +88,8 @@ pub struct TowerPlay<'info> {
     pub ledger: Account<'info, Ledger>,
     #[account(mut, seeds = [TOWER_SEED, account.player.as_ref()], bump)]
     pub board: Account<'info, TowerBoard>,
+    #[account(mut, seeds = [RISK_POOL_SEED], bump = risk_pool.bump)]
+    pub risk_pool: Account<'info, RiskPool>,
     /// CHECK: the configured MagicBlock VRF queue; also validated by the VRF program
     #[account(mut, address = vault.config.vrf_queue @ TiltError::Unauthorized)]
     pub oracle_queue: UncheckedAccount<'info>,
@@ -100,6 +103,8 @@ pub struct ConsumeTowerRandomness<'info> {
     pub account: Account<'info, PlayerAccount>,
     #[account(mut, seeds = [TOWER_SEED, account.player.as_ref()], bump)]
     pub board: Account<'info, TowerBoard>,
+    #[account(mut, seeds = [RISK_POOL_SEED], bump = risk_pool.bump)]
+    pub risk_pool: Account<'info, RiskPool>,
 }
 
 /// Takes the stake of a new round at `difficulty` and resets the board. No draw: the round
@@ -109,11 +114,11 @@ fn start_tower(
     board: &mut TowerBoard,
     amount: u64,
     difficulty: TowerDifficulty,
-    config: &Config,
+    bank: &mut Bankroll,
     now: i64,
 ) -> Result<()> {
-    let max_gain = tower::max_gain(amount, difficulty, config.max_round_gain);
-    account.start_round(Game::Tower, amount, 1, max_gain, config, now)?;
+    let max_gain = tower::max_gain(amount, difficulty, bank.config.max_round_gain);
+    account.start_round(Game::Tower, amount, 1, max_gain, bank, now)?;
     account.round.status = RoundStatus::PlayerTurn;
     board.start(amount, difficulty, max_gain);
     Ok(())
@@ -150,11 +155,12 @@ fn check_tower_draw(round: &Round, board: &TowerBoard, request_id: u64) -> Resul
 }
 
 /// Asks for the pending tile's draw, answered by `consume_tower_randomness` with the player
-/// account and the board.
+/// account, the board and the risk pool.
 fn request_climb(ctx: &mut Context<TowerPlay>, client_seed: [u8; 32]) -> Result<()> {
     let accounts = vec![
         callback_account(ctx.accounts.account.key()),
         callback_account(ctx.accounts.board.key()),
+        callback_account(ctx.accounts.risk_pool.key()),
     ];
     let ix = draw_request(
         &mut ctx.accounts.account.round,
@@ -171,14 +177,19 @@ fn request_climb(ctx: &mut Context<TowerPlay>, client_seed: [u8; 32]) -> Result<
 }
 
 pub fn tower_bet(ctx: Context<TowerPlay>, amount: u64, difficulty: TowerDifficulty) -> Result<()> {
-    let accounts = ctx.accounts;
-    accounts.account.sync_ledger(&accounts.ledger);
+    let a = ctx.accounts;
+    a.account.sync_ledger(&a.ledger);
+    let mut bank = Bankroll {
+        config: &a.vault.config,
+        pool: &mut a.risk_pool,
+        line: a.vault.pool_line,
+    };
     start_tower(
-        &mut accounts.account,
-        &mut accounts.board,
+        &mut a.account,
+        &mut a.board,
         amount,
         difficulty,
-        &accounts.vault.config,
+        &mut bank,
         now()?,
     )
 }
@@ -194,23 +205,34 @@ pub fn tower_climb(mut ctx: Context<TowerPlay>, tile: u8, client_seed: [u8; 32])
 pub fn tower_cashout(ctx: Context<TowerPlay>) -> Result<()> {
     let accounts = ctx.accounts;
     check_cash_out(&accounts.account.round, &accounts.board)?;
+    cash_out(accounts);
+    Ok(())
+}
+
+fn cash_out(accounts: &mut TowerPlay) {
     let request_id = accounts.account.round.request_id;
     settle_round(
         &mut accounts.account,
+        &mut accounts.risk_pool,
         accounts.board.gross(),
         request_id,
         [0; 32],
     );
-    Ok(())
 }
 
-/// Relay cron: requests an awaited climb again, like `expire_round`. A board waiting for the
-/// player never expires.
+/// Relay cron: requests an awaited climb again, like `expire_round`. A board left waiting
+/// for the player for `ABANDONED_ROUND_SECS` is cashed out for them at its current value,
+/// 0.98x the stake before any level.
 pub fn expire_tower_round(mut ctx: Context<TowerPlay>, client_seed: [u8; 32]) -> Result<()> {
     let round = &ctx.accounts.account.round;
     require!(round.game == Game::Tower, TiltError::WrongState);
-    expired_draw(round, ctx.accounts.vault.config.round_timeout_secs)?;
-    request_climb(&mut ctx, client_seed)
+    match expiry(round, ctx.accounts.vault.config.round_timeout_secs, now()?)? {
+        Expiry::Retry(_) => request_climb(&mut ctx, client_seed),
+        Expiry::Abandoned => {
+            cash_out(ctx.accounts);
+            Ok(())
+        }
+    }
 }
 
 /// VRF callback for climbs: a bad tile busts the round, the top or the cap cashes out, any
@@ -228,7 +250,13 @@ pub fn consume_tower_randomness(
         round.last_action = now()?;
         return Ok(());
     };
-    settle_round(&mut accounts.account, gross, request_id, randomness);
+    settle_round(
+        &mut accounts.account,
+        &mut accounts.risk_pool,
+        gross,
+        request_id,
+        randomness,
+    );
     Ok(())
 }
 
@@ -236,14 +264,34 @@ pub fn consume_tower_randomness(
 mod tests {
     use super::*;
     use crate::games::tower::{gross_uncapped, randomness_for, LEVELS};
-    use crate::instructions::testing::{account, config};
+    use crate::instructions::testing::{account, bank, config, pool_of};
     use crate::settlement::settle;
+    use crate::state::Config;
 
     /// A round of 1 000 000 at `difficulty`, waiting for the player.
     fn started(difficulty: TowerDifficulty) -> (PlayerAccount, TowerBoard) {
         let (mut a, mut b) = (account(), TowerBoard::default());
-        start_tower(&mut a, &mut b, 1_000_000, difficulty, &config(), 0).unwrap();
+        start(&mut a, &mut b, 1_000_000, difficulty, &config()).unwrap();
         (a, b)
+    }
+
+    /// `start_tower` against a risk pool that covers anything.
+    fn start(
+        a: &mut PlayerAccount,
+        b: &mut TowerBoard,
+        amount: u64,
+        difficulty: TowerDifficulty,
+        config: &Config,
+    ) -> Result<()> {
+        let mut pool = RiskPool::default();
+        start_tower(a, b, amount, difficulty, &mut bank(config, &mut pool), 0)
+    }
+
+    #[test]
+    fn an_abandoned_board_returns_its_cash_out_value_0_98x_before_any_level() {
+        let (a, b) = started(TowerDifficulty::Easy);
+        assert!(check_cash_out(&a.round, &b).is_err());
+        assert_eq!(b.gross(), 980_000);
     }
 
     /// Requests `tile` like `tower_climb`, then plays the first seed giving `safe`.
@@ -255,7 +303,7 @@ mod tests {
         check_tower_draw(&a.round, b, a.round.request_id).unwrap();
         let gross = b.climb(&mut Rng::from_vrf(randomness_for(b.difficulty, safe)));
         match gross {
-            Some(gross) => a.finish_round(settle(a.round.stake, gross)),
+            Some(gross) => a.finish_round(settle(a.round.stake, gross), &mut pool_of(a)),
             None => a.round.status = RoundStatus::PlayerTurn,
         }
         gross
@@ -280,17 +328,42 @@ mod tests {
     }
 
     #[test]
-    fn a_small_bet_reserves_a_gain_in_proportion_to_its_stake() {
-        // Headroom far below the 50 000 000 round limit: 1 000 on Master only needs 9 999 000.
+    fn a_small_bet_puts_a_gain_in_proportion_to_its_stake_on_the_pool() {
+        // Far below the 50 000 000 round limit: 1 000 on Master may only gain 9 999 000.
+        let (c, mut pool) = (config(), RiskPool::default());
+        let mut exact = Bankroll {
+            config: &c,
+            pool: &mut pool,
+            line: 9_999_000,
+        };
         let (mut a, mut b) = (account(), TowerBoard::default());
-        a.max_win = 9_999_000;
-        start_tower(&mut a, &mut b, 1_000, TowerDifficulty::Master, &config(), 0).unwrap();
+        start_tower(
+            &mut a,
+            &mut b,
+            1_000,
+            TowerDifficulty::Master,
+            &mut exact,
+            0,
+        )
+        .unwrap();
         assert_eq!(b.max_gain, 9_999_000);
+        let mut pool = RiskPool::default();
+        let mut short = Bankroll {
+            config: &c,
+            pool: &mut pool,
+            line: 9_998_999,
+        };
         let (mut a, mut b) = (account(), TowerBoard::default());
-        a.max_win = 9_998_999;
         assert_eq!(
-            start_tower(&mut a, &mut b, 1_000, TowerDifficulty::Master, &config(), 0),
-            Err(TiltError::WinCapReached.into())
+            start_tower(
+                &mut a,
+                &mut b,
+                1_000,
+                TowerDifficulty::Master,
+                &mut short,
+                0
+            ),
+            Err(TiltError::RiskPoolFull.into())
         );
     }
 
@@ -305,7 +378,7 @@ mod tests {
         assert_eq!(climb(&mut a, &mut b, 1, true), None);
         check_cash_out(&a.round, &b).unwrap();
         assert_eq!(b.gross(), 1_960_000);
-        a.finish_round(settle(a.round.stake, b.gross()));
+        a.finish_round(settle(a.round.stake, b.gross()), &mut pool_of(&a));
         assert_eq!((a.round.payout, a.round.fee), (1_950_400, 9_600));
     }
 
@@ -339,7 +412,7 @@ mod tests {
             ..config()
         };
         let (mut a, mut b) = (account(), TowerBoard::default());
-        start_tower(&mut a, &mut b, 1_000_000, TowerDifficulty::Hard, &small, 0).unwrap();
+        start(&mut a, &mut b, 1_000_000, TowerDifficulty::Hard, &small).unwrap();
         assert_eq!(climb(&mut a, &mut b, 0, true), None);
         assert_eq!(climb(&mut a, &mut b, 0, true), Some(3_000_000));
     }
@@ -364,14 +437,7 @@ mod tests {
             Err(TiltError::WrongState.into())
         );
         assert_eq!(
-            start_tower(
-                &mut a,
-                &mut b,
-                1_000_000,
-                TowerDifficulty::Easy,
-                &config(),
-                0
-            ),
+            start(&mut a, &mut b, 1_000_000, TowerDifficulty::Easy, &config()),
             Err(TiltError::RoundInProgress.into())
         );
         assert_eq!(b.pending, 1, "a refused bet leaves the board alone");

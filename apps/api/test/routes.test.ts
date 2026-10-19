@@ -1075,6 +1075,29 @@ describe.skipIf(!db)("api routes", () => {
       });
     });
 
+    it("verifies a mines board the relay closed before any reveal, which has no draw", async () => {
+      const stake = 1_000_000n;
+      const { payout, fee } = settle(stake, (stake * 99n) / 100n);
+      await saveRound(db, {
+        player: wallet,
+        game: "mines",
+        stake,
+        settledAt: new Date(),
+        signature: SIGNATURE,
+        round: 1,
+        payout,
+        fee,
+        requestId: 0n,
+        randomness: Buffer.alloc(32),
+      });
+      const res = await app.request(`/v1/rounds/${SIGNATURE}/verify`);
+      expect(res.status).toBe(200);
+      expect((await res.json()) as VerifyResponse).toMatchObject({
+        matches: true,
+        replayed: { payout: ((stake * 99n) / 100n).toString(), detail: { game: "mines", revealed: [], busted: null } },
+      });
+    });
+
     it("verifies one-draw, hilo and tower rounds from their draws, cash-outs included", async () => {
       const account = playerAccountAddress(new PublicKey(wallet)).toBase58();
       const dice = must(
