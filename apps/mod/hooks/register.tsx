@@ -1297,10 +1297,23 @@ const KEYED_BOARDS: ReadonlySet<Game> = new Set(["mines", "tower"]);
 type TableRegion = (cards: CardSize, columns: number, wheel: number | null, isResultFirst: boolean) => RenderElement;
 
 /**
- * The animated table (table.tsx) for the pane or the band, or null where the still one is drawn.
- * The fullscreen terminal hands raw keys (Space, Enter, arrows) to a clicked `Client`; the main
- * screen hands it neither clicks nor keys, but runs its frame clock: there it deals, spins and
- * counts up, and the letters play it. `site.isPaneFocused`: the band never says, so false there.
+ * The table surface module in the pane or the band: the animated table (`region`), or null where
+ * the still one is drawn. Beside a still board where clicks land, `keeper`: a `Client` under the
+ * same key drawing nothing, so the keys a click gave the table before the game switched stay with
+ * it, and press the board's keys.
+ */
+interface TableSite {
+  region: TableRegion | null;
+  keeper: RenderElement | null;
+}
+
+const NO_TABLE: TableSite = { region: null, keeper: null };
+
+/**
+ * The table surface module's site (TableSite). The fullscreen terminal hands raw keys (Space,
+ * Enter, arrows) to a clicked `Client`; the main screen hands it neither clicks nor keys, but runs
+ * its frame clock: there it deals, spins and counts up, and the letters play it.
+ * `site.isPaneFocused`: the band never says, so false there.
  */
 function tableOf(
   $: EngineInterface,
@@ -1309,38 +1322,47 @@ function tableOf(
   snap: Snapshot,
   isLight: boolean,
   site: Pick<TableProps, "isPaneFocused" | "isClickable">,
-): TableRegion | null {
+): TableSite {
   const state = snap.remote.state;
 
   if (e.surface !== "terminal" || state === null || rt.isTableBroken) {
-    return null;
-  }
-
-  // A `Client` arms no hotkey: a board whose tiles are its keys is drawn still, its tiles the
-  // Buttons of their letters (clicked too, in fullscreen), so the key line needs none of them.
-  if (KEYED_BOARDS.has(activeGame(state, snap.prefs))) {
-    return null;
+    return NO_TABLE;
   }
 
   const { Client } = $.ui.resolve(e);
   const keys = tableKeysIn(e.component === "AbovePrompt", { state, prefs: snap.prefs, isBusy: isPlayHeld(snap) });
-  const props = (cards: CardSize, columns: number, wheel: number | null, isResultFirst: boolean): TableProps => ({
-    state,
-    prefs: snap.prefs,
-    keys: keys.map(({ key, hotkey, label }) => ({ key, hotkey, label })),
-    columns,
-    cards,
-    wheel,
-    isResultFirst,
-    isLight,
-    ...site,
-    dealing: dealingHands(snap),
-    sending: sendingRound(snap),
-  });
+  const client = (
+    cards: CardSize,
+    columns: number,
+    wheel: number | null,
+    isResultFirst: boolean,
+    isKeysOnly = false,
+  ) => {
+    const props: TableProps = {
+      state,
+      prefs: snap.prefs,
+      keys: keys.map(({ key, hotkey, label }) => ({ key, hotkey, label })),
+      columns,
+      cards,
+      wheel,
+      isResultFirst,
+      isLight,
+      ...site,
+      dealing: dealingHands(snap),
+      sending: sendingRound(snap),
+      isKeysOnly,
+    };
 
-  return (cards, columns, wheel, isResultFirst) => (
-    <Client key={TABLE_KEY} module="./table.tsx" props={props(cards, columns, wheel, isResultFirst)} />
-  );
+    return <Client key={TABLE_KEY} module="./table.tsx" props={props} />;
+  };
+
+  // A `Client` arms no hotkey: a board whose tiles are its keys is drawn still, its tiles the
+  // Buttons of their letters (clicked too, in fullscreen), so the key line needs none of them.
+  if (KEYED_BOARDS.has(activeGame(state, snap.prefs))) {
+    return { region: null, keeper: site.isClickable ? client("small", 0, null, false, true) : null };
+  }
+
+  return { region: client, keeper: null };
 }
 
 // ---- hooks ----
@@ -1546,14 +1568,12 @@ export const register: Register = (on, options) => {
       isBand: false,
     };
     const snap = await snapshot($, rt);
+    const table = tableOf($, e, rt, snap, look.isLight, {
+      isPaneFocused: e.props.isFocused,
+      isClickable: pane.isClickable,
+    });
 
-    return renderPane(
-      ui,
-      snap,
-      pane,
-      commandRunner($, rt),
-      tableOf($, e, rt, snap, look.isLight, { isPaneFocused: e.props.isFocused, isClickable: pane.isClickable }),
-    );
+    return renderPane(ui, snap, pane, commandRunner($, rt), table.region, table.keeper);
   });
 
   on("ui.message", { element: TABLE_KEY }, async ($, e) => {
@@ -1605,13 +1625,9 @@ export const register: Register = (on, options) => {
     };
 
     if (rt.settings.layout === "bottom" && fitsRows(snap, band, rows)) {
-      return renderPane(
-        ui,
-        snap,
-        band,
-        commandRunner($, rt),
-        tableOf($, e, rt, snap, look.isLight, { isPaneFocused: false, isClickable: band.isClickable }),
-      );
+      const table = tableOf($, e, rt, snap, look.isLight, { isPaneFocused: false, isClickable: band.isClickable });
+
+      return renderPane(ui, snap, band, commandRunner($, rt), table.region, table.keeper);
     }
 
     return renderBand(ui, snap, { bodyColumns: e.props.bodyColumns }, commandRunner($, rt));

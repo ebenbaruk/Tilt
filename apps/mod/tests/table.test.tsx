@@ -17,6 +17,7 @@ import {
   DICE,
   HILO_TURN,
   KENO,
+  MINES_TURN,
   SLOTS,
   WHEEL,
 } from "./fixtures";
@@ -109,9 +110,9 @@ describe("the table in the fullscreen pane", () => {
     expect(textOf(await ui.drawn())).toContain("click the table for keys · esc hands them back");
     expect(textOf(await ui.drawn())).not.toContain("ctrl+x tab to use keys");
 
-    // Mines draws no such table: a click there reveals a tile, so the footer says ctrl+x tab.
+    // Beside the still Mines board a click reveals a tile: the footer says ctrl+x tab.
     await ui.press({ key: "game-mines" });
-    expect(textOf(await ui.drawn())).toContain("ctrl+x tab to use keys");
+    expect(textOf(await ui.drawn())).toContain("ctrl+x tab keys · esc hands them back");
   });
 
   test("a key the table holds no click for plays nothing: none yet, or since the pane took the keys", async ($, on) => {
@@ -126,6 +127,26 @@ describe("the table in the fullscreen pane", () => {
     await ui.key({ key: "space" });
     await ui.key({ key: "return" });
     expect(world.calls("POST /v1/play")).toHaveLength(0);
+  });
+
+  test("a clicked table keeps the keys on the still Mines board: Space plays it, its letters reveal", async ($, on) => {
+    const { world, clock } = await seat($, on, BASE, movingTable(BASE, MINES_TURN));
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...UNFOCUSED });
+
+    await ui.pointer(CLICK);
+    await ui.key({ key: "5" });
+    // The pane draws the board; the table, still under its key, draws nothing and holds the keys.
+    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toBe("");
+    expect(textOf(await ui.drawn())).toContain("3 mines");
+
+    await ui.key({ key: "space" });
+    await clock.advance(FIRST_TICK_MS + 1_000);
+    await ui.key({ key: "y" });
+
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([
+      { type: "mines_bet", amount: "500000", mines: 3 },
+      { type: "mines_reveal", tile: 24 },
+    ]);
   });
 
   test("in a blackjack turn Space hits, Enter stands and d doubles", async ($, on) => {

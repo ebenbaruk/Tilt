@@ -42,6 +42,9 @@ export interface TableProps {
   /** The surface reports clicks: the fullscreen terminal does, its main screen neither clicks nor
    *  hands the table keys, so there the letters of the pane's key line play it. */
   isClickable: boolean;
+  /** A still board (Mines, Tower) the pane draws: the table draws nothing, only keeps the keys a
+   *  click gave it before the game switched, which the board's letters and Space then press. */
+  isKeysOnly: boolean;
 }
 
 /** What the surface module posts: press the plan's key with this address. */

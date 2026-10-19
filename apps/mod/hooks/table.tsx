@@ -435,6 +435,11 @@ export default function Table(props: TableProps, surface: ClientSurface<TableSta
     surface.setState(state);
   }
 
+  // A still board is the pane's to draw: the table only keeps the keys.
+  if (props.isKeysOnly) {
+    return <Box />;
+  }
+
   if (isAnimating(state, props)) {
     startClock(surface, rt);
   }

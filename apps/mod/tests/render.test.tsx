@@ -478,8 +478,9 @@ describe("the Mines board", () => {
     const { world, clock } = await seat($, on, MINES_TURN, movingTable(MINES_TURN, MINES_TURN));
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE, surface: "terminal" });
 
-    // The tiles' letters are on the board, not twenty-five blank keys on the key line.
-    expect(await ui.find({ type: "Client" })).toBeUndefined();
+    // The tiles' letters are on the board, not twenty-five blank keys on the key line: the table
+    // surface module draws nothing there, it only keeps the keys a click gave it.
+    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toBe("");
     expect((await ui.find({ key: "mines-tile-24" }))?.props.hotkey).toBe("y");
     await ui.press({ key: "mines-tile-24" });
     await clock.advance(1_000);
@@ -573,7 +574,7 @@ describe("the Tower, Hilo and Keno boards", () => {
     const { world, clock } = await seat($, on, TOWER_TURN, movingTable(TOWER_TURN, TOWER_TURN));
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE, surface: "terminal" });
 
-    expect(await ui.find({ type: "Client" })).toBeUndefined();
+    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toBe("");
     await ui.press({ key: "tower-tile-1" });
     await clock.advance(1_000);
     await ui.press({ key: "tower-cashout" });

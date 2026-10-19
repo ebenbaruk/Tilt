@@ -1110,12 +1110,16 @@ function sessionText(ui: Ui, session: TiltSession, now: number): RenderElement |
 /** How to get the keys, or hand them back: its first words in gold, then the rest. */
 type KeysHint = readonly [string, string];
 
+/** Where clicks land, the table surface module that takes the keys a click gives it: drawn, or kept
+ *  drawing nothing beside a still board (it takes no click there: a click reveals a tile). */
+type ClickTable = "drawn" | "kept" | null;
+
 /**
  * The right of the footer: how to give the pane the keys while it does not hold them, or how to hand
- * them back. Neither the band nor a table a click gives the keys to (`hasClickTable`) can tell
- * whether it holds them (the engine never says when Esc takes them back): both, there.
+ * them back. Neither the band nor a table a click gives the keys to can tell whether it holds them
+ * (the engine never says when Esc takes them back): both, there.
  */
-function keysHint(layout: PaneLayout, hasClickTable: boolean): KeysHint {
+function keysHint(layout: PaneLayout, table: ClickTable): KeysHint {
   if (layout.isBand) {
     return ["ctrl+x tab", " keys · esc hands them back"];
   }
@@ -1124,7 +1128,14 @@ function keysHint(layout: PaneLayout, hasClickTable: boolean): KeysHint {
     return ["", "esc hands the keys back"];
   }
 
-  return hasClickTable ? ["click the table", " for keys · esc hands them back"] : ["ctrl+x tab", " to use keys"];
+  switch (table) {
+    case "drawn":
+      return ["click the table", " for keys · esc hands them back"];
+    case "kept":
+      return ["ctrl+x tab", " keys · esc hands them back"];
+    case null:
+      return ["ctrl+x tab", " to use keys"];
+  }
 }
 
 /** The session and the odds on the left; on the right, the keys (`keysHint`). */
@@ -1134,11 +1145,11 @@ function footer(
   state: StateResponse,
   game: Game,
   layout: PaneLayout,
-  hasClickTable: boolean,
+  table: ClickTable,
 ): RenderElement {
   const { Box, Text } = ui;
   const rtp = `${RTP_AT_MOST.has(game) ? "≤ " : ""}${cleanText(state.rtp[game])}`;
-  const [lead, rest] = keysHint(layout, hasClickTable);
+  const [lead, rest] = keysHint(layout, table);
 
   return (
     <Box flexDirection="row" flexWrap="wrap" columnGap={2} paddingX={1}>
@@ -1558,7 +1569,8 @@ export const PANE_ROWS: Record<CardSize, number> = { large: 30, small: 20 };
 
 /**
  * `table` is the table surface module's region (fullscreen terminal), drawn in place of the still
- * table at a card size, `columns` wide, the Wheel drawn as `wheel`.
+ * table at a card size, `columns` wide, the Wheel drawn as `wheel`. `keeper`: that module drawing
+ * nothing beside a still table, where the table would be: the engine keeps its keys only there.
  */
 export function renderPane(
   ui: Ui,
@@ -1566,6 +1578,7 @@ export function renderPane(
   layout: PaneLayout,
   onCommand: OnCommand,
   table: ((size: CardSize, columns: number, wheel: number | null, isResultFirst: boolean) => RenderElement) | null,
+  keeper: RenderElement | null = null,
 ): RenderElement {
   const { Box, Button, Text } = ui;
   const state = snap.remote.state;
@@ -1701,6 +1714,7 @@ export function renderPane(
       {!snap.isOnboarded && canPlay && firstHandGuide(ui, layout.isFocused, START_VERB[game])}
       {state.blocked !== null && <Text color={RED}>{`Play paused · ${cleanText(state.blocked)}`}</Text>}
       {shownTable}
+      {table === null && keeper}
       {/* The table surface module invites clicks; where none land, the keys are recalled here. */}
       {(table === null || !layout.isClickable) && layoutHint(ui, keys, layout.isClickable)}
       {!isKeysFirst && slots}
@@ -1714,7 +1728,14 @@ export function renderPane(
   const foot = (
     <Box flexDirection="column" marginTop={1}>
       <Text color={LINE3}>{"─".repeat(Math.max(0, layout.bodyColumns))}</Text>
-      {footer(ui, snap, state, game, layout, table !== null && layout.isClickable)}
+      {footer(
+        ui,
+        snap,
+        state,
+        game,
+        layout,
+        !layout.isClickable ? null : table !== null ? "drawn" : keeper !== null ? "kept" : null,
+      )}
     </Box>
   );
 
