@@ -1,0 +1,2 @@
+# False positive: a roulette test key in apps/mod/tests/render.test.tsx, not a secret.
+2c4c6a6f1930689f5a9feef1cf1fcaf6957c9680:apps/mod/tests/render.test.tsx:generic-api-key:582
