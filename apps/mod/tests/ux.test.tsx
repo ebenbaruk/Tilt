@@ -1290,6 +1290,21 @@ describe("the card games tag their result as blackjack does", () => {
     expect(band).not.toContain("×1.06");
   });
 
+  test("hilo before a right guess says ×— in the band, as the table does, never ×0.98", async ($, on) => {
+    await seat($, on, HILO_ACE);
+    const band = textOf(await (await $.ui.mount({ plugin: PLUGIN, ...BAND })).drawn());
+
+    expect(band).toContain("hilo · A♣ · ×—");
+    expect(band).not.toContain("×0.98");
+  });
+
+  test("tower: a bust says so in the band, never the multiplier of the levels climbed", async ($, on) => {
+    await seat($, on, TOWER_BUSTED);
+    const band = textOf(await (await $.ui.mount({ plugin: PLUGIN, ...BAND })).drawn());
+
+    expect(band).toMatch(/tower · easy · level \d+ · bust · −1\.00 LOSE/);
+  });
+
   test("blackjack: a hand's WIN or BJ waits for the dealer's hole card", async ($, on) => {
     const { show, clock } = await moving($, on, BLACKJACK_TURN);
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_STILL });

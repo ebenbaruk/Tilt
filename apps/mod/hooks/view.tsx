@@ -1898,13 +1898,17 @@ export function handSummary(state: StateResponse, prefs: Prefs, motion: BandMoti
     }
     case "hilo": {
       const current = detail.cards[detail.cards.length - 1];
-
-      const standing = detail.busted ? "wrong guess" : `×${shortMultiplier(detail.multiplier)}`;
+      // Before a right guess there is no multiplier to cash out yet, as the table says.
+      const standing = detail.busted
+        ? "wrong guess"
+        : hiloRight(detail) === 0
+          ? "×—"
+          : `×${shortMultiplier(detail.multiplier)}`;
 
       return `${label}${current === undefined ? "" : ` · ${cardFace(current)}`} · ${standing}${net}`;
     }
     case "tower":
-      return `${label} · ${detail.difficulty} · level ${detail.climbed.length} · ×${detail.multiplier}${net}`;
+      return `${label} · ${detail.difficulty} · level ${detail.climbed.length} · ${detail.busted === null ? `×${detail.multiplier}` : "bust"}${net}`;
   }
 }
 
