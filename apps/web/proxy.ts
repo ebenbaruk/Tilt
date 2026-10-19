@@ -4,6 +4,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 const isDev = process.env.NODE_ENV === "development";
+// Waitlist deployment: only the landing (and its archived first version), the legal pages and the
+// signup route exist; the app pages need the api, which isn't public yet.
+const landingOnly = process.env.LANDING_ONLY === "true";
+const LANDING_PATHS = /^\/(legal\/[a-z-]+|api\/waitlist|archive\/landing-v1)?$/;
 
 /** Origin only: CSP sources must not carry a path. */
 function origin(url: string | undefined): string {
@@ -44,6 +48,13 @@ function contentSecurityPolicy(nonce: string): string {
 }
 
 export function proxy(request: NextRequest) {
+  if (landingOnly && !LANDING_PATHS.test(request.nextUrl.pathname)) {
+    return NextResponse.redirect(new URL("/", request.url));
+  }
+  // Prefetches go through for the gate above, but get no nonce: it would not match the page's.
+  if (request.headers.get("next-router-prefetch") || request.headers.get("purpose") === "prefetch") {
+    return NextResponse.next();
+  }
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const csp = contentSecurityPolicy(nonce);
   // Next reads the nonce from the request's CSP header while rendering.
@@ -55,13 +66,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    {
-      source: "/((?!_next/static|_next/image|favicon.ico).*)",
-      missing: [
-        { type: "header", key: "next-router-prefetch" },
-        { type: "header", key: "purpose", value: "prefetch" },
-      ],
-    },
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

@@ -1,0 +1,111 @@
+.figure {
+  margin: 0;
+  min-width: 0;
+  /* Terminal text: the design's 13.5px, a little smaller on a phone. */
+  font-size: clamp(11.5px, 3.2vw, 13.5px);
+}
+
+.frame {
+  --demo-rows: 12.5em;
+  --demo-cap: 1em;
+  --game-min-height: 0;
+}
+
+/* The terminal components set no size of their own: they follow the figure's. */
+.frame > div {
+  max-width: none;
+}
+
+.meta,
+.dim,
+.placeholder,
+.hints {
+  color: var(--fg-6);
+}
+
+.transcript {
+  /* Two tool calls with their outputs: the transcript scrolls, nothing under it moves. */
+  min-height: calc(4 * 1.55em);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.status {
+  color: var(--fg-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spinner {
+  color: var(--tilt-gold);
+}
+
+.done {
+  color: var(--tilt-green-fg);
+}
+
+.action {
+  color: var(--tilt-gold);
+}
+
+.input {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-6);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-md);
+}
+
+.chevron {
+  color: var(--fg-6);
+}
+
+.cursor,
+.cursorOff {
+  display: inline-block;
+  width: 0.6em;
+  height: 1.2em;
+  background: var(--fg-1);
+}
+
+.cursorOff {
+  visibility: hidden;
+}
+
+.hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-8);
+  font-size: var(--text-xs);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.caption {
+  margin-top: var(--space-6);
+  color: var(--fg-6);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+
+/* The sponsor and the leaderboard leave the panel to the game where the terminal is narrow. */
+@media (max-width: 1240px) {
+  .frame {
+    --side-column: 0px;
+  }
+
+  .frame aside {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .hints span:nth-child(2) {
+    display: none;
+  }
+}
