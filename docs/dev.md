@@ -2,6 +2,8 @@
 
 Tout tourne sur la machine : Solana + rollup MagicBlock + oracle VRF, Postgres, le relais (`apps/wallet`), `api`, le web et le mod Claude Code.
 
+Pour installer le mod chez un testeur invité (sans cloner le dépôt) : [onboarding.md](onboarding.md).
+
 ## Prérequis
 
 | Outil | Version |
