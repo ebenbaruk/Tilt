@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/tilt.json`.
  */
 export type Tilt = {
-  "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd",
+  "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8",
   "metadata": {
     "name": "tilt",
     "version": "0.1.0",
@@ -94,7 +94,7 @@ export type Tilt = {
         },
         {
           "name": "thisProgram",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "escrowAuth"
@@ -2138,38 +2138,38 @@ export type Tilt = {
             "program": {
               "kind": "const",
               "value": [
-                24,
-                12,
-                135,
-                51,
-                234,
-                253,
-                132,
-                42,
-                23,
-                91,
-                143,
-                100,
-                117,
-                247,
-                92,
-                216,
-                69,
-                90,
-                227,
-                83,
-                114,
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
                 248,
-                108,
-                194,
-                137,
-                171,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
                 145,
-                243,
-                105,
-                204,
-                132,
-                234
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
               ]
             }
           }
@@ -2271,7 +2271,7 @@ export type Tilt = {
         },
         {
           "name": "ownerProgram",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "delegationProgram",
@@ -2346,38 +2346,38 @@ export type Tilt = {
             "program": {
               "kind": "const",
               "value": [
-                24,
-                12,
-                135,
-                51,
-                234,
-                253,
-                132,
-                42,
-                23,
-                91,
-                143,
-                100,
-                117,
-                247,
-                92,
-                216,
-                69,
-                90,
-                227,
-                83,
-                114,
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
                 248,
-                108,
-                194,
-                137,
-                171,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
                 145,
-                243,
-                105,
-                204,
-                132,
-                234
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
               ]
             }
           }
@@ -2476,7 +2476,7 @@ export type Tilt = {
         },
         {
           "name": "ownerProgram",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "delegationProgram",
@@ -2551,38 +2551,38 @@ export type Tilt = {
             "program": {
               "kind": "const",
               "value": [
-                24,
-                12,
-                135,
-                51,
-                234,
-                253,
-                132,
-                42,
-                23,
-                91,
-                143,
-                100,
-                117,
-                247,
-                92,
-                216,
-                69,
-                90,
-                227,
-                83,
-                114,
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
                 248,
-                108,
-                194,
-                137,
-                171,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
                 145,
-                243,
-                105,
-                204,
-                132,
-                234
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
               ]
             }
           }
@@ -2682,7 +2682,7 @@ export type Tilt = {
         },
         {
           "name": "ownerProgram",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "delegationProgram",
@@ -2757,38 +2757,38 @@ export type Tilt = {
             "program": {
               "kind": "const",
               "value": [
-                24,
-                12,
-                135,
-                51,
-                234,
-                253,
-                132,
-                42,
-                23,
-                91,
-                143,
-                100,
-                117,
-                247,
-                92,
-                216,
-                69,
-                90,
-                227,
-                83,
-                114,
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
                 248,
-                108,
-                194,
-                137,
-                171,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
                 145,
-                243,
-                105,
-                204,
-                132,
-                234
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
               ]
             }
           }
@@ -2888,7 +2888,7 @@ export type Tilt = {
         },
         {
           "name": "ownerProgram",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "delegationProgram",
@@ -2960,38 +2960,38 @@ export type Tilt = {
             "program": {
               "kind": "const",
               "value": [
-                24,
-                12,
-                135,
-                51,
-                234,
-                253,
-                132,
-                42,
-                23,
-                91,
-                143,
-                100,
-                117,
-                247,
-                92,
-                216,
-                69,
-                90,
-                227,
-                83,
-                114,
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
                 248,
-                108,
-                194,
-                137,
-                171,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
                 145,
-                243,
-                105,
-                204,
-                132,
-                234
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
               ]
             }
           }
@@ -3091,7 +3091,7 @@ export type Tilt = {
         },
         {
           "name": "ownerProgram",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "delegationProgram",
@@ -3166,38 +3166,38 @@ export type Tilt = {
             "program": {
               "kind": "const",
               "value": [
-                24,
-                12,
-                135,
-                51,
-                234,
-                253,
-                132,
-                42,
-                23,
-                91,
-                143,
-                100,
-                117,
-                247,
-                92,
-                216,
-                69,
-                90,
-                227,
-                83,
-                114,
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
                 248,
-                108,
-                194,
-                137,
-                171,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
                 145,
-                243,
-                105,
-                204,
-                132,
-                234
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
               ]
             }
           }
@@ -3300,7 +3300,7 @@ export type Tilt = {
         },
         {
           "name": "ownerProgram",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "delegationProgram",
@@ -3375,38 +3375,38 @@ export type Tilt = {
             "program": {
               "kind": "const",
               "value": [
-                24,
-                12,
-                135,
-                51,
-                234,
-                253,
-                132,
-                42,
-                23,
-                91,
-                143,
-                100,
-                117,
-                247,
-                92,
-                216,
-                69,
-                90,
-                227,
-                83,
-                114,
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
                 248,
-                108,
-                194,
-                137,
-                171,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
                 145,
-                243,
-                105,
-                204,
-                132,
-                234
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
               ]
             }
           }
@@ -3508,7 +3508,7 @@ export type Tilt = {
         },
         {
           "name": "ownerProgram",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "delegationProgram",
@@ -3583,38 +3583,38 @@ export type Tilt = {
             "program": {
               "kind": "const",
               "value": [
-                24,
-                12,
-                135,
-                51,
-                234,
-                253,
-                132,
-                42,
-                23,
-                91,
-                143,
-                100,
-                117,
-                247,
-                92,
-                216,
-                69,
-                90,
-                227,
-                83,
-                114,
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
                 248,
-                108,
-                194,
-                137,
-                171,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
                 145,
-                243,
-                105,
-                204,
-                132,
-                234
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
               ]
             }
           }
@@ -3714,7 +3714,7 @@ export type Tilt = {
         },
         {
           "name": "ownerProgram",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "delegationProgram",
@@ -6288,7 +6288,7 @@ export type Tilt = {
         },
         {
           "name": "program",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "programData"
@@ -8355,7 +8355,7 @@ export type Tilt = {
         },
         {
           "name": "thisProgram",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "escrowAuth"
@@ -11065,7 +11065,17 @@ export type Tilt = {
           {
             "name": "roundTimeoutSecs",
             "docs": [
-              "A round untouched this long can be closed by the relayer."
+              "A draw not answered this long can be requested again by the relayer."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "abandonedRoundSecs",
+            "docs": [
+              "A round left waiting for the player this long (a blackjack hand, a Mines, Hilo or Tower",
+              "board) is closed for them by the relayer: stand, or cash-out at the current value. Until",
+              "then it holds its share of the risk pool and blocks `checkpoint`. At least",
+              "`round_timeout_secs`."
             ],
             "type": "i64"
           },

@@ -4,7 +4,8 @@
 // scenarios. Runs against the local MagicBlock stack by default (README), or devnet with
 // BASE_RPC / ER_RPC / ER_WS / VALIDATOR / VRF_ER_QUEUE.
 //
-// Uses its own test USDC mint, so it never touches real funds. The admin is the wallet
+// Uses its own test USDC mint, so it never touches real funds (USDC_MINT reuses an earlier
+// test mint the admin can mint, when it installs a new vault). The admin is the wallet
 // (ANCHOR_WALLET, must be the program's upgrade authority); the relayer is a separate key
 // kept in .anchor/e2e-relayer.json.
 //
@@ -71,6 +72,8 @@ const LOCAL_RPC = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/;
 
 const usdc = (x: number) => Math.round(x * 1_000_000);
 const ROUND_TIMEOUT_SECS = 3;
+/** Long enough for every pause the scenario takes mid-round, short enough to wait out. */
+const ABANDONED_ROUND_SECS = 20;
 const CONFIG: Config = {
   minBet: new BN(usdc(0.1)),
   maxBet: new BN(usdc(10)),
@@ -82,6 +85,7 @@ const CONFIG: Config = {
   playerDailyCap: new BN(usdc(1_000)),
   dailyCap: new BN(usdc(10_000)),
   roundTimeoutSecs: new BN(ROUND_TIMEOUT_SECS),
+  abandonedRoundSecs: new BN(ABANDONED_ROUND_SECS),
   validator: VALIDATOR,
   vrfQueue: VRF_ER_QUEUE,
   depositsPaused: false,
@@ -673,7 +677,7 @@ async function setUpHouse() {
       await program.methods.setRoles(admin.publicKey, relayer.publicKey).accountsPartial({ admin: admin.publicKey, vault }).rpc();
     }
   } else {
-    mint = await createMint(base, admin, admin.publicKey, null, 6);
+    mint = process.env.USDC_MINT ? new PublicKey(process.env.USDC_MINT) : await createMint(base, admin, admin.publicKey, null, 6);
     const treasury = await createAssociatedTokenAccountIdempotent(base, admin, mint, admin.publicKey);
     const intruder = Keypair.generate();
     await fundSol(intruder.publicKey, 0.05);
@@ -921,8 +925,8 @@ async function run(): Promise<number> {
   await rejectsInRollup("nouvelle manche refusée tant que le plateau est ouvert", () =>
     erProgram.methods.slotsSpin(new BN(usdc(1)), seed()).accountsPartial(playAccounts()).transaction(), /RoundInProgress|6004/);
   await sleep((ROUND_TIMEOUT_SECS + 1) * 1_000);
-  await rejectsInRollup("plateau en attente du joueur jamais clôturé à sa place, même après le délai", () =>
-    erProgram.methods.expireMinesRound(seed()).accountsPartial(minesAccounts()).transaction(), /WrongState|6005/);
+  await rejectsInRollup("plateau en attente du joueur pas clôturé à sa place avant le délai d'abandon", () =>
+    erProgram.methods.expireMinesRound(seed()).accountsPartial(minesAccounts()).transaction(), /RoundNotExpired|6011/);
   await rejectsInRollup("expire_round sans plateau refusé sur une manche de mines", () =>
     erProgram.methods.expireRound(seed()).accountsPartial(playAccounts()).transaction(), /WrongState|6005/);
   const beforeReveal = m;
@@ -1038,8 +1042,8 @@ async function run(): Promise<number> {
   await rejectsInRollup("nouvelle manche refusée tant que le plateau hilo est ouvert", () =>
     erProgram.methods.slotsSpin(new BN(usdc(1)), seed()).accountsPartial(playAccounts()).transaction(), /RoundInProgress|6004/);
   await sleep((ROUND_TIMEOUT_SECS + 1) * 1_000);
-  await rejectsInRollup("plateau hilo en attente du joueur jamais clôturé à sa place, même après le délai", () =>
-    erProgram.methods.expireHiloRound(seed()).accountsPartial(hiloAccounts()).transaction(), /WrongState|6005/);
+  await rejectsInRollup("plateau hilo en attente du joueur pas clôturé à sa place avant le délai d'abandon", () =>
+    erProgram.methods.expireHiloRound(seed()).accountsPartial(hiloAccounts()).transaction(), /RoundNotExpired|6011/);
   await rejectsInRollup("expire_round refusé sur une manche de hilo", () =>
     erProgram.methods.expireRound(seed()).accountsPartial(playAccounts()).transaction(), /WrongState|6005/);
   while (isPlayerTurn(h.round)) {
@@ -1130,12 +1134,34 @@ async function run(): Promise<number> {
   await rejectsInRollup("expiration refusée avant le délai", () =>
     erProgram.methods.expireRound(seed()).accountsPartial(blackjackAccounts()).transaction(), /RoundNotExpired|6011/);
   await sleep((ROUND_TIMEOUT_SECS + 1) * 1_000);
-  await rejectsInRollup("main en attente du joueur jamais clôturée à sa place, même après le délai", () =>
-    erProgram.methods.expireRound(seed()).accountsPartial(blackjackAccounts()).transaction(), /WrongState|6005/);
+  await rejectsInRollup("main en attente du joueur pas clôturée à sa place avant le délai d'abandon", () =>
+    erProgram.methods.expireRound(seed()).accountsPartial(blackjackAccounts()).transaction(), /RoundNotExpired|6011/);
   const roundsBefore = a.rounds;
   a = await act("stand du joueur après le délai", erProgram.methods.blackjackStand(seed()).accountsPartial(blackjackAccounts()).transaction(), (x) => x.rounds === roundsBefore + 1);
   check("le joueur reprend sa main quand il veut", isIdle(a.round) && (await fetchTable()).nDealer >= 2);
   check("chaque tirage porte un identifiant de requête qui ne fait que croître", a.round.requestId.gtn(0));
+
+  // Left past the abandon delay, the relay closes the round as the player could have.
+  let closedByRelay = false;
+  const waitOutThenExpire = (label: string, expire: () => Promise<Transaction>) => async (x: PlayerAccount) => {
+    if (!isPlayerTurn(x.round)) return x;
+    await sleep((ABANDONED_ROUND_SECS + 1) * 1_000);
+    closedByRelay = true;
+    return act(label, expire(), (y) => y.rounds > x.rounds);
+  };
+  for (let i = 0; i < 10 && !closedByRelay; i++) {
+    await round("main abandonnée close par le relais (stand, le croupier joue)",
+      () => erProgram.methods.blackjackBet(new BN(usdc(1)), 1, seed()).accountsPartial(blackjackAccounts()).transaction(),
+      waitOutThenExpire("clôture de la main abandonnée", () => erProgram.methods.expireRound(seed()).accountsPartial(blackjackAccounts()).transaction()),
+      async (r) => blackjackGross(await fetchTable(), r.stake.toNumber()));
+  }
+  check("main abandonnée close par le relais et payée comme un stand", closedByRelay);
+  closedByRelay = false;
+  a = await round("plateau mines abandonné encaissé par le relais",
+    () => erProgram.methods.minesBet(new BN(usdc(1)), 3).accountsPartial(minesAccounts()).transaction(),
+    waitOutThenExpire("encaissement du plateau abandonné", () => erProgram.methods.expireMinesRound(seed()).accountsPartial(minesAccounts()).transaction()),
+    async () => minesGross(await fetchBoard(), BigInt(CONFIG.maxRoundGain.toString())));
+  check("plateau mines abandonné encaissé à 0,99x la mise", closedByRelay && a.round.payout.eq(new BN(usdc(0.99))), `(${a.round.payout})`);
 
   console.log("\n--- 8. Retraits vérifiés, plafonnés, mis en attente ---");
   await rejectsInRollup("retrait supérieur au solde refusé", async () => withdrawTx((await fetchAccount()).balance.toNumber() + 1), /InsufficientBalance|6007/);

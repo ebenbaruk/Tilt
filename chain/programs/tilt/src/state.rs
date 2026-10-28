@@ -38,8 +38,13 @@ pub struct Config {
     pub player_daily_cap: u64,
     /// House money (paid beyond players' own deposits) sent automatically per 24 h block.
     pub daily_cap: u64,
-    /// A round untouched this long can be closed by the relayer.
+    /// A draw not answered this long can be requested again by the relayer.
     pub round_timeout_secs: i64,
+    /// A round left waiting for the player this long (a blackjack hand, a Mines, Hilo or Tower
+    /// board) is closed for them by the relayer: stand, or cash-out at the current value. Until
+    /// then it holds its share of the risk pool and blocks `checkpoint`. At least
+    /// `round_timeout_secs`.
+    pub abandoned_round_secs: i64,
     /// The only rollup validator player accounts may be delegated to.
     pub validator: Pubkey,
     /// The only MagicBlock VRF queue draws may come from.
@@ -71,6 +76,7 @@ impl Config {
                 && self.max_withdrawal <= self.player_daily_cap
                 && self.max_withdrawal <= self.daily_cap
                 && self.round_timeout_secs > 0
+                && self.abandoned_round_secs >= self.round_timeout_secs
                 && self.validator != Pubkey::default()
                 && self.vrf_queue != Pubkey::default(),
             TiltError::InvalidConfig
@@ -602,6 +608,7 @@ mod tests {
             player_daily_cap: 2,
             daily_cap: 2,
             round_timeout_secs: 60,
+            abandoned_round_secs: 21_600,
             validator: Pubkey::new_from_array([1; 32]),
             vrf_queue: Pubkey::new_from_array([2; 32]),
             deposits_paused: false,
@@ -644,6 +651,10 @@ mod tests {
             },
             Config {
                 round_timeout_secs: 0,
+                ..valid_config()
+            },
+            Config {
+                abandoned_round_secs: 59,
                 ..valid_config()
             },
             Config {

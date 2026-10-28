@@ -281,6 +281,7 @@ mod tests {
             player_daily_cap: 150,
             daily_cap: 1_000,
             round_timeout_secs: 0,
+            abandoned_round_secs: 0,
             validator: Pubkey::default(),
             vrf_queue: Pubkey::default(),
             deposits_paused: false,

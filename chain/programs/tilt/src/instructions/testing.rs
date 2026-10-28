@@ -17,6 +17,7 @@ pub fn config() -> Config {
         player_daily_cap: 1_000,
         daily_cap: 1_000,
         round_timeout_secs: 60,
+        abandoned_round_secs: 21_600,
         validator: Pubkey::new_unique(),
         vrf_queue: Pubkey::new_unique(),
         deposits_paused: false,

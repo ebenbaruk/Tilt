@@ -25,8 +25,3 @@ pub const ACTION_ESCROW_INDEX: u8 = 255;
 pub const DAY_SECS: i64 = 86_400;
 /// Lowest `Config::min_bet` accepted: 0.1 USDC, in base units (6 decimals).
 pub const MIN_BET_FLOOR: u64 = 100_000;
-/// A round left waiting for the player this long (a blackjack hand, a Mines, Hilo or Tower
-/// board) is closed for them by the relay: stand, or cash-out at the current value. Until
-/// then it holds its share of the risk pool and blocks `checkpoint`: six hours leave the player
-/// time to come back without abandoned rounds piling up on the pool.
-pub const ABANDONED_ROUND_SECS: i64 = 21_600;

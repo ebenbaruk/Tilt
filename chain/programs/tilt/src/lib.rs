@@ -32,7 +32,7 @@ use games::{
 use instructions::*;
 use state::Config;
 
-declare_id!("2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd");
+declare_id!("7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8");
 
 #[ephemeral]
 #[program]

@@ -7,10 +7,10 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-tilt = "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+tilt = "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
 
 [programs.localnet]
-tilt = "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+tilt = "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
 
 [provider]
 cluster = "localnet"

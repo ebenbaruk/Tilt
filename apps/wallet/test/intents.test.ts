@@ -13,7 +13,7 @@ import { IntentError, type PlayerAccount, type RecordSend, type SentTransaction,
 import { createDb, migrate, type Db } from "../src/db";
 import { Intents, type Executor, type RelayLimits } from "../src/intents";
 import type { PlayerWallet, PlayerWallets } from "../src/players";
-import { ABANDONED_ROUND_SECS, releasable, sweep } from "../src/sweeper";
+import { releasable, requiredReserve, sweep } from "../src/sweeper";
 
 const { BN } = anchor;
 
@@ -215,16 +215,33 @@ describe("intents", () => {
     expect(await intents.get(landed)).toMatchObject({ status: "submitted" });
   });
 
-  /** A chain whose risk pool has `left` of its line free, in a vault holding `free` beyond what it reserves. */
-  const pooled = (left: bigint, free: bigint, funded: bigint[] = []) => ({
+  const ABANDONED_SECS = 21_600;
+  /** A chain whose risk pool has `left` of its line free once `open` rounds are held, in a vault
+   *  holding `free` beyond what it reserves. */
+  const pooled = (
+    left: bigint,
+    free: bigint,
+    funded: bigint[] = [],
+    { open = { gain: 0n, stake: 0n }, maxRoundGain = 100n, betsPaused = false } = {},
+  ) => ({
     ensureRiskPool: async () => undefined,
-    fetchRiskPool: async () => ({ transferred: new BN(300), uncovered: new BN(200) }),
+    fetchRiskPool: async () => ({
+      transferred: new BN(300),
+      uncovered: new BN(200),
+      gains: new BN(open.gain.toString()),
+      stakes: new BN(open.stake.toString()),
+      exposure: new BN((open.gain * open.stake).toString()),
+    }),
     fetchVaultBalance: async () => 10_000n + free,
     fundRiskPool: async (amount: bigint) => {
       funded.push(amount);
       return "sig";
     },
-    fetchVault: async () => ({ config: { roundTimeoutSecs: 60 }, poolLine: new BN((500n + left).toString()), reserved: new BN(10_000) }),
+    fetchVault: async () => ({
+      config: { roundTimeoutSecs: 60, abandonedRoundSecs: ABANDONED_SECS, maxRoundGain: new BN(maxRoundGain.toString()), betsPaused },
+      poolLine: new BN((500n + open.gain + left).toString()),
+      reserved: new BN(10_000),
+    }),
   });
   const SWEEP = { checkpointMinLoss: 1n, checkpointIntervalMs: 1, riskPoolTarget: 1_000n };
 
@@ -246,6 +263,28 @@ describe("intents", () => {
     expect(funded).toEqual([600n, 250n]);
   });
 
+  it("counts what open rounds hold of the line, and keeps one largest round's worth free", async () => {
+    const intents = { reconcile: async () => 0 } as unknown as Intents;
+    const funded: bigint[] = [];
+    // A lone round holds its whole worst case (800): the 1 000 left beside it is still the target.
+    const parked = { open: { gain: 800n, stake: 1n }, maxRoundGain: 800n };
+    expect(await sweep(db, pooled(1_000n, 5_000n, funded, parked) as unknown as TiltChain, intents, SWEEP)).toMatchObject({ funded: 0n });
+    // A target below the largest round's gain is raised to it.
+    expect(await sweep(db, pooled(1_000n, 5_000n, funded, { maxRoundGain: 2_500n }) as unknown as TiltChain, intents, SWEEP)).toMatchObject({ funded: 1_500n });
+    // Nothing while bets are paused: the line could never be taken back.
+    expect(await sweep(db, pooled(0n, 5_000n, funded, { betsPaused: true }) as unknown as TiltChain, intents, SWEEP)).toMatchObject({ funded: 0n, failed: 0 });
+    expect(funded).toEqual([1_500n]);
+  });
+
+  it("computes the open rounds' reserve as the program does", () => {
+    const USDC = 1_000_000n;
+    const reserveFor = (n: bigint, stake: bigint, gain: bigint) => requiredReserve(n * gain, n * stake, n * gain * stake, gain);
+    expect(requiredReserve(0n, 0n, 0n, 2_500n * USDC)).toBe(0n);
+    // Values of `risk.rs` (a_few_rounds_hold_their_whole_worst_case, many_rounds_hold_far_less_than_their_worst_case).
+    expect(reserveFor(1n, 10n * USDC, 2_500n * USDC)).toBe(2_500n * USDC);
+    expect(reserveFor(1_000n, 10n * USDC, 2_500n * USDC)).toBe(63_558_059_855n);
+  });
+
   it("counts both losses and secured wins lost again as what a checkpoint releases", () => {
     const account = (balance: number, secured: number) =>
       ({ balance: new BN(balance), withdrawn: new BN(0), credited: new BN(1_000), forfeited: new BN(0), winReserved: new BN(secured), winReleased: new BN(0) }) as unknown as PlayerAccount;
@@ -258,7 +297,7 @@ describe("intents", () => {
   it("retries a draw that never arrived and closes a round the player abandoned (with the game it plays on), never one they are still thinking about", async () => {
     const TIMEOUT_SECS = 60;
     const now = Date.now();
-    const longAgo = Math.floor(now / 1000) - ABANDONED_ROUND_SECS;
+    const longAgo = Math.floor(now / 1000) - ABANDONED_SECS;
     const stillThinking = longAgo + 1;
     const players = {
       thinking: { address: PublicKey.unique(), game: { blackjack: {} }, status: { playerTurn: {} }, lastAction: stillThinking },
@@ -285,7 +324,11 @@ describe("intents", () => {
     const accounts = new Map(Object.values(players).map((p) => [p.address.toBase58(), p]));
     const chain = {
       ...pooled(1_000n, 0n),
-      fetchVault: async () => ({ config: { roundTimeoutSecs: TIMEOUT_SECS }, poolLine: new BN(1_500), reserved: new BN(10_000) }),
+      fetchVault: async () => ({
+        config: { roundTimeoutSecs: TIMEOUT_SECS, abandonedRoundSecs: ABANDONED_SECS, maxRoundGain: new BN(100), betsPaused: false },
+        poolLine: new BN(1_500),
+        reserved: new BN(10_000),
+      }),
       fetchPlayerAccount: async (player: PublicKey) => {
         const p = accounts.get(player.toBase58())!;
         const roulette = "roulette" in p ? p.roulette : null;

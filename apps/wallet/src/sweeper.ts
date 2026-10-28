@@ -25,9 +25,35 @@ export interface SweepReport {
 
 const big = (n: { toString(): string }) => BigInt(n.toString());
 
-/** The program's `ABANDONED_ROUND_SECS`: a round waiting for the player this long is closed
- *  for them by `expire_*_round` (refused `RoundNotExpired` before). */
-export const ABANDONED_ROUND_SECS = 21_600;
+/** `risk::required_reserve` as the program computes it (every step rounded up): what the pool
+ *  holds for open rounds of total worst case `gains`, total stake `stakes` and total
+ *  `exposure` (Σ gain × stake), none gaining more than `maxGain`. */
+export function requiredReserve(gains: bigint, stakes: bigint, exposure: bigint, maxGain: bigint): bigint {
+  if (gains === 0n) return 0n;
+  const mean = divCeil(stakes * MAX_RETURN_PERCENT, 100n);
+  const b = divCeil(2n * LN_INV_EPSILON_MILLI * maxGain, 3_000n);
+  const c = divCeil(exposure * 2n * LN_INV_EPSILON_MILLI * MAX_RETURN_PERCENT, 100_000n);
+  const t = divCeil(b + sqrtCeil(b * b + 4n * c), 2n);
+  return mean + t < gains ? mean + t : gains;
+}
+
+/** ln(1 / ε) for ε = 10⁻⁹ in thousandths, and the highest return of any game in percent: the
+ *  program's `risk.rs` constants. */
+const LN_INV_EPSILON_MILLI = 20_724n;
+const MAX_RETURN_PERCENT = 99n;
+
+const divCeil = (n: bigint, d: bigint) => (n + d - 1n) / d;
+
+function sqrtCeil(n: bigint): bigint {
+  if (n === 0n) return 0n;
+  let x = n;
+  let y = (x + 1n) / 2n;
+  while (y < x) {
+    x = y;
+    y = (x + n / x) / 2n;
+  }
+  return x * x === n ? x : x + 1n;
+}
 
 /** What a checkpoint would release now, as the program computes it: losses not yet forfeited
  *  (`unforfeited_loss`), then secured wins the player has lost again (`unneeded_secured_wins`). */
@@ -43,10 +69,17 @@ export function releasable(a: PlayerAccount): bigint {
 async function fundRiskPool(chain: TiltChain, target: bigint): Promise<bigint> {
   await chain.ensureRiskPool();
   const [vault, pool, held] = await Promise.all([chain.fetchVault(), chain.fetchRiskPool(), chain.fetchVaultBalance()]);
-  const used = big(pool.transferred) + big(pool.uncovered);
+  // The line never shrinks: a pause (an incident) must not grow it. The program refuses it too.
+  if (vault.config.betsPaused) return 0n;
+  const maxRoundGain = big(vault.config.maxRoundGain);
+  const open = requiredReserve(big(pool.gains), big(pool.stakes), big(pool.exposure), maxRoundGain);
+  const used = open + big(pool.uncovered) + big(pool.transferred);
   const left = big(vault.poolLine) - used;
+  // One round can hold up to `max_round_gain` of the line: below that free, a single board
+  // left open would refuse every other bet until it expires.
+  const wanted = target > maxRoundGain ? target : maxRoundGain;
   const free = held - big(vault.reserved);
-  const amount = [target - left, free].reduce((a, b) => (a < b ? a : b));
+  const amount = [wanted - left, free].reduce((a, b) => (a < b ? a : b));
   if (amount <= 0n) return 0n;
   await chain.fundRiskPool(amount);
   return amount;
@@ -67,7 +100,9 @@ export async function sweep(db: Db, chain: TiltChain, intents: Intents, options:
     logFailure("risk pool funding failed", e);
     return 0n;
   });
-  const timeoutSecs = Number((await chain.fetchVault()).config.roundTimeoutSecs.toString());
+  const { config } = await chain.fetchVault();
+  const timeoutSecs = Number(config.roundTimeoutSecs.toString());
+  const abandonedSecs = Number(config.abandonedRoundSecs.toString());
   // Only players whose account opening landed have anything to sweep.
   const { rows } = await db.query<{ user_id: string; address: string; last_checkpoint_at: Date | null }>(
     `SELECT p.user_id, p.address, p.last_checkpoint_at FROM players p
@@ -81,7 +116,7 @@ export async function sweep(db: Db, chain: TiltChain, intents: Intents, options:
       const idle = "idle" in account.round.status;
       const idleFor = nowMs / 1000 - Number(account.round.lastAction.toString());
       const stuckDraw = "awaitingDraw" in account.round.status && idleFor >= timeoutSecs;
-      const abandoned = "playerTurn" in account.round.status && idleFor >= ABANDONED_ROUND_SECS;
+      const abandoned = "playerTurn" in account.round.status && idleFor >= abandonedSecs;
       if (stuckDraw || abandoned) {
         await chain.expireRound(player, account.round);
         report.expired++;

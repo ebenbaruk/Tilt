@@ -9,9 +9,7 @@ use ephemeral_rollups_sdk::vrf::{
     types::SerializableAccountMeta,
 };
 
-use crate::constants::{
-    ABANDONED_ROUND_SECS, ACCOUNT_SEED, LEDGER_SEED, RISK_POOL_SEED, TABLE_SEED, VAULT_SEED,
-};
+use crate::constants::{ACCOUNT_SEED, LEDGER_SEED, RISK_POOL_SEED, TABLE_SEED, VAULT_SEED};
 use crate::errors::TiltError;
 use crate::games::{
     baccarat::{BaccaratBet, BaccaratCoup},
@@ -22,7 +20,9 @@ use crate::games::{
 use crate::risk::RiskPool;
 use crate::rng::Rng;
 use crate::settlement::settle;
-use crate::state::{Bankroll, Draw, Game, Ledger, PlayerAccount, Round, RoundStatus, Vault};
+use crate::state::{
+    Bankroll, Config, Draw, Game, Ledger, PlayerAccount, Round, RoundStatus, Vault,
+};
 
 #[vrf]
 #[derive(Accounts)]
@@ -289,7 +289,7 @@ pub fn slots_spin(mut ctx: Context<Play>, amount: u64, client_seed: [u8; 32]) ->
 
 /// Relay cron. A draw that never arrived within `round_timeout_secs` is requested again
 /// under a new id (the late answer to the old one, if it ever comes, is refused). A hand
-/// left waiting for the player for `ABANDONED_ROUND_SECS` is closed for them: every hand
+/// left waiting for the player for `abandoned_round_secs` is closed for them: every hand
 /// still to play stands and the dealer plays. Blackjack retries must pass the table, like
 /// the original request; the games playing on their own account (Mines, the one-draw games,
 /// Hilo, Tower, roulette chips) expire through their own `expire_*_round`, which calls back
@@ -300,7 +300,7 @@ pub fn expire_round(mut ctx: Context<Play>, client_seed: [u8; 32]) -> Result<()>
         round.game.draws_in_round() && !round.on_roulette_table(),
         TiltError::WrongState
     );
-    match expiry(round, ctx.accounts.vault.config.round_timeout_secs, now()?)? {
+    match expiry(round, &ctx.accounts.vault.config, now()?)? {
         Expiry::Retry(draw) => request_draw(&mut ctx, draw, client_seed),
         // Only blackjack hands wait for the player among these games.
         Expiry::Abandoned => {
@@ -315,16 +315,16 @@ pub fn expire_round(mut ctx: Context<Play>, client_seed: [u8; 32]) -> Result<()>
 pub(crate) enum Expiry {
     /// A draw still awaited after `round_timeout_secs`: requested again.
     Retry(Draw),
-    /// A round left waiting for the player for `ABANDONED_ROUND_SECS`: closed for them as
+    /// A round left waiting for the player for `abandoned_round_secs`: closed for them as
     /// they could have closed it (a stand, a cash-out), so it stops holding the account.
     Abandoned,
 }
 
 /// How a round untouched since `round.last_action` expires at `now`, or why it does not.
-pub(crate) fn expiry(round: &Round, timeout: i64, now: i64) -> Result<Expiry> {
+pub(crate) fn expiry(round: &Round, config: &Config, now: i64) -> Result<Expiry> {
     let (expiry, after) = match round.status {
-        RoundStatus::AwaitingDraw(draw) => (Expiry::Retry(draw), timeout),
-        RoundStatus::PlayerTurn => (Expiry::Abandoned, ABANDONED_ROUND_SECS),
+        RoundStatus::AwaitingDraw(draw) => (Expiry::Retry(draw), config.round_timeout_secs),
+        RoundStatus::PlayerTurn => (Expiry::Abandoned, config.abandoned_round_secs),
         RoundStatus::Idle => return err!(TiltError::WrongState),
     };
     require!(now - round.last_action >= after, TiltError::RoundNotExpired);
@@ -333,8 +333,8 @@ pub(crate) fn expiry(round: &Round, timeout: i64, now: i64) -> Result<Expiry> {
 
 /// The draw to request again for a game that never waits for the player (the one-draw
 /// games, roulette chips).
-pub(crate) fn expired_draw(round: &Round, timeout: i64) -> Result<Draw> {
-    match expiry(round, timeout, now()?)? {
+pub(crate) fn expired_draw(round: &Round, config: &Config) -> Result<Draw> {
+    match expiry(round, config, now()?)? {
         Expiry::Retry(draw) => Ok(draw),
         Expiry::Abandoned => err!(TiltError::WrongState),
     }
@@ -401,7 +401,8 @@ pub fn consume_randomness(
 mod tests {
     use super::*;
 
-    const TIMEOUT: i64 = 60;
+    use crate::instructions::testing::config;
+
     const LAST_ACTION: i64 = 1_000;
 
     fn untouched(status: RoundStatus) -> Round {
@@ -426,12 +427,13 @@ mod tests {
             Draw::Climb,
         ] {
             let round = untouched(RoundStatus::AwaitingDraw(draw));
+            let timeout = config().round_timeout_secs;
             assert_eq!(
-                expiry(&round, TIMEOUT, LAST_ACTION + TIMEOUT - 1).unwrap_err(),
+                expiry(&round, &config(), LAST_ACTION + timeout - 1).unwrap_err(),
                 TiltError::RoundNotExpired.into()
             );
             assert_eq!(
-                expiry(&round, TIMEOUT, LAST_ACTION + TIMEOUT).unwrap(),
+                expiry(&round, &config(), LAST_ACTION + timeout).unwrap(),
                 Expiry::Retry(draw)
             );
         }
@@ -440,13 +442,14 @@ mod tests {
     #[test]
     fn a_round_waiting_for_the_player_is_closed_only_once_abandoned() {
         let round = untouched(RoundStatus::PlayerTurn);
+        let abandoned = config().abandoned_round_secs;
         // The round timeout is for draws only: a player thinking is never rushed by it.
         assert_eq!(
-            expiry(&round, TIMEOUT, LAST_ACTION + ABANDONED_ROUND_SECS - 1).unwrap_err(),
+            expiry(&round, &config(), LAST_ACTION + abandoned - 1).unwrap_err(),
             TiltError::RoundNotExpired.into()
         );
         assert_eq!(
-            expiry(&round, TIMEOUT, LAST_ACTION + ABANDONED_ROUND_SECS).unwrap(),
+            expiry(&round, &config(), LAST_ACTION + abandoned).unwrap(),
             Expiry::Abandoned
         );
     }
@@ -454,7 +457,7 @@ mod tests {
     #[test]
     fn a_settled_round_never_expires() {
         assert_eq!(
-            expiry(&untouched(RoundStatus::Idle), TIMEOUT, i64::MAX).unwrap_err(),
+            expiry(&untouched(RoundStatus::Idle), &config(), i64::MAX).unwrap_err(),
             TiltError::WrongState.into()
         );
     }

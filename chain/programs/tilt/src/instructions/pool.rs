@@ -65,7 +65,8 @@ pub struct FundRiskPool<'info> {
 }
 
 /// Solana, relayer: grants the risk pool `amount` more of the free bankroll, reserved like a
-/// player's deposit. The rollup sees the larger line at the next round.
+/// player's deposit. The rollup sees the larger line at the next round. Refused while bets are
+/// paused: the line can never shrink, so an incident must not grow it.
 pub fn fund_risk_pool(ctx: Context<FundRiskPool>, amount: u64) -> Result<()> {
     let a = ctx.accounts;
     let free = a.vault_token.amount.saturating_sub(a.vault.reserved);
@@ -73,6 +74,7 @@ pub fn fund_risk_pool(ctx: Context<FundRiskPool>, amount: u64) -> Result<()> {
 }
 
 fn grant_line(vault: &mut Vault, free: u64, amount: u64) -> Result<()> {
+    require!(!vault.config.bets_paused, TiltError::Paused);
     require!(amount > 0, TiltError::AmountOutOfRange);
     require!(amount <= free, TiltError::VaultTooSmall);
     vault.reserved = vault
@@ -104,5 +106,16 @@ mod tests {
             grant_line(&mut v, 0, 0),
             Err(TiltError::AmountOutOfRange.into())
         );
+    }
+
+    #[test]
+    fn no_line_is_granted_while_bets_are_paused() {
+        let mut v = vault();
+        v.config.bets_paused = true;
+        assert_eq!(
+            grant_line(&mut v, 1_000, 1_000),
+            Err(TiltError::Paused.into())
+        );
+        assert_eq!((v.reserved, v.pool_line), (0, 0));
     }
 }

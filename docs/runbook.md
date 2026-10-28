@@ -23,7 +23,7 @@ Les lignes `sweep stuck` (un passage du cron dure plus de 5 min) et `intent sett
 | Commande | Effet |
 | --- | --- |
 | `pause deposits` | Plus de premier dépôt ni de dépôt. |
-| `pause bets` | Plus de nouvelle manche (les manches en cours peuvent finir). |
+| `pause bets` | Plus de nouvelle manche (les manches en cours peuvent finir). Plus de ligne accordée au pool de risque (`fund_risk_pool` refusé) : la ligne ne se réduit jamais. |
 | `pause payouts` | Tous les retraits sont mis en attente (rien ne sort sans `release`). |
 | `pause promo` | Plus aucun gain promo. |
 | `pause all` / `resume …` | Tout, ou levée. |

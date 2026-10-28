@@ -221,12 +221,12 @@ fn cash_out(accounts: &mut TowerPlay) {
 }
 
 /// Relay cron: requests an awaited climb again, like `expire_round`. A board left waiting
-/// for the player for `ABANDONED_ROUND_SECS` is cashed out for them at its current value,
+/// for the player for `abandoned_round_secs` is cashed out for them at its current value,
 /// 0.98x the stake before any level.
 pub fn expire_tower_round(mut ctx: Context<TowerPlay>, client_seed: [u8; 32]) -> Result<()> {
     let round = &ctx.accounts.account.round;
     require!(round.game == Game::Tower, TiltError::WrongState);
-    match expiry(round, ctx.accounts.vault.config.round_timeout_secs, now()?)? {
+    match expiry(round, &ctx.accounts.vault.config, now()?)? {
         Expiry::Retry(_) => request_climb(&mut ctx, client_seed),
         Expiry::Abandoned => {
             cash_out(ctx.accounts);

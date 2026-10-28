@@ -32,12 +32,14 @@ import { createDb, migrate } from "../src/db";
 import { ChainExecutor } from "../src/executor";
 import { Intents } from "../src/intents";
 import type { PlayerWallet, PlayerWallets } from "../src/players";
-import { sweep } from "../src/sweeper";
+import { sweep, type SweepReport } from "../src/sweeper";
 
 const env = (key: string, fallback: string) => process.env[key] ?? fallback;
 const POLL_MS = Number(env("POLL_MS", "25"));
 const API_KEY = "e2e".repeat(12);
 const usdc = (x: number) => Math.round(x * 1_000_000);
+/** A sweep report as text: its amounts are bigints, which JSON.stringify refuses. */
+const report = (r: SweepReport) => JSON.stringify(r, (_key, value: unknown) => (typeof value === "bigint" ? value.toString() : value));
 const loadKeypair = (path: string) => Keypair.fromSecretKey(Uint8Array.from(JSON.parse(fs.readFileSync(path, "utf8"))));
 
 const admin = loadKeypair(env("ANCHOR_WALLET", `${os.homedir()}/.config/solana/id.json`));
@@ -209,6 +211,13 @@ async function main() {
     legacyBet.status === "submitted" && (await chain.base.getAccountInfo(tableAddress(legacyKey.publicKey))) !== null && legacyTable.nHands === 1,
     `(statut ${JSON.stringify(legacyAccount.round.status)})`,
   );
+  if ("playerTurn" in legacyAccount.round.status) {
+    await submit(legacyUser, { type: "blackjack_stand" });
+    await until(async () => {
+      const x = await chain.fetchPlayerAccount(legacyKey.publicKey);
+      return x && "idle" in x.round.status ? x : undefined;
+    }, "legacy hand stood");
+  }
 
   console.log("\n--- Pool de risque après les manches ---");
   const pool = await chain.fetchRiskPool();
@@ -252,13 +261,25 @@ async function main() {
   const sweepOptions = { checkpointMinLoss: 1n, checkpointIntervalMs: 0, riskPoolTarget: RISK_POOL_TARGET };
   const swept = await sweep(db, chain, intents, { ...sweepOptions, checkpointMinLoss: 1n << 62n });
   const stillOpen = await account();
-  check("le sweeper ne joue jamais à la place du joueur", swept.expired === 0 && "playerTurn" in stillOpen.round.status, JSON.stringify(swept));
+  check("le sweeper ne joue jamais à la place du joueur", swept.expired === 0 && "playerTurn" in stillOpen.round.status, report(swept));
   await submit(user, { type: "blackjack_stand" });
   await until(async () => {
     const x = await account();
     return "idle" in x.round.status ? x : undefined;
   }, "stand after timeout");
   check("le joueur reprend sa main après le délai", (await table()).nDealer >= 2);
+
+  const abandonedSecs = Number(vault.config.abandonedRoundSecs.toString());
+  a = await account();
+  for (let i = 0; i < 10 && !("playerTurn" in a.round.status); i++) a = await playRound({ type: "blackjack_bet", amount: String(usdc(1)), hands: 1 });
+  check("main laissée ouverte jusqu'au délai d'abandon", "playerTurn" in a.round.status);
+  await sleep((abandonedSecs + 1) * 1_000);
+  const closed = await sweep(db, chain, intents, { ...sweepOptions, checkpointMinLoss: 1n << 62n });
+  await until(async () => {
+    const x = await account();
+    return "idle" in x.round.status ? x : undefined;
+  }, "abandoned hand closed");
+  check("le sweeper clôt une main abandonnée : stand, le croupier joue", closed.expired === 1 && (await table()).nDealer >= 2, report(closed));
 
   const netWin = (x: PlayerAccount) => BigInt(x.balance.toString()) + BigInt(x.withdrawn.toString()) - BigInt(x.credited.toString()) + BigInt(x.forfeited.toString());
   for (let i = 0; i < 40 && netWin(await account()) >= 0n; i++) await playRound({ type: "baccarat_deal", amount: String(usdc(2)), bet: "tie" });
@@ -270,7 +291,7 @@ async function main() {
   }, "checkpoint applied");
   check("le sweeper rend les pertes du joueur à la maison", checkpointed.checkpointed === 1 && forfeited === loss, `(${forfeited} libérés)`);
   const again = await sweep(db, chain, intents, sweepOptions);
-  check("pas de checkpoint en double", again.checkpointed === 0 && again.failed === 0, JSON.stringify(again));
+  check("pas de checkpoint en double", again.checkpointed === 0 && again.failed === 0, report(again));
 
   console.log("\n--- Gains promo via le relais ---");
   // The pool is set up by chain/scripts/e2e.ts; refill it from a sponsor.

@@ -218,12 +218,12 @@ fn cash_out(accounts: &mut HiloPlay) {
 }
 
 /// Relay cron: requests an awaited card again, like `expire_round`. A board left waiting
-/// for the player for `ABANDONED_ROUND_SECS` is cashed out for them at its current value,
+/// for the player for `abandoned_round_secs` is cashed out for them at its current value,
 /// 0.98x the stake before any right guess.
 pub fn expire_hilo_round(mut ctx: Context<HiloPlay>, client_seed: [u8; 32]) -> Result<()> {
     let round = &ctx.accounts.account.round;
     require!(round.game == Game::Hilo, TiltError::WrongState);
-    match expiry(round, ctx.accounts.vault.config.round_timeout_secs, now()?)? {
+    match expiry(round, &ctx.accounts.vault.config, now()?)? {
         Expiry::Retry(_) => request_card(&mut ctx, client_seed),
         Expiry::Abandoned => {
             cash_out(ctx.accounts);
