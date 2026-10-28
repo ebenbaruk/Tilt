@@ -1,6 +1,9 @@
-import { describe, expect, mock, test } from "claude-code/testing";
+import type { RenderInput } from "claude-code";
+import { describe, expect, type FoundElement, type Mounted, mock, test } from "claude-code/testing";
 
-import type { StateResponse } from "../hooks/protocol";
+import { TILE_FILL } from "../hooks/games";
+import type { PlayRequest, StateResponse } from "../hooks/protocol";
+import { TABLE_KEY } from "../hooks/table-input";
 import {
   BACCARAT,
   BASE,
@@ -13,12 +16,48 @@ import {
   BLACKJACK_TURN,
   BLACKJACK_WIN,
   BLOCKED,
+  DICE,
+  DICE_DRAWING,
+  DICE_LOSS,
+  DICE_PUSH,
+  FLIP,
+  FLIP_LOSS,
+  HILO_ACE,
+  HILO_BUSTED,
+  HILO_CASHED,
+  HILO_DRAWING,
+  HILO_FIRST_DRAWING,
+  HILO_KING,
+  HILO_TURN,
+  KENO,
+  KENO_DRAWING,
+  LIMBO,
+  LIMBO_WIN,
+  MINES_BUSTED,
+  MINES_CASHED,
+  MINES_DRAWING,
+  MINES_TURN,
   NOT_OPEN,
   ROULETTE,
+  ROULETTE_CHIPS,
   SLOTS,
   SLOTS_DRAWING,
+  TOWER_BUSTED,
+  TOWER_CASHED,
+  TOWER_DRAWING,
+  TOWER_TURN,
+  WHEEL,
+  WHEEL_DRAWING,
 } from "./fixtures";
-import { BAND, NOW, PANE, PANE_INLINE, PLUGIN, seat, SESSION, shownText, textOf, worldOf } from "./world";
+import { BAND, movingTable, NOW, PANE, PANE_INLINE, PLUGIN, seat, SESSION, shownText, textOf, worldOf } from "./world";
+
+/** The tiles of a Mines board or a tower drawn in the pane, or by the table surface module in `scope`. */
+async function tilesOf(ui: Pick<Mounted, "findAll">, scope?: string): Promise<FoundElement[]> {
+  const fills = new Set<unknown>(Object.values(TILE_FILL).flat());
+  const boxes = await ui.findAll(scope === undefined ? { type: "Box" } : { type: "Box", in: scope });
+
+  return boxes.filter((box) => fills.has(box.props.backgroundColor));
+}
 
 /** The band is drawn on these two; a pane on every surface. */
 const SURFACES = ["terminal", "desktop"] as const;
@@ -88,11 +127,137 @@ const cases: [string, StateResponse, string[]][] = [
   [
     "roulette, settled",
     ROULETTE,
-    ["bet red", " 17 BLACK ", "Red loses.", "−1.00", " 17 ", "spin · 0.50", "rtp 97.30%"],
+    ["No chips on the table yet.", " 17 BLACK ", "Red loses.", "−1.00", " 17 ", "chip ●", "rtp 97.30%"],
   ],
-  ["baccarat, settled", BACCARAT, ["bet banker", "PLAYER 5", "BANKER 7", "Player 5 · banker 7.", "+0.94"]],
-  ["slots, settled", SLOTS, ["7", "★", "+3.96", "spin · 0.50", "rtp 96.16%"]],
+  ["roulette, three chips settled", ROULETTE_CHIPS, [" 17 BLACK ", "2 of 3 bets win.", "+17.91"]],
+  [
+    "baccarat, settled",
+    BACCARAT,
+    ["bet banker WIN 1.00", "PLAYER 5", "BANKER 7 WINS", "Banker wins 7 to 5: pays ×1.95.", "+0.94"],
+  ],
+  ["slots, settled", SLOTS, ["◎", "◎ ◎ ◎ pays ×5.", "+3.96", "spin · 0.50", "rtp 96.16%"]],
   ["slots, drawing", SLOTS_DRAWING, ["drawing", "PAYS × BET"]],
+  [
+    "mines, the player to reveal or cash out",
+    MINES_TURN,
+    ["3 mines", "multiplier ×1.2857", "YOUR TURN", "next tile ×1.4785", "z cash out 1.28", "2 safe", "◆", "rtp 99.00%"],
+  ],
+  // The next tile stays in view while one is drawn; the cash-out waits for it.
+  [
+    "mines, a reveal drawing",
+    MINES_DRAWING,
+    ["3 mines", "multiplier ×1.1250", "drawing…", "next tile ×1.2857", "z cash out 1.12", "1 safe", "◆"],
+  ],
+  [
+    "mines, busted",
+    MINES_BUSTED,
+    ["✸", "◆", "BUST", "multiplier ×0", "Mine on h after 1 safe tile.", "−1.00", "play · 0.50 · 3 mines"],
+  ],
+  [
+    "mines, cashed out",
+    MINES_CASHED,
+    ["◆", "CASHED OUT ×1.4785", "Cashed out at ×1.4785 after 3 safe tiles.", "+0.47"],
+  ],
+  [
+    "dice, a win under the target",
+    DICE,
+    [
+      "roll under 49.00",
+      "win chance 49.00%",
+      "multiplier ×2.00",
+      "rolled 37.42",
+      "Rolled 37.42: under 49.00 wins.",
+      "+0.99",
+      "roll · 0.50 · under 49.00",
+      "rtp 98.00%",
+    ],
+  ],
+  ["dice, a loss over the target", DICE_LOSS, ["Rolled 12.00: over 75.00 loses.", "LOSE", "−1.00"]],
+  ["dice, a winning roll at ×1 is a push", DICE_PUSH, ["Rolled 57.00: over 2.00 wins ×1.00, a push. 0.00", "PUSH"]],
+  ["dice, rolling", DICE_DRAWING, ["rolling…", "drawing"]],
+  [
+    "limbo, short of the target",
+    LIMBO,
+    [
+      "×1.53",
+      "target ×2.00",
+      "win chance 49.00%",
+      "×1.53 falls short of ×2.00.",
+      "−1.00",
+      "play · 0.50 · ×2.00",
+      "rtp ≤ 98.00%",
+    ],
+  ],
+  ["limbo, the target reached", LIMBO_WIN, ["×3.12", "×3.12 reaches ×2.00.", "+0.99"]],
+  // A new session opens on the last round's choices: three coins on heads, the round on the table.
+  ["flip, three heads in a row", FLIP, ["(H)(H)(H)", "WIN", "3 heads in a row.", "+5.77", "flip · 0.50 · 3 × heads"]],
+  ["flip, a tail", FLIP_LOSS, ["Tails on coin 2 of 2.", "−1.00"]],
+  [
+    "keno, three hits",
+    KENO,
+    [
+      "[ 4]",
+      "[12]",
+      "[19]",
+      "5 picks",
+      "3 hits",
+      "HITS",
+      "3 ×4.00",
+      "3 hits of 5 picks.",
+      "+2.97",
+      "play · 0.50 · 5 picks",
+      "rtp ≤ 95.00%",
+    ],
+  ],
+  ["keno, drawing", KENO_DRAWING, ["[ 4]", "drawing…"]],
+  [
+    "wheel, landed",
+    WHEEL,
+    [" ×1.50 ", "● ×0.80", "● ×1.50", "Landed on ×1.50.", "+0.49", "spin · 0.50 · 10 segments · low"],
+  ],
+  ["wheel, spinning", WHEEL_DRAWING, ["10 segments · low risk", "spinning…"]],
+  [
+    "hilo, the player to guess or cash out",
+    HILO_TURN,
+    [
+      "Q♠ ▼ 9♥ ▼ 5♦",
+      "multiplier ×1.53",
+      "YOUR TURN",
+      "▲ higher or same 69% ×2.21",
+      "▼ lower or same 38% ×3.98",
+      "⇥ skip · 10 left",
+      "cash out 1.53",
+      "2 right",
+      "rtp 98.00%",
+    ],
+  ],
+  ["hilo, an ace", HILO_ACE, ["▲ higher 92% ×1.06", "▼ lower or same 8% ×12.74", "⇥ skip · 0 left"]],
+  ["hilo, a king", HILO_KING, ["▲ higher or same 8% ×12.74", "▼ lower 92% ×1.06", "⇥ skip · 0 left"]],
+  ["hilo, the first card drawing", HILO_FIRST_DRAWING, ["multiplier ×—", "drawing…", "0 right"]],
+  ["hilo, a card drawing", HILO_DRAWING, ["Q♠ ▼ 9♥ ▲ ▒▒", "drawing… ▲ higher or same"]],
+  [
+    "hilo, a wrong guess",
+    HILO_BUSTED,
+    ["WRONG GUESS", "multiplier ×0", "Wrong guess after 1 right.", "−1.00", "play · 0.50"],
+  ],
+  ["hilo, cashed out", HILO_CASHED, ["CASHED OUT ×1.53", "Cashed out at ×1.53 after 2 right guesses.", "+0.52"]],
+  [
+    "tower, the player to climb or cash out",
+    TOWER_TURN,
+    [
+      "easy · 3 safe of 4",
+      "multiplier ×1.7422",
+      "YOUR TURN",
+      "next level ×2.3229",
+      "z cash out 1.74",
+      "2 levels",
+      "×13.0519",
+      "◆",
+    ],
+  ],
+  ["tower, a climb drawing", TOWER_DRAWING, ["multiplier ×1.3066", "drawing…", "next level ×1.7422", "1 level"]],
+  ["tower, a fall", TOWER_BUSTED, ["✸", "◆", "BUST", "Fell on level 3.", "−1.00", "play · 0.50 · easy"]],
+  ["tower, cashed out", TOWER_CASHED, ["CASHED OUT ×1.7422", "Cashed out at ×1.7422 on level 2.", "+0.73"]],
   ["an account not open yet", NOT_OPEN, ["No Tilt account yet", "first deposit on the web"]],
   ["play blocked", BLOCKED, ["Play paused · Self-exclusion until 2026-11-01."]],
 ];
@@ -186,11 +351,30 @@ describe("the pane draws each state the api sends", () => {
     let current: StateResponse = BASE;
     const { clock } = await seat($, on, BASE, { "GET /v1/state": () => ({ status: 200, body: current }) });
 
-    for (const state of [BASE, BLACKJACK_TURN, BLACKJACK_PAIR, ROULETTE, BACCARAT, SLOTS, BLOCKED]) {
+    for (const state of [
+      BASE,
+      BLACKJACK_TURN,
+      BLACKJACK_PAIR,
+      ROULETTE,
+      BACCARAT,
+      SLOTS,
+      MINES_TURN,
+      DICE,
+      FLIP,
+      KENO,
+      WHEEL,
+      HILO_TURN,
+      TOWER_TURN,
+      BLOCKED,
+    ]) {
       current = state;
       await clock.advance(5_000);
       const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
-      const hotkeys = (await ui.findAll({ type: "Button" })).map((button) => String(button.props.hotkey));
+      // A Button without a hotkey (a key whose letter a tile takes, drawn letterless) presses by click alone.
+      const hotkeys = (await ui.findAll({ type: "Button" }))
+        .map((button) => button.props.hotkey)
+        .filter((hotkey) => hotkey !== undefined)
+        .map(String);
 
       expect(hotkeys.length).toBeGreaterThan(0);
       expect(new Set(hotkeys).size, hotkeys.join(" ")).toBe(hotkeys.length);
@@ -226,6 +410,496 @@ describe("the pane draws each state the api sends", () => {
 
     // Two hands from split aces, one hand from no split.
     expect(text.match(/· 1 card/g)).toHaveLength(2);
+  });
+});
+
+describe("the Mines board", () => {
+  const actionsOf = (calls: { body: unknown }[]) => calls.map((call) => (call.body as PlayRequest).action);
+
+  test("on the main screen its hidden tiles are the keys: a press reveals, the safe ones are not keys", async ($, on) => {
+    const { world } = await seat($, on, MINES_TURN, movingTable(MINES_TURN, MINES_TURN));
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+    const tile = (index: number) => ui.find({ key: `mines-tile-${index}` });
+
+    expect((await tile(0))?.props.hotkey).toBe("a");
+    expect((await tile(24))?.props.hotkey).toBe("y");
+    expect(await tile(6)).toBeUndefined();
+    expect(await tile(12)).toBeUndefined();
+    const tiles = await Promise.all(Array.from({ length: 25 }, (_, index) => tile(index)));
+
+    expect(tiles.filter((found) => found !== undefined)).toHaveLength(23);
+    expect(await ui.find({ key: "mines-cashout" })).toBeDefined();
+
+    await ui.press({ key: "mines-tile-0" });
+
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([{ type: "mines_reveal", tile: 0 }]);
+  });
+
+  for (const [game, turn, key] of [
+    ["mines", MINES_TURN, "mines-tile-0"],
+    ["tower", TOWER_TURN, "tower-tile-0"],
+  ] as const) {
+    test(`${game}: a move turns its tile from the key on, before the api shows it drawing`, async ($, on) => {
+      const answer = { status: 200, body: { intentId: "sent", status: "submitted", error: null } };
+
+      await seat($, on, turn, { "POST /v1/play": () => answer });
+      const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+
+      expect(await shownText(ui)).toContain("YOUR TURN");
+      expect(await shownText(ui)).not.toMatch(/[◐◓◑◒]/);
+      await ui.press({ key });
+      const text = await shownText(ui);
+
+      expect(text).toContain("drawing…");
+      expect(text).toMatch(/[◐◓◑◒]/);
+    });
+  }
+
+  test("a reveal being drawn turns its tile and holds the other tiles' keys, inert", async ($, on) => {
+    const { clock } = await seat($, on, MINES_DRAWING);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+    const glyphs = new Set<string>();
+
+    for (let frame = 0; frame < 8; frame++) {
+      const text = textOf(await ui.drawn());
+
+      glyphs.add(text.match(/[◐◓◑◒]/)?.[0] ?? "");
+      await clock.advance(200);
+    }
+
+    expect(glyphs.has("")).toBe(false);
+    expect(glyphs.size).toBeGreaterThan(1);
+    expect(await ui.find({ key: "mines-tile-0" })).toBeUndefined();
+    expect(await ui.find({ key: "held-mines-tile-0" })).toBeDefined();
+    expect(await ui.find({ key: "held-mines-tile-12" })).toBeUndefined();
+  });
+
+  test("in the fullscreen pane the board is still: a tile is its key's Button, a click reveals it", async ($, on) => {
+    const { world, clock } = await seat($, on, MINES_TURN, movingTable(MINES_TURN, MINES_TURN));
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE, surface: "terminal" });
+
+    // The tiles' letters are on the board, not twenty-five blank keys on the key line: the table
+    // surface module draws nothing there, it only keeps the keys a click gave it.
+    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toBe("");
+    expect((await ui.find({ key: "mines-tile-24" }))?.props.hotkey).toBe("y");
+    await ui.press({ key: "mines-tile-24" });
+    await clock.advance(1_000);
+    await ui.press({ key: "mines-cashout" });
+
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([
+      { type: "mines_reveal", tile: 24 },
+      { type: "mines_cashout" },
+    ]);
+  });
+
+  test("the board is 25 tiles: hidden ones the keys, gems, the mine and the tile being drawn", async ($, on) => {
+    let current: StateResponse = MINES_TURN;
+    const { clock } = await seat($, on, current, { "GET /v1/state": () => ({ status: 200, body: current }) });
+    const fullscreen = await $.ui.mount({ plugin: PLUGIN, ...PANE, surface: "terminal" });
+    const table = await tilesOf(fullscreen);
+
+    expect(table).toHaveLength(25);
+    expect(table.filter((tile) => tile.props.backgroundColor === TILE_FILL.safe)).toHaveLength(2);
+    // Each hidden tile is the Button of its letter: a click or the letter reveals it (the test above).
+    const buttons = (await fullscreen.findAll({ type: "Button" })).filter((button) =>
+      String(button.props.key).startsWith("mines-tile-"),
+    );
+
+    expect(buttons).toHaveLength(23);
+    await fullscreen.unmount();
+
+    for (const [state, fill, glyph] of [
+      [MINES_BUSTED, TILE_FILL.mine, "✸"],
+      [MINES_DRAWING, null, /[◐◓◑◒]/],
+    ] as const) {
+      current = state;
+      await clock.advance(5_000);
+      const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+      const tiles = await tilesOf(ui);
+
+      expect(tiles).toHaveLength(25);
+      expect(
+        tiles.filter((tile) =>
+          fill === null
+            ? TILE_FILL.pending.some((shade) => shade === tile.props.backgroundColor)
+            : tile.props.backgroundColor === fill,
+        ),
+      ).toHaveLength(1);
+      expect(textOf(await ui.drawn())).toMatch(glyph);
+      await ui.unmount();
+    }
+  });
+});
+
+describe("the Tower, Hilo and Keno boards", () => {
+  const actionsOf = (calls: { body: unknown }[]) => calls.map((call) => (call.body as PlayRequest).action);
+
+  test("on the main screen the next level's tiles are the keys: a press climbs", async ($, on) => {
+    const { world } = await seat($, on, TOWER_TURN, movingTable(TOWER_TURN, TOWER_TURN));
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+
+    expect((await ui.find({ key: "tower-tile-0" }))?.props.hotkey).toBe("a");
+    expect((await ui.find({ key: "tower-tile-3" }))?.props.hotkey).toBe("d");
+    expect(await ui.find({ key: "tower-tile-4" })).toBeUndefined();
+    expect(await ui.find({ key: "tower-cashout" })).toBeDefined();
+
+    await ui.press({ key: "tower-tile-2" });
+
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([{ type: "tower_climb", tile: 2 }]);
+  });
+
+  test("the tower is nine levels of tiles, top first, what each pays on its left, the level in play lit", async ($, on) => {
+    await seat($, on, TOWER_TURN);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+    const tiles = await tilesOf(ui);
+    const text = textOf(await ui.drawn());
+
+    expect(tiles).toHaveLength(9 * 4);
+    expect(tiles.filter((tile) => tile.props.backgroundColor === TILE_FILL.safe)).toHaveLength(2);
+    expect(tiles.filter((tile) => tile.props.backgroundColor === TILE_FILL.lit)).toHaveLength(4);
+    expect(text.indexOf("×13.0519")).toBeLessThan(text.indexOf("×1.3066"));
+  });
+
+  test("a climb being drawn turns its tile and holds the others, inert", async ($, on) => {
+    await seat($, on, TOWER_DRAWING);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+
+    expect(textOf(await ui.drawn())).toMatch(/[◐◓◑◒]/);
+    expect(await ui.find({ key: "tower-tile-0" })).toBeUndefined();
+    expect(await ui.find({ key: "held-tower-tile-0" })).toBeDefined();
+    expect(await ui.find({ key: "held-tower-tile-2" })).toBeUndefined();
+  });
+
+  test("in the fullscreen pane the tower is still too: a click on a tile climbs, on the cash-out takes it", async ($, on) => {
+    const { world, clock } = await seat($, on, TOWER_TURN, movingTable(TOWER_TURN, TOWER_TURN));
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE, surface: "terminal" });
+
+    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toBe("");
+    await ui.press({ key: "tower-tile-1" });
+    await clock.advance(1_000);
+    await ui.press({ key: "tower-cashout" });
+
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([
+      { type: "tower_climb", tile: 1 },
+      { type: "tower_cashout" },
+    ]);
+  });
+
+  test("hilo: the guesses are the key row's, keyed on the main screen, clicked in fullscreen, said once", async ($, on) => {
+    const { world, clock } = await seat($, on, HILO_TURN, movingTable(HILO_TURN, HILO_TURN));
+    const inline = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+
+    expect((await inline.find({ key: "hilo-higher" }))?.props.hotkey).toBe("h");
+    expect((await inline.find({ key: "hilo-skip" }))?.props.hotkey).toBe("s");
+    await inline.press({ key: "hilo-lower" });
+    await inline.unmount();
+    await clock.advance(1_000);
+
+    const full = await $.ui.mount({ plugin: PLUGIN, ...PANE, surface: "terminal" });
+
+    // The table repeats no move: its side gives the odds, the key row the moves.
+    expect(await full.find({ key: "table-hilo-higher", in: TABLE_KEY })).toBeUndefined();
+    await full.press({ key: "hilo-higher" });
+    await clock.advance(1_000);
+    await full.press({ key: "hilo-cashout" });
+
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([
+      { type: "hilo_guess", guess: "lower" },
+      { type: "hilo_guess", guess: "higher" },
+      { type: "hilo_cashout" },
+    ]);
+  });
+
+  test("keno: on the fullscreen table a click on a number picks or unpicks it, the play carries the picks", async ($, on) => {
+    const { world } = await seat($, on, KENO, movingTable(KENO, KENO));
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE, surface: "terminal" });
+
+    await ui.press({ key: "table-keno-pick-7" });
+    await ui.press({ key: "table-keno-pick-35" });
+    await ui.press({ key: "start" });
+
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([
+      { type: "keno_play", amount: "500000", picks: [4, 7, 12, 19, 27] },
+    ]);
+  });
+
+  test("keno: on the main screen the numbers are drawn, not keys", async ($, on) => {
+    await seat($, on, KENO);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+
+    expect(await ui.find({ key: "keno-pick-7" })).toBeUndefined();
+    expect(await ui.find({ key: "keno-random" })).toBeDefined();
+  });
+});
+
+describe("the roulette layout", () => {
+  const actionsOf = (calls: { body: unknown }[]) => calls.map((call) => (call.body as PlayRequest).action);
+  const FULLSCREEN = { ...PANE, surface: "terminal" } as const;
+  const GOLD = "#f1c45e";
+  const DRAWING: StateResponse =
+    ROULETTE.round === null
+      ? ROULETTE
+      : {
+          ...ROULETTE,
+          round: {
+            ...ROULETTE.round,
+            phase: "drawing",
+            detail: {
+              game: "roulette",
+              bet: { kind: "red" },
+              chips: [{ bet: { kind: "red" }, amount: "1000000" }],
+              number: null,
+            },
+          },
+        };
+
+  test("lies under the wheel, the landed pocket and the winning cells lit", async ($, on) => {
+    await seat($, on, ROULETTE_CHIPS);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+    const cellOf = async (cell: string) =>
+      JSON.stringify(await ui.find({ key: `table-roulette-${cell}`, in: TABLE_KEY }));
+
+    await ui.press({ key: "game-roulette" });
+    const table = textOf(await ui.drawn({ in: TABLE_KEY }));
+
+    for (const cell of ["2:1", "1st 12", "2nd 12", "3rd 12", "1–18", "EVEN", "BLACK", "ODD", "19–36"]) {
+      expect(table).toContain(cell);
+    }
+
+    // 17 and the second dozen won; red lost, 16 was not played.
+    expect(await cellOf("straight-17")).toContain(GOLD);
+    expect(await cellOf("dozen-2")).toContain(GOLD);
+    expect(await cellOf("red")).not.toContain(GOLD);
+    expect(await cellOf("straight-16")).not.toContain(GOLD);
+    // Once the table holds the keys, its prompt says the layout takes clicks.
+    await ui.pointer({ type: "down", x: 2, y: 1, button: "left" });
+    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("click the layout to add a chip");
+  });
+
+  test("clicks stack chips on a number, RED, a dozen and a 2:1; undo, spin and clear are buttons", async ($, on) => {
+    const { world, clock } = await seat($, on, ROULETTE, movingTable(ROULETTE, ROULETTE));
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+    const table = async () => textOf(await ui.drawn({ in: TABLE_KEY }));
+
+    await ui.press({ key: "game-roulette" });
+    expect(await ui.find({ key: "table-start", in: TABLE_KEY })).toBeUndefined();
+
+    for (const cell of ["straight-17", "straight-17", "red", "dozen-1", "column-3"]) {
+      await ui.press({ key: `table-roulette-${cell}` });
+    }
+
+    expect(await table()).toContain("●1");
+    expect(await table()).toContain("on the table 2.50 · 4 bets");
+    expect(JSON.stringify(await ui.find({ key: "table-roulette-straight-17", in: TABLE_KEY }))).toContain(GOLD);
+    await ui.press({ key: "table-chip-undo" });
+    expect(await table()).toContain("on the table 2.00 · 3 bets");
+    await ui.press({ key: "table-start" });
+    await clock.advance(3_000);
+    // The chips stay for the next spin, until cleared.
+    expect(await table()).toContain("on the table 2.00 · 3 bets");
+    await ui.press({ key: "table-chip-clear" });
+    expect(await table()).toContain("No chips on the table yet.");
+    expect(await ui.find({ key: "table-start", in: TABLE_KEY })).toBeUndefined();
+
+    expect(actionsOf(world.calls("POST /v1/play"))).toEqual([
+      {
+        type: "roulette_chips",
+        chips: [
+          { bet: { kind: "straight", number: 17 }, amount: "1000000" },
+          { bet: { kind: "red" }, amount: "500000" },
+          { bet: { kind: "dozen", dozen: 1 }, amount: "500000" },
+        ],
+      },
+    ]);
+  });
+
+  test("a 21st bet is refused with a word; the 20 already on stay", async ($, on) => {
+    await seat($, on, ROULETTE);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+
+    await ui.press({ key: "game-roulette" });
+
+    for (let number = 0; number <= 20; number++) {
+      await ui.press({ key: `table-roulette-straight-${number}` });
+    }
+
+    expect(textOf(await ui.drawn())).toContain("20 bets at most on one spin.");
+    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("on the table 10.00 · 20 bets");
+  });
+
+  test("is inert while the wheel draws: no cell takes a click", async ($, on) => {
+    await seat($, on, DRAWING);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+
+    expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("1st 12");
+    expect(await ui.find({ key: "table-roulette-straight-17", in: TABLE_KEY })).toBeUndefined();
+    expect(await ui.find({ key: "table-roulette-red", in: TABLE_KEY })).toBeUndefined();
+    expect(await ui.find({ key: "table-roulette-dozen-1", in: TABLE_KEY })).toBeUndefined();
+  });
+
+  test("on the main screen s and d move the cursor, a puts a chip under it and x takes it off", async ($, on) => {
+    await seat($, on, BASE);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+    const text = async () => shownText(ui);
+
+    await ui.press({ key: "game-roulette" });
+    expect((await ui.find({ key: "cursor-up" }))?.props.hotkey).toBe("d");
+    // No cell is a Button where no click lands.
+    expect(await ui.find({ key: "table-roulette-straight-17", in: TABLE_KEY })).toBeUndefined();
+    await ui.press({ key: "cursor-up" });
+    expect(await text()).toContain("on number 1");
+    await ui.press({ key: "cursor-down" });
+    await ui.press({ key: "cursor-down" });
+    expect(await text()).toContain("on column 3");
+
+    for (let press = 0; press < 6; press++) {
+      await ui.press({ key: "cursor-down" });
+    }
+
+    expect(await text()).toContain("on number 36");
+    await ui.press({ key: "chip-add" });
+    // The chip marks the number without hiding it; its stake is on the cursor's line.
+    expect(await text()).toContain("●36");
+    expect(await text()).toContain("on number 36 ●0.50");
+    expect(await text()).toContain("spin · 0.50 · 1 bet");
+    await ui.press({ key: "chip-remove" });
+    expect(await text()).toContain("No chips on the table yet.");
+    expect(await ui.find({ key: "start" })).toBeUndefined();
+  });
+
+  /** The whole table above the prompt of a fullscreen terminal tall enough for the roulette table:
+   *  the table surface module, as in the pane. */
+  const BOTTOM: RenderInput<"AbovePrompt", "terminal"> = {
+    ...BAND,
+    surface: "terminal",
+    viewport: { columns: 125, rows: 90, isFullscreen: true },
+    props: { ...BAND.props, maxRows: 40, bodyColumns: 120, scroll: { offset: 0, bodyRows: 39 } },
+  };
+  const cell = (address: string) => `table-${address}`;
+
+  test(
+    "takes clicks in the bottom band of the fullscreen terminal: numbers, RED, a dozen, a 2:1, then the keys spin",
+    { options: { layout: "bottom" } },
+    async ($, on) => {
+      const { world } = await seat($, on, ROULETTE, movingTable(ROULETTE, ROULETTE));
+      const ui = await $.ui.mount({ plugin: PLUGIN, ...BOTTOM });
+
+      await ui.press({ key: "game-roulette" });
+      expect(await ui.find({ type: "Client", key: TABLE_KEY })).toBeDefined();
+      expect(textOf(await ui.drawn({ in: TABLE_KEY }))).toContain("click the layout to add a chip");
+
+      for (const address of ["straight-17", "straight-17", "red", "dozen-1", "column-3", "straight-0"]) {
+        await ui.press({ key: cell(`roulette-${address}`) });
+      }
+
+      expect(await shownText(ui)).toContain("on the table 3.00 · 5 bets");
+      await ui.press({ key: cell("chip-undo") });
+      await ui.press({ key: cell("start") });
+
+      expect(actionsOf(world.calls("POST /v1/play"))).toEqual([
+        {
+          type: "roulette_chips",
+          chips: [
+            { bet: { kind: "straight", number: 17 }, amount: "1000000" },
+            { bet: { kind: "red" }, amount: "500000" },
+            { bet: { kind: "dozen", dozen: 1 }, amount: "500000" },
+            { bet: { kind: "column", column: 3 }, amount: "500000" },
+          ],
+        },
+      ]);
+    },
+  );
+
+  test("in the band, a cell takes no click while the wheel draws", { options: { layout: "bottom" } }, async ($, on) => {
+    await seat($, on, DRAWING);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...BOTTOM });
+
+    expect(await shownText(ui)).toContain("1st 12");
+    expect(await ui.find({ key: cell("roulette-straight-17"), in: TABLE_KEY })).toBeUndefined();
+    expect(await ui.find({ key: cell("roulette-red"), in: TABLE_KEY })).toBeUndefined();
+  });
+
+  test(
+    "on the main screen, which reports no clicks, the layout is no Button and says how to bet with keys",
+    { options: { layout: "bottom" } },
+    async ($, on) => {
+      await seat($, on, BASE);
+      const ui = await $.ui.mount({
+        plugin: PLUGIN,
+        ...BOTTOM,
+        viewport: { columns: 125, rows: 80, isFullscreen: false },
+      });
+
+      await ui.press({ key: "game-roulette" });
+      const text = textOf(await ui.drawn());
+
+      expect(await ui.find({ key: cell("roulette-straight-17") })).toBeUndefined();
+      expect(text).toContain("a: chip under the cursor · s d step it, f h across · r k o e l g outside bets");
+      expect(text).not.toContain("click the layout");
+      // h jumps across the felt: 0, 3, 6.
+      await ui.press({ key: "cursor-right" });
+      await ui.press({ key: "cursor-right" });
+      expect(textOf(await ui.drawn())).toContain("on number 6");
+    },
+  );
+
+  test("an outside bet's stake leaves a blank column before the next cell's label", async ($, on) => {
+    await seat($, on, BASE);
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN });
+    const face = async (bet: string) => (await ui.find({ key: `table-roulette-${bet}`, in: TABLE_KEY }))?.text;
+
+    await ui.press({ key: "game-roulette" });
+    await ui.press({ key: "roulette-even" });
+    await ui.press({ key: "roulette-red" });
+    await ui.press({ key: "roulette-black" });
+
+    expect(await face("red")).toBe("RED ●.5 ");
+    expect(await face("even")).toBe("EVEN●.5 ");
+    // No room for both and the blank column: the chip marks the label alone.
+    expect(await face("black")).toBe(" ●BLACK ");
+  });
+
+  test("fits its column: wide cells and wheel, narrow ones beside the sidebar at 90 columns, keys alone under 43", async ($, on) => {
+    await seat($, on, ROULETTE_CHIPS);
+    const widths = async (bodyColumns: number) => {
+      const ui = await $.ui.mount({ plugin: PLUGIN, ...FULLSCREEN, props: { ...FULLSCREEN.props, bodyColumns } });
+
+      await ui.press({ key: "game-roulette" });
+      const number = (await ui.find({ key: "table-roulette-straight-16", in: TABLE_KEY }))?.text ?? "";
+      const texts = await ui.findAll({ type: "Text", in: TABLE_KEY });
+      // The marker stands over the middle tile: its column says how many tiles the wheel shows.
+      const marker = texts.find((text) => text.text.endsWith("▼"))?.text ?? "";
+
+      await ui.unmount();
+
+      return { number: number.length, marker: marker.length };
+    };
+
+    // 120: a game column of 85 beside the sidebar, the wheel 6 tiles each side of the marker, 66
+    // wide. 90: of 55, too few for the wide layout (56) or that wheel: 4 tiles each side, 46 wide.
+    expect(await widths(120)).toEqual({ number: 4, marker: 33 });
+    expect(await widths(90)).toEqual({ number: 3, marker: 23 });
+
+    const narrow = await $.ui.mount({
+      plugin: PLUGIN,
+      ...PANE_INLINE,
+      props: { ...PANE_INLINE.props, bodyColumns: 40 },
+    });
+
+    await narrow.press({ key: "game-roulette" });
+    expect(textOf(await narrow.drawn())).not.toContain("1st 12");
+    expect(await narrow.find({ key: "roulette-red" })).toBeDefined();
+  });
+
+  test("the balance short of the chips is said before n", async ($, on) => {
+    await seat($, on, { ...BASE, balance: "700000" });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE });
+
+    await ui.press({ key: "game-roulette" });
+    await ui.press({ key: "roulette-red" });
+    expect(textOf(await ui.drawn())).not.toContain("Balance too low");
+    await ui.press({ key: "roulette-black" });
+    expect(textOf(await ui.drawn())).toContain("Balance too low for these chips");
   });
 });
 

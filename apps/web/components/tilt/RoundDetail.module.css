@@ -50,3 +50,210 @@
   font-size: var(--text-display);
   font-weight: var(--weight-black);
 }
+
+.mines {
+  display: grid;
+  grid-template-columns: repeat(5, 40px);
+  gap: var(--space-2);
+}
+
+.tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  border: 1px solid var(--line-3);
+  border-radius: var(--radius-xs);
+  background: var(--surface-well);
+  color: var(--fg-7);
+  font-weight: var(--weight-black);
+}
+
+.safe {
+  color: var(--tilt-gold);
+}
+
+.mine {
+  border-color: var(--tilt-red);
+  color: var(--tilt-red);
+}
+
+.win {
+  color: var(--tilt-gold);
+}
+
+.lose {
+  color: var(--tilt-red);
+}
+
+.chosen {
+  color: var(--tilt-gold);
+  font-weight: var(--weight-black);
+}
+
+.big {
+  font-size: var(--text-display);
+  font-weight: var(--weight-black);
+  line-height: 1;
+}
+
+/* Dice: the 0–99.99 range, its winning part and where the roll landed. */
+.track {
+  position: relative;
+  max-width: 320px;
+  height: 12px;
+  border: 1px solid var(--line-3);
+  border-radius: var(--radius-xs);
+  background: var(--surface-well);
+}
+
+.trackWin {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--surface-win-tint);
+  border-inline: 1px solid var(--tilt-gold);
+}
+
+.trackMarker {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--fg-1);
+}
+
+.coins {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.coin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-weight: var(--weight-black);
+}
+
+.keno {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 40px));
+  gap: var(--space-2);
+}
+
+.picked {
+  border-color: var(--tilt-gold);
+  color: var(--fg-1);
+}
+
+.drawn {
+  color: var(--fg-3);
+  background: var(--line-2);
+}
+
+.hit {
+  border-color: var(--tilt-gold);
+  background: var(--tilt-gold);
+  color: var(--text-on-light);
+}
+
+.wheel {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 52px));
+  gap: var(--space-2);
+}
+
+/* Ten segments to a row are too narrow for "49.00" on a phone: five there. */
+@media (max-width: 480px) {
+  .wheel {
+    grid-template-columns: repeat(5, minmax(0, 52px));
+  }
+}
+
+.segment {
+  padding: var(--space-2) 0;
+  border: 1px solid var(--line-3);
+  border-radius: var(--radius-xs);
+  background: var(--surface-well);
+  color: var(--fg-5);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+
+.segment.chosen {
+  border-color: var(--tilt-gold);
+  color: var(--tilt-gold);
+}
+
+.sequence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-xs);
+}
+
+.tower {
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* Roulette chips: the felt in 14 columns (zero, twelve number columns, 2:1) by 5 rows. Columns never
+   shrink below a cell or its stake: on a phone the felt scrolls sideways instead of overlapping. */
+.felt {
+  display: grid;
+  grid-template-columns: repeat(14, max-content);
+  gap: var(--space-2);
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* No background of its own: number cells take their pocket colour, the outside bets stay bare felt. */
+.cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  min-height: 40px;
+  padding-inline: var(--space-1);
+  border: 1px solid var(--line-3);
+  border-radius: var(--radius-xs);
+  color: var(--fg-1);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-black);
+}
+
+.landed {
+  outline: 2px solid var(--fg-1);
+  outline-offset: 1px;
+}
+
+.stake {
+  color: var(--tilt-gold);
+  font-size: var(--text-2xs);
+  font-weight: normal;
+}
+
+.paid {
+  border-color: var(--tilt-gold);
+  box-shadow: inset 0 0 0 1px var(--tilt-gold);
+}
+
+.chips {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}

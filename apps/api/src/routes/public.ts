@@ -1,6 +1,7 @@
 // Public routes: health, leaderboard, provably-fair verification and the geo check.
 import { PublicKey } from "@solana/web3.js";
 import { playerAccountAddress } from "@tilt/contract";
+import type { Game } from "@tilt/mod/protocol";
 import type { Hono } from "hono";
 import { latestCompetition, sponsorView } from "../competitions/store";
 import type { AppDeps } from "../deps";
@@ -9,20 +10,26 @@ import { replay } from "../games/replay";
 import { buildRoundView } from "../games/view";
 import { country, geoAllowed, parseParam, type Env } from "../http";
 import type { GeoResponse, LeaderboardResponse, VerifyResponse } from "../public";
-import { drawsBetween, findRound, previousRequestId, type IndexedRound } from "../rounds";
+import { drawsBetween, findRound, isCashout, previousRequestId, type IndexedRound } from "../rounds";
 import { SignatureParam } from "../schemas";
 import { leaderboard } from "../state";
 
-/** VRF outputs of a round in request order. Blackjack needs every draw since the previous
- *  round settled; without that bound (previous round not indexed) only the last one is known. */
+/** Games whose rounds take several draws (one per card, tile or climb). */
+const MULTI_DRAW: ReadonlySet<Game> = new Set(["blackjack", "mines", "hilo", "tower"]);
+
+/** VRF outputs of a round in request order. Multi-draw games need every draw since the
+ *  previous round settled; without that bound (previous round not indexed) only the last one is
+ *  known. A cash-out settles without a draw (zero randomness in the event): its last draw is
+ *  the last move's, and a Mines or Tower board the relay closed before any move has none. */
 async function roundDraws(deps: AppDeps, round: IndexedRound): Promise<{ draws: Buffer[]; complete: boolean }> {
-  if (round.game !== "blackjack") return { draws: [round.randomness], complete: true };
+  const settledByDraw = !isCashout(round);
+  if (!MULTI_DRAW.has(round.game)) return { draws: [round.randomness], complete: true };
   const after = await previousRequestId(deps.db, round.player, round.round);
-  if (after === null) return { draws: [round.randomness], complete: false };
+  if (after === null) return { draws: settledByDraw ? [round.randomness] : [], complete: false };
   const account = playerAccountAddress(new PublicKey(round.player)).toBase58();
   const draws = await drawsBetween(deps.db, account, after, round.requestId);
   const last = draws.at(-1);
-  if (!last?.equals(round.randomness)) draws.push(round.randomness);
+  if (settledByDraw && !last?.equals(round.randomness)) draws.push(round.randomness);
   return { draws, complete: true };
 }
 
@@ -30,6 +37,10 @@ async function verify(deps: AppDeps, signature: string): Promise<VerifyResponse>
   const round = await findRound(deps.db, signature);
   if (!round) throw new ApiError("NOT_FOUND", "round not indexed (yet)");
   const { draws, complete } = await roundDraws(deps, round);
+  // Only a Mines or Tower cash-out whose draws are all known can have none: a board the relay
+  // closed before any move.
+  const drawless = complete && isCashout(round) && (round.game === "mines" || round.game === "tower");
+  if (draws.length === 0 && !drawless) throw new ApiError("NOT_FOUND", "round draws not indexed (yet)");
   const result = replay({
     game: round.game,
     stake: round.stake,

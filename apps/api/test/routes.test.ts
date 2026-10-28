@@ -1,15 +1,20 @@
 // HTTP behaviour of the mod, web and public routes against Postgres, a fake relay (HTTP, on the
 // contract schemas), a fake chain and a fake Privy.
+import { PublicKey } from "@solana/web3.js";
+import { playerAccountAddress } from "@tilt/contract";
 import type { IntentResponse, StateResponse } from "@tilt/mod/protocol";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createSession } from "../src/auth/sessions";
 import { createCampaign, openCompetition } from "../src/competitions/store";
 import { migrate } from "../src/db";
+import { GUESSES } from "../src/games/hilo";
+import type { Outcome } from "../src/games/round";
 import { settle } from "../src/games/settlement";
+import { DIFFICULTY_NAMES } from "../src/games/tower";
 import type { AccountResponse, MoneyIntentResponse, ResponsibleLimits, VerifyResponse } from "../src/public";
 import { RateLimiter } from "../src/ratelimit";
-import { saveDetail, saveRound } from "../src/rounds";
+import { saveDetail, saveDraw, saveRound } from "../src/rounds";
 import { ensureUser } from "../src/users";
 import vectors from "./fixtures/rust-vectors.json";
 import {
@@ -75,6 +80,56 @@ describe.skipIf(!db)("api routes", () => {
       expect(relay.actions()).toEqual([slots]);
     });
 
+    it("forwards the mines moves", async () => {
+      const moves = [
+        { type: "mines_bet", amount: "1000000", mines: 1 },
+        { type: "mines_bet", amount: "1000000", mines: 24 },
+        { type: "mines_reveal", tile: 0 },
+        { type: "mines_reveal", tile: 24 },
+        { type: "mines_cashout" },
+      ];
+      for (const action of moves) expect((await play(action)).status, JSON.stringify(action)).toBe(200);
+      expect(relay.actions()).toEqual(moves);
+    });
+
+    it("forwards the new games' moves at their bounds", async () => {
+      const amount = "1000000";
+      const moves = [
+        { type: "dice_roll", amount, target: 100, over: false },
+        { type: "dice_roll", amount, target: 9_800, over: false },
+        { type: "dice_roll", amount, target: 200, over: true },
+        { type: "dice_roll", amount, target: 9_900, over: true },
+        { type: "limbo_play", amount, target: 101 },
+        { type: "limbo_play", amount, target: 1_000_000 },
+        { type: "flip_play", amount, side: "heads", flips: 1 },
+        { type: "flip_play", amount, side: "tails", flips: 10 },
+        { type: "keno_play", amount, picks: [1] },
+        { type: "keno_play", amount, picks: [40, 1, 2, 3, 4, 5, 6, 7, 8, 9] },
+        { type: "wheel_spin", amount, segments: 10, risk: "low" },
+        { type: "wheel_spin", amount, segments: 50, risk: "high" },
+        { type: "hilo_bet", amount },
+        { type: "hilo_guess", guess: "higher" },
+        { type: "hilo_guess", guess: "lower" },
+        { type: "hilo_guess", guess: "skip" },
+        { type: "hilo_cashout" },
+        { type: "tower_bet", amount, difficulty: "easy" },
+        { type: "tower_bet", amount, difficulty: "master" },
+        { type: "tower_climb", tile: 0 },
+        { type: "tower_climb", tile: 3 },
+        { type: "tower_cashout" },
+        { type: "roulette_chips", chips: [{ bet: { kind: "red" }, amount }] },
+        {
+          type: "roulette_chips",
+          chips: [
+            ...Array.from({ length: 19 }, (_, number) => ({ bet: { kind: "straight", number }, amount })),
+            { bet: { kind: "column", column: 3 }, amount: "2500000" },
+          ],
+        },
+      ];
+      for (const action of moves) expect((await play(action)).status, JSON.stringify(action)).toBe(200);
+      expect(relay.actions()).toEqual(moves);
+    });
+
     it("refuses money actions and malformed moves without calling the relay", async () => {
       for (const action of [
         { type: "deposit", amount: "1000000" },
@@ -85,11 +140,80 @@ describe.skipIf(!db)("api routes", () => {
         { type: "slots_spin", amount: 1000000 },
         { type: "roulette_spin", amount: "1000000", bet: { kind: "straight", number: 37 } },
         { type: "roulette_spin", amount: "1000000", bet: { kind: "dozen", dozen: 4 } },
+        { type: "roulette_chips", chips: [] },
+        {
+          type: "roulette_chips",
+          chips: Array.from({ length: 21 }, (_, number) => ({ bet: { kind: "straight", number }, amount: "1000000" })),
+        },
+        { type: "roulette_chips", chips: [{ bet: { kind: "red" }, amount: "0" }] },
+        { type: "roulette_chips", chips: [{ bet: { kind: "red" }, amount: 1000000 }] },
+        { type: "roulette_chips", chips: [{ bet: { kind: "straight", number: 37 }, amount: "1000000" }] },
+        { type: "roulette_chips", chips: [{ bet: { kind: "red" }, amount: "1000000", extra: true }] },
+        {
+          type: "roulette_chips",
+          chips: [
+            { bet: { kind: "dozen", dozen: 2 }, amount: "1000000" },
+            { bet: { kind: "dozen", dozen: 2 }, amount: "2000000" },
+          ],
+        },
+        {
+          type: "roulette_chips",
+          chips: [
+            { bet: { kind: "straight", number: 5 }, amount: "1000000" },
+            { bet: { number: 5, kind: "straight" }, amount: "2000000" },
+          ],
+        },
+        { type: "roulette_chips", amount: "1000000", bet: { kind: "red" } },
         { type: "blackjack_hit", extra: true },
         { type: "blackjack_bet", amount: "1000000" },
         { type: "blackjack_bet", amount: "1000000", hands: 0 },
         { type: "blackjack_bet", amount: "1000000", hands: 7 },
         { type: "blackjack_bet", amount: "1000000", hands: 1.5 },
+        { type: "mines_bet", amount: "1000000", mines: 0 },
+        { type: "mines_bet", amount: "1000000", mines: 25 },
+        { type: "mines_bet", amount: "1000000", mines: 2.5 },
+        { type: "mines_bet", amount: "1000000" },
+        { type: "mines_bet", mines: 3 },
+        { type: "mines_reveal", tile: 25 },
+        { type: "mines_reveal", tile: -1 },
+        { type: "mines_reveal", tile: 1.5 },
+        { type: "mines_reveal", tile: "3" },
+        { type: "mines_reveal" },
+        { type: "mines_cashout", tile: 3 },
+        { type: "dice_roll", amount: "1000000", target: 99, over: false },
+        { type: "dice_roll", amount: "1000000", target: 9_801, over: false },
+        { type: "dice_roll", amount: "1000000", target: 199, over: true },
+        { type: "dice_roll", amount: "1000000", target: 9_901, over: true },
+        { type: "dice_roll", amount: "1000000", target: 50.5, over: true },
+        { type: "dice_roll", amount: "1000000", target: 5_000 },
+        { type: "dice_roll", amount: "1000000", target: 5_000, over: "yes" },
+        { type: "limbo_play", amount: "1000000", target: 100 },
+        { type: "limbo_play", amount: "1000000", target: 1_000_001 },
+        { type: "limbo_play", amount: "1000000", target: 150.5 },
+        { type: "limbo_play", amount: "1000000", target: "200" },
+        { type: "flip_play", amount: "1000000", side: "heads", flips: 0 },
+        { type: "flip_play", amount: "1000000", side: "heads", flips: 11 },
+        { type: "flip_play", amount: "1000000", side: "edge", flips: 1 },
+        { type: "flip_play", amount: "1000000", flips: 1 },
+        { type: "keno_play", amount: "1000000", picks: [] },
+        { type: "keno_play", amount: "1000000", picks: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] },
+        { type: "keno_play", amount: "1000000", picks: [0] },
+        { type: "keno_play", amount: "1000000", picks: [41] },
+        { type: "keno_play", amount: "1000000", picks: [3, 3] },
+        { type: "keno_play", amount: "1000000", picks: [2.5] },
+        { type: "wheel_spin", amount: "1000000", segments: 15, risk: "low" },
+        { type: "wheel_spin", amount: "1000000", segments: 60, risk: "low" },
+        { type: "wheel_spin", amount: "1000000", segments: 10, risk: "extreme" },
+        { type: "hilo_bet", amount: "1000000", guess: "higher" },
+        { type: "hilo_guess", guess: "same" },
+        { type: "hilo_guess" },
+        { type: "hilo_cashout", amount: "1000000" },
+        { type: "tower_bet", amount: "1000000", difficulty: "insane" },
+        { type: "tower_bet", amount: "1000000" },
+        { type: "tower_climb", tile: 4 },
+        { type: "tower_climb", tile: -1 },
+        { type: "tower_climb", tile: 1.5 },
+        { type: "tower_cashout", tile: 0 },
       ]) {
         const res = await play(action);
         expect(res.status, JSON.stringify(action)).toBe(400);
@@ -245,7 +369,17 @@ describe.skipIf(!db)("api routes", () => {
       });
       expect((await play(slots)).status).toBe(403);
       expect((await play({ type: "blackjack_double" })).status).toBe(403);
+      expect((await play({ type: "mines_bet", amount: "1000000", mines: 3 })).status).toBe(403);
+      expect((await play({ type: "dice_roll", amount: "1000000", target: 5_000, over: true })).status).toBe(403);
+      expect((await play({ type: "hilo_bet", amount: "1000000" })).status).toBe(403);
+      expect((await play({ type: "tower_bet", amount: "1000000", difficulty: "easy" })).status).toBe(403);
       expect((await play({ type: "blackjack_stand" })).status).toBe(200);
+      expect((await play({ type: "mines_reveal", tile: 4 })).status).toBe(200);
+      expect((await play({ type: "mines_cashout" })).status).toBe(200);
+      expect((await play({ type: "hilo_guess", guess: "lower" })).status).toBe(200);
+      expect((await play({ type: "hilo_cashout" })).status).toBe(200);
+      expect((await play({ type: "tower_climb", tile: 1 })).status).toBe(200);
+      expect((await play({ type: "tower_cashout" })).status).toBe(200);
     });
 
     it("the daily deposit limit counts deposits sent in the last 24 h", async () => {
@@ -538,7 +672,20 @@ describe.skipIf(!db)("api routes", () => {
         webUrl: "https://tilt.test",
       });
       expect(state.limits).toEqual({ minBet: "100000", maxBet: "100000000" });
-      expect(state.rtp).toEqual({ blackjack: "99.00", roulette: "97.30", baccarat: "98.76", slots: "96.16" });
+      expect(state.rtp).toEqual({
+        blackjack: "99.00",
+        roulette: "97.30",
+        baccarat: "98.76",
+        slots: "96.16",
+        mines: "99.00",
+        dice: "98.00",
+        limbo: "98.00",
+        flip: "98.00",
+        keno: "95.00",
+        wheel: "98.00",
+        hilo: "98.00",
+        tower: "98.00",
+      });
     });
 
     it("shows the hand in play, the pending intent, the sponsor and the leaderboard", async () => {
@@ -697,7 +844,7 @@ describe.skipIf(!db)("api routes", () => {
   });
 
   describe("public routes", () => {
-    it("verifies a settled round from its randomness", async () => {
+    it("verifies a settled round from its randomness, a single-bet detail migrated to one chip", async () => {
       const v = must(
         vectors.roulette.find((r) => r.red !== "0"),
         "red win",
@@ -716,6 +863,11 @@ describe.skipIf(!db)("api routes", () => {
         settledAt: new Date(),
       });
       await db.query("UPDATE rounds SET detail = $1", [{ game: "roulette", bet: { kind: "red" }, number: v.number }]);
+      await migrate(db);
+      await migrate(db);
+      const chips = [{ bet: { kind: "red" }, amount: "1000000" }];
+      const { rows } = await db.query("SELECT detail FROM rounds WHERE signature = $1", [SIGNATURE]);
+      expect(rows[0].detail).toEqual({ game: "roulette", chips, number: v.number });
       const body = (await (await app.request(`/v1/rounds/${SIGNATURE}/verify`)).json()) as VerifyResponse;
       expect(body).toMatchObject({
         signature: SIGNATURE,
@@ -725,7 +877,7 @@ describe.skipIf(!db)("api routes", () => {
         randomness: v.seed,
         matches: true,
         onChain: { stake: "1000000", payout: v.red, fee: fee.toString() },
-        replayed: { payout: v.red, detail: { number: v.number, bet: { kind: "red" } } },
+        replayed: { payout: v.red, detail: { number: v.number, bet: { kind: "red" }, chips } },
       });
       await db.query("UPDATE rounds SET payout = payout + 1");
       expect(((await (await app.request(`/v1/rounds/${SIGNATURE}/verify`)).json()) as VerifyResponse).matches).toBe(
@@ -837,6 +989,211 @@ describe.skipIf(!db)("api routes", () => {
       }
       const body = (await (await app.request(`/v1/rounds/${SIGNATURE}/verify`)).json()) as VerifyResponse;
       expect(body.matches).toBe(true);
+    });
+
+    it("migrates rounds tables created before mines or the seven newer games so that their rounds can be stored", async () => {
+      const older = [
+        "'blackjack', 'roulette', 'baccarat', 'slots'",
+        "'blackjack', 'roulette', 'baccarat', 'slots', 'mines'",
+      ];
+      for (const games of older) {
+        await db.query("DELETE FROM rounds");
+        await db.query("ALTER TABLE rounds DROP CONSTRAINT rounds_game_check");
+        await db.query(`ALTER TABLE rounds ADD CONSTRAINT rounds_game_check CHECK (game IN (${games}))`);
+        await migrate(db);
+        await migrate(db);
+        for (const [i, game] of (["mines", "dice", "tower"] as const).entries()) {
+          const round = {
+            signature: String(i).padEnd(88, "5"),
+            player: wallet,
+            round: 1 + i,
+            game,
+            stake: 1n,
+            payout: 0n,
+            fee: 0n,
+            requestId: 1n,
+            randomness: Buffer.alloc(32, 1),
+            settledAt: new Date(),
+          };
+          expect(await saveRound(db, round), `${games} then ${game}`).toBe(true);
+        }
+      }
+    });
+
+    it("verifies mines rounds from their reveal draws, cashed out (no draw of its own) or busted", async () => {
+      const account = playerAccountAddress(new PublicKey(wallet)).toBase58();
+      const cashedOut = must(
+        vectors.mines.find((m) => m.cashout && m.draws.length > 1),
+        "cash-out after several tiles",
+      );
+      const busted = must(
+        vectors.mines.find((m) => m.busted !== null && m.draws.length > 1),
+        "bust after a safe tile",
+      );
+      const base = { player: wallet, game: "mines" as const, stake: 1_000_000n, settledAt: new Date() };
+      // Round 1 cashed out: its event names the last reveal's request, with zero randomness.
+      let requestId = 0n;
+      const rounds = [
+        { v: cashedOut, signature: "4".repeat(88) },
+        { v: busted, signature: SIGNATURE },
+      ];
+      for (const [i, { v, signature }] of rounds.entries()) {
+        for (const [j, draw] of v.draws.entries()) {
+          requestId++;
+          await saveDraw(db, { account, requestId, randomness: Buffer.from(draw, "hex"), signature: `d${i}${j}` });
+        }
+        await saveRound(db, {
+          ...base,
+          signature,
+          round: i + 1,
+          payout: BigInt(v.payout),
+          fee: BigInt(v.fee),
+          requestId,
+          randomness: v.cashout ? Buffer.alloc(32) : Buffer.from(v.draws[v.draws.length - 1], "hex"),
+        });
+        await saveDetail(db, wallet, i + 1, requestId, {
+          game: "mines",
+          mines: v.mines,
+          order: v.order,
+          pending: null,
+          busted: v.busted,
+          maxGain: v.maxGain,
+        });
+      }
+      const verify = async (signature: string) =>
+        (await (await app.request(`/v1/rounds/${signature}/verify`)).json()) as VerifyResponse;
+      const cash = await verify("4".repeat(88));
+      expect(cash).toMatchObject({
+        game: "mines",
+        matches: true,
+        replayed: { payout: cashedOut.gross, detail: { game: "mines", revealed: cashedOut.order, busted: null } },
+      });
+      const bust = await verify(SIGNATURE);
+      expect(bust).toMatchObject({
+        matches: true,
+        replayed: { payout: "0", detail: { revealed: busted.order, busted: busted.busted } },
+      });
+    });
+
+    it("verifies a mines board the relay closed before any reveal, which has no draw", async () => {
+      const stake = 1_000_000n;
+      const { payout, fee } = settle(stake, (stake * 99n) / 100n);
+      await saveRound(db, {
+        player: wallet,
+        game: "mines",
+        stake,
+        settledAt: new Date(),
+        signature: SIGNATURE,
+        round: 1,
+        payout,
+        fee,
+        requestId: 0n,
+        randomness: Buffer.alloc(32),
+      });
+      const res = await app.request(`/v1/rounds/${SIGNATURE}/verify`);
+      expect(res.status).toBe(200);
+      expect((await res.json()) as VerifyResponse).toMatchObject({
+        matches: true,
+        replayed: { payout: ((stake * 99n) / 100n).toString(), detail: { game: "mines", revealed: [], busted: null } },
+      });
+    });
+
+    it("verifies one-draw, hilo and tower rounds from their draws, cash-outs included", async () => {
+      const account = playerAccountAddress(new PublicKey(wallet)).toBase58();
+      const dice = must(
+        vectors.dice.find((d) => d.gross !== "0"),
+        "a dice win",
+      );
+      const hilo = must(
+        vectors.hilo.find((h) => h.cashout && h.draws.length > 2),
+        "a hilo cash-out after several cards",
+      );
+      const tower = must(
+        vectors.tower.find((t) => t.busted !== null && t.draws.length > 1),
+        "a tower bust after a safe level",
+      );
+      const diceSettlement = settle(1_000_000n, BigInt(dice.gross));
+      const rounds: {
+        signature: string;
+        draws: string[];
+        payout: string;
+        fee: string;
+        cashout: boolean;
+        detail: Outcome;
+      }[] = [
+        {
+          signature: "6".repeat(88),
+          draws: [dice.seed],
+          payout: diceSettlement.payout.toString(),
+          fee: diceSettlement.fee.toString(),
+          cashout: false,
+          detail: { game: "dice", target: dice.target, over: dice.over, roll: dice.roll },
+        },
+        {
+          signature: "7".repeat(88),
+          ...hilo,
+          detail: {
+            game: "hilo",
+            cards: hilo.cards,
+            guesses: hilo.guesses.map((c) => must(GUESSES[c], "a hilo guess")),
+            pending: null,
+            busted: hilo.busted,
+            maxGain: hilo.maxGain,
+          },
+        },
+        {
+          signature: SIGNATURE,
+          ...tower,
+          detail: {
+            game: "tower",
+            difficulty: must(
+              DIFFICULTY_NAMES.find((d) => d === tower.difficulty),
+              "a tower difficulty",
+            ),
+            climbed: tower.climbed,
+            pending: null,
+            busted: tower.busted,
+            maxGain: tower.maxGain,
+          },
+        },
+      ];
+      let requestId = 0n;
+      for (const [i, r] of rounds.entries()) {
+        for (const [j, draw] of r.draws.entries()) {
+          requestId++;
+          await saveDraw(db, { account, requestId, randomness: Buffer.from(draw, "hex"), signature: `d${i}${j}` });
+        }
+        await saveRound(db, {
+          player: wallet,
+          game: r.detail.game,
+          stake: 1_000_000n,
+          settledAt: new Date(),
+          signature: r.signature,
+          round: i + 1,
+          payout: BigInt(r.payout),
+          fee: BigInt(r.fee),
+          requestId,
+          randomness: r.cashout ? Buffer.alloc(32) : Buffer.from(r.draws[r.draws.length - 1], "hex"),
+        });
+        await saveDetail(db, wallet, i + 1, requestId, r.detail);
+      }
+      const verify = async (signature: string) =>
+        (await (await app.request(`/v1/rounds/${signature}/verify`)).json()) as VerifyResponse;
+      expect(await verify("6".repeat(88))).toMatchObject({
+        game: "dice",
+        matches: true,
+        replayed: { payout: dice.gross, detail: { game: "dice", roll: dice.roll } },
+      });
+      expect(await verify("7".repeat(88))).toMatchObject({
+        game: "hilo",
+        matches: true,
+        replayed: { payout: hilo.gross, detail: { game: "hilo", busted: false, canCashOut: false } },
+      });
+      expect(await verify(SIGNATURE)).toMatchObject({
+        game: "tower",
+        matches: true,
+        replayed: { payout: "0", detail: { game: "tower", climbed: tower.climbed, busted: tower.busted } },
+      });
     });
 
     it("tells the web whether the caller's country may play", async () => {

@@ -104,12 +104,20 @@ Référence visuelle : la maquette d'Eli (image partagée dans la conversation, 
 | Jeu | Version | Règles (implémentées dans `chain/`, détail dans `chain/README.md`) |
 | --- | --- | --- |
 | Blackjack | v1 | Sans carte cachée (2e carte du croupier tirée après le joueur), sabot infini, croupier reste sur 17, blackjack payé 3:2, double sur les 2 premières cartes. Split des deux premières cartes de même valeur (10, V, D, R valent tous 10 ; as seulement avec as) pour une mise de base de plus : la nouvelle main se place juste après, chacune reçoit une carte. Au plus 4 splits par manche (jusqu'à 6 + 4 = 10 mains). Re-split et double après split permis, sauf pour les as : un as splitté reçoit une seule carte et la main est finie. Un 21 en deux cartes né d'un split n'est pas un blackjack (payé 1:1). RTP ≈ 99 % en stratégie de base. |
-| Roulette | v1 | Européenne (un seul zéro), un pari par tour : plein, rouge/noir, pair/impair, manque/passe, douzaine, colonne. RTP 97,30 %. |
+| Roulette | v1 | Européenne (un seul zéro). Jetons sur tout le tapis : de 1 à 20 paris par tour, chacun avec sa mise (plein, rouge/noir, pair/impair, manque/passe, douzaine, colonne), chaque mise entre les limites de la table. RTP 97,30 %. |
 | Baccarat | v1 | Punto Banco, sabot infini : joueur (1:1), banque (1:1, commission 5 %) et égalité (8:1). RTP 98,76 % / 98,94 % / ≈ 85,9 %. |
 | Slots | v1 | 3 rouleaux pondérés, table de gains publique, gain max 250×. RTP 96,16 %. |
-| Autres (crash, dice, mines…) | plus tard | Très adaptés au terminal et rapides à jouer. |
+| Mines | v1 | Grille 5×5, 1 à 24 mines. Chaque case cliquée est tirée à l'instant par le VRF (aucune disposition stockée d'avance, lisible on-chain sinon). Multiplicateur 0,99 × C(25, k) / C(25 − mines, k) après k cases sûres, encaissement à tout moment dès une case ; retour plafonné à 10 000 × la mise et par manche (`max_round_gain`), comme le plafond de profit de Stake. RTP 99,00 %. |
+| Dice | v1 | Tirage 00,00–99,99, pari au-dessus ou en dessous d'un seuil, chance de 1 % à 98 %, gain 98 / chance. RTP 98,00 %. |
+| Limbo | v1 | Multiplicateur cible de 1,01× à 10 000× ; le tirage (0,98 / U) doit l'atteindre. RTP 98,00 %. |
+| Flip | v1 | Pile ou face sur 1 à 10 pièces, toutes du côté choisi : 0,98 × 2ⁿ. RTP 98,00 %. |
+| Keno | v1 | 1 à 10 numéros sur 40, 10 tirés, table de gains publique par nombre de numéros (jusqu'à 1 000× à 10/10). RTP entre 94,90 et 95,00 % selon le nombre de numéros. |
+| Wheel | v1 | Roue de 10 à 50 segments, risque faible, moyen ou élevé, table publique. RTP 98,00 %. |
+| Hilo | v1 | Sabot infini : plus haut ou égal / plus bas ou égal que la carte suivante ; au roi, plus bas strict ; à l'as, plus haut strict (aucun pari n'est certain). 10 cartes passées au plus, encaissement dès une bonne réponse. Multiplicateur 0,98 × Π 13 / issues gagnantes ; retour plafonné à 10 000 × la mise et par `max_round_gain`. RTP 98,00 %. |
+| Tower | v1 | Dragon Tower : 9 étages, 5 difficultés (4 cases dont 3 sûres … 4 cases dont 1 sûre), chaque case tirée au clic, encaissement dès un étage, 0,98 × (cases / sûres)^étages, retour plafonné à 10 000 × la mise et par `max_round_gain`. RTP 98,00 %. |
+| Autres (crash, plinko…) | plus tard | |
 
-Les programmes de jeu existent pour les quatre jeux ; leur interface dans le mod reste à faire (Eli). Chaque jeu affiche son **RTP** (taux de retour au joueur, avant les 1 % Tilt) et est **provably fair** (§6.4).
+Chaque jeu affiche son **RTP** (taux de retour au joueur, avant les 1 % Tilt) et est **provably fair** (§6.4).
 
 ### 4.4 Ton et confiance
 
@@ -174,7 +182,7 @@ Options écartées : hybride avec solde off-chain (custodial, confiance reposant
 
 - Solana suffit : la latence vient de l'oracle VRF, pas de la chaîne. On vise l'**Ephemeral Rollup** MagicBlock.
 - Blackjack : environ 3 tirages par main (donne, chaque carte demandée, tirage du croupier après « stand »). La carte cachée du croupier n'existe pas on-chain avant d'être révélée ; on tire donc à la demande (équivalent d'un sabot quasi infini, RTP à recalculer et à afficher).
-- Roulette, baccarat, slots : un tirage par tour.
+- Roulette, baccarat, slots, dice, limbo, flip, keno, wheel : un tirage par tour. Mines et Tower : un tirage par case cliquée ; Hilo : un tirage par carte (dont la première) ; aucun pour la mise de Mines et Tower ni pour un encaissement.
 
 **Frais : Tilt prend 1 % sur le gain de chaque manche gagnante**, ce qui finance les tirages VRF et les frais réseau. Les RTP affichés par jeu (§4.3) sont **avant** ces 1 % ; le mod affiche aussi le taux effectif après les 1 %.
 
@@ -194,9 +202,9 @@ Sans rollup, les tirages coûtent 6 à 10× ce que rapportent les 1 % : le rollu
 - Les dépôts suivants se font sur Solana pendant que le compte est dans le rollup ; ils sont crédités à la manche suivante (visibles en ≈ 25 ms).
 - Une manche ne coûte **rien** à Tilt sur Solana : tirage VRF gratuit dans le rollup, ≈ 165 ms par tirage mesurés sur devnet.
 - Un retrait est demandé dans le rollup puis payé sur Solana par une Magic Action (≈ 1,2–1,4 s), sans faire sortir le compte. Sur devnet, MagicBlock a payé cette transaction (40 200 lamports) : à confirmer pour le mainnet.
-- **Le rollup n'est pas cru sur parole** : le paiement vérifie la demande contre le registre Solana (dépôts réels, plafond de gains du joueur). Plafond par retrait et par 24 h, mise en attente puis libération par Tilt, pause globale.
-- Une manche non terminée survit à une déconnexion et ne bloque pas les retraits. Une main en attente du joueur n'est jamais jouée à sa place ; seul un tirage VRF jamais arrivé est relancé par le relais après un délai.
-- Plafond de gains **glissant** (2026-10-15) : relevé automatiquement par le relais depuis la bankroll libre (`raise_win_cap`), le joueur ne rencontre une limite que si la bankroll ne couvre pas la mise.
+- **Le rollup n'est pas cru sur parole** : le paiement vérifie la demande contre le registre Solana (dépôts réels, gains réservés du joueur). Plafond par retrait et par 24 h, mise en attente puis libération par Tilt, pause globale.
+- Une manche non terminée survit à une déconnexion et ne bloque pas les retraits. Une main en attente du joueur lui reste 6 h depuis son dernier coup ; passé ce délai le relais la clôt (stand au blackjack, encaissement à la valeur du moment ailleurs). Un tirage VRF jamais arrivé est relancé par le relais après un délai.
+- **Pool de risque** (2026-10-19, remplace le plafond de gains glissant du 2026-10-15) : la maison ne bloque plus le pire cas de chaque manche. Un pool unique dans le rollup tient, pour toutes les manches ouvertes, la réserve qu'exige l'inégalité de Bernstein à ε = 10⁻⁹ (jamais plus que la somme des pires cas), contre une ligne de bankroll réservée sur Solana et alimentée par le relais. Une manche réglée rend aussitôt ce qu'elle tenait ; les gains ne sont réservés pour le joueur qu'au retrait qui les emporte, et rendus à la maison au checkpoint s'il les a reperdus. Au-delà de la ligne, les mises sont refusées (`RiskPoolFull`) et les retraits de gains attendent ; les dépôts restent couverts à 100 %. Détails : `chain/README.md`.
 - Restent à concevoir : sortie de secours si le rollup tombe, multisig, audit (`chain/README.md`).
 
 **Conséquences sur le reste de la spec (D13) :** la logique des jeux et l'aléa passent dans `chain/` ; le ledger Postgres, l'ancien contrat `reserve/settle` et le provably fair serveur disparaissent. L'architecture (§5), le contrat (§7), la répartition (§8) et les jalons (§14) sont réécrits en conséquence.
@@ -249,7 +257,12 @@ GET  /users/:userId    -> { userId, solanaAddress, accountOpen }        // 404 U
 POST /intents { intentId, userId, action, consent? } -> { intentId, status, signature?, error? }
 GET  /intents/:intentId -> même réponse
 // action : open_account | deposit {amount} · blackjack_bet {amount (par main), hands 1..6} | blackjack_hit | blackjack_stand | blackjack_double | blackjack_split
-//          roulette_spin {amount, bet} · baccarat_deal {amount, bet} · slots_spin {amount} · withdraw {amount}
+//          roulette_spin {amount, bet} (un pari) · roulette_chips {chips: [{bet, amount}] 1..20, paris distincts}
+//          baccarat_deal {amount, bet} · slots_spin {amount}
+//          mines_bet {amount, mines 1..24} | mines_reveal {tile 0..24} | mines_cashout
+//          dice_roll {amount, target, over} · limbo_play {amount, target ×100} · flip_play {amount, side, flips 1..10}
+//          keno_play {amount, picks 1..10 de 1..40} · wheel_spin {amount, segments, risk}
+//          hilo_bet {amount} | hilo_guess {guess} | hilo_cashout · tower_bet {amount, difficulty} | tower_climb {tile} | tower_cashout · withdraw {amount}
 // status : pending (en vol ou issue inconnue, le relais la tranche seul) | submitted (arrivée on-chain) | failed
 // error.code : PROGRAM_ERROR (message = nom de l'erreur Anchor, ex. InsufficientBalance), ACCOUNT_NOT_OPEN,
 //              TABLE_NOT_READY (table de blackjack pas encore ouverte dans le rollup ; rien n'est joué, renvoyer l'action), …
@@ -353,7 +366,7 @@ Depuis D2, les règles, les tirages et les gains sont dans le programme (Armand)
 | Requêtes concurrentes | Une intention en vol par joueur (relais) ; `intentId` idempotent de bout en bout (mod → `api` → relais). | Armand + Eli |
 | Prédire ou choisir l'aléa | VRF MagicBlock, callback limité à l'oracle et à la requête en cours (§6.4) ; `expire_round` ne doit pas permettre de relancer un tirage favorable (point ouvert, audit). | Armand |
 | RTP réel ≠ annoncé | RTP exact testé dans le programme ; `api` rejoue chaque manche avec les règles portées en TS, vérifiées contre le code Rust (380 vecteurs). | Armand + Eli |
-| Option gratuite (main laissée ouverte) | Aucune valeur à attendre : la mise est déjà prélevée et les cartes ne sont tirées qu'à la demande (VRF), donc le temps n'apporte aucune information. La main reste ouverte jusqu'à ce que le joueur la joue. | Armand |
+| Option gratuite (main laissée ouverte) | Aucune valeur à attendre : la mise est déjà prélevée et les cartes ne sont tirées qu'à la demande (VRF), donc le temps n'apporte aucune information. La main reste ouverte 6 h après le dernier coup, puis le relais la clôt comme le joueur aurait pu le faire (stand, ou encaissement à sa valeur, égale à ce que vaut la manche en moyenne). | Armand |
 | Abus des compétitions et des drops | Mise minimum pour qu'une manche compte, plafond de tickets par heure, un drop max par joueur, prix bloqués en revue avant paiement, `payoutId` déterministe (payé une fois). | Eli |
 
 ### 10.4 Anti-spam, anti-bots, anti-multicomptes

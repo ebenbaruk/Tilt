@@ -6,6 +6,14 @@ export type BlackjackDetail = Extract<Detail, { game: "blackjack" }>;
 export type RouletteDetail = Extract<Detail, { game: "roulette" }>;
 export type BaccaratDetail = Extract<Detail, { game: "baccarat" }>;
 export type SlotsDetail = Extract<Detail, { game: "slots" }>;
+export type MinesDetail = Extract<Detail, { game: "mines" }>;
+export type DiceDetail = Extract<Detail, { game: "dice" }>;
+export type LimboDetail = Extract<Detail, { game: "limbo" }>;
+export type FlipDetail = Extract<Detail, { game: "flip" }>;
+export type KenoDetail = Extract<Detail, { game: "keno" }>;
+export type WheelDetail = Extract<Detail, { game: "wheel" }>;
+export type HiloDetail = Extract<Detail, { game: "hilo" }>;
+export type TowerDetail = Extract<Detail, { game: "tower" }>;
 export type Card = BlackjackDetail["dealer"][number];
 export type BlackjackHand = BlackjackDetail["hands"][number];
 export type RouletteBet = RouletteDetail["bet"];
@@ -15,7 +23,20 @@ export const GAME_NAMES: Record<Game, string> = {
   roulette: "Roulette",
   baccarat: "Baccarat",
   slots: "Slots",
+  mines: "Mines",
+  dice: "Dice",
+  limbo: "Limbo",
+  flip: "Flip",
+  keno: "Keno",
+  wheel: "Wheel",
+  hilo: "Hilo",
+  tower: "Tower",
 };
+
+/** An on-chain count of hundredths (dice roll 0–9999, target, chance) as "7.25". Integer math, no floats. */
+export function hundredths(value: number): string {
+  return `${Math.floor(value / 100)}.${String(value % 100).padStart(2, "0")}`;
+}
 
 export function describeRouletteBet(bet: RouletteBet): string {
   switch (bet.kind) {
@@ -35,4 +56,28 @@ const RED_POCKETS = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 
 export function pocketColor(n: number): "green" | "red" | "black" {
   if (n === 0) return "green";
   return RED_POCKETS.has(n) ? "red" : "black";
+}
+
+/** Whether `bet` wins when the ball lands on `n`, as the program decides it: zero loses every outside bet. */
+export function rouletteWins(bet: RouletteBet, n: number): boolean {
+  if (bet.kind === "straight") return n === bet.number;
+  if (n === 0) return false;
+  switch (bet.kind) {
+    case "red":
+      return RED_POCKETS.has(n);
+    case "black":
+      return !RED_POCKETS.has(n);
+    case "odd":
+      return n % 2 === 1;
+    case "even":
+      return n % 2 === 0;
+    case "low":
+      return n <= 18;
+    case "high":
+      return n >= 19;
+    case "dozen":
+      return Math.ceil(n / 12) === bet.dozen;
+    case "column":
+      return ((n - 1) % 3) + 1 === bet.column;
+  }
 }

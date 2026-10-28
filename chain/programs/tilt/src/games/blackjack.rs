@@ -265,6 +265,12 @@ impl BlackjackTable {
         self.active_hand().is_none()
     }
 
+    /// Stands every hand still to play, as for a player who left the table: the dealer
+    /// plays next. No card is drawn for the player.
+    pub fn stand_all(&mut self) {
+        while !self.stand() {}
+    }
+
     /// The dealer's turn once no hand is left: draws to 17 if a hand still competes on
     /// total, else one card if a natural needs the push check, else nothing (all bust).
     pub fn play_dealer(&mut self, rng: &mut Rng) {
@@ -442,6 +448,18 @@ mod tests {
         assert!(t.stand(), "last hand: the dealer must play");
         assert_eq!(t.active, 3);
         assert!(t.active_hand().is_none());
+    }
+
+    #[test]
+    fn an_abandoned_table_stands_every_hand_left_without_a_card() {
+        let (mut t, _) = dealt(3, |t, _| {
+            t.active == 0 && t.hands().iter().all(|h| !h.is_natural())
+        });
+        let before: Vec<_> = t.hands().iter().map(|h| h.n_cards).collect();
+        t.stand_all();
+        assert!(t.active_hand().is_none(), "the dealer plays next");
+        let after: Vec<_> = t.hands().iter().map(|h| h.n_cards).collect();
+        assert_eq!(after, before);
     }
 
     #[test]

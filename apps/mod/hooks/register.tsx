@@ -6,7 +6,7 @@
 // Every function that takes `$` is declared at the top of this file: the engine follows `$` only
 // here, so the other modules are plain functions over data.
 import { atom, read, update } from "claude-code";
-import type { EngineInterface, Register, RenderElement, Timer } from "claude-code";
+import type { EngineInterface, Register, RenderElement, RenderInput, Timer } from "claude-code";
 
 import {
   apiBase,
@@ -21,21 +21,40 @@ import {
   startDevice,
   trustedVerifyUrl,
 } from "./api";
-import { cardCount, DEAL_STEP_MS, revealedAt } from "./blackjack";
-import type { CardSize } from "./cards";
+import { type CardSize, dealMs, dealtCards, revealedAt } from "./cards";
 import { cleanText, formatDuration, formatUsdc, moveFailure, SEPARATOR } from "./format";
 import { isPlayAction } from "./guards";
 import {
   activeGame,
+  addChip,
+  bandTableKeys,
+  choicesOf,
   type Command,
   currentBet,
+  crossCursor,
+  cursorBet,
+  cycle,
+  DEFAULT_DICE_CHANCE,
+  DEFAULT_KENO_PICKS,
+  DEFAULT_LIMBO_TARGET,
+  DEFAULT_MINES,
+  DEFAULT_WHEEL_SEGMENTS,
   GAME_LABELS,
   isRoundOpen,
-  nextRouletteBet,
-  planKeys,
+  type KeyAction,
+  type PlanInput,
+  randomPicks,
+  type RandomBelow,
+  sameBet,
   startAction,
   stepBetIndex,
+  stepCursor,
   stepHands,
+  stepMines,
+  stepSetting,
+  tableKeys,
+  toggleKenoPick,
+  WHEEL_RISKS,
 } from "./keys";
 import {
   type AgentView,
@@ -45,10 +64,11 @@ import {
   type LayoutView,
   type Prefs,
   prefsView,
+  storedPrefs,
   remoteView,
   type RemoteView,
 } from "./model";
-import type { IntentResponse, PlayAction, RoundView, StateResponse } from "./protocol";
+import type { Game, IntentResponse, PlayAction, RouletteBet, RoundView, StateResponse } from "./protocol";
 import { type Settings, SETTING_FIELDS, settingsOf } from "./settings";
 import { renderSetup, SETUP_ROWS } from "./setup";
 import { isTablePost, TABLE_KEY, type TableProps } from "./table-input";
@@ -56,14 +76,19 @@ import { applyTheme, isLightTheme, type Ui } from "./theme";
 import {
   bigWinOf,
   celebrationMs,
+  dealingHands,
+  fitsRows,
+  isPlayHeld,
   PANE_ROWS,
   type PaneLayout,
   renderBand,
   renderPane,
+  RESULT_MS,
+  sendingRound,
   type Snapshot,
   spinMs,
   spinProgress,
-  WIDE_MIN_COLUMNS,
+  SURFACE_LAG_MS,
 } from "./view";
 
 const PANE = "tilt";
@@ -78,13 +103,22 @@ const prefs = atom({ plugin: "tilt", key: "prefs" } as const, {
   game: "blackjack",
   betIndex: 0,
   hands: 1,
-  roulette: { kind: "red" },
+  rouletteChips: [],
+  rouletteCursor: 0,
   baccarat: "banker",
   slotsSpeed: "normal",
+  mines: DEFAULT_MINES,
+  diceChance: DEFAULT_DICE_CHANCE,
+  diceOver: false,
+  limboTarget: DEFAULT_LIMBO_TARGET,
+  flipSide: "heads",
+  flips: 1,
+  kenoPicks: [...DEFAULT_KENO_PICKS],
+  wheelSegments: DEFAULT_WHEEL_SEGMENTS,
+  wheelRisk: "low",
+  towerDifficulty: "easy",
 });
 const intent = atom({ plugin: "tilt", key: "intent" } as const, null);
-const NO_ECHO = { keys: [], until: null };
-const echo = atom({ plugin: "tilt", key: "echo" } as const, NO_ECHO);
 const message = atom({ plugin: "tilt", key: "message" } as const, null);
 const agent = atom({ plugin: "tilt", key: "agent" } as const, { isWorking: false, frame: 0, notice: null });
 const layout = atom({ plugin: "tilt", key: "layout" } as const, {
@@ -95,7 +129,7 @@ const layout = atom({ plugin: "tilt", key: "layout" } as const, {
 });
 const spin = atom({ plugin: "tilt", key: "spin" } as const, { round: null, startedAt: 0, balance: "0" });
 const deal = atom({ plugin: "tilt", key: "deal" } as const, { round: null, from: 0, startedAt: 0, balance: "0" });
-const celebration = atom({ plugin: "tilt", key: "celebration" } as const, { round: null, startsAt: 0 });
+const result = atom({ plugin: "tilt", key: "result" } as const, { round: null, startsAt: 0, balance: "0" });
 const session = atom({ plugin: "tilt", key: "session" } as const, {
   net: "0",
   rounds: 0,
@@ -108,6 +142,8 @@ const session = atom({ plugin: "tilt", key: "session" } as const, {
 const STORE_SESSION = "session";
 const STORE_DEVICE = "device";
 const STORE_ONBOARDED = "onboarded";
+/** The choices last made (the game shown, the bet, each game's settings), restored by the next session. */
+const STORE_PREFS = "prefs";
 
 /** The mod's own sound files, played only with the `sound` setting on. */
 const SOUND_DEAL = "sounds/deal.wav";
@@ -130,8 +166,6 @@ const RATE_LIMIT_BACKOFF_MS = 5_000;
 const OPEN_TIMEOUT_MS = 10_000;
 /** A submitted move whose state never shows frees the keys after this long rather than never. */
 const SETTLE_TIMEOUT_MS = 15_000;
-/** How long a settled move's keys stay inert: a mashed key's last presses land in it. */
-const ECHO_MS = 1_500;
 const MS_PER_MINUTE = 60_000;
 
 const UNTRUSTED_LOGIN_PAGE = "the login page the API sent is not on its own site.";
@@ -174,6 +208,8 @@ interface Runtime {
   isRestorePending: boolean;
   /** What the last drawing said: the fullscreen layout, where a pane docks. Null before any. */
   isFullscreen: boolean | null;
+  /** The session started with the choices a past one stored. */
+  isPrefsRestored: boolean;
 }
 
 interface StoredSession {
@@ -198,9 +234,10 @@ const isStoredDevice = (value: unknown): value is StoredDevice =>
   typeof value.expiresAt === "number" &&
   typeof value.intervalMs === "number";
 
-/** "✓ agent finished in 6m 14s · your hand is saved"; interrupted or failed turns get neutral words. */
+/** "✓ agent finished in 6m 14s · your hand is saved for 6 hours" (after 6 hours without a move,
+ *  the relay closes the round: stand or cash-out); interrupted or failed turns get neutral words. */
 export function finishNotice(reason: string, durationMs: number): AgentView["notice"] {
-  const saved = `${SEPARATOR}your hand is saved`;
+  const saved = `${SEPARATOR}your hand is saved for 6 hours`;
 
   if (reason === "answer") {
     return { text: `✓ agent finished in ${formatDuration(durationMs)}${saved}`, tone: "success" };
@@ -513,44 +550,9 @@ async function sendMove($: EngineInterface, rt: Runtime, action: PlayAction): Pr
   }
 
   await markOnboarded($);
-
-  const live =
-    state === null
-      ? []
-      : planKeys({ state, prefs: await readPrefs($), isBusy: false })
-          .filter((key) => key.command.kind !== "switch")
-          .map(({ key, hotkey, label }) => ({ key, hotkey, label }));
-
-  await update($, echo, () => ({ keys: live, until: null }));
   await update($, message, () => null);
   rt.wakeAt = 0;
   await submit($, rt, sent);
-}
-
-/**
- * Starts the echo's ECHO_MS once its move settled (the intent is gone), and clears it after. The
- * deadline lives in the store, which every load of the mod shares. Returns the ms until it is due.
- */
-async function fadeEcho($: EngineInterface, now: number): Promise<number> {
-  const held = await read($, echo);
-
-  if (held.keys.length === 0 || (await readIntent($)) !== null) {
-    return Infinity;
-  }
-
-  if (held.until === null) {
-    await update($, echo, (value) => (value.until === null ? { ...value, until: now + ECHO_MS } : value));
-
-    return ECHO_MS;
-  }
-
-  if (now < held.until) {
-    return held.until - now;
-  }
-
-  await update($, echo, (value) => (value.until !== null && now >= value.until ? NO_ECHO : value));
-
-  return Infinity;
 }
 
 async function intentStep($: EngineInterface, rt: Runtime, token: string, now: number): Promise<void> {
@@ -582,9 +584,13 @@ async function intentStep($: EngineInterface, rt: Runtime, token: string, now: n
   }
 }
 
+/** Changes the choices, and keeps them for the next sessions: the bet, the game, its settings. */
 async function setPrefs($: EngineInterface, change: (value: Prefs) => Prefs): Promise<void> {
-  await update($, prefs, (held) => change(prefsView(held)));
+  await $.store.set(STORE_PREFS, await update($, prefs, (held) => change(prefsView(held))));
 }
+
+/** Keno's random picks: the player's own choice of numbers, not an outcome, so Math.random does. */
+const randomBelow: RandomBelow = (bound) => Math.floor(Math.random() * bound);
 
 async function startRound($: EngineInterface, rt: Runtime): Promise<void> {
   const state = (await readRemote($)).state;
@@ -597,6 +603,31 @@ async function startRound($: EngineInterface, rt: Runtime): Promise<void> {
   const amount = currentBet(state.limits, chosen.betIndex);
 
   await sendMove($, rt, startAction(activeGame(state, chosen), amount, chosen));
+}
+
+/** A chip of the bet's size on `bet`, or on the cursor's cell; a full table or bet says why instead. */
+async function addRouletteChip($: EngineInterface, bet: RouletteBet | null): Promise<void> {
+  const state = (await readRemote($)).state;
+
+  if (state === null) {
+    return;
+  }
+
+  const outcome: { refusal: string | null } = { refusal: null };
+
+  await setPrefs($, (value) => {
+    const placed = addChip(
+      value.rouletteChips,
+      bet ?? cursorBet(value.rouletteCursor),
+      currentBet(state.limits, value.betIndex),
+      state.limits,
+    );
+
+    outcome.refusal = typeof placed === "string" ? placed : null;
+
+    return typeof placed === "string" ? value : { ...value, rouletteChips: placed };
+  });
+  await update($, message, () => outcome.refusal);
 }
 
 async function runCommand($: EngineInterface, rt: Runtime, command: Command): Promise<void> {
@@ -636,12 +667,60 @@ async function runCommand($: EngineInterface, rt: Runtime, command: Command): Pr
       await setPrefs($, (value) => ({ ...value, hands: stepHands(value.hands, command.step) }));
 
       return;
-    case "roulette-bet":
-      await setPrefs($, (value) => ({ ...value, roulette: command.bet }));
+    case "mines":
+      await setPrefs($, (value) => ({ ...value, mines: stepMines(value.mines, command.step) }));
 
       return;
-    case "roulette-cycle":
-      await setPrefs($, (value) => ({ ...value, roulette: nextRouletteBet(value.roulette, command.target) }));
+    case "step":
+      await setPrefs($, (value) => stepSetting(value, command.setting, command.step, randomBelow));
+
+      return;
+    case "dice-over":
+      await setPrefs($, (value) => ({ ...value, diceOver: !value.diceOver }));
+
+      return;
+    case "flip-side":
+      await setPrefs($, (value) => ({ ...value, flipSide: command.side }));
+
+      return;
+    case "wheel-risk":
+      await setPrefs($, (value) => ({ ...value, wheelRisk: cycle(WHEEL_RISKS, value.wheelRisk) }));
+
+      return;
+    case "keno-random":
+      await setPrefs($, (value) => ({ ...value, kenoPicks: randomPicks(value.kenoPicks.length, randomBelow) }));
+
+      return;
+    case "keno-pick":
+      await setPrefs($, (value) => ({ ...value, kenoPicks: toggleKenoPick(value.kenoPicks, command.number) }));
+
+      return;
+    case "roulette-add":
+      await addRouletteChip($, command.bet);
+
+      return;
+    case "roulette-cursor":
+      await setPrefs($, (value) => ({ ...value, rouletteCursor: stepCursor(value.rouletteCursor, command.step) }));
+
+      return;
+    case "roulette-across":
+      await setPrefs($, (value) => ({ ...value, rouletteCursor: crossCursor(value.rouletteCursor, command.step) }));
+
+      return;
+    case "roulette-remove":
+      await setPrefs($, (value) => {
+        const cell = cursorBet(value.rouletteCursor);
+
+        return { ...value, rouletteChips: value.rouletteChips.filter((chip) => !sameBet(chip.bet, cell)) };
+      });
+
+      return;
+    case "roulette-undo":
+      await setPrefs($, (value) => ({ ...value, rouletteChips: value.rouletteChips.slice(0, -1) }));
+
+      return;
+    case "roulette-clear":
+      await setPrefs($, (value) => ({ ...value, rouletteChips: [] }));
 
       return;
     case "baccarat-bet":
@@ -672,8 +751,12 @@ function commandRunner($: EngineInterface, rt: Runtime): (command: Command) => v
   };
 }
 
+/** The table surface module's keys where it is drawn: the band's game keys there (`bandTableKeys`). */
+const tableKeysIn = (isBand: boolean, input: PlanInput): KeyAction[] =>
+  isBand ? bandTableKeys(input) : tableKeys(input);
+
 /** A key the table surface module pressed: checked, then run as that key of the plan, if it has it now. */
-async function onTablePost($: EngineInterface, rt: Runtime, data: unknown): Promise<void> {
+async function onTablePost($: EngineInterface, rt: Runtime, data: unknown, isBand: boolean): Promise<void> {
   if (!isTablePost(data)) {
     logDebug($, "ignored a malformed post from the table");
 
@@ -685,7 +768,9 @@ async function onTablePost($: EngineInterface, rt: Runtime, data: unknown): Prom
   const action =
     state === null
       ? undefined
-      : planKeys({ state, prefs: snap.prefs, isBusy: snap.intent !== null }).find((key) => key.key === data.press);
+      : tableKeysIn(isBand, { state, prefs: snap.prefs, isBusy: isPlayHeld(snap) }).find(
+          (key) => key.key === data.press,
+        );
 
   if (action !== undefined) {
     commandRunner($, rt)(action.command);
@@ -731,12 +816,14 @@ async function pollStep($: EngineInterface, rt: Runtime, token: string, now: num
     minute(held.fetchedAt) === minute(now) &&
     JSON.stringify(held.state) === JSON.stringify(fetched.value);
 
+  // The deal, the spin and the result it holds back are set before the state can be drawn: a
+  // drawing in between would show the settled round with nothing held, its balance first.
+  await countRound($, rt, held.state, fetched.value, now);
+
   // An unchanged state is not written, so the pane is not redrawn on every poll.
   if (!isSame) {
     await update($, remote, () => ({ state: fetched.value, error: null, fetchedAt: now }));
   }
-
-  await countRound($, rt, held.state, fetched.value, now);
 
   const current = await readIntent($);
 
@@ -744,11 +831,11 @@ async function pollStep($: EngineInterface, rt: Runtime, token: string, now: num
     await dropIntent($, current.id);
   }
 
-  // A new session opens on the game last played.
-  const lastGame = fetched.value.round?.detail.game;
+  // A session with no stored choices opens on the game last played, set up as it was played.
+  const last = fetched.value.round;
 
-  if (held.state === null && lastGame !== undefined) {
-    await setPrefs($, (value) => ({ ...value, game: lastGame }));
+  if (held.state === null && last !== null && !rt.isPrefsRestored) {
+    await setPrefs($, (value) => choicesOf({ ...value, game: last.detail.game }, last));
   }
 
   return needsFastPoll(fetched.value, await readIntent($)) ? FAST_POLL_MS : SLOW_POLL_MS;
@@ -835,25 +922,31 @@ async function spinElapsed($: EngineInterface, state: StateResponse | null, now:
   return spinProgress(round, now - playing.startedAt, (await readPrefs($)).slotsSpeed);
 }
 
-/** Blackjack cards turned over so far on the table; null when none is being dealt. */
+/**
+ * Blackjack, baccarat or Hilo cards turned over so far on the table; null when none is being dealt.
+ * The deal lasts SURFACE_LAG_MS past its last card, the table surface module's own lag.
+ */
 async function dealRevealed($: EngineInterface, state: StateResponse | null, now: number): Promise<number | null> {
   const playing = await read($, deal);
   const round = state?.round;
 
-  if (round === undefined || round === null || round.detail.game !== "blackjack" || playing.round !== round.number) {
+  if (round === undefined || round === null || playing.round !== round.number) {
     return null;
   }
 
-  return revealedAt(playing.from, cardCount(round.detail), now - playing.startedAt);
+  const total = dealtCards(round);
+  const elapsed = now - playing.startedAt;
+
+  if (elapsed >= dealMs(playing.from, total) + SURFACE_LAG_MS) {
+    return null;
+  }
+
+  return revealedAt(playing.from, total, elapsed) ?? total;
 }
 
-/** How far into its win's celebration the round on the table is; null when none plays. */
-async function celebrationElapsed(
-  $: EngineInterface,
-  state: StateResponse | null,
-  now: number,
-): Promise<number | null> {
-  const playing = await read($, celebration);
+/** How far into its result's effects (and a win's celebration) the round on the table is; null when none plays. */
+async function resultElapsed($: EngineInterface, state: StateResponse | null, now: number): Promise<number | null> {
+  const playing = await read($, result);
   const round = state?.round;
 
   if (round === undefined || round === null || playing.round !== round.number) {
@@ -862,34 +955,48 @@ async function celebrationElapsed(
 
   const elapsed = now - playing.startsAt;
 
-  return elapsed >= 0 && elapsed < celebrationMs(round) ? elapsed : null;
+  return elapsed >= 0 && elapsed < Math.max(RESULT_MS, celebrationMs(round)) ? elapsed : null;
 }
 
-/** The spin, the deal or the celebration playing on the table, and the balance held back until the round shows. */
+/** Whether the round on the table has a result still to show: it waits for the table to catch up. */
+async function isResultAhead($: EngineInterface, state: StateResponse | null, now: number): Promise<boolean> {
+  const playing = await read($, result);
+
+  return playing.round !== null && playing.round === state?.round?.number && now < playing.startsAt;
+}
+
+/** The spin, the deal or the result playing on the table, and the balance held back until the round shows. */
 async function motionView(
   $: EngineInterface,
-): Promise<Pick<Snapshot, "spinElapsed" | "revealed" | "heldBalance" | "celebrating">> {
+): Promise<Pick<Snapshot, "spinElapsed" | "revealed" | "heldBalance" | "resultElapsed">> {
   const state = (await readRemote($)).state;
   const now = await $.clock.now();
   const elapsed = await spinElapsed($, state, now);
   const revealed = await dealRevealed($, state, now);
   const held =
-    elapsed !== null ? (await read($, spin)).balance : revealed !== null ? (await read($, deal)).balance : null;
+    elapsed !== null
+      ? (await read($, spin)).balance
+      : revealed !== null
+        ? (await read($, deal)).balance
+        : (await isResultAhead($, state, now))
+          ? (await read($, result)).balance
+          : null;
 
   return {
     spinElapsed: elapsed,
     revealed,
     heldBalance: held,
-    celebrating: await celebrationElapsed($, state, now),
+    resultElapsed: await resultElapsed($, state, now),
   };
 }
 
-/** Whether a spin, a deal or a celebration is playing on the table. */
+/** Whether a spin, a deal or a result is playing on the table. */
 async function isMoving($: EngineInterface, state: StateResponse | null, now: number): Promise<boolean> {
   return (
     (await spinElapsed($, state, now)) !== null ||
     (await dealRevealed($, state, now)) !== null ||
-    (await celebrationElapsed($, state, now)) !== null
+    (await isResultAhead($, state, now)) ||
+    (await resultElapsed($, state, now)) !== null
   );
 }
 
@@ -975,9 +1082,7 @@ async function tick($: EngineInterface, rt: Runtime): Promise<void> {
     const now = await $.clock.now();
 
     if (now >= rt.wakeAt) {
-      const wait = await step($, rt, now);
-
-      rt.wakeAt = now + Math.min(wait, await fadeEcho($, now));
+      rt.wakeAt = now + (await step($, rt, now));
     }
   } catch (error) {
     logDebug($, `background step failed: ${errorText(error)}`);
@@ -1022,21 +1127,21 @@ async function countRound(
     playSound($, rt, SOUND_DEAL);
   }
 
-  // A roulette or slots round spins on the table while it draws, and from its landing until the
-  // wheel or the last reel stops; the result shows after.
+  // A roulette, wheel, slots or one-draw round spins on the table while it draws, and from its
+  // landing until the wheel, the last reel, the roll or the last number stops; the result shows after.
   const speed = (await readPrefs($)).slotsSpeed;
 
-  if ((isNew || hasLanded) && round !== null && before !== null && spinMs(round.detail.game, speed) > 0) {
+  if ((isNew || hasLanded) && round !== null && before !== null && spinMs(round.detail, speed) > 0) {
     // On a landing the balance before the spin is the one already held.
     const balance = isNew ? before.balance : (await read($, spin)).balance;
 
     await update($, spin, () => ({ round: round.number, startedAt: now, balance }));
   }
 
-  // New blackjack cards (a deal, a card drawn, the dealer's turn) are turned over one at a time,
-  // as the fullscreen table deals them; the balance waits for the last one.
-  const cards = round?.detail.game === "blackjack" ? cardCount(round.detail) : 0;
-  const shown = !isNew && before?.round?.detail.game === "blackjack" ? cardCount(before.round.detail) : 0;
+  // New blackjack or baccarat cards (a deal, a card drawn, the dealer's turn, a draw landing) are
+  // turned over one at a time, as the fullscreen table deals them; the balance waits for the last one.
+  const cards = dealtCards(round);
+  const shown = isNew ? 0 : dealtCards(before?.round ?? null);
 
   if (round !== null && before !== null && cards > shown) {
     await update($, deal, () => ({ round: round.number, from: shown, startedAt: now, balance: before.balance }));
@@ -1064,24 +1169,35 @@ async function countRound(
 
   if (BigInt(round.net) > 0n) {
     playSound($, rt, SOUND_WIN);
-    const startsAt = await resultShowsAt($, round, now);
-
-    await update($, celebration, () => ({ round: round.number, startsAt }));
   }
+
+  // A still table (the main screen's Mines and Tower boards) plays the result as the moving one does.
+  const spinning = await read($, spin);
+  const dealing = await read($, deal);
+  // The balance shown until then: the one held while it spun or was dealt, else the one before it settled.
+  const balance =
+    spinning.round === round.number
+      ? spinning.balance
+      : dealing.round === round.number
+        ? dealing.balance
+        : (before?.balance ?? after.balance);
+  const startsAt = await resultShowsAt($, round, now);
+
+  await update($, result, () => ({ round: round.number, startsAt, balance }));
 }
 
-/** When `round`'s result shows on the table: after its spin lands and its last card is turned over. */
+/**
+ * When `round`'s result shows: after its spin lands and its last card is turned over, on the table
+ * surface module too, which starts them when its props come (SURFACE_LAG_MS later).
+ */
 async function resultShowsAt($: EngineInterface, round: RoundView, now: number): Promise<number> {
   const spinning = await read($, spin);
   const dealing = await read($, deal);
   const speed = (await readPrefs($)).slotsSpeed;
-  const spinEnd = spinning.round === round.number ? spinning.startedAt + spinMs(round.detail.game, speed) : now;
-  const dealEnd =
-    dealing.round === round.number && round.detail.game === "blackjack"
-      ? dealing.startedAt + (cardCount(round.detail) - dealing.from) * DEAL_STEP_MS
-      : now;
+  const spinEnd = spinning.round === round.number ? spinning.startedAt + spinMs(round.detail, speed) : now;
+  const dealEnd = dealing.round === round.number ? dealing.startedAt + dealMs(dealing.from, dealtCards(round)) : now;
 
-  return Math.max(now, spinEnd, dealEnd);
+  return Math.max(now, spinEnd, dealEnd) + SURFACE_LAG_MS;
 }
 
 /** Copies a line about the last big win for the person to paste; nothing about their work is in it. */
@@ -1160,7 +1276,6 @@ async function snapshot($: EngineInterface, rt: Runtime): Promise<Snapshot> {
     remote: await readRemote($),
     prefs: await readPrefs($),
     intent: await readIntent($),
-    echo: (await read($, echo)).keys,
     message: await read($, message),
     agent: await read($, agent),
     session: await read($, session),
@@ -1173,6 +1288,82 @@ async function snapshot($: EngineInterface, rt: Runtime): Promise<Snapshot> {
 /** The web page to deposit on, when the api named one on its own site. */
 function depositUrlOf(rt: Runtime, state: StateResponse | null): string | null {
   return state?.webUrl === undefined || rt.base === null ? null : trustedVerifyUrl(state.webUrl, rt.base);
+}
+
+/** Games whose board is its keys: each hidden tile is the letter Button of its key, a click on it in fullscreen. */
+const KEYED_BOARDS: ReadonlySet<Game> = new Set(["mines", "tower"]);
+
+/** The table drawn by its surface module, at a card size, `columns` wide, the Wheel drawn as `wheel`,
+ *  its result over the table where `isResultFirst`. */
+type TableRegion = (cards: CardSize, columns: number, wheel: number | null, isResultFirst: boolean) => RenderElement;
+
+/**
+ * The table surface module in the pane or the band: the animated table (`region`), or null where
+ * the still one is drawn. Beside a still board where clicks land, `keeper`: a `Client` under the
+ * same key drawing nothing, so the keys a click gave the table before the game switched stay with
+ * it, and press the board's keys.
+ */
+interface TableSite {
+  region: TableRegion | null;
+  keeper: RenderElement | null;
+}
+
+const NO_TABLE: TableSite = { region: null, keeper: null };
+
+/**
+ * The table surface module's site (TableSite). The fullscreen terminal hands raw keys (Space,
+ * Enter, arrows) to a clicked `Client`; the main screen hands it neither clicks nor keys, but runs
+ * its frame clock: there it deals, spins and counts up, and the letters play it.
+ * `site.isPaneFocused`: the band never says, so false there.
+ */
+function tableOf(
+  $: EngineInterface,
+  e: RenderInput<"Pane" | "AbovePrompt">,
+  rt: Runtime,
+  snap: Snapshot,
+  isLight: boolean,
+  site: Pick<TableProps, "isPaneFocused" | "isClickable">,
+): TableSite {
+  const state = snap.remote.state;
+
+  if (e.surface !== "terminal" || state === null || rt.isTableBroken) {
+    return NO_TABLE;
+  }
+
+  const { Client } = $.ui.resolve(e);
+  const keys = tableKeysIn(e.component === "AbovePrompt", { state, prefs: snap.prefs, isBusy: isPlayHeld(snap) });
+  const client = (
+    cards: CardSize,
+    columns: number,
+    wheel: number | null,
+    isResultFirst: boolean,
+    isKeysOnly = false,
+  ) => {
+    const props: TableProps = {
+      state,
+      prefs: snap.prefs,
+      keys: keys.map(({ key, hotkey, label }) => ({ key, hotkey, label })),
+      columns,
+      cards,
+      wheel,
+      isResultFirst,
+      isLight,
+      ...site,
+      dealing: dealingHands(snap),
+      sending: sendingRound(snap),
+      isKeysOnly,
+    };
+
+    return <Client key={TABLE_KEY} module="./table.tsx" props={props} />;
+  };
+
+  // A `Client` arms no hotkey: a board whose tiles are its keys is drawn still, its tiles the
+  // Buttons of their letters (clicked too, in fullscreen), so the key line needs none of them.
+  if (KEYED_BOARDS.has(activeGame(state, snap.prefs))) {
+    return { region: null, keeper: site.isClickable ? client("small", 0, null, false, true) : null };
+  }
+
+  return { region: client, keeper: null };
 }
 
 // ---- hooks ----
@@ -1193,6 +1384,13 @@ async function onSessionStart($: EngineInterface, rt: Runtime, isInteractive: bo
 
   if ((await $.store.get(STORE_ONBOARDED)) === true) {
     await update($, layout, (value) => ({ ...value, isOnboarded: true }));
+  }
+
+  const kept = storedPrefs(await $.store.get(STORE_PREFS));
+
+  if (kept !== null) {
+    await update($, prefs, () => kept);
+    rt.isPrefsRestored = true;
   }
 
   if (!isInteractive) {
@@ -1291,6 +1489,9 @@ async function onTurnStart($: EngineInterface, rt: Runtime): Promise<void> {
   }
 }
 
+/** The terminal reports clicks only on its fullscreen screen; a desktop always does. */
+const isClickable = (surface: string, isFullscreen: boolean): boolean => surface !== "terminal" || isFullscreen;
+
 export const register: Register = (on, options) => {
   const rt: Runtime = {
     base: apiBase(options.apiUrl),
@@ -1314,6 +1515,7 @@ export const register: Register = (on, options) => {
     rateLimitedUntil: 0,
     isRestorePending: false,
     isFullscreen: null,
+    isPrefsRestored: false,
   };
 
   on("session.start", async ($, e, next) => {
@@ -1363,41 +1565,26 @@ export const register: Register = (on, options) => {
       bodyRows: e.props.scroll.bodyRows,
       isFocused: e.props.isFocused,
       cards: rt.settings.cards,
+      isClickable: isClickable(e.surface, e.viewport?.isFullscreen === true),
+      isBand: false,
     };
     const snap = await snapshot($, rt);
-    const state = snap.remote.state;
-    let table: ((cards: CardSize, columns: number) => RenderElement) | null = null;
+    const table = tableOf($, e, rt, snap, look.isLight, {
+      isPaneFocused: e.props.isFocused,
+      isClickable: pane.isClickable,
+    });
 
-    // The fullscreen terminal hands raw keys (Space, Enter, arrows) to a clicked `Client`; the
-    // main screen never does, so there the table is drawn still and played with the letters.
-    if (e.surface === "terminal" && e.viewport?.isFullscreen === true && state !== null && !rt.isTableBroken) {
-      const { Client } = $.ui.resolve(e);
-      const keys = planKeys({ state, prefs: snap.prefs, isBusy: snap.intent !== null });
-      const props = (cards: CardSize, columns: number): TableProps => ({
-        state,
-        prefs: snap.prefs,
-        keys: keys.map(({ key, hotkey, label }) => ({ key, hotkey, label })),
-        isWide: e.props.bodyColumns >= WIDE_MIN_COLUMNS,
-        columns,
-        cards,
-        isLight: look.isLight,
-        isPaneFocused: e.props.isFocused,
-      });
-
-      table = (cards, columns) => <Client key={TABLE_KEY} module="./table.tsx" props={props(cards, columns)} />;
-    }
-
-    return renderPane(ui, snap, pane, commandRunner($, rt), table);
+    return renderPane(ui, snap, pane, commandRunner($, rt), table.region, table.keeper);
   });
 
   on("ui.message", { element: TABLE_KEY }, async ($, e) => {
-    await onTablePost($, rt, e.data);
+    await onTablePost($, rt, e.data, e.component === "AbovePrompt");
 
     return {};
   });
 
   on("ui.fault", { element: TABLE_KEY }, ($, e, next) => {
-    // The engine draws the pane again: without the table's `Client` from now on, the still table instead.
+    // The engine draws the pane or the band again: without the table's `Client` from now on, the still table instead.
     rt.isTableBroken = true;
     logDebug($, `table failed (${e.phase}): ${e.reason}`);
 
@@ -1421,15 +1608,27 @@ export const register: Register = (on, options) => {
     const ui: Ui = $.ui.resolve(e);
     const snap = await snapshot($, rt);
 
-    if (rt.settings.layout === "bottom") {
-      const band: PaneLayout = {
-        bodyColumns: e.props.bodyColumns,
-        bodyRows: e.props.scroll.bodyRows,
-        isFocused: false,
-        cards: rt.settings.cards,
-      };
+    // The band shows a tree of at most `maxRows` whole and scrolls a taller one, the sponsor out of
+    // view with it. Off fullscreen it may take the terminal's whole height: there it keeps to half,
+    // the agent's answer in view. The table takes its smallest form (small cards, the Wheel's strip)
+    // where that is what fits; where nothing does, the compact band stands in for it.
+    const rows =
+      e.viewport === undefined || e.viewport.isFullscreen
+        ? e.props.maxRows
+        : Math.min(e.props.maxRows, Math.floor(e.viewport.rows / 2));
+    const band: PaneLayout = {
+      bodyColumns: e.props.bodyColumns,
+      bodyRows: rows,
+      isFocused: false,
+      cards: rt.settings.cards,
+      isClickable: isClickable(e.surface, e.viewport?.isFullscreen === true),
+      isBand: true,
+    };
 
-      return renderPane(ui, snap, band, commandRunner($, rt), null);
+    if (rt.settings.layout === "bottom" && fitsRows(snap, band, rows)) {
+      const table = tableOf($, e, rt, snap, look.isLight, { isPaneFocused: false, isClickable: band.isClickable });
+
+      return renderPane(ui, snap, band, commandRunner($, rt), table.region, table.keeper);
     }
 
     return renderBand(ui, snap, { bodyColumns: e.props.bodyColumns }, commandRunner($, rt));

@@ -9,11 +9,15 @@ use ephemeral_rollups_sdk::{
 };
 
 use crate::constants::{
-    ACCOUNT_SEED, ACTION_ESCROW_INDEX, LEDGER_SEED, VAULT_SEED, VAULT_TOKEN_SEED,
+    ACCOUNT_SEED, ACTION_ESCROW_INDEX, LEDGER_SEED, RISK_POOL_SEED, VAULT_SEED, VAULT_TOKEN_SEED,
 };
 use crate::errors::TiltError;
+use crate::risk::RiskPool;
 use crate::state::{Ledger, PlayerAccount, Vault};
-use crate::withdrawals::{checked_forfeit, pay_due, read_claim, LossReleased, PayAccounts};
+use crate::withdrawals::{
+    apply_secured_wins, checked_forfeit, pay_due, read_claim, LossReleased, PayAccounts,
+    WinsReleased,
+};
 
 fn meta(key: Pubkey, is_writable: bool) -> ShortAccountMeta {
     ShortAccountMeta {
@@ -34,6 +38,8 @@ pub struct Withdraw<'info> {
     pub account: Account<'info, PlayerAccount>,
     #[account(seeds = [LEDGER_SEED, account.player.as_ref()], bump)]
     pub ledger: Account<'info, Ledger>,
+    #[account(mut, seeds = [RISK_POOL_SEED], bump = risk_pool.bump)]
+    pub risk_pool: Account<'info, RiskPool>,
     /// CHECK: Solana accounts forwarded to the payment action, which validates them.
     pub vault_token: UncheckedAccount<'info>,
     /// CHECK: see `vault_token`
@@ -44,11 +50,12 @@ pub struct Withdraw<'info> {
     pub token_program: UncheckedAccount<'info>,
 }
 
-/// Rollup. Debits the balance, commits the account to Solana and schedules the payment
-/// there. Allowed during a round: its stake is already out of the balance. The account
-/// stays in the rollup.
+/// Rollup. Debits the balance, secures on Solana the wins the withdrawal takes, commits the
+/// account to Solana and schedules the payment there. Allowed during a round: its stake is
+/// already out of the balance. The account stays in the rollup.
 pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
     let min = ctx.accounts.vault.config.min_withdrawal;
+    let line = ctx.accounts.vault.pool_line;
     let account = &mut ctx.accounts.account;
     account.sync_ledger(&ctx.accounts.ledger);
     require!(
@@ -61,6 +68,7 @@ pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
     );
     account.balance -= amount;
     account.withdrawn += amount;
+    account.secure_withdrawn_wins(&mut ctx.accounts.risk_pool, line)?;
     // Anchor writes account changes back only when the instruction ends, but the commit
     // below snapshots the account now: flush the new totals first.
     ctx.accounts.account.exit(&crate::ID)?;
@@ -195,9 +203,10 @@ pub struct Checkpoint<'info> {
     pub ledger: Account<'info, Ledger>,
 }
 
-/// Rollup, relay cron. Marks the player's losses so far as final, commits the account and
-/// schedules `apply_checkpoint` on Solana, which releases them from the vault reservation
-/// so house winnings can be withdrawn. The player's win headroom starts again from here.
+/// Rollup, relay cron. Marks the player's losses so far as final, gives back to the house the
+/// secured wins they have lost again, commits the account and schedules `apply_checkpoint`
+/// on Solana, which releases both from the vault reservation so house winnings can be
+/// withdrawn.
 pub fn checkpoint(ctx: Context<Checkpoint>) -> Result<()> {
     let account = &mut ctx.accounts.account;
     account.sync_ledger(&ctx.accounts.ledger);
@@ -206,11 +215,19 @@ pub fn checkpoint(ctx: Context<Checkpoint>) -> Result<()> {
         TiltError::RoundInProgress
     );
     let loss = account.unforfeited_loss();
-    // A checkpoint whose Solana side failed (e.g. relayer rotated meanwhile) can be pushed
-    // again: the rollup still holds the forfeited total that Solana has not applied.
-    let unapplied = account.forfeited > ctx.accounts.ledger.forfeited;
-    require!(loss > 0 || unapplied, TiltError::NothingToCheckpoint);
     account.forfeited += loss;
+    let wins = account.unneeded_secured_wins();
+    account.win_released += wins;
+    // A checkpoint (or a withdrawal) whose Solana side failed (e.g. relayer rotated
+    // meanwhile) can be pushed again: the rollup still holds totals Solana has not applied.
+    let ledger = &ctx.accounts.ledger;
+    let unapplied = account.forfeited > ledger.forfeited
+        || account.win_reserved > ledger.win_reserved
+        || account.win_released > ledger.win_released;
+    require!(
+        loss > 0 || wins > 0 || unapplied,
+        TiltError::NothingToCheckpoint
+    );
     ctx.accounts.account.exit(&crate::ID)?;
 
     let a = &ctx.accounts;
@@ -261,7 +278,8 @@ pub struct ApplyCheckpoint<'info> {
     pub escrow: UncheckedAccount<'info>,
 }
 
-/// Solana, Magic Action only. Releases newly forfeited losses from the vault reservation.
+/// Solana, Magic Action only. Takes the claim's secured wins onto Solana, then releases newly
+/// forfeited losses and wins lost again from the vault reservation.
 pub fn apply_checkpoint(ctx: Context<ApplyCheckpoint>) -> Result<()> {
     let a = ctx.accounts;
     require_keys_eq!(
@@ -270,6 +288,14 @@ pub fn apply_checkpoint(ctx: Context<ApplyCheckpoint>) -> Result<()> {
         TiltError::Unauthorized
     );
     let claim = read_claim(&a.account.to_account_info())?;
+    let wins = apply_secured_wins(&mut a.vault, &mut a.ledger, &claim)?;
+    if wins > 0 {
+        emit!(WinsReleased {
+            player: claim.player,
+            amount: wins,
+            released_total: a.ledger.win_released
+        });
+    }
     let released = checked_forfeit(&claim, &a.ledger)?;
     if released == 0 {
         return Ok(());

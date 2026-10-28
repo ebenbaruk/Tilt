@@ -16,7 +16,7 @@
   font-family: var(--font-archivo);
   font-weight: 800;
   /* Sized so the ring text is about one circumference long (textLength trims the rest). */
-  font-size: 18.5px;
+  font-size: 16.2px;
   letter-spacing: 0.04em;
   white-space: pre;
   fill: var(--ink);

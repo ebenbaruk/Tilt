@@ -62,9 +62,12 @@ const sweepTimer = setInterval(() => {
     return;
   }
   sweepStartedAt = Date.now();
-  void sweep(db, chain, intents, { checkpointMinLoss: config.CHECKPOINT_MIN_LOSS, checkpointIntervalMs: config.CHECKPOINT_INTERVAL_MS })
+  const options = { checkpointMinLoss: config.CHECKPOINT_MIN_LOSS, checkpointIntervalMs: config.CHECKPOINT_INTERVAL_MS, riskPoolTarget: config.RISK_POOL_TARGET };
+  void sweep(db, chain, intents, options)
     .then((report) => {
-      if (report.reconciled || report.expired || report.checkpointed || report.failed) log("sweep", { ...report });
+      if (report.reconciled || report.funded || report.expired || report.checkpointed || report.failed) {
+        log("sweep", { ...report, funded: report.funded.toString() });
+      }
     }, (e: unknown) => logError("sweep failed", e))
     .finally(() => {
       sweepStartedAt = undefined;

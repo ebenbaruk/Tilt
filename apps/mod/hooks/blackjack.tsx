@@ -3,7 +3,7 @@
 // frame by the table surface module.
 import type { RenderElement } from "claude-code";
 
-import { BLACKJACK, type CardSize, handCards, handRow, handTag, largeHandColumns } from "./cards";
+import { BLACKJACK, type CardSize, faceDownOf, handCards, handRow, handTag, largeHandColumns } from "./cards";
 import { formatUsdc, SEPARATOR } from "./format";
 import type { BlackjackHandView, BlackjackResult, BlackjackView, RoundView } from "./protocol";
 import { FG1, FG4, FG6, GOLD, GREEN, PINK, RED, type Ui } from "./theme";
@@ -19,26 +19,17 @@ export const handColumns = (cardCount: number, size: CardSize): number =>
 
 /** What moves on the table between two still frames; `STILL` draws it at rest. */
 export interface TableFx {
-  /** Cards turned over so far, in deal order (dealOrder); null when all are. */
+  /** Blackjack or baccarat cards turned over so far, in deal order (each game's dealOrder); null when all are. */
   revealed: number | null;
   /** The active hand's highlight is on its bright beat. */
   isPulseOn: boolean;
   /** How far into its spin a roulette or slots round is; null when it has landed. */
   spinElapsed: number | null;
+  /** The spinner's frame: a Mines tile awaiting its draw turns with it. */
+  frame: number;
 }
 
-export const STILL: TableFx = { revealed: null, isPulseOn: true, spinElapsed: null };
-
-/** One card turned over every step, on the fullscreen table and on the main screen alike. */
-export const DEAL_STEP_MS = 150;
-
-/** Cards turned over `elapsed` ms into a deal that found `from` of `total` already shown (the
- *  first new one at once); null once all are. */
-export function revealedAt(from: number, total: number, elapsed: number): number | null {
-  const revealed = from + 1 + Math.floor(elapsed / DEAL_STEP_MS);
-
-  return revealed >= total ? null : revealed;
-}
+export const STILL: TableFx = { revealed: null, isPulseOn: true, spinElapsed: null, frame: 0 };
 
 const RESULTS: Record<BlackjackResult, { label: string; color: string }> = {
   blackjack: { label: "BJ", color: GOLD },
@@ -73,17 +64,12 @@ function dealOrder(detail: BlackjackView): { hands: number[][]; dealer: number[]
   return { hands, dealer };
 }
 
-export function cardCount(detail: BlackjackView): number {
-  return detail.hands.reduce((sum, hand) => sum + hand.cards.length, detail.dealer.length);
-}
-
-const faceDownOf = (order: readonly number[], revealed: number | null): number =>
-  revealed === null ? 0 : order.filter((index) => index >= revealed).length;
-
 interface HandPlace {
   index: number;
   /** Cards of this hand still face down. */
   faceDown: number;
+  /** The dealer's cards are all face up: a hand's result is known only then. */
+  isDealerShown: boolean;
   size: CardSize;
 }
 
@@ -95,7 +81,7 @@ function handColumn(
   fx: TableFx,
 ): RenderElement {
   const { Box, Text } = ui;
-  const { index, faceDown, size } = place;
+  const { index, faceDown, isDealerShown, size } = place;
   const isActive = detail.activeHand === index;
   const isTurned = faceDown === 0;
   const label = detail.hands.length === 1 ? "YOU" : `#${index + 1}`;
@@ -104,7 +90,8 @@ function handColumn(
   // Split aces take one card each and are finished: said on the hand, or it looks like a stand.
   const isSplitAces = hand.split && hand.cards[0]?.rank === ACE_RANK;
   const stake = `${formatUsdc(hand.stake)}${hand.doubled ? " doubled" : ""}${isSplitAces ? " · 1 card" : ""}`;
-  const result = hand.result === null || !isTurned ? null : RESULTS[hand.result];
+  // WIN, BJ or LOSE waits for the dealer's cards too: it would tell the hole card first.
+  const result = hand.result === null || !isTurned || !isDealerShown ? null : RESULTS[hand.result];
 
   return (
     <Box flexDirection="column" width={handColumns(hand.cards.length, size)}>
@@ -160,7 +147,12 @@ export function blackjackTable(ui: Ui, round: RoundView | null, fx: TableFx, siz
             ui,
             detail,
             hand,
-            { index, faceDown: faceDownOf(order.hands[index] ?? [], fx.revealed), size },
+            {
+              index,
+              faceDown: faceDownOf(order.hands[index] ?? [], fx.revealed),
+              isDealerShown: dealerFaceDown === 0,
+              size,
+            },
             fx,
           ),
         )}
