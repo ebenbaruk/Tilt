@@ -1,30 +1,16 @@
 import type { Viewport } from "next";
 import Link from "next/link";
-import { AgentCliPreview } from "@/components/landing/AgentCliPreview";
 import { Badge } from "@/components/landing/Badge";
-import { CopyPill } from "@/components/landing/CopyPill";
-import {
-  Burst,
-  CardBuddy,
-  Chip,
-  Coin,
-  Die,
-  Fan,
-  HiloCard,
-  KenoCard,
-  LimboCurve,
-  Minefield,
-  PrizeWheel,
-  Reels,
-  Terminal,
-  Tower,
-  Wheel,
-} from "@/components/landing/Illustrations";
-import { INSTALL_COMMANDS } from "@/components/landing/InstallSnippet";
+import { GamesFloor } from "@/components/landing/demo/Games";
+import { HeroTerminal } from "@/components/landing/demo/HeroTerminal";
+import { VerifyOutput } from "@/components/landing/demo/VerifyOutput";
+import { Chip, Die } from "@/components/landing/Illustrations";
+import { WaitlistForm } from "@/components/landing/WaitlistForm";
 import { WavyWordmark } from "@/components/landing/WavyWordmark";
-import styles from "./landing.module.css";
+import { SponsorBlock } from "@/components/tilt/SponsorBlock";
+import styles from "./home.module.css";
 
-export const viewport: Viewport = { themeColor: "#ffe26e", colorScheme: "light" };
+export const viewport: Viewport = { themeColor: "#0b0b0c", colorScheme: "dark" };
 
 const NAV = [
   { href: "#how", label: "How it works" },
@@ -33,154 +19,102 @@ const NAV = [
   { href: "#faq", label: "FAQ" },
 ];
 
+/** Sized to run once around the badge in the mono face (Badge stretches it the rest of the way). */
+const BADGE_RING = "PLAY WHILE YOUR AGENT CODES · 12 GAMES · USDC ON SOLANA · PROVABLY FAIR · ";
+
+const TICKER = [
+  ["♠", "Blackjack"],
+  ["●", "Roulette"],
+  ["♦", "Baccarat"],
+  ["7", "Slots"],
+  ["✸", "Mines"],
+  ["▼", "Dice"],
+  ["×", "Limbo"],
+  ["(H)", "Flip"],
+  ["[12]", "Keno"],
+  ["◉", "Wheel"],
+  ["▲▼", "Hilo"],
+  ["◆", "Tower"],
+];
+
+const FACTS = [
+  { value: "12", label: "games, one key per move" },
+  { value: "1%", label: "fee, on winning rounds only" },
+  { value: "0", label: "SOL needed: Tilt pays the network fees" },
+];
+
 const STEPS = [
   {
     title: "Install the mod",
-    body: "Two commands in Claude Code. The mod only sees when a turn starts and ends: never your prompts, your code or your tool calls.",
-    art: <Terminal />,
+    command: "/plugin install tilt",
+    body: "From inside Claude Code. The mod only sees when a turn starts and ends: never your prompts, your code or your tool calls.",
   },
   {
     title: "Log in, add USDC",
-    body: "/tilt login opens your browser. Email, Google, X or Phantom; a Solana wallet is made for you. Fund it by card. No SOL needed.",
-    art: <Chip />,
+    command: "/tilt login",
+    body: "Opens your browser. Email, Google, X or Phantom; a Solana wallet is made for you. Fund it by card. No SOL needed.",
   },
   {
     title: "Play while it works",
+    command: "n deal · 5.00",
     body: "Send a prompt and the panel opens. One key per move. When the agent finishes, your hand waits for the next turn.",
-    art: <CardBuddy />,
-  },
-];
-
-const GAMES = [
-  {
-    name: "Blackjack",
-    rtp: "99.00%",
-    rules: "No hole card, dealer stands on 17, blackjack pays 3:2, double on your first two cards, split pairs.",
-    tone: styles.toneOrange,
-    art: <CardBuddy />,
-  },
-  {
-    name: "Roulette",
-    rtp: "97.30%",
-    rules: "European, single zero. Straight up, red or black, odd or even, low or high, dozens, columns.",
-    tone: styles.toneSky,
-    art: <Wheel />,
-  },
-  {
-    name: "Baccarat",
-    rtp: "98.94%",
-    rules: "Punto Banco. Player 1:1, banker 1:1 less 5%, tie 8:1. Banker shown; player 98.76%, tie 85.9%.",
-    tone: styles.tonePink,
-    art: <Fan />,
-  },
-  {
-    name: "Slots",
-    rtp: "96.16%",
-    rules: "Three weighted reels, a public paytable and a top win of 250× your stake.",
-    tone: styles.toneGreen,
-    art: <Reels />,
-  },
-  {
-    name: "Mines",
-    rtp: "99.00%",
-    rules: "Pick 1 to 24 mines on a 5×5 board, reveal tiles one by one and cash out before you hit a mine.",
-    tone: styles.tonePaper,
-    art: <Minefield />,
-  },
-  {
-    name: "Dice",
-    rtp: "98.00%",
-    rules: "Roll 00.00 to 99.99, over or under your target. Win chance 1% to 98%; a 50% chance pays 1.96×.",
-    tone: styles.toneOrange,
-    art: <Die />,
-  },
-  {
-    name: "Limbo",
-    rtp: "98.00%",
-    // The drawn multiplier rounds down, in the house's favour.
-    upTo: true,
-    rules: "Set a target from 1.01× to 10,000×. If the drawn multiplier reaches it, you win your target.",
-    tone: styles.toneSky,
-    art: <LimboCurve />,
-  },
-  {
-    name: "Flip",
-    rtp: "98.00%",
-    rules: "Call heads or tails on 1 to 10 coins; every coin must land your side. 1.96× for one, doubling per coin.",
-    tone: styles.tonePink,
-    art: <Coin />,
-  },
-  {
-    name: "Keno",
-    rtp: "95.00%",
-    // 94.98% to 95.00% depending on how many numbers are picked.
-    upTo: true,
-    rules: "Pick 1 to 10 numbers out of 40, then 10 are drawn. More hits pay more, up to 1,000× for 10 of 10.",
-    tone: styles.toneGreen,
-    art: <KenoCard />,
-  },
-  {
-    name: "Wheel",
-    rtp: "98.00%",
-    rules: "10 to 50 segments and three risks: low pays often and small, high puts everything on one segment.",
-    tone: styles.tonePaper,
-    art: <PrizeWheel />,
-  },
-  {
-    name: "Hilo",
-    rtp: "98.00%",
-    rules: "Guess if the next card is higher or lower, skip up to 10 cards, and cash out after any right guess.",
-    tone: styles.toneOrange,
-    art: <HiloCard />,
-  },
-  {
-    name: "Tower",
-    rtp: "98.00%",
-    rules:
-      "Climb 9 levels, one tile each, and cash out on the way. Five difficulties, from 3 safe tiles of 4 to 1 of 4.",
-    tone: styles.toneSky,
-    art: <Tower />,
   },
 ];
 
 const FAQ = [
   {
+    flag: "--currency",
     q: "What do I play with?",
     a: "USDC on Solana, a dollar stablecoin. Your balance shows in dollars and cents.",
   },
   {
+    flag: "--wallet",
     q: "Do I need a crypto wallet?",
     a: "No. Log in with email, Google or X and a Solana wallet is created for you. Already on Phantom? Use it.",
   },
   {
+    flag: "--fees",
     q: "Do I need SOL for fees?",
     a: "No. Tilt pays the Solana network fees. The only fee is 1% of the gain on the rounds you win.",
   },
   {
+    flag: "--deposit",
     q: "Is there a minimum deposit?",
     a: "Yes. The first deposit has a minimum, and a small one-time fee opens your on-chain account. Your account page shows both before you confirm.",
   },
   {
+    flag: "--withdraw",
     q: "How do withdrawals work?",
     a: "From this website only, never from the terminal. You confirm with a fresh login and the USDC goes to your own wallet. Daily caps apply; large withdrawals can be held for review.",
   },
   {
+    flag: "--custody",
     q: "Who can move my money?",
     a: "Your balance lives in the Tilt program on Solana. Tilt's key can only sign Tilt program instructions for your wallet, and every deposit or withdrawal needs your fresh login.",
   },
   {
+    flag: "--limits",
     q: "Can I set limits?",
     a: "Yes: daily deposit and loss limits, and self-exclusion from a day to ten years, from your account page. Lowering a limit is immediate; raising one takes 24 hours.",
   },
   {
+    flag: "--region",
     q: "Where is Tilt available?",
     a: "Not in the United States, the United Kingdom, France or other restricted countries. You must be 18 or older.",
   },
 ];
 
+function Command({ children }: { children: string }) {
+  return (
+    <p className={styles.command} aria-hidden="true">
+      <span className={styles.dollar}>$</span> {children}
+    </p>
+  );
+}
+
 export default function Landing() {
   return (
-    <div className={styles.landing}>
+    <div className={styles.page}>
       <a href="#main" className="skip-link">
         Skip to content
       </a>
@@ -190,96 +124,103 @@ export default function Landing() {
           TILT
         </Link>
         <nav aria-label="Main" className={styles.nav}>
-          {NAV.map((item) => (
+          {NAV.map((item, i) => (
             <a key={item.href} href={item.href} className={styles.navLink}>
+              <span className={styles.navKey} aria-hidden="true">
+                [{i + 1}]
+              </span>{" "}
               {item.label}
             </a>
           ))}
         </nav>
-        <div className={styles.headerActions}>
-          <a href="#install" className={styles.pill}>
-            Get the mod
-          </a>
-          <Link href="/account" className={styles.circle}>
-            Log in
-          </Link>
-        </div>
+        <a href="#waitlist" className={styles.headerCta}>
+          <span aria-hidden="true">⏎</span>Join the waitlist
+        </a>
       </header>
 
       <main id="main">
         <section className={styles.hero} aria-labelledby="hero-title">
-          <div className={styles.heroMain}>
-            <h1 id="hero-title" className={styles.kicker}>
+          <div className={styles.heroText}>
+            <p className={styles.heroMeta}>
+              <span className={styles.pink}>›</span> a claude code mod · 12 games · usdc on solana · 18+
+            </p>
+            <WavyWordmark id="hero" className={styles.wordmark} />
+            <h1 id="hero-title" className={styles.tagline}>
               The casino you play while your agent codes
             </h1>
-            <WavyWordmark id="hero" className={styles.wordmark} />
+            <p className={styles.lede}>
+              Blackjack, roulette and ten more games in a panel inside Claude Code. Real USDC on Solana, every draw
+              provably fair, and the panel steps aside the second your agent needs you.
+            </p>
+            <div id="waitlist" className={styles.waitlist}>
+              <WaitlistForm />
+              <p className={styles.note}>
+                Tilt isn&apos;t open yet. Leave your email and we&apos;ll tell you when the tables open. One email, no
+                spam.
+              </p>
+            </div>
           </div>
-          <div className={styles.heroSide}>
-            <Badge className={styles.badge} />
-            <p className={styles.blob}>Your hand is saved the moment the agent is done.</p>
+          <div className={styles.heroDemo}>
+            <Badge className={styles.badge} text={BADGE_RING} />
+            <HeroTerminal />
           </div>
         </section>
 
-        <section className={styles.intro} aria-labelledby="intro-title">
-          <div className={styles.introArt}>
-            <span className={`${styles.disc} ${styles.discPink}`} />
-            <span className={`${styles.disc} ${styles.discSky}`} />
-            <Die className={styles.introDie} />
-            <CardBuddy className={styles.introBuddy} />
-            <Chip className={styles.introChip} />
+        <div className={styles.tape} aria-hidden="true">
+          <div className={styles.tapeTrack}>
+            {[0, 1].map((copy) => (
+              <span key={copy} className={styles.tapeRun}>
+                {TICKER.map(([glyph, name]) => (
+                  <span key={name} className={styles.tapeItem}>
+                    <span className={styles.tapeGlyph}>{glyph}</span> {name}
+                  </span>
+                ))}
+              </span>
+            ))}
           </div>
+        </div>
+
+        <section className={styles.intro} aria-labelledby="intro-title">
           <div className={styles.introText}>
-            <h2 id="intro-title" className={styles.serifTitle}>
+            <Command>tilt --why</Command>
+            <h2 id="intro-title" className={styles.display}>
               The most fun way to wait on your agent.
             </h2>
             <p className={styles.lede}>
-              Twelve casino games, from blackjack and roulette to mines, keno and hilo, in a panel inside Claude Code.
-              Real USDC on Solana, every draw provably fair, and the panel steps aside the second your agent needs you.
+              Your agent works for a minute; you play a hand. The moment it&apos;s done, Tilt hands the keys back and
+              your hand is saved for the next turn.
             </p>
-            <div className={styles.row}>
-              <a href="#install" className={styles.pill}>
-                Get the mod
-              </a>
-              <a href="#games" className={styles.pillGhost}>
-                See the games
-              </a>
-            </div>
           </div>
+          <ul className={styles.facts}>
+            {FACTS.map((fact) => (
+              <li key={fact.label} className={styles.fact}>
+                <span className={styles.factValue}>{fact.value}</span>
+                <span className={styles.factLabel}>{fact.label}</span>
+              </li>
+            ))}
+          </ul>
+          <Die className={styles.introDie} fill="var(--tilt-pink)" />
+          <Chip className={styles.introChip} fill="var(--tilt-gold)" />
         </section>
 
-        <section id="install" className={styles.section} aria-labelledby="install-title">
+        <section id="games" className={styles.section} aria-labelledby="games-title">
           <div className={styles.sectionHead}>
-            <h2 id="install-title" className={styles.displayTitle}>
-              Three lines to install
+            <Command>tilt games --all</Command>
+            <h2 id="games-title" className={styles.display}>
+              The games
             </h2>
-            <Burst className={styles.headBurst} />
+            <p className={styles.headNote}>
+              Return to player before Tilt&apos;s fee: 1% of the gain, on winning rounds only. Wins are capped at
+              10,000× the stake.
+            </p>
           </div>
-          <div className={styles.installGrid}>
-            <div className={styles.card}>
-              <div className={styles.cardHead}>
-                <span className={styles.cardLabel}>In Claude Code</span>
-                <CopyPill text={INSTALL_COMMANDS.join("\n")} className={styles.pillSmall} />
-              </div>
-              <pre className={styles.code} aria-label="Install commands">
-                {INSTALL_COMMANDS.map((line) => (
-                  <code key={line} className={styles.codeLine}>
-                    <span aria-hidden="true">› </span>
-                    {line}
-                    {"\n"}
-                  </code>
-                ))}
-              </pre>
-              <p className={styles.note}>Needs Claude Code 2.1.287 or later, in the terminal or the desktop app.</p>
-            </div>
-            <div className={styles.demo}>
-              <AgentCliPreview />
-            </div>
-          </div>
+          <GamesFloor />
         </section>
 
         <section id="how" className={styles.section} aria-labelledby="how-title">
           <div className={styles.sectionHead}>
-            <h2 id="how-title" className={styles.displayTitle}>
+            <Command>tilt --setup</Command>
+            <h2 id="how-title" className={styles.display}>
               How it works
             </h2>
           </div>
@@ -287,44 +228,25 @@ export default function Landing() {
             {STEPS.map((step, i) => (
               <li key={step.title} className={styles.step}>
                 <span className={styles.stepNumber} aria-hidden="true">
-                  {i + 1}
+                  {String(i + 1).padStart(2, "0")}
                 </span>
-                <div className={styles.stepArt}>{step.art}</div>
                 <h3 className={styles.stepTitle}>{step.title}</h3>
+                <code className={styles.stepCommand}>
+                  <span className={styles.pink} aria-hidden="true">
+                    ›{" "}
+                  </span>
+                  {step.command}
+                </code>
                 <p>{step.body}</p>
               </li>
             ))}
           </ol>
         </section>
 
-        <section id="games" className={styles.section} aria-labelledby="games-title">
-          <div className={styles.sectionHead}>
-            <h2 id="games-title" className={styles.displayTitle}>
-              The games
-            </h2>
-            <p className={styles.headNote}>
-              Return to player before Tilt&apos;s fee: 1% of the gain, on winning rounds only.
-            </p>
-          </div>
-          <ul className={styles.games}>
-            {GAMES.map((game) => (
-              <li key={game.name} className={`${styles.game} ${game.tone}`}>
-                <div className={styles.gameArt}>{game.art}</div>
-                <h3 className={styles.gameName}>{game.name}</h3>
-                <p className={styles.rtp}>
-                  {game.upTo && "Up to "}
-                  <span className={styles.rtpValue}>{game.rtp}</span> RTP
-                </p>
-                <p>{game.rules}</p>
-              </li>
-            ))}
-          </ul>
-          <p className={styles.footnote}>Blackjack assumes basic strategy.</p>
-        </section>
-
         <section id="fair" className={styles.fair} aria-labelledby="fair-title">
           <div className={styles.fairText}>
-            <h2 id="fair-title" className={styles.displayTitle}>
+            <Command>tilt verify</Command>
+            <h2 id="fair-title" className={styles.display}>
               Provably fair
             </h2>
             <p className={styles.manifesto}>
@@ -332,21 +254,19 @@ export default function Landing() {
               program, not on our servers. Each round records its randomness: replay it and you get the same cards and
               the same payout. You don&apos;t have to trust us. Check.
             </p>
-            <Link href="/verify" className={styles.pillInk}>
-              Verify a round
-            </Link>
           </div>
-          <div className={styles.fairArt}>
-            <Die className={styles.fairDie} fill="var(--pink)" />
-            <Wheel className={styles.fairWheel} />
-            <Chip className={styles.fairChip} fill="var(--green)" />
-          </div>
+          <figure className={styles.fairDemo}>
+            <VerifyOutput />
+            <figcaption className={styles.caption}>
+              Checking a round: its randomness, a replay in the public program, the same payout. Values are examples.
+            </figcaption>
+          </figure>
         </section>
 
         <section id="brands" className={styles.brands} aria-labelledby="brands-title">
           <div className={styles.brandsText}>
             <p className={styles.eyebrow}>For brands</p>
-            <h2 id="brands-title" className={styles.serifTitle}>
+            <h2 id="brands-title" className={styles.displaySmall}>
               Be the name next to the prize pool.
             </h2>
             <p>
@@ -358,34 +278,50 @@ export default function Landing() {
               hand a ticket. You get a report: time on screen, players, hands and shares.
             </p>
           </div>
-          <div className={styles.sponsorCard} aria-label="Example sponsor block">
-            <span className={styles.cardLabel}>Presented by · sponsored</span>
-            <span className={styles.sponsorName}>Your Brand</span>
-            <span>
-              Daily pool <strong>$3,000</strong>
-            </span>
-            <span className={styles.muted}>Ends in 14h · top 50 paid · drops every hour</span>
+          <div className={styles.sponsorCard} role="group" aria-label="Example sponsor block">
+            <div className={styles.sponsorHead} aria-hidden="true">
+              <span className={styles.sponsorMark}>TILT</span>
+              <span>S1 · daily competition</span>
+            </div>
+            <div className={styles.sponsorBody}>
+              <SponsorBlock name="Your Brand" pool="$3,000" poolLabel="daily pool" endsIn="14h" />
+              <p className={styles.sponsorMeta}>top 50 paid · drops every hour</p>
+            </div>
           </div>
         </section>
 
         <section id="faq" className={styles.section} aria-labelledby="faq-title">
           <div className={styles.sectionHead}>
-            <h2 id="faq-title" className={styles.displayTitle}>
+            <Command>tilt help</Command>
+            <h2 id="faq-title" className={styles.display}>
               Questions
             </h2>
           </div>
           <div className={styles.faq}>
             {FAQ.map((item) => (
               <details key={item.q} className={styles.faqItem}>
-                <summary className={styles.faqQ}>{item.q}</summary>
-                <p className={styles.faqA}>{item.a}</p>
+                <summary className={styles.faqQ}>
+                  <span className={styles.faqFlag} aria-hidden="true">
+                    {item.flag}
+                  </span>
+                  {item.q}
+                </summary>
+                <p className={styles.faqA}>
+                  <span className={styles.faqBranch} aria-hidden="true">
+                    └
+                  </span>
+                  <span>{item.a}</span>
+                </p>
               </details>
             ))}
           </div>
         </section>
 
         <section id="responsible" className={styles.responsible} aria-labelledby="rg-title">
-          <h2 id="rg-title" className={styles.serifTitle}>
+          <p className={styles.rgTag} aria-hidden="true">
+            18+ · real money · the house has an edge
+          </p>
+          <h2 id="rg-title" className={styles.displaySmall}>
             Play with what you can afford to lose.
           </h2>
           <p>
@@ -396,9 +332,19 @@ export default function Landing() {
             Not available in the United States, the United Kingdom, France or other countries where online casino games
             are restricted. Real-money play opens only where Tilt is licensed.
           </p>
-          <Link href="/legal/responsible-gaming" className={styles.linkLight}>
+          <Link href="/legal/responsible-gaming" className={styles.rgLink}>
             Responsible gaming and where to get help
           </Link>
+        </section>
+
+        <section className={styles.closing} aria-labelledby="closing-title">
+          <h2 id="closing-title" className={styles.display}>
+            Get in early
+          </h2>
+          <p className={styles.lede}>The tables open soon. One email when they do.</p>
+          <a href="#waitlist" className={styles.closingCta}>
+            <span aria-hidden="true">⏎</span>Join the waitlist
+          </a>
         </section>
       </main>
 
@@ -406,9 +352,6 @@ export default function Landing() {
         <WavyWordmark id="footer" className={styles.footerMark} />
         <div className={styles.footerRow}>
           <nav aria-label="Footer" className={styles.footerNav}>
-            <Link href="/leaderboard">Leaderboard</Link>
-            <Link href="/verify">Verify</Link>
-            <Link href="/account">Account</Link>
             <Link href="/legal/terms">Terms</Link>
             <Link href="/legal/privacy">Privacy</Link>
             <Link href="/legal/responsible-gaming">Responsible gaming</Link>

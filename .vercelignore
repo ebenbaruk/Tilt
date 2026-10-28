@@ -1,0 +1,9 @@
+# Vercel CLI uploads (apps/web on Vercel): skip build output, local state and anything secret.
+.env*
+!.env.example
+**/node_modules
+**/.next
+**/test-results
+chain/target
+chain/test-ledger
+chain/.anchor
