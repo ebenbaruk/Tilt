@@ -14,7 +14,8 @@
 //   tiles were revealed before it, never on which one. The snapshot (the board) gives the mine
 //   count, the tiles and the round's cap; without one, every mine count is tried with the
 //   board's own cap (the vault's max_round_gain is unknown here), on tiles 0, 1, 2… A cash-out
-//   takes no draw: the last draw is then the last safe reveal;
+//   takes no draw: the last draw is then the last safe reveal. A board left 6 h without a move
+//   is cashed out for the player by the relay, possibly before any reveal: no draw at all;
 // - dice / limbo / flip / keno / wheel: one draw; the choice comes from the snapshot. Without
 //   one, every choice that can reproduce the payout is tried (keno: the picks are unknown, only
 //   how many and how many hit matter, so drawn numbers stand for the hits and others for the misses);
@@ -23,7 +24,8 @@
 //   cards allow that settles at the program's gross return (payout + fee), with the board's own
 //   cap of 10 000× the stake (the vault's max_round_gain is unknown here);
 // - tower: like mines, one draw per climb; the snapshot gives the difficulty, tiles and cap.
-//   Cash-outs of hilo and tower take no draw either.
+//   Cash-outs of hilo and tower take no draw either, and an abandoned board may be cashed out
+//   before any right guess or level (0.98× the stake).
 // A round "matches" when a replay reproduces the program's payout and fee (and the snapshot,
 // when there is one).
 import type { BaccaratBet, FlipSide, Game, HiloGuess, RouletteChip, TowerDifficulty } from "@tilt/mod/protocol";
@@ -322,8 +324,8 @@ const MAX_HILO_STATES = 10_000;
 const UNCAPPED = (1n << 64n) - 1n;
 
 /** Plays `guesses` on the cards the draws give. A cash-out (the round did not end by itself)
- *  needs a right guess. An impossible candidate is still shown, so it keeps only guesses these
- *  cards can play. */
+ *  may come before any right guess when the relay closes a board the player left. An
+ *  impossible candidate is still shown, so it keeps only guesses these cards can play. */
 function hiloCandidate(cards: number[], guesses: HiloGuess[], stake: bigint, gain: bigint): Candidate {
   const played = guesses.length === cards.length - 1 ? hilo.play(stake, gain, cards, guesses) : null;
   const gross = played ? (played.ended ?? hilo.gross(stake, played.fair, gain)) : 0n;
@@ -336,7 +338,7 @@ function hiloCandidate(cards: number[], guesses: HiloGuess[], stake: bigint, gai
     busted: played?.busted ?? false,
     maxGain: gain.toString(),
   };
-  return { outcome, gross, possible: played !== null && (played.ended !== null || played.right >= 1) };
+  return { outcome, gross, possible: played !== null };
 }
 
 /** Guesses on `cards` that settle the round at `target` (its gross return), searched depth first
@@ -350,15 +352,16 @@ function hiloGuessesFor(cards: number[], stake: bigint, gain: bigint, target: bi
   /** Fewest skips each board (card, multiplier) was seen with: more skips can only do less. */
   const seen = new Map<string, number>();
   /** The board showing card `i` after a guess: the cap or a full board ends the round there. */
-  const reached = (i: number, fair: bigint, right: number, skips: number): boolean => {
+  const reached = (i: number, fair: bigint, skips: number): boolean => {
     if (i + 1 === hilo.MAX_CARDS || hilo.uncappedGross(stake, fair) >= cap) {
       return i === last && hilo.gross(stake, fair, gain) === target;
     }
-    return inPlay(i, fair, right, skips);
+    return inPlay(i, fair, skips);
   };
-  /** The board showing card `i`, waiting for the player: a cash-out on the last card. */
-  const inPlay = (i: number, fair: bigint, right: number, skips: number): boolean => {
-    if (i === last) return right >= 1 && hilo.gross(stake, fair, gain) === target;
+  /** The board showing card `i`, waiting for the player: a cash-out on the last card (by the
+   *  player, or by the relay once the board was left 6 h). */
+  const inPlay = (i: number, fair: bigint, skips: number): boolean => {
+    if (i === last) return hilo.gross(stake, fair, gain) === target;
     if (target > 0n && target < cap && hilo.uncappedGross(stake, fair) > target) return false;
     const key = `${i}:${fair}`;
     if ((seen.get(key) ?? Infinity) <= skips || seen.size >= MAX_HILO_STATES) return false;
@@ -368,17 +371,17 @@ function hiloGuessesFor(cards: number[], stake: bigint, gain: bigint, target: bi
       const winning = hilo.winningRanks(guess, current);
       guesses.push(guess);
       if (winning === null) {
-        if (skips < hilo.MAX_SKIPS && reached(i + 1, fair, right, skips + 1)) return true;
+        if (skips < hilo.MAX_SKIPS && reached(i + 1, fair, skips + 1)) return true;
       } else if (!hilo.isRight(guess, current, hilo.rank(cards[i + 1]))) {
         if (i + 1 === last && target === 0n) return true;
-      } else if (reached(i + 1, hilo.nextFair(fair, winning), right + 1, skips)) {
+      } else if (reached(i + 1, hilo.nextFair(fair, winning), skips)) {
         return true;
       }
       guesses.pop();
     }
     return false;
   };
-  return cards.length > 0 && inPlay(0, hilo.FAIR_ONE, 0, 0) ? guesses : null;
+  return cards.length > 0 && inPlay(0, hilo.FAIR_ONE, 0) ? guesses : null;
 }
 
 function hiloCandidates(draws: Uint8Array[], stake: bigint, snapshot: Outcome | null, target: bigint): Candidate[] {
@@ -391,7 +394,8 @@ function hiloCandidates(draws: Uint8Array[], stake: bigint, snapshot: Outcome | 
 type TowerOutcome = Extract<Outcome, { game: "tower" }>;
 
 /** Plays the climbs of a `difficulty` tower; impossible when a draw comes after the round
- *  ended (bust, top or cap reached) or a cash-out comes before any level. */
+ *  ended (bust, top or cap reached). A cash-out may come before any level: a board the player
+ *  left, closed by the relay. */
 function towerCandidate(
   draws: Uint8Array[],
   stake: bigint,
@@ -407,8 +411,6 @@ function towerCandidate(
     if (tower.isSafe(Rng.fromVrf(randomness), difficulty)) levels++;
     else busted = true;
   }
-  const ended = busted || !tower.canClimbMore(stake, difficulty, levels, gain);
-  if (!ended && levels === 0) possible = false;
   // Tiles never change the outcome: the snapshot's when it has as many, else tile 0.
   const climbed = snapshot?.climbed.length === levels ? snapshot.climbed : Array<number>(levels).fill(0);
   const outcome: TowerOutcome = {
@@ -428,6 +430,9 @@ function towerCandidates(draws: Uint8Array[], stake: bigint, snapshot: Outcome |
 }
 
 export function replay(input: ReplayInput): ReplayResult {
+  // A board abandoned before any reveal or climb settles with no draw at all.
+  if (input.game === "mines") return choose(minesCandidates(input.draws, input.stake, input.snapshot), input);
+  if (input.game === "tower") return choose(towerCandidates(input.draws, input.stake, input.snapshot), input);
   const last = input.draws.at(-1);
   if (!last) throw new Error("a settled round has at least one draw");
   switch (input.game) {
@@ -439,8 +444,6 @@ export function replay(input: ReplayInput): ReplayResult {
       return choose(baccaratCandidates(last, input.stake, input.snapshot), input);
     case "slots":
       return choose(slotsCandidates(last, input.stake), input);
-    case "mines":
-      return choose(minesCandidates(input.draws, input.stake, input.snapshot), input);
     case "dice":
       return choose(diceCandidates(last, input.stake, input.snapshot), input);
     case "limbo":
@@ -456,7 +459,5 @@ export function replay(input: ReplayInput): ReplayResult {
         hiloCandidates(input.draws, input.stake, input.snapshot, input.onChain.payout + input.onChain.fee),
         input,
       );
-    case "tower":
-      return choose(towerCandidates(input.draws, input.stake, input.snapshot), input);
   }
 }

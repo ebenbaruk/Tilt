@@ -85,14 +85,14 @@ describe("the agent comes first", () => {
     expect(world.opened).toEqual([{ id: "tilt", focus: true }]);
   });
 
-  test("the turn end says how long the agent took and that the hand is saved", async ($, on) => {
+  test("the turn end says how long the agent took and how long the hand is saved", async ($, on) => {
     await seat($, on, BASE);
     await $.turn.start({ text: "", turnId: "t1" });
     await $.turn.complete(turnEnd({}));
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
     const text = textOf(await ui.drawn());
 
-    expect(text).toContain("✓ agent finished in 6m 14s · your hand is saved");
+    expect(text).toContain("✓ agent finished in 6m 14s · your hand is saved for 6 hours");
     expect(text).not.toContain("agent is working");
   });
 
@@ -102,7 +102,7 @@ describe("the agent comes first", () => {
     await $.turn.complete(turnEnd({ reason: "aborted", durationMs: 31_000 }));
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
 
-    expect(textOf(await ui.drawn())).toContain("agent stopped after 31s · your hand is saved");
+    expect(textOf(await ui.drawn())).toContain("agent stopped after 31s · your hand is saved for 6 hours");
   });
 
   test("a subagent's turn end is not the agent finishing", async ($, on) => {

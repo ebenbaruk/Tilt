@@ -7,14 +7,15 @@ use anchor_lang::prelude::*;
 use ephemeral_rollups_sdk::anchor::{delegate, vrf, vrf_callback};
 use ephemeral_rollups_sdk::cpi::DelegateConfig;
 
-use crate::constants::{ACCOUNT_SEED, LEDGER_SEED, ROULETTE_SEED, VAULT_SEED};
+use crate::constants::{ACCOUNT_SEED, LEDGER_SEED, RISK_POOL_SEED, ROULETTE_SEED, VAULT_SEED};
 use crate::errors::TiltError;
 use crate::games::roulette::{self, RouletteChip, RouletteTable};
 use crate::instructions::play::{
     callback_account, draw_request, expired_draw, now, pending_draw, settle_round,
 };
+use crate::risk::RiskPool;
 use crate::rng::Rng;
-use crate::state::{Config, Draw, Game, Ledger, PlayerAccount, Round, Vault};
+use crate::state::{Bankroll, Draw, Game, Ledger, PlayerAccount, Round, Vault};
 
 #[derive(Accounts)]
 pub struct OpenRouletteTable<'info> {
@@ -88,6 +89,8 @@ pub struct RoulettePlay<'info> {
     pub ledger: Account<'info, Ledger>,
     #[account(mut, seeds = [ROULETTE_SEED, account.player.as_ref()], bump)]
     pub roulette: Account<'info, RouletteTable>,
+    #[account(mut, seeds = [RISK_POOL_SEED], bump = risk_pool.bump)]
+    pub risk_pool: Account<'info, RiskPool>,
     /// CHECK: the configured MagicBlock VRF queue; also validated by the VRF program
     #[account(mut, address = vault.config.vrf_queue @ TiltError::Unauthorized)]
     pub oracle_queue: UncheckedAccount<'info>,
@@ -101,15 +104,17 @@ pub struct ConsumeRouletteRandomness<'info> {
     pub account: Account<'info, PlayerAccount>,
     #[account(mut, seeds = [ROULETTE_SEED, account.player.as_ref()], bump)]
     pub roulette: Account<'info, RouletteTable>,
+    #[account(mut, seeds = [RISK_POOL_SEED], bump = risk_pool.bump)]
+    pub risk_pool: Account<'info, RiskPool>,
 }
 
 /// Takes the stake of a new spin of `chips` after checking the layout: bet limits apply to
-/// each chip, and the best pocket's gain must fit the round limit and the win cap.
+/// each chip, and the best pocket's gain must fit the round limit and the risk pool.
 fn start_chips(
     account: &mut PlayerAccount,
     table: &mut RouletteTable,
     chips: &[RouletteChip],
-    config: &Config,
+    bank: &mut Bankroll,
     now: i64,
 ) -> Result<()> {
     require!(roulette::chips_are_valid(chips), TiltError::InvalidBet);
@@ -118,7 +123,7 @@ fn start_chips(
         Game::Roulette,
         chips.iter().map(|chip| chip.amount),
         max_gain,
-        config,
+        bank,
         now,
     )?;
     table.start(chips);
@@ -135,12 +140,13 @@ fn check_roulette_draw(round: &Round, table: &RouletteTable, request_id: u64) ->
     Ok(())
 }
 
-/// Asks for the spin's draw, answered by `consume_roulette_randomness` with the player account
-/// and the table.
+/// Asks for the spin's draw, answered by `consume_roulette_randomness` with the player
+/// account, the table and the risk pool.
 fn request_roulette_draw(ctx: &mut Context<RoulettePlay>, client_seed: [u8; 32]) -> Result<()> {
     let accounts = vec![
         callback_account(ctx.accounts.account.key()),
         callback_account(ctx.accounts.roulette.key()),
+        callback_account(ctx.accounts.risk_pool.key()),
     ];
     let ix = draw_request(
         &mut ctx.accounts.account.round,
@@ -162,15 +168,14 @@ pub fn roulette_chips(
     chips: Vec<RouletteChip>,
     client_seed: [u8; 32],
 ) -> Result<()> {
-    let accounts = &mut ctx.accounts;
-    accounts.account.sync_ledger(&accounts.ledger);
-    start_chips(
-        &mut accounts.account,
-        &mut accounts.roulette,
-        &chips,
-        &accounts.vault.config,
-        now()?,
-    )?;
+    let a = &mut ctx.accounts;
+    a.account.sync_ledger(&a.ledger);
+    let mut bank = Bankroll {
+        config: &a.vault.config,
+        pool: &mut a.risk_pool,
+        line: a.vault.pool_line,
+    };
+    start_chips(&mut a.account, &mut a.roulette, &chips, &mut bank, now()?)?;
     request_roulette_draw(&mut ctx, client_seed)
 }
 
@@ -178,7 +183,7 @@ pub fn roulette_chips(
 pub fn expire_roulette_round(mut ctx: Context<RoulettePlay>, client_seed: [u8; 32]) -> Result<()> {
     let round = &ctx.accounts.account.round;
     require!(round.on_roulette_table(), TiltError::WrongState);
-    expired_draw(round, ctx.accounts.vault.config.round_timeout_secs)?;
+    expired_draw(round, &ctx.accounts.vault.config)?;
     request_roulette_draw(&mut ctx, client_seed)
 }
 
@@ -191,7 +196,13 @@ pub fn consume_roulette_randomness(
     let accounts = ctx.accounts;
     check_roulette_draw(&accounts.account.round, &accounts.roulette, request_id)?;
     let gross = accounts.roulette.spin(&mut Rng::from_vrf(randomness));
-    settle_round(&mut accounts.account, gross, request_id, randomness);
+    settle_round(
+        &mut accounts.account,
+        &mut accounts.risk_pool,
+        gross,
+        request_id,
+        randomness,
+    );
     Ok(())
 }
 
@@ -199,9 +210,25 @@ pub fn consume_roulette_randomness(
 mod tests {
     use super::*;
     use crate::games::roulette::{spin_pocket, RouletteBet, RouletteSpin, MAX_CHIPS};
-    use crate::instructions::testing::{account, config};
+    use crate::instructions::testing::{account, bank, config, pool_of};
     use crate::settlement::settle;
-    use crate::state::RoundStatus;
+    use crate::state::{Config, RoundStatus};
+
+    /// `start_chips` with `config` and a risk pool whose line is `line`.
+    fn start(
+        a: &mut PlayerAccount,
+        t: &mut RouletteTable,
+        chips: &[RouletteChip],
+        config: &Config,
+        line: u64,
+    ) -> Result<()> {
+        let mut pool = RiskPool::default();
+        let mut bank = Bankroll {
+            line,
+            ..bank(config, &mut pool)
+        };
+        start_chips(a, t, chips, &mut bank, 0)
+    }
 
     fn chip(bet: RouletteBet, amount: u64) -> RouletteChip {
         RouletteChip { bet, amount }
@@ -218,7 +245,7 @@ mod tests {
 
     fn started(chips: &[RouletteChip]) -> Result<(PlayerAccount, RouletteTable)> {
         let (mut a, mut t) = (account(), RouletteTable::default());
-        start_chips(&mut a, &mut t, chips, &config(), 0)?;
+        start(&mut a, &mut t, chips, &config(), u64::MAX)?;
         Ok((a, t))
     }
 
@@ -228,7 +255,7 @@ mod tests {
         a.round.status = RoundStatus::AwaitingDraw(Draw::Spin);
         check_roulette_draw(&a.round, t, a.round.request_id).unwrap();
         let gross = t.spin(&mut Rng::from_vrf(randomness));
-        a.finish_round(settle(a.round.stake, gross));
+        a.finish_round(settle(a.round.stake, gross), &mut pool_of(a));
         gross
     }
 
@@ -289,7 +316,7 @@ mod tests {
         ] {
             let (mut a, mut t) = (account(), RouletteTable::default());
             assert_eq!(
-                start_chips(&mut a, &mut t, &chips, &config(), 0),
+                start(&mut a, &mut t, &chips, &config(), u64::MAX),
                 Err(TiltError::InvalidBet.into()),
                 "{chips:?}"
             );
@@ -321,28 +348,33 @@ mod tests {
             .map(|n| chip(RouletteBet::Straight(n), 1_000_000))
             .collect();
         // The best pocket returns 36 000 000: a 16 000 000 gain, within the 50 000 000 limit.
-        start_chips(&mut a, &mut RouletteTable::default(), &chips, &config(), 0).unwrap();
+        start(
+            &mut a,
+            &mut RouletteTable::default(),
+            &chips,
+            &config(),
+            u64::MAX,
+        )
+        .unwrap();
         assert_eq!((a.balance, a.round.stake), (0, 20_000_000));
     }
 
     #[test]
-    fn the_best_pocket_must_fit_the_round_limit_and_the_win_cap() {
+    fn the_best_pocket_must_fit_the_round_limit_and_the_risk_pool() {
         let mut config = config();
         // Straight 7 + red + first dozen gain 4 300 000 on 7.
         config.max_round_gain = 4_299_999;
         let (mut a, mut t) = (account(), RouletteTable::default());
         assert_eq!(
-            start_chips(&mut a, &mut t, &layout(), &config, 0),
+            start(&mut a, &mut t, &layout(), &config, u64::MAX),
             Err(TiltError::RoundGainTooHigh.into())
         );
         config.max_round_gain = 4_300_000;
-        a.max_win = 4_299_999;
         assert_eq!(
-            start_chips(&mut a, &mut t, &layout(), &config, 0),
-            Err(TiltError::WinCapReached.into())
+            start(&mut a, &mut t, &layout(), &config, 4_299_999),
+            Err(TiltError::RiskPoolFull.into())
         );
-        a.max_win = 4_300_000;
-        start_chips(&mut a, &mut t, &layout(), &config, 0).unwrap();
+        start(&mut a, &mut t, &layout(), &config, 4_300_000).unwrap();
         assert_eq!(a.balance, 10_000_000 - 600_000);
     }
 
@@ -351,7 +383,7 @@ mod tests {
         let (mut a, mut t) = (account(), RouletteTable::default());
         a.balance = 599_999;
         assert_eq!(
-            start_chips(&mut a, &mut t, &layout(), &config(), 0),
+            start(&mut a, &mut t, &layout(), &config(), u64::MAX),
             Err(TiltError::InsufficientBalance.into())
         );
         assert_eq!(t.n_chips, 0);
@@ -408,12 +440,12 @@ mod tests {
         a.round.status = RoundStatus::AwaitingDraw(Draw::Spin);
         let before = t.clone();
         assert_eq!(
-            start_chips(
+            start(
                 &mut a,
                 &mut t,
                 &[chip(RouletteBet::Odd, 1_000)],
                 &config(),
-                0
+                u64::MAX
             ),
             Err(TiltError::RoundInProgress.into())
         );

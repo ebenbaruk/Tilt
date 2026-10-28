@@ -1121,8 +1121,29 @@ describe("replay (GET /verify)", () => {
     expect(replay({ ...input, snapshot: { ...hiloSnapshot(v), guesses: flipped } }).matches).toBe(false);
     const afterBust = { ...multiInput("hilo", bust), draws: [...bust.draws, ...v.draws].map(bytes) };
     expect(replay({ ...afterBust, snapshot: hiloSnapshot(bust) }).matches).toBe(false);
-    // A cash-out needs a right guess: the first card alone settles nothing.
+    // The first card alone only settles at 0.98× (a board the relay closed): not this payout.
     expect(replay({ ...input, draws: input.draws.slice(0, 1), snapshot: null }).matches).toBe(false);
+  });
+
+  it("replays boards the relay closed after 6 h without a move, before any step", () => {
+    // Mines and Tower with no draw at all, Hilo with its first card only: cashed out at 0.99× / 0.98×.
+    const closed = (game: "mines" | "tower" | "hilo", draws: Uint8Array[], gross: bigint) =>
+      replay({ game, stake: STAKE, onChain: settle(STAKE, gross), draws, snapshot: null });
+    expect(closed("mines", [], (STAKE * 99n) / 100n)).toMatchObject({
+      matches: true,
+      outcome: { order: [], busted: null },
+    });
+    expect(closed("tower", [], (STAKE * 98n) / 100n)).toMatchObject({
+      matches: true,
+      outcome: { climbed: [], busted: null },
+    });
+    expect(closed("hilo", [rankSeed(7)], (STAKE * 98n) / 100n)).toMatchObject({
+      matches: true,
+      outcome: { guesses: [] },
+    });
+    // Nothing else settles without a move.
+    expect(closed("mines", [], STAKE).matches).toBe(false);
+    expect(closed("tower", [], 0n).matches).toBe(false);
   });
 
   const towerSnapshot = (v: (typeof vectors.tower)[number]): Extract<Outcome, { game: "tower" }> => ({

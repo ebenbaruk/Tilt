@@ -1,6 +1,7 @@
 // Relay behaviour against a real Postgres (TEST_DATABASE_URL), with the on-chain executor
 // replaced at its interface: idempotency, one intent in flight per player, crash recovery,
 // deposit caps, auth and validation.
+import anchor from "@coral-xyz/anchor";
 import type { Action } from "@tilt/contract";
 import { PublicKey, Transaction } from "@solana/web3.js";
 import { randomUUID } from "node:crypto";
@@ -8,11 +9,13 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
 import type { ConsentVerifier } from "../src/consent";
-import { IntentError, type RecordSend, type SentTransaction, type TiltChain, type TransactionStatus, UnconfirmedError } from "../src/chain";
+import { IntentError, type PlayerAccount, type RecordSend, type SentTransaction, type TiltChain, type TransactionStatus, UnconfirmedError } from "../src/chain";
 import { createDb, migrate, type Db } from "../src/db";
 import { Intents, type Executor, type RelayLimits } from "../src/intents";
 import type { PlayerWallet, PlayerWallets } from "../src/players";
-import { sweep } from "../src/sweeper";
+import { releasable, requiredReserve, sweep } from "../src/sweeper";
+
+const { BN } = anchor;
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL ?? "postgres://postgres:tilt@127.0.0.1:55432/tilt_test";
 const API_KEY = "k".repeat(40);
@@ -212,23 +215,99 @@ describe("intents", () => {
     expect(await intents.get(landed)).toMatchObject({ status: "submitted" });
   });
 
+  const ABANDONED_SECS = 21_600;
+  /** A chain whose risk pool has `left` of its line free once `open` rounds are held, in a vault
+   *  holding `free` beyond what it reserves. */
+  const pooled = (
+    left: bigint,
+    free: bigint,
+    funded: bigint[] = [],
+    { open = { gain: 0n, stake: 0n }, maxRoundGain = 100n, betsPaused = false } = {},
+  ) => ({
+    ensureRiskPool: async () => undefined,
+    fetchRiskPool: async () => ({
+      transferred: new BN(300),
+      uncovered: new BN(200),
+      gains: new BN(open.gain.toString()),
+      stakes: new BN(open.stake.toString()),
+      exposure: new BN((open.gain * open.stake).toString()),
+    }),
+    fetchVaultBalance: async () => 10_000n + free,
+    fundRiskPool: async (amount: bigint) => {
+      funded.push(amount);
+      return "sig";
+    },
+    fetchVault: async () => ({
+      config: { roundTimeoutSecs: 60, abandonedRoundSecs: ABANDONED_SECS, maxRoundGain: new BN(maxRoundGain.toString()), betsPaused },
+      poolLine: new BN((500n + open.gain + left).toString()),
+      reserved: new BN(10_000),
+    }),
+  });
+  const SWEEP = { checkpointMinLoss: 1n, checkpointIntervalMs: 1, riskPoolTarget: 1_000n };
+
   it("sweeps players even when reconciliation fails", async () => {
     const intents = { reconcile: () => Promise.reject(new Error("database unreachable")) } as unknown as Intents;
-    const chain = { fetchVault: async () => ({ config: { roundTimeoutSecs: 60 } }) } as unknown as TiltChain;
-    expect(await sweep(db, chain, intents, { checkpointMinLoss: 1n, checkpointIntervalMs: 1 })).toEqual({ reconciled: 0, expired: 0, checkpointed: 0, failed: 1 });
+    const chain = pooled(1_000n, 0n) as unknown as TiltChain;
+    expect(await sweep(db, chain, intents, SWEEP)).toEqual({ reconciled: 0, funded: 0n, expired: 0, checkpointed: 0, failed: 1 });
   });
 
-  it("never closes a hand or board waiting for the player, only retries a draw that never arrived (with the game it plays on)", async () => {
+  it("grants the risk pool what its line lacks for new rounds, within the free bankroll", async () => {
+    const intents = { reconcile: async () => 0 } as unknown as Intents;
+    const funded: bigint[] = [];
+    // 400 of the line left for a 1 000 target: 600 granted.
+    expect(await sweep(db, pooled(400n, 5_000n, funded) as unknown as TiltChain, intents, SWEEP)).toMatchObject({ funded: 600n, failed: 0 });
+    // Only 250 free in the vault: 250 granted.
+    expect(await sweep(db, pooled(400n, 250n, funded) as unknown as TiltChain, intents, SWEEP)).toMatchObject({ funded: 250n });
+    // At the target, nothing.
+    expect(await sweep(db, pooled(1_000n, 5_000n, funded) as unknown as TiltChain, intents, SWEEP)).toMatchObject({ funded: 0n });
+    expect(funded).toEqual([600n, 250n]);
+  });
+
+  it("counts what open rounds hold of the line, and keeps one largest round's worth free", async () => {
+    const intents = { reconcile: async () => 0 } as unknown as Intents;
+    const funded: bigint[] = [];
+    // A lone round holds its whole worst case (800): the 1 000 left beside it is still the target.
+    const parked = { open: { gain: 800n, stake: 1n }, maxRoundGain: 800n };
+    expect(await sweep(db, pooled(1_000n, 5_000n, funded, parked) as unknown as TiltChain, intents, SWEEP)).toMatchObject({ funded: 0n });
+    // A target below the largest round's gain is raised to it.
+    expect(await sweep(db, pooled(1_000n, 5_000n, funded, { maxRoundGain: 2_500n }) as unknown as TiltChain, intents, SWEEP)).toMatchObject({ funded: 1_500n });
+    // Nothing while bets are paused: the line could never be taken back.
+    expect(await sweep(db, pooled(0n, 5_000n, funded, { betsPaused: true }) as unknown as TiltChain, intents, SWEEP)).toMatchObject({ funded: 0n, failed: 0 });
+    expect(funded).toEqual([1_500n]);
+  });
+
+  it("computes the open rounds' reserve as the program does", () => {
+    const USDC = 1_000_000n;
+    const reserveFor = (n: bigint, stake: bigint, gain: bigint) => requiredReserve(n * gain, n * stake, n * gain * stake, gain);
+    expect(requiredReserve(0n, 0n, 0n, 2_500n * USDC)).toBe(0n);
+    // Values of `risk.rs` (a_few_rounds_hold_their_whole_worst_case, many_rounds_hold_far_less_than_their_worst_case).
+    expect(reserveFor(1n, 10n * USDC, 2_500n * USDC)).toBe(2_500n * USDC);
+    expect(reserveFor(1_000n, 10n * USDC, 2_500n * USDC)).toBe(63_558_059_855n);
+  });
+
+  it("counts both losses and secured wins lost again as what a checkpoint releases", () => {
+    const account = (balance: number, secured: number) =>
+      ({ balance: new BN(balance), withdrawn: new BN(0), credited: new BN(1_000), forfeited: new BN(0), winReserved: new BN(secured), winReleased: new BN(0) }) as unknown as PlayerAccount;
+    expect(releasable(account(600, 0))).toBe(400n);
+    expect(releasable(account(1_250, 400))).toBe(150n);
+    expect(releasable(account(600, 400))).toBe(800n);
+    expect(releasable(account(1_500, 400))).toBe(0n);
+  });
+
+  it("retries a draw that never arrived and closes a round the player abandoned (with the game it plays on), never one they are still thinking about", async () => {
     const TIMEOUT_SECS = 60;
     const now = Date.now();
-    const longAgo = Math.floor(now / 1000) - 3_600;
+    const longAgo = Math.floor(now / 1000) - ABANDONED_SECS;
+    const stillThinking = longAgo + 1;
     const players = {
-      thinking: { address: PublicKey.unique(), game: { blackjack: {} }, status: { playerTurn: {} } },
+      thinking: { address: PublicKey.unique(), game: { blackjack: {} }, status: { playerTurn: {} }, lastAction: stillThinking },
+      leftTable: { address: PublicKey.unique(), game: { blackjack: {} }, status: { playerTurn: {} } },
       stuckDraw: { address: PublicKey.unique(), game: { blackjack: {} }, status: { awaitingDraw: { 0: { deal: {} } } } },
       stuckSpin: { address: PublicKey.unique(), game: { roulette: {} }, roulette: { bet: { red: {} }, number: 0 }, status: { awaitingDraw: { 0: { spin: {} } } } },
       // A multi-chip spin: no bet in the round, its chips are on the roulette table.
       stuckChips: { address: PublicKey.unique(), game: { roulette: {} }, roulette: null, status: { awaitingDraw: { 0: { spin: {} } } } },
-      minesThinking: { address: PublicKey.unique(), game: { mines: {} }, status: { playerTurn: {} } },
+      minesThinking: { address: PublicKey.unique(), game: { mines: {} }, status: { playerTurn: {} }, lastAction: stillThinking },
+      minesLeft: { address: PublicKey.unique(), game: { mines: {} }, status: { playerTurn: {} } },
       stuckReveal: { address: PublicKey.unique(), game: { mines: {} }, status: { awaitingDraw: { 0: { reveal: {} } } } },
       freshDraw: { address: PublicKey.unique(), game: { roulette: {} }, status: { awaitingDraw: { 0: { spin: {} } } }, lastAction: Math.floor(now / 1000) - 5 },
     };
@@ -244,7 +323,12 @@ describe("intents", () => {
     const expired: [string, string, unknown][] = [];
     const accounts = new Map(Object.values(players).map((p) => [p.address.toBase58(), p]));
     const chain = {
-      fetchVault: async () => ({ config: { roundTimeoutSecs: TIMEOUT_SECS } }),
+      ...pooled(1_000n, 0n),
+      fetchVault: async () => ({
+        config: { roundTimeoutSecs: TIMEOUT_SECS, abandonedRoundSecs: ABANDONED_SECS, maxRoundGain: new BN(100), betsPaused: false },
+        poolLine: new BN(1_500),
+        reserved: new BN(10_000),
+      }),
       fetchPlayerAccount: async (player: PublicKey) => {
         const p = accounts.get(player.toBase58())!;
         const roulette = "roulette" in p ? p.roulette : null;
@@ -256,14 +340,16 @@ describe("intents", () => {
       },
     } as unknown as TiltChain;
     const intents = { reconcile: async () => 0 } as unknown as Intents;
-    const report = await sweep(db, chain, intents, { checkpointMinLoss: 1n, checkpointIntervalMs: 1 }, now);
+    const report = await sweep(db, chain, intents, SWEEP, now);
     expect(Object.fromEntries(expired.map(([address, ...rest]) => [address, rest]))).toEqual({
+      [players.leftTable.address.toBase58()]: ["blackjack", null],
       [players.stuckDraw.address.toBase58()]: ["blackjack", null],
       [players.stuckSpin.address.toBase58()]: ["roulette", players.stuckSpin.roulette],
       [players.stuckChips.address.toBase58()]: ["roulette", null],
+      [players.minesLeft.address.toBase58()]: ["mines", null],
       [players.stuckReveal.address.toBase58()]: ["mines", null],
     });
-    expect(report).toMatchObject({ expired: 4, failed: 0 });
+    expect(report).toMatchObject({ expired: 6, failed: 0 });
   });
 
   it("lets an execution that saw its transaction land correct a reconciliation failure", async () => {

@@ -7,6 +7,7 @@ import {
   PROGRAM_ID,
   quickTableAddress,
   rouletteTableAddress,
+  riskPoolAddress,
   tableAddress,
   towerBoardAddress,
 } from "./program";
@@ -56,6 +57,20 @@ describe("IDL", () => {
       const prefix = Buffer.from(seeds?.[0]?.value ?? []);
       const [expected] = PublicKey.findProgramAddressSync([prefix, player.toBuffer()], PROGRAM_ID);
       expect(minesBoardAddress(player).equals(expected), name).toBe(true);
+    }
+  });
+
+  it("derives the risk pool the program expects wherever a round starts, settles or pays out", () => {
+    const withPool = idl.instructions.filter((i) => i.accounts.some((a) => a.name === "risk_pool"));
+    expect(withPool.map((i) => i.name)).toEqual(expect.arrayContaining(["blackjack_bet", "consume_randomness", "mines_cashout", "withdraw", "open_risk_pool"]));
+    for (const instruction of withPool) {
+      const account = instruction.accounts.find((a) => a.name === "risk_pool");
+      const seeds = account && "pda" in account ? account.pda?.seeds : undefined;
+      const [expected] = PublicKey.findProgramAddressSync(
+        seeds?.map((s) => Buffer.from("value" in s && s.value ? s.value : [])) ?? [],
+        PROGRAM_ID,
+      );
+      expect(riskPoolAddress().equals(expected), instruction.name).toBe(true);
     }
   });
 

@@ -135,7 +135,7 @@ describe("the table stays when the agent finishes", () => {
     expect(world.closed).toEqual([]);
     const pane = await shownText(await $.ui.mount({ plugin: PLUGIN, ...PANE_INLINE }));
 
-    expect(pane).toContain("✓ agent finished in 6m 14s · your hand is saved");
+    expect(pane).toContain("✓ agent finished in 6m 14s · your hand is saved for 6 hours");
     expect(pane).toContain("DEALER");
   });
 
@@ -149,7 +149,7 @@ describe("the table stays when the agent finishes", () => {
       const band = textOf(await (await $.ui.mount({ plugin: PLUGIN, ...BAND_ROOMY })).drawn());
 
       expect(band).toContain("LEADERBOARD");
-      expect(band).toContain("your hand is saved");
+      expect(band).toContain("your hand is saved for 6 hours");
     },
   );
 });

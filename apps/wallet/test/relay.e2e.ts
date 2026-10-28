@@ -32,12 +32,14 @@ import { createDb, migrate } from "../src/db";
 import { ChainExecutor } from "../src/executor";
 import { Intents } from "../src/intents";
 import type { PlayerWallet, PlayerWallets } from "../src/players";
-import { sweep } from "../src/sweeper";
+import { sweep, type SweepReport } from "../src/sweeper";
 
 const env = (key: string, fallback: string) => process.env[key] ?? fallback;
 const POLL_MS = Number(env("POLL_MS", "25"));
 const API_KEY = "e2e".repeat(12);
 const usdc = (x: number) => Math.round(x * 1_000_000);
+/** A sweep report as text: its amounts are bigints, which JSON.stringify refuses. */
+const report = (r: SweepReport) => JSON.stringify(r, (_key, value: unknown) => (typeof value === "bigint" ? value.toString() : value));
 const loadKeypair = (path: string) => Keypair.fromSecretKey(Uint8Array.from(JSON.parse(fs.readFileSync(path, "utf8"))));
 
 const admin = loadKeypair(env("ANCHOR_WALLET", `${os.homedir()}/.config/solana/id.json`));
@@ -128,6 +130,15 @@ async function main() {
   await until(() => rollupProgram.account.blackjackTable.fetchNullable(tableAddress(key.publicKey)), "table in rollup");
   check("dépôt via le relais", (await submit(user, { type: "deposit", amount: String(usdc(10)) })).status === "submitted");
 
+  console.log("\n--- Pool de risque ---");
+  const RISK_POOL_TARGET = BigInt(usdc(500));
+  const funding = await sweep(db, chain, intents, { checkpointMinLoss: 1n << 62n, checkpointIntervalMs: 0, riskPoolTarget: RISK_POOL_TARGET });
+  const poolLeft = async () => {
+    const [v, pool] = await Promise.all([chain.fetchVault(), chain.fetchRiskPool()]);
+    return BigInt(v.poolLine.toString()) - BigInt(pool.transferred.toString()) - BigInt(pool.uncovered.toString());
+  };
+  check("le sweeper ouvre le pool de risque et lui accorde sa ligne", funding.failed === 0 && (await poolLeft()) >= RISK_POOL_TARGET, `(${funding.funded} accordés)`);
+
   console.log("\n--- Manches via le relais ---");
   const playRound = async (action: Action) => {
     const startRounds = (await account()).rounds;
@@ -170,9 +181,6 @@ async function main() {
   await mintTo(chain.base, admin, vault.mint, legacyToken, admin, usdc(20));
   const baseProgram = new anchor.Program<Tilt>(idl, new anchor.AnchorProvider(chain.base, new anchor.Wallet(relayer), { commitment: "confirmed" }));
   const legacyDeposit = BigInt(usdc(20));
-  const credited = legacyDeposit - BigInt(vault.config.onboardingFee.toString());
-  const multipleCap = credited * BigInt(vault.config.maxWinMultiple.toString());
-  const playerCap = BigInt(vault.config.maxPlayerWin.toString());
   const legacyAccounts = {
     vault: vaultAddress(),
     payer: relayer.publicKey,
@@ -185,7 +193,7 @@ async function main() {
     ledger: ledgerAddress(legacyKey.publicKey),
   };
   await baseProgram.methods
-    .openAccount(new anchor.BN(legacyDeposit.toString()), new anchor.BN((multipleCap < playerCap ? multipleCap : playerCap).toString()))
+    .openAccount(new anchor.BN(legacyDeposit.toString()))
     .accountsPartial(legacyAccounts)
     .postInstructions([await baseProgram.methods.delegateAccount().accountsPartial(legacyAccounts).instruction()])
     .signers([legacyKey])
@@ -203,40 +211,20 @@ async function main() {
     legacyBet.status === "submitted" && (await chain.base.getAccountInfo(tableAddress(legacyKey.publicKey))) !== null && legacyTable.nHands === 1,
     `(statut ${JSON.stringify(legacyAccount.round.status)})`,
   );
+  if ("playerTurn" in legacyAccount.round.status) {
+    await submit(legacyUser, { type: "blackjack_stand" });
+    await until(async () => {
+      const x = await chain.fetchPlayerAccount(legacyKey.publicKey);
+      return x && "idle" in x.round.status ? x : undefined;
+    }, "legacy hand stood");
+  }
 
-  console.log("\n--- Plafond de gains glissant ---");
-  // Opened with a 2 USDC win cap: a 1 USDC spin could win 250, past it.
-  const capUser = `did:privy:e2e${randomUUID().replaceAll("-", "")}`;
-  const capKey = Keypair.generate();
-  players.keys.set(capUser, capKey);
-  const capToken = await createAssociatedTokenAccountIdempotent(chain.base, admin, vault.mint, capKey.publicKey);
-  await mintTo(chain.base, admin, vault.mint, capToken, admin, usdc(20));
-  const capAccounts = {
-    ...legacyAccounts,
-    player: capKey.publicKey,
-    playerToken: capToken,
-    account: playerAccountAddress(capKey.publicKey),
-    ledger: ledgerAddress(capKey.publicKey),
-  };
-  await baseProgram.methods
-    .openAccount(new anchor.BN(usdc(20)), new anchor.BN(usdc(2)))
-    .accountsPartial(capAccounts)
-    .postInstructions([await baseProgram.methods.delegateAccount().accountsPartial(capAccounts).instruction()])
-    .signers([capKey])
-    .rpc();
-  await until(() => chain.fetchPlayerAccount(capKey.publicKey).then((x) => x ?? undefined), "capped account in rollup");
-  const capLedger = () => baseProgram.account.ledger.fetch(ledgerAddress(capKey.publicKey));
-  const capBefore = (await capLedger()).maxWin;
-  const spin = await submit(capUser, { type: "slots_spin", amount: String(usdc(1)) });
-  const spun = await until(async () => {
-    const x = await chain.fetchPlayerAccount(capKey.publicKey);
-    return x && x.rounds > 0 ? x : undefined;
-  }, "spin past the cap");
-  const capAfter = (await capLedger()).maxWin;
+  console.log("\n--- Pool de risque après les manches ---");
+  const pool = await chain.fetchRiskPool();
   check(
-    "mise au-delà du plafond : plafond relevé depuis la bankroll, mise jouée, rien vu par le joueur",
-    spin.status === "submitted" && spun.rounds === 1 && capAfter.gt(capBefore),
-    `(plafond ${capBefore} → ${capAfter}${spin.error ? `, ${spin.error.message}` : ""})`,
+    "toute manche réglée a rendu ce qu'elle tenait au pool",
+    BigInt(pool.gains.toString()) === 0n && BigInt(pool.stakes.toString()) === 0n,
+    `(gains ${pool.gains}, mises ${pool.stakes})`,
   );
 
   console.log("\n--- Reprise après interruption ---");
@@ -270,16 +258,28 @@ async function main() {
   for (let i = 0; i < 10 && !("playerTurn" in a.round.status); i++) a = await playRound({ type: "blackjack_bet", amount: String(usdc(1)), hands: 1 });
   check("main laissée ouverte", "playerTurn" in a.round.status);
   await sleep((timeoutSecs + 1) * 1_000);
-  const sweepOptions = { checkpointMinLoss: 1n, checkpointIntervalMs: 0 };
+  const sweepOptions = { checkpointMinLoss: 1n, checkpointIntervalMs: 0, riskPoolTarget: RISK_POOL_TARGET };
   const swept = await sweep(db, chain, intents, { ...sweepOptions, checkpointMinLoss: 1n << 62n });
   const stillOpen = await account();
-  check("le sweeper ne joue jamais à la place du joueur", swept.expired === 0 && "playerTurn" in stillOpen.round.status, JSON.stringify(swept));
+  check("le sweeper ne joue jamais à la place du joueur", swept.expired === 0 && "playerTurn" in stillOpen.round.status, report(swept));
   await submit(user, { type: "blackjack_stand" });
   await until(async () => {
     const x = await account();
     return "idle" in x.round.status ? x : undefined;
   }, "stand after timeout");
   check("le joueur reprend sa main après le délai", (await table()).nDealer >= 2);
+
+  const abandonedSecs = Number(vault.config.abandonedRoundSecs.toString());
+  a = await account();
+  for (let i = 0; i < 10 && !("playerTurn" in a.round.status); i++) a = await playRound({ type: "blackjack_bet", amount: String(usdc(1)), hands: 1 });
+  check("main laissée ouverte jusqu'au délai d'abandon", "playerTurn" in a.round.status);
+  await sleep((abandonedSecs + 1) * 1_000);
+  const closed = await sweep(db, chain, intents, { ...sweepOptions, checkpointMinLoss: 1n << 62n });
+  await until(async () => {
+    const x = await account();
+    return "idle" in x.round.status ? x : undefined;
+  }, "abandoned hand closed");
+  check("le sweeper clôt une main abandonnée : stand, le croupier joue", closed.expired === 1 && (await table()).nDealer >= 2, report(closed));
 
   const netWin = (x: PlayerAccount) => BigInt(x.balance.toString()) + BigInt(x.withdrawn.toString()) - BigInt(x.credited.toString()) + BigInt(x.forfeited.toString());
   for (let i = 0; i < 40 && netWin(await account()) >= 0n; i++) await playRound({ type: "baccarat_deal", amount: String(usdc(2)), bet: "tie" });
@@ -291,7 +291,7 @@ async function main() {
   }, "checkpoint applied");
   check("le sweeper rend les pertes du joueur à la maison", checkpointed.checkpointed === 1 && forfeited === loss, `(${forfeited} libérés)`);
   const again = await sweep(db, chain, intents, sweepOptions);
-  check("pas de checkpoint en double", again.checkpointed === 0 && again.failed === 0, JSON.stringify(again));
+  check("pas de checkpoint en double", again.checkpointed === 0 && again.failed === 0, report(again));
 
   console.log("\n--- Gains promo via le relais ---");
   // The pool is set up by chain/scripts/e2e.ts; refill it from a sponsor.

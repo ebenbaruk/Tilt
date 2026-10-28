@@ -9,7 +9,7 @@ use ephemeral_rollups_sdk::vrf::{
     types::SerializableAccountMeta,
 };
 
-use crate::constants::{ACCOUNT_SEED, LEDGER_SEED, TABLE_SEED, VAULT_SEED};
+use crate::constants::{ACCOUNT_SEED, LEDGER_SEED, RISK_POOL_SEED, TABLE_SEED, VAULT_SEED};
 use crate::errors::TiltError;
 use crate::games::{
     baccarat::{BaccaratBet, BaccaratCoup},
@@ -17,9 +17,12 @@ use crate::games::{
     roulette::{RouletteBet, RouletteSpin},
     slots,
 };
+use crate::risk::RiskPool;
 use crate::rng::Rng;
 use crate::settlement::settle;
-use crate::state::{Draw, Game, Ledger, PlayerAccount, Round, RoundStatus, Vault};
+use crate::state::{
+    Bankroll, Config, Draw, Game, Ledger, PlayerAccount, Round, RoundStatus, Vault,
+};
 
 #[vrf]
 #[derive(Accounts)]
@@ -39,6 +42,8 @@ pub struct Play<'info> {
     /// by the other games.
     #[account(mut, seeds = [TABLE_SEED, account.player.as_ref()], bump)]
     pub table: Option<Account<'info, BlackjackTable>>,
+    #[account(mut, seeds = [RISK_POOL_SEED], bump = risk_pool.bump)]
+    pub risk_pool: Account<'info, RiskPool>,
     /// CHECK: the configured MagicBlock VRF queue; also validated by the VRF program
     #[account(mut, address = vault.config.vrf_queue @ TiltError::Unauthorized)]
     pub oracle_queue: UncheckedAccount<'info>,
@@ -54,6 +59,8 @@ pub struct ConsumeRandomness<'info> {
     /// The player's table, for blackjack draws; the program id otherwise.
     #[account(mut, seeds = [TABLE_SEED, account.player.as_ref()], bump)]
     pub table: Option<Account<'info, BlackjackTable>>,
+    #[account(mut, seeds = [RISK_POOL_SEED], bump = risk_pool.bump)]
+    pub risk_pool: Account<'info, RiskPool>,
 }
 
 /// Emitted in the rollup when a round ends; with the account state, enough to display
@@ -110,8 +117,8 @@ pub(crate) fn draw_request(
     ))
 }
 
-/// Asks for `draw` with `consume_randomness` as the callback, which gets the player account
-/// and, for blackjack, the table.
+/// Asks for `draw` with `consume_randomness` as the callback, which gets the player account,
+/// for blackjack the table, and the risk pool.
 fn request_draw(ctx: &mut Context<Play>, draw: Draw, client_seed: [u8; 32]) -> Result<()> {
     let table_meta = match &ctx.accounts.table {
         Some(table) => callback_account(table.key()),
@@ -126,7 +133,11 @@ fn request_draw(ctx: &mut Context<Play>, draw: Draw, client_seed: [u8; 32]) -> R
         ctx.accounts.account.round.game != Game::Blackjack || ctx.accounts.table.is_some(),
         TiltError::MissingTable
     );
-    let accounts = vec![callback_account(ctx.accounts.account.key()), table_meta];
+    let accounts = vec![
+        callback_account(ctx.accounts.account.key()),
+        table_meta,
+        callback_account(ctx.accounts.risk_pool.key()),
+    ];
     let ix = draw_request(
         &mut ctx.accounts.account.round,
         draw,
@@ -141,12 +152,21 @@ fn request_draw(ctx: &mut Context<Play>, draw: Draw, client_seed: [u8; 32]) -> R
     Ok(())
 }
 
+/// The risk pool and limits a round of this context answers to.
+fn bankroll<'a>(accounts: &'a mut Play) -> (&'a mut PlayerAccount, &'a Ledger, Bankroll<'a>) {
+    let bank = Bankroll {
+        config: &accounts.vault.config,
+        pool: &mut accounts.risk_pool,
+        line: accounts.vault.pool_line,
+    };
+    (&mut accounts.account, &accounts.ledger, bank)
+}
+
 /// Credits new deposits and takes the stake of a new round of `bets` bets of `bet`.
 fn start(ctx: &mut Context<Play>, game: Game, bet: u64, bets: u8, max_gain: u64) -> Result<()> {
-    let (ledger, config) = (&ctx.accounts.ledger, &ctx.accounts.vault.config);
-    let account = &mut ctx.accounts.account;
+    let (account, ledger, mut bank) = bankroll(ctx.accounts);
     account.sync_ledger(ledger);
-    account.start_round(game, bet, bets, max_gain, config, now()?)
+    account.start_round(game, bet, bets, max_gain, &mut bank, now()?)
 }
 
 fn table<'a>(ctx: &'a mut Context<Play>) -> Result<&'a mut BlackjackTable> {
@@ -220,25 +240,22 @@ pub fn blackjack_double(mut ctx: Context<Play>, client_seed: [u8; 32]) -> Result
         TiltError::WrongState
     );
     let extra = table.bet;
-    let account = &mut ctx.accounts.account;
-    require!(account.balance >= extra, TiltError::InsufficientBalance);
-    account.balance -= extra;
-    account.round.stake += extra;
+    let (account, _, mut bank) = bankroll(ctx.accounts);
+    account.take_double(extra, &mut bank)?;
     request_draw(&mut ctx, Draw::Double, client_seed)
 }
 
 /// Splits the active hand's pair into two hands for one more base bet; each takes one card.
-/// The round's worst case is checked again with the extra hand (see `take_split`), against a
-/// win cap Solana may have raised since the bet.
+/// The round's worst case is checked again with the extra hand (see `take_split`), against
+/// the risk pool as it stands now.
 pub fn blackjack_split(mut ctx: Context<Play>, client_seed: [u8; 32]) -> Result<()> {
     require_blackjack_turn(&ctx.accounts.account)?;
     let table = table(&mut ctx)?;
     require!(table.can_split(), TiltError::WrongState);
     let (bet, hands) = (table.bet, table.n_hands + 1);
-    let (ledger, config) = (&ctx.accounts.ledger, &ctx.accounts.vault.config);
-    let account = &mut ctx.accounts.account;
+    let (account, ledger, mut bank) = bankroll(ctx.accounts);
     account.sync_ledger(ledger);
-    account.take_split(bet, hands, config)?;
+    account.take_split(bet, hands, &mut bank)?;
     request_draw(&mut ctx, Draw::Split, client_seed)
 }
 
@@ -272,34 +289,54 @@ pub fn slots_spin(mut ctx: Context<Play>, amount: u64, client_seed: [u8; 32]) ->
 
 /// Relay cron. A draw that never arrived within `round_timeout_secs` is requested again
 /// under a new id (the late answer to the old one, if it ever comes, is refused). A hand
-/// waiting for the player is never closed for them: they come back to it whenever they want.
-/// Blackjack retries must pass the table, like the original request; the games playing on
-/// their own account (Mines, the one-draw games, Hilo, Tower, roulette chips) retry through
-/// their own `expire_*_round`, which calls back with that account.
+/// left waiting for the player for `abandoned_round_secs` is closed for them: every hand
+/// still to play stands and the dealer plays. Blackjack retries must pass the table, like
+/// the original request; the games playing on their own account (Mines, the one-draw games,
+/// Hilo, Tower, roulette chips) expire through their own `expire_*_round`, which calls back
+/// with that account.
 pub fn expire_round(mut ctx: Context<Play>, client_seed: [u8; 32]) -> Result<()> {
     let round = &ctx.accounts.account.round;
     require!(
         round.game.draws_in_round() && !round.on_roulette_table(),
         TiltError::WrongState
     );
-    let draw = expired_draw(round, ctx.accounts.vault.config.round_timeout_secs)?;
-    request_draw(&mut ctx, draw, client_seed)
+    match expiry(round, &ctx.accounts.vault.config, now()?)? {
+        Expiry::Retry(draw) => request_draw(&mut ctx, draw, client_seed),
+        // Only blackjack hands wait for the player among these games.
+        Expiry::Abandoned => {
+            table(&mut ctx)?.stand_all();
+            request_draw(&mut ctx, Draw::Dealer, client_seed)
+        }
+    }
 }
 
-/// The draw to request again once the round has been untouched for `timeout` seconds.
-pub(crate) fn expired_draw(round: &Round, timeout: i64) -> Result<Draw> {
-    require!(
-        now()? - round.last_action >= timeout,
-        TiltError::RoundNotExpired
-    );
-    draw_to_retry(round.status)
+/// What the relay cron may do with a round left untouched.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Expiry {
+    /// A draw still awaited after `round_timeout_secs`: requested again.
+    Retry(Draw),
+    /// A round left waiting for the player for `abandoned_round_secs`: closed for them as
+    /// they could have closed it (a stand, a cash-out), so it stops holding the account.
+    Abandoned,
 }
 
-/// The draw `expire_round` requests again: only one that is still awaited.
-fn draw_to_retry(status: RoundStatus) -> Result<Draw> {
-    match status {
-        RoundStatus::AwaitingDraw(draw) => Ok(draw),
-        RoundStatus::PlayerTurn | RoundStatus::Idle => err!(TiltError::WrongState),
+/// How a round untouched since `round.last_action` expires at `now`, or why it does not.
+pub(crate) fn expiry(round: &Round, config: &Config, now: i64) -> Result<Expiry> {
+    let (expiry, after) = match round.status {
+        RoundStatus::AwaitingDraw(draw) => (Expiry::Retry(draw), config.round_timeout_secs),
+        RoundStatus::PlayerTurn => (Expiry::Abandoned, config.abandoned_round_secs),
+        RoundStatus::Idle => return err!(TiltError::WrongState),
+    };
+    require!(now - round.last_action >= after, TiltError::RoundNotExpired);
+    Ok(expiry)
+}
+
+/// The draw to request again for a game that never waits for the player (the one-draw
+/// games, roulette chips).
+pub(crate) fn expired_draw(round: &Round, config: &Config) -> Result<Draw> {
+    match expiry(round, config, now()?)? {
+        Expiry::Retry(draw) => Ok(draw),
+        Expiry::Abandoned => err!(TiltError::WrongState),
     }
 }
 
@@ -316,12 +353,13 @@ pub(crate) fn pending_draw(round: &Round, request_id: u64) -> Result<Draw> {
 /// randomness of the draw that ended it (zeros when a move ended it without a draw).
 pub(crate) fn settle_round(
     account: &mut PlayerAccount,
+    pool: &mut RiskPool,
     gross: u64,
     request_id: u64,
     randomness: [u8; 32],
 ) {
     let stake = account.round.stake;
-    account.finish_round(settle(stake, gross));
+    account.finish_round(settle(stake, gross), pool);
     emit!(RoundSettled {
         player: account.player,
         round: account.rounds,
@@ -349,7 +387,13 @@ pub fn consume_randomness(
         account.round.last_action = now()?;
         return Ok(());
     };
-    settle_round(account, gross, request_id, randomness);
+    settle_round(
+        account,
+        &mut ctx.accounts.risk_pool,
+        gross,
+        request_id,
+        randomness,
+    );
     Ok(())
 }
 
@@ -357,8 +401,20 @@ pub fn consume_randomness(
 mod tests {
     use super::*;
 
+    use crate::instructions::testing::config;
+
+    const LAST_ACTION: i64 = 1_000;
+
+    fn untouched(status: RoundStatus) -> Round {
+        Round {
+            status,
+            last_action: LAST_ACTION,
+            ..Round::default()
+        }
+    }
+
     #[test]
-    fn only_a_pending_draw_is_retried_never_a_hand_waiting_for_the_player() {
+    fn an_awaited_draw_is_retried_after_the_round_timeout() {
         for draw in [
             Draw::Deal,
             Draw::Hit,
@@ -370,17 +426,38 @@ mod tests {
             Draw::Card,
             Draw::Climb,
         ] {
+            let round = untouched(RoundStatus::AwaitingDraw(draw));
+            let timeout = config().round_timeout_secs;
             assert_eq!(
-                draw_to_retry(RoundStatus::AwaitingDraw(draw)).unwrap(),
-                draw
+                expiry(&round, &config(), LAST_ACTION + timeout - 1).unwrap_err(),
+                TiltError::RoundNotExpired.into()
+            );
+            assert_eq!(
+                expiry(&round, &config(), LAST_ACTION + timeout).unwrap(),
+                Expiry::Retry(draw)
             );
         }
+    }
+
+    #[test]
+    fn a_round_waiting_for_the_player_is_closed_only_once_abandoned() {
+        let round = untouched(RoundStatus::PlayerTurn);
+        let abandoned = config().abandoned_round_secs;
+        // The round timeout is for draws only: a player thinking is never rushed by it.
         assert_eq!(
-            draw_to_retry(RoundStatus::PlayerTurn).unwrap_err(),
-            TiltError::WrongState.into()
+            expiry(&round, &config(), LAST_ACTION + abandoned - 1).unwrap_err(),
+            TiltError::RoundNotExpired.into()
         );
         assert_eq!(
-            draw_to_retry(RoundStatus::Idle).unwrap_err(),
+            expiry(&round, &config(), LAST_ACTION + abandoned).unwrap(),
+            Expiry::Abandoned
+        );
+    }
+
+    #[test]
+    fn a_settled_round_never_expires() {
+        assert_eq!(
+            expiry(&untouched(RoundStatus::Idle), &config(), i64::MAX).unwrap_err(),
             TiltError::WrongState.into()
         );
     }

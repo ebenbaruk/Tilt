@@ -1,5 +1,5 @@
 {
-  "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd",
+  "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8",
   "metadata": {
     "name": "tilt",
     "version": "0.1.0",
@@ -88,7 +88,7 @@
         },
         {
           "name": "this_program",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "escrow_auth"
@@ -218,6 +218,28 @@
                 "kind": "account",
                 "path": "account.player",
                 "account": "PlayerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -406,6 +428,28 @@
           }
         },
         {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracle_queue",
           "writable": true
         },
@@ -585,6 +629,28 @@
           }
         },
         {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracle_queue",
           "writable": true
         },
@@ -751,6 +817,28 @@
                 "kind": "account",
                 "path": "account.player",
                 "account": "PlayerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -927,6 +1015,28 @@
           }
         },
         {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracle_queue",
           "writable": true
         },
@@ -1093,6 +1203,28 @@
                 "kind": "account",
                 "path": "account.player",
                 "account": "PlayerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -1311,6 +1443,28 @@
               }
             ]
           }
+        },
+        {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -1400,6 +1554,28 @@
               }
             ]
           }
+        },
+        {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -1486,6 +1662,28 @@
                 "kind": "account",
                 "path": "account.player",
                 "account": "PlayerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -1585,6 +1783,28 @@
               }
             ]
           }
+        },
+        {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -1677,6 +1897,28 @@
               }
             ]
           }
+        },
+        {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -1763,6 +2005,28 @@
                 "kind": "account",
                 "path": "account.player",
                 "account": "PlayerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -1868,38 +2132,38 @@
             "program": {
               "kind": "const",
               "value": [
-                24,
-                12,
-                135,
-                51,
-                234,
-                253,
-                132,
-                42,
-                23,
-                91,
-                143,
-                100,
-                117,
-                247,
-                92,
-                216,
-                69,
-                90,
-                227,
-                83,
-                114,
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
                 248,
-                108,
-                194,
-                137,
-                171,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
                 145,
-                243,
-                105,
-                204,
-                132,
-                234
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
               ]
             }
           }
@@ -2001,7 +2265,7 @@
         },
         {
           "name": "owner_program",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "delegation_program",
@@ -2076,38 +2340,38 @@
             "program": {
               "kind": "const",
               "value": [
-                24,
-                12,
-                135,
-                51,
-                234,
-                253,
-                132,
-                42,
-                23,
-                91,
-                143,
-                100,
-                117,
-                247,
-                92,
-                216,
-                69,
-                90,
-                227,
-                83,
-                114,
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
                 248,
-                108,
-                194,
-                137,
-                171,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
                 145,
-                243,
-                105,
-                204,
-                132,
-                234
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
               ]
             }
           }
@@ -2206,7 +2470,7 @@
         },
         {
           "name": "owner_program",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "delegation_program",
@@ -2281,38 +2545,38 @@
             "program": {
               "kind": "const",
               "value": [
-                24,
-                12,
-                135,
-                51,
-                234,
-                253,
-                132,
-                42,
-                23,
-                91,
-                143,
-                100,
-                117,
-                247,
-                92,
-                216,
-                69,
-                90,
-                227,
-                83,
-                114,
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
                 248,
-                108,
-                194,
-                137,
-                171,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
                 145,
-                243,
-                105,
-                204,
-                132,
-                234
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
               ]
             }
           }
@@ -2412,7 +2676,7 @@
         },
         {
           "name": "owner_program",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "delegation_program",
@@ -2487,38 +2751,38 @@
             "program": {
               "kind": "const",
               "value": [
-                24,
-                12,
-                135,
-                51,
-                234,
-                253,
-                132,
-                42,
-                23,
-                91,
-                143,
-                100,
-                117,
-                247,
-                92,
-                216,
-                69,
-                90,
-                227,
-                83,
-                114,
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
                 248,
-                108,
-                194,
-                137,
-                171,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
                 145,
-                243,
-                105,
-                204,
-                132,
-                234
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
               ]
             }
           }
@@ -2618,7 +2882,210 @@
         },
         {
           "name": "owner_program",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
+        },
+        {
+          "name": "delegation_program",
+          "address": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "delegate_risk_pool",
+      "discriminator": [
+        139,
+        10,
+        122,
+        135,
+        85,
+        99,
+        226,
+        193
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "buffer_risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  102,
+                  102,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "risk_pool"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
+                248,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
+                145,
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "name": "delegation_record_risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "risk_pool"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegation_program"
+            }
+          }
+        },
+        {
+          "name": "delegation_metadata_risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  109,
+                  101,
+                  116,
+                  97,
+                  100,
+                  97,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "risk_pool"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegation_program"
+            }
+          }
+        },
+        {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner_program",
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "delegation_program",
@@ -2693,38 +3160,38 @@
             "program": {
               "kind": "const",
               "value": [
-                24,
-                12,
-                135,
-                51,
-                234,
-                253,
-                132,
-                42,
-                23,
-                91,
-                143,
-                100,
-                117,
-                247,
-                92,
-                216,
-                69,
-                90,
-                227,
-                83,
-                114,
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
                 248,
-                108,
-                194,
-                137,
-                171,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
                 145,
-                243,
-                105,
-                204,
-                132,
-                234
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
               ]
             }
           }
@@ -2827,7 +3294,7 @@
         },
         {
           "name": "owner_program",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "delegation_program",
@@ -2902,38 +3369,38 @@
             "program": {
               "kind": "const",
               "value": [
-                24,
-                12,
-                135,
-                51,
-                234,
-                253,
-                132,
-                42,
-                23,
-                91,
-                143,
-                100,
-                117,
-                247,
-                92,
-                216,
-                69,
-                90,
-                227,
-                83,
-                114,
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
                 248,
-                108,
-                194,
-                137,
-                171,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
                 145,
-                243,
-                105,
-                204,
-                132,
-                234
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
               ]
             }
           }
@@ -3035,7 +3502,7 @@
         },
         {
           "name": "owner_program",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "delegation_program",
@@ -3110,38 +3577,38 @@
             "program": {
               "kind": "const",
               "value": [
-                24,
-                12,
-                135,
-                51,
-                234,
-                253,
-                132,
-                42,
-                23,
-                91,
-                143,
-                100,
-                117,
-                247,
-                92,
-                216,
-                69,
-                90,
-                227,
-                83,
-                114,
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
                 248,
-                108,
-                194,
-                137,
-                171,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
                 145,
-                243,
-                105,
-                204,
-                132,
-                234
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
               ]
             }
           }
@@ -3241,7 +3708,7 @@
         },
         {
           "name": "owner_program",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "delegation_program",
@@ -3474,6 +3941,28 @@
           }
         },
         {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracle_queue",
           "writable": true
         },
@@ -3649,6 +4138,28 @@
           }
         },
         {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracle_queue",
           "writable": true
         },
@@ -3808,6 +4319,28 @@
                 "kind": "account",
                 "path": "account.player",
                 "account": "PlayerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -3977,6 +4510,28 @@
           }
         },
         {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracle_queue",
           "writable": true
         },
@@ -4139,6 +4694,28 @@
                 "kind": "account",
                 "path": "account.player",
                 "account": "PlayerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -4315,6 +4892,28 @@
           }
         },
         {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracle_queue",
           "writable": true
         },
@@ -4474,6 +5073,28 @@
                 "kind": "account",
                 "path": "account.player",
                 "account": "PlayerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -4643,6 +5264,28 @@
           }
         },
         {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracle_queue",
           "writable": true
         },
@@ -4795,6 +5438,72 @@
         {
           "name": "token_program",
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "fund_risk_pool",
+      "discriminator": [
+        231,
+        167,
+        50,
+        246,
+        96,
+        115,
+        103,
+        21
+      ],
+      "accounts": [
+        {
+          "name": "relayer",
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault_token",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -4999,6 +5708,28 @@
           }
         },
         {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracle_queue",
           "writable": true
         },
@@ -5166,6 +5897,28 @@
           }
         },
         {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracle_queue",
           "writable": true
         },
@@ -5314,6 +6067,28 @@
                 "kind": "account",
                 "path": "account.player",
                 "account": "PlayerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -5507,7 +6282,7 @@
         },
         {
           "name": "program",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "program_data"
@@ -5700,6 +6475,28 @@
           }
         },
         {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracle_queue",
           "writable": true
         },
@@ -5867,6 +6664,28 @@
                 "kind": "account",
                 "path": "account.player",
                 "account": "PlayerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -6044,6 +6863,28 @@
           }
         },
         {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracle_queue",
           "writable": true
         },
@@ -6207,6 +7048,28 @@
           }
         },
         {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracle_queue",
           "writable": true
         },
@@ -6356,6 +7219,28 @@
                 "kind": "account",
                 "path": "account.player",
                 "account": "PlayerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -6556,10 +7441,6 @@
       "args": [
         {
           "name": "amount",
-          "type": "u64"
-        },
-        {
-          "name": "max_win",
           "type": "u64"
         }
       ]
@@ -6837,6 +7718,73 @@
               {
                 "kind": "account",
                 "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "open_risk_pool",
+      "discriminator": [
+        63,
+        125,
+        127,
+        255,
+        173,
+        96,
+        42,
+        40
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The relay: pays the rent."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -7401,7 +8349,7 @@
         },
         {
           "name": "this_program",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "escrow_auth"
@@ -7518,96 +8466,6 @@
           "type": {
             "vec": "bytes"
           }
-        }
-      ]
-    },
-    {
-      "name": "raise_win_cap",
-      "discriminator": [
-        65,
-        167,
-        19,
-        207,
-        172,
-        97,
-        6,
-        209
-      ],
-      "accounts": [
-        {
-          "name": "relayer",
-          "signer": true
-        },
-        {
-          "name": "vault",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  118,
-                  97,
-                  117,
-                  108,
-                  116
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "vault_token",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  118,
-                  97,
-                  117,
-                  108,
-                  116,
-                  95,
-                  116,
-                  111,
-                  107,
-                  101,
-                  110
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "ledger",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  108,
-                  101,
-                  100,
-                  103,
-                  101,
-                  114
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "ledger.player",
-                "account": "Ledger"
-              }
-            ]
-          }
-        }
-      ],
-      "args": [
-        {
-          "name": "amount",
-          "type": "u64"
         }
       ]
     },
@@ -7857,6 +8715,28 @@
           }
         },
         {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracle_queue",
           "writable": true
         },
@@ -8033,6 +8913,28 @@
                 "kind": "account",
                 "path": "account.player",
                 "account": "PlayerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -8388,6 +9290,28 @@
           }
         },
         {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracle_queue",
           "writable": true
         },
@@ -8551,6 +9475,28 @@
                 "kind": "account",
                 "path": "account.player",
                 "account": "PlayerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -8723,6 +9669,28 @@
           }
         },
         {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracle_queue",
           "writable": true
         },
@@ -8872,6 +9840,28 @@
                 "kind": "account",
                 "path": "account.player",
                 "account": "PlayerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -9045,6 +10035,28 @@
           }
         },
         {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracle_queue",
           "writable": true
         },
@@ -9191,6 +10203,28 @@
                 "kind": "account",
                 "path": "account.player",
                 "account": "PlayerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "risk_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -9520,6 +10554,19 @@
       ]
     },
     {
+      "name": "RiskPool",
+      "discriminator": [
+        101,
+        46,
+        90,
+        100,
+        248,
+        9,
+        6,
+        213
+      ]
+    },
+    {
       "name": "RouletteTable",
       "discriminator": [
         176,
@@ -9600,6 +10647,19 @@
       ]
     },
     {
+      "name": "WinsReleased",
+      "discriminator": [
+        200,
+        218,
+        6,
+        169,
+        223,
+        22,
+        124,
+        244
+      ]
+    },
+    {
       "name": "WithdrawalHeld",
       "discriminator": [
         180,
@@ -9669,8 +10729,8 @@
     },
     {
       "code": 6008,
-      "name": "WinCapReached",
-      "msg": "Lifetime win cap reached"
+      "name": "RiskPoolFull",
+      "msg": "The house's risk pool cannot cover this bet right now"
     },
     {
       "code": 6009,
@@ -9699,46 +10759,41 @@
     },
     {
       "code": 6014,
-      "name": "MaxWinTooHigh",
-      "msg": "Max win above the allowed limit"
-    },
-    {
-      "code": 6015,
       "name": "WithdrawalTooSmall",
       "msg": "Withdrawal below the minimum"
     },
     {
-      "code": 6016,
+      "code": 6015,
       "name": "NothingToCheckpoint",
-      "msg": "No loss to release"
+      "msg": "No loss or secured win to release"
     },
     {
-      "code": 6017,
+      "code": 6016,
       "name": "StaleRandomness",
       "msg": "Randomness does not answer the pending request"
     },
     {
-      "code": 6018,
+      "code": 6017,
       "name": "InvalidConfig",
       "msg": "Invalid configuration"
     },
     {
-      "code": 6019,
+      "code": 6018,
       "name": "PromoCapReached",
       "msg": "Promo payout above the pool's limits"
     },
     {
-      "code": 6020,
+      "code": 6019,
       "name": "MissingTable",
       "msg": "Blackjack needs the player's table account"
     },
     {
-      "code": 6021,
+      "code": 6020,
       "name": "InvalidTile",
       "msg": "Mines tile already revealed or off the board"
     },
     {
-      "code": 6022,
+      "code": 6021,
       "name": "InvalidChoice",
       "msg": "Choice outside the game's rules"
     }
@@ -9935,35 +10990,24 @@
           {
             "name": "min_bet",
             "docs": [
-              "Smallest stake. Whatever a round gains, a win pays Tilt at least `MIN_FEE` (`settle`)."
+              "Smallest stake, at least `MIN_BET_FLOOR`. Whatever a round gains, a win pays Tilt at",
+              "least `MIN_FEE` (`settle`)."
             ],
             "type": "u64"
           },
           {
             "name": "max_bet",
             "docs": [
-              "Largest stake for one round, in USDC base units."
+              "Largest stake of one bet, in USDC base units: a blackjack hand, a roulette chip (a",
+              "`roulette_chips` spin stakes up to `MAX_CHIPS` of them), the bet of any other round."
             ],
             "type": "u64"
           },
           {
             "name": "max_round_gain",
             "docs": [
-              "Largest gain one round may produce (caps e.g. straight-up roulette and slot jackpots)."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "max_player_win",
-            "docs": [
-              "Largest lifetime net win reserved for one player."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "max_win_multiple",
-            "docs": [
-              "A player's reserved max win may not exceed this multiple of their first deposit."
+              "Largest gain one round may produce (caps e.g. straight-up roulette and slot jackpots).",
+              "Also the most one round can take from the risk pool (`risk::required_reserve`)."
             ],
             "type": "u64"
           },
@@ -10015,7 +11059,17 @@
           {
             "name": "round_timeout_secs",
             "docs": [
-              "A round untouched this long can be closed by the relayer."
+              "A draw not answered this long can be requested again by the relayer."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "abandoned_round_secs",
+            "docs": [
+              "A round left waiting for the player this long (a blackjack hand, a Mines, Hilo or Tower",
+              "board) is closed for them by the relayer: stand, or cash-out at the current value. Until",
+              "then it holds its share of the risk pool and blocks `checkpoint`. At least",
+              "`round_timeout_secs`."
             ],
             "type": "i64"
           },
@@ -10263,9 +11317,18 @@
             "type": "u64"
           },
           {
-            "name": "max_win",
+            "name": "win_reserved",
             "docs": [
-              "The player's win cap: set at the first deposit, raised by `raise_win_cap` as they win."
+              "House money reserved for the player's wins, moved from the risk pool's line when a",
+              "withdrawal needs it; never decreases."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "win_released",
+            "docs": [
+              "Part of `win_reserved` given back to the house by `checkpoint` once the player lost",
+              "it again; never decreases."
             ],
             "type": "u64"
           },
@@ -10381,10 +11444,6 @@
             "type": "pubkey"
           },
           {
-            "name": "max_win",
-            "type": "u64"
-          },
-          {
             "name": "credited",
             "docs": [
               "Deposits already credited from the ledger; never decreases."
@@ -10402,6 +11461,30 @@
             "name": "withdrawn",
             "docs": [
               "Total ever withdrawn; never decreases."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "win_reserved",
+            "docs": [
+              "House money moved from the risk pool to Solana for this player's wins (`secure_wins`,",
+              "before a withdrawal); never decreases. Solana mirrors it in `Ledger::win_reserved`."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "win_released",
+            "docs": [
+              "Part of `win_reserved` given back to the house once lost again (`checkpoint`); never",
+              "decreases."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "uncovered",
+            "docs": [
+              "Net wins beyond the secured ones: the risk pool pays them until a withdrawal secures",
+              "them (its share of `RiskPool::uncovered`)."
             ],
             "type": "u64"
           },
@@ -10427,6 +11510,26 @@
                 "name": "Round"
               }
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Pooled",
+      "docs": [
+        "What an open round puts on the pool: the part of its worst case the player's secured wins",
+        "do not already cover (`gain`), and its stake. `gain` is at most `max_round_gain`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "gain",
+            "type": "u64"
+          },
+          {
+            "name": "stake",
+            "type": "u64"
           }
         ]
       }
@@ -10693,6 +11796,53 @@
       }
     },
     {
+      "name": "RiskPool",
+      "docs": [
+        "Lives in the rollup (delegated once), next to the player accounts. Every round that puts",
+        "something on the pool reprices it at its start (`reprice`) and takes it off at its end",
+        "(`close`): the bankroll it needed is free again at once."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "gains",
+            "docs": [
+              "Open rounds: Σ `gain`, Σ `stake` and Σ `gain × stake`."
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "stakes",
+            "type": "u128"
+          },
+          {
+            "name": "exposure",
+            "type": "u128"
+          },
+          {
+            "name": "uncovered",
+            "docs": [
+              "Players' net wins the pool pays and Solana has not secured yet (Σ their `uncovered`)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "transferred",
+            "docs": [
+              "Total moved from the pool to players' secured wins (`secure`); never decreases.",
+              "Solana mirrors it in `Vault::pool_transferred`."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "RouletteBet",
       "type": {
         "kind": "enum",
@@ -10912,6 +12062,17 @@
             "type": {
               "defined": {
                 "name": "SlotsSpin"
+              }
+            }
+          },
+          {
+            "name": "pooled",
+            "docs": [
+              "What the round puts on the risk pool until it settles."
+            ],
+            "type": {
+              "defined": {
+                "name": "Pooled"
               }
             }
           }
@@ -11180,8 +12341,9 @@
           {
             "name": "reserved",
             "docs": [
-              "What the vault may owe in the worst case: for every player,",
-              "deposited - forfeited - withdrawn_paid + max_win."
+              "What the vault may owe in the worst case: for every player, deposited - forfeited -",
+              "withdrawn_paid + their secured wins, plus what is left of the risk pool's line",
+              "(pool_line - pool_transferred)."
             ],
             "type": "u64"
           },
@@ -11200,6 +12362,21 @@
           {
             "name": "window_paid",
             "type": "u64"
+          },
+          {
+            "name": "pool_line",
+            "docs": [
+              "Bankroll granted to the risk pool so far (`fund_risk_pool`), reserved; never decreases."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "pool_transferred",
+            "docs": [
+              "Part of `pool_line` moved to players' secured wins (`Ledger::win_reserved`), as the",
+              "rollup's `RiskPool::transferred` reports it; never decreases."
+            ],
+            "type": "u64"
           }
         ]
       }
@@ -11217,6 +12394,29 @@
           },
           {
             "name": "High"
+          }
+        ]
+      }
+    },
+    {
+      "name": "WinsReleased",
+      "docs": [
+        "Secured wins the player lost again, back to the house."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "player",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "released_total",
+            "type": "u64"
           }
         ]
       }

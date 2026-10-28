@@ -6,14 +6,15 @@ use anchor_lang::prelude::*;
 use ephemeral_rollups_sdk::anchor::{delegate, vrf, vrf_callback};
 use ephemeral_rollups_sdk::cpi::DelegateConfig;
 
-use crate::constants::{ACCOUNT_SEED, HILO_SEED, LEDGER_SEED, VAULT_SEED};
+use crate::constants::{ACCOUNT_SEED, HILO_SEED, LEDGER_SEED, RISK_POOL_SEED, VAULT_SEED};
 use crate::errors::TiltError;
 use crate::games::hilo::{self, HiloBoard, HiloMove};
 use crate::instructions::play::{
-    callback_account, draw_request, expired_draw, now, pending_draw, settle_round,
+    callback_account, draw_request, expiry, now, pending_draw, settle_round, Expiry,
 };
+use crate::risk::RiskPool;
 use crate::rng::Rng;
-use crate::state::{Config, Draw, Game, Ledger, PlayerAccount, Round, RoundStatus, Vault};
+use crate::state::{Bankroll, Draw, Game, Ledger, PlayerAccount, Round, RoundStatus, Vault};
 
 #[derive(Accounts)]
 pub struct OpenHiloBoard<'info> {
@@ -87,6 +88,8 @@ pub struct HiloPlay<'info> {
     pub ledger: Account<'info, Ledger>,
     #[account(mut, seeds = [HILO_SEED, account.player.as_ref()], bump)]
     pub board: Account<'info, HiloBoard>,
+    #[account(mut, seeds = [RISK_POOL_SEED], bump = risk_pool.bump)]
+    pub risk_pool: Account<'info, RiskPool>,
     /// CHECK: the configured MagicBlock VRF queue; also validated by the VRF program
     #[account(mut, address = vault.config.vrf_queue @ TiltError::Unauthorized)]
     pub oracle_queue: UncheckedAccount<'info>,
@@ -100,20 +103,22 @@ pub struct ConsumeHiloRandomness<'info> {
     pub account: Account<'info, PlayerAccount>,
     #[account(mut, seeds = [HILO_SEED, account.player.as_ref()], bump)]
     pub board: Account<'info, HiloBoard>,
+    #[account(mut, seeds = [RISK_POOL_SEED], bump = risk_pool.bump)]
+    pub risk_pool: Account<'info, RiskPool>,
 }
 
 /// Takes the stake of a new round and resets the board; the first card is drawn next. The
-/// round reserves `hilo::max_gain`, in proportion to the stake (never the whole round limit for
-/// a small bet).
+/// round puts `hilo::max_gain` on the risk pool, in proportion to the stake (never the whole
+/// round limit for a small bet).
 fn start_hilo(
     account: &mut PlayerAccount,
     board: &mut HiloBoard,
     amount: u64,
-    config: &Config,
+    bank: &mut Bankroll,
     now: i64,
 ) -> Result<()> {
-    let max_gain = hilo::max_gain(amount, config.max_round_gain);
-    account.start_round(Game::Hilo, amount, 1, max_gain, config, now)?;
+    let max_gain = hilo::max_gain(amount, bank.config.max_round_gain);
+    account.start_round(Game::Hilo, amount, 1, max_gain, bank, now)?;
     board.start(amount, max_gain);
     Ok(())
 }
@@ -148,12 +153,13 @@ fn check_hilo_draw(round: &Round, board: &HiloBoard, request_id: u64) -> Result<
     Ok(())
 }
 
-/// Asks for the awaited card, answered by `consume_hilo_randomness` with the player account
-/// and the board.
+/// Asks for the awaited card, answered by `consume_hilo_randomness` with the player account,
+/// the board and the risk pool.
 fn request_card(ctx: &mut Context<HiloPlay>, client_seed: [u8; 32]) -> Result<()> {
     let accounts = vec![
         callback_account(ctx.accounts.account.key()),
         callback_account(ctx.accounts.board.key()),
+        callback_account(ctx.accounts.risk_pool.key()),
     ];
     let ix = draw_request(
         &mut ctx.accounts.account.round,
@@ -170,15 +176,14 @@ fn request_card(ctx: &mut Context<HiloPlay>, client_seed: [u8; 32]) -> Result<()
 }
 
 pub fn hilo_bet(mut ctx: Context<HiloPlay>, amount: u64, client_seed: [u8; 32]) -> Result<()> {
-    let accounts = &mut ctx.accounts;
-    accounts.account.sync_ledger(&accounts.ledger);
-    start_hilo(
-        &mut accounts.account,
-        &mut accounts.board,
-        amount,
-        &accounts.vault.config,
-        now()?,
-    )?;
+    let a = &mut ctx.accounts;
+    a.account.sync_ledger(&a.ledger);
+    let mut bank = Bankroll {
+        config: &a.vault.config,
+        pool: &mut a.risk_pool,
+        line: a.vault.pool_line,
+    };
+    start_hilo(&mut a.account, &mut a.board, amount, &mut bank, now()?)?;
     request_card(&mut ctx, client_seed)
 }
 
@@ -197,23 +202,34 @@ pub fn hilo_guess(
 pub fn hilo_cashout(ctx: Context<HiloPlay>) -> Result<()> {
     let accounts = ctx.accounts;
     check_cash_out(&accounts.account.round, &accounts.board)?;
+    cash_out(accounts);
+    Ok(())
+}
+
+fn cash_out(accounts: &mut HiloPlay) {
     let request_id = accounts.account.round.request_id;
     settle_round(
         &mut accounts.account,
+        &mut accounts.risk_pool,
         accounts.board.gross(),
         request_id,
         [0; 32],
     );
-    Ok(())
 }
 
-/// Relay cron: requests an awaited card again, like `expire_round`. A board waiting for the
-/// player never expires.
+/// Relay cron: requests an awaited card again, like `expire_round`. A board left waiting
+/// for the player for `abandoned_round_secs` is cashed out for them at its current value,
+/// 0.98x the stake before any right guess.
 pub fn expire_hilo_round(mut ctx: Context<HiloPlay>, client_seed: [u8; 32]) -> Result<()> {
     let round = &ctx.accounts.account.round;
     require!(round.game == Game::Hilo, TiltError::WrongState);
-    expired_draw(round, ctx.accounts.vault.config.round_timeout_secs)?;
-    request_card(&mut ctx, client_seed)
+    match expiry(round, &ctx.accounts.vault.config, now()?)? {
+        Expiry::Retry(_) => request_card(&mut ctx, client_seed),
+        Expiry::Abandoned => {
+            cash_out(ctx.accounts);
+            Ok(())
+        }
+    }
 }
 
 /// VRF callback for cards: a wrong guess busts the round, the cap or a full board cashes out,
@@ -231,7 +247,13 @@ pub fn consume_hilo_randomness(
         round.last_action = now()?;
         return Ok(());
     };
-    settle_round(&mut accounts.account, gross, request_id, randomness);
+    settle_round(
+        &mut accounts.account,
+        &mut accounts.risk_pool,
+        gross,
+        request_id,
+        randomness,
+    );
     Ok(())
 }
 
@@ -239,8 +261,31 @@ pub fn consume_hilo_randomness(
 mod tests {
     use super::*;
     use crate::games::hilo::{randomness_for, FAIR_ONE};
-    use crate::instructions::testing::{account, config};
+    use crate::instructions::testing::{account, bank, config, pool_of};
     use crate::settlement::settle;
+    use crate::state::Config;
+
+    /// `start_hilo` against a risk pool that covers anything.
+    fn start(a: &mut PlayerAccount, b: &mut HiloBoard, amount: u64, config: &Config) -> Result<()> {
+        let mut pool = RiskPool::default();
+        start_hilo(a, b, amount, &mut bank(config, &mut pool), 0)
+    }
+
+    /// `start_hilo` against a risk pool whose line is `line`.
+    fn start_within(
+        a: &mut PlayerAccount,
+        b: &mut HiloBoard,
+        amount: u64,
+        line: u64,
+    ) -> Result<()> {
+        let (c, mut pool) = (config(), RiskPool::default());
+        let mut bank = Bankroll {
+            config: &c,
+            pool: &mut pool,
+            line,
+        };
+        start_hilo(a, b, amount, &mut bank, 0)
+    }
 
     /// Requests a card like the instructions do, then plays the first seed giving `rank`.
     fn card(a: &mut PlayerAccount, b: &mut HiloBoard, rank: u8) -> Option<u64> {
@@ -249,7 +294,7 @@ mod tests {
         check_hilo_draw(&a.round, b, a.round.request_id).unwrap();
         let gross = b.draw(&mut Rng::from_vrf(randomness_for(rank)));
         match gross {
-            Some(gross) => a.finish_round(settle(a.round.stake, gross)),
+            Some(gross) => a.finish_round(settle(a.round.stake, gross), &mut pool_of(a)),
             None => a.round.status = RoundStatus::PlayerTurn,
         }
         gross
@@ -258,9 +303,16 @@ mod tests {
     /// A round of 1 000 000 showing `first`, waiting for the player.
     fn started(first: u8) -> (PlayerAccount, HiloBoard) {
         let (mut a, mut b) = (account(), HiloBoard::default());
-        start_hilo(&mut a, &mut b, 1_000_000, &config(), 0).unwrap();
+        start(&mut a, &mut b, 1_000_000, &config()).unwrap();
         assert_eq!(card(&mut a, &mut b, first), None);
         (a, b)
+    }
+
+    #[test]
+    fn an_abandoned_board_returns_its_cash_out_value_0_98x_before_any_right_guess() {
+        let (a, b) = started(7);
+        assert!(check_cash_out(&a.round, &b).is_err());
+        assert_eq!(b.gross(), 980_000);
     }
 
     fn guess(a: &mut PlayerAccount, b: &mut HiloBoard, guess: HiloMove, next: u8) -> Option<u64> {
@@ -272,7 +324,7 @@ mod tests {
     #[test]
     fn a_bet_takes_the_stake_and_draws_the_first_card() {
         let (mut a, mut b) = (account(), HiloBoard::default());
-        start_hilo(&mut a, &mut b, 1_000_000, &config(), 0).unwrap();
+        start(&mut a, &mut b, 1_000_000, &config()).unwrap();
         assert_eq!((a.balance, a.round.game), (9_000_000, Game::Hilo));
         assert_eq!((b.max_gain, b.fair), (50_000_000, FAIR_ONE));
         assert_eq!(
@@ -297,7 +349,7 @@ mod tests {
         assert_eq!(guess(&mut a, &mut b, HiloMove::Lower, 9), None);
         check_cash_out(&a.round, &b).unwrap();
         assert_eq!(b.gross(), 1_415_555);
-        a.finish_round(settle(a.round.stake, b.gross()));
+        a.finish_round(settle(a.round.stake, b.gross()), &mut pool_of(&a));
         assert_eq!((a.round.payout, a.round.fee), (1_411_400, 4_155));
     }
 
@@ -337,7 +389,7 @@ mod tests {
             ..config()
         };
         let (mut a, mut b) = (account(), HiloBoard::default());
-        start_hilo(&mut a, &mut b, 1_000_000, &small, 0).unwrap();
+        start(&mut a, &mut b, 1_000_000, &small).unwrap();
         card(&mut a, &mut b, 2);
         // Lower from 2: 6.5x, past the 3x cap.
         assert_eq!(guess(&mut a, &mut b, HiloMove::Lower, 1), Some(3_000_000));
@@ -345,12 +397,12 @@ mod tests {
     }
 
     #[test]
-    fn the_round_limit_and_the_win_cap_apply() {
+    fn the_round_limit_and_the_risk_pool_apply() {
+        // 1 000 000 may gain the whole 50 000 000 round limit.
         let (mut a, mut b) = (account(), HiloBoard::default());
-        a.max_win = 49_999_999;
         assert_eq!(
-            start_hilo(&mut a, &mut b, 1_000_000, &config(), 0),
-            Err(TiltError::WinCapReached.into())
+            start_within(&mut a, &mut b, 1_000_000, 49_999_999),
+            Err(TiltError::RiskPoolFull.into())
         );
         assert_eq!(
             b,
@@ -360,17 +412,15 @@ mod tests {
     }
 
     #[test]
-    fn a_small_bet_reserves_a_gain_in_proportion_to_its_stake() {
-        // Headroom far below the 50 000 000 round limit: a 1 000 bet only needs 9 999 000.
+    fn a_small_bet_puts_a_gain_in_proportion_to_its_stake_on_the_pool() {
+        // Far below the 50 000 000 round limit: a 1 000 bet may only gain 9 999 000.
         let (mut a, mut b) = (account(), HiloBoard::default());
-        a.max_win = 9_999_000;
-        start_hilo(&mut a, &mut b, 1_000, &config(), 0).unwrap();
+        start_within(&mut a, &mut b, 1_000, 9_999_000).unwrap();
         assert_eq!(b.max_gain, 9_999_000);
         let (mut a, mut b) = (account(), HiloBoard::default());
-        a.max_win = 9_998_999;
         assert_eq!(
-            start_hilo(&mut a, &mut b, 1_000, &config(), 0),
-            Err(TiltError::WinCapReached.into())
+            start_within(&mut a, &mut b, 1_000, 9_998_999),
+            Err(TiltError::RiskPoolFull.into())
         );
     }
 

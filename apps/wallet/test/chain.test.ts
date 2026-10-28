@@ -1,7 +1,7 @@
 // The relay's transactions, with both RPC connections stubbed: which instruction each action
 // becomes, which table or board it passes, how a missing game account (blackjack table,
-// one-draw table, Mines, Hilo or Tower board) gets opened first, and how a move past the win
-// cap raises it.
+// one-draw table, Mines, Hilo or Tower board) gets opened first, only for a move the program
+// would take, and how the house's risk pool travels with every round and withdrawal.
 import anchor from "@coral-xyz/anchor";
 import { type AccountInfo, Keypair, PublicKey, type Transaction } from "@solana/web3.js";
 import {
@@ -12,12 +12,13 @@ import {
   minesBoardAddress,
   PROGRAM_ID,
   quickTableAddress,
+  riskPoolAddress,
   rouletteTableAddress,
   tableAddress,
   towerBoardAddress,
 } from "@tilt/contract";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TiltChain, winCapShortfall } from "../src/chain";
+import { type Ledger, type PlayerAccount, TiltChain, type Vault } from "../src/chain";
 
 type GameAction = Exclude<Action, { type: "open_account" | "deposit" | "withdraw" }>;
 
@@ -35,7 +36,24 @@ interface Fakes {
   rollupMisses: number;
   /** The open + delegate transaction fails to simulate. */
   openRefused?: boolean;
+  /** The player's balance in the rollup (default 100 USDC), and whether a round is open. */
+  balance?: number;
+  roundOpen?: boolean;
 }
+
+const MIN_BET = 100_000;
+const MAX_BET = 10_000_000;
+
+const ledgerOf = (player: PublicKey): Ledger => ({
+  player,
+  deposited: new anchor.BN(0),
+  withdrawnPaid: new anchor.BN(0),
+  forfeited: new anchor.BN(0),
+  winReserved: new anchor.BN(0),
+  winReleased: new anchor.BN(0),
+  windowStart: new anchor.BN(0),
+  windowPaid: new anchor.BN(0),
+});
 
 /** A TiltChain whose Solana and rollup connections are stubbed; records what gets sent. */
 function stubbedChain(fakes: Fakes) {
@@ -90,6 +108,14 @@ function stubbedChain(fakes: Fakes) {
     context: { slot: 1 },
     value: [{ slot: 1, confirmations: null, err: null, confirmationStatus: "confirmed" }],
   });
+  // What `play` checks before paying a game account's rent: only the fields it reads.
+  vi.spyOn(chain, "fetchVault").mockResolvedValue({ config: { betsPaused: false, minBet: new anchor.BN(MIN_BET), maxBet: new anchor.BN(MAX_BET) } } as unknown as Vault);
+  vi.spyOn(chain, "fetchPlayerAccount").mockImplementation(async () => ({
+    balance: new anchor.BN(fakes.balance ?? 100_000_000),
+    credited: new anchor.BN(0),
+    round: { status: fakes.roundOpen ? { playerTurn: {} } : { idle: {} } },
+  }) as unknown as PlayerAccount);
+  vi.spyOn(chain, "fetchLedger").mockResolvedValue(ledgerOf(player));
   return { chain, player, sent };
 }
 
@@ -420,112 +446,69 @@ describe("new games' accounts", () => {
     expect(sent.solana).toHaveLength(0);
     expect(sent.rollup.map(instructionNames)).toEqual([["roulette_spin"]]);
   });
+
+  const refused: { name: string; fakes: Partial<Fakes>; action: GameAction; error: string }[] = [
+    { name: "a stake above the balance", fakes: { balance: 500_000 }, action: { type: "hilo_bet", amount: "1000000" }, error: "InsufficientBalance" },
+    { name: "chips adding up past the balance", fakes: { balance: 1_500_000 }, action: { type: "roulette_chips", chips: [{ bet: { kind: "odd" }, amount: "1000000" }, { bet: { kind: "red" }, amount: "1000000" }] }, error: "InsufficientBalance" },
+    { name: "a round already open", fakes: { roundOpen: true }, action: { type: "tower_bet", amount: "1000000", difficulty: "easy" }, error: "RoundInProgress" },
+    { name: "a bet below the minimum", fakes: {}, action: { type: "dice_roll", amount: String(MIN_BET - 1), target: 5_000, over: false }, error: "AmountOutOfRange" },
+    { name: "a bet above the maximum", fakes: {}, action: { type: "mines_bet", amount: String(MAX_BET + 1), mines: 3 }, error: "AmountOutOfRange" },
+  ];
+
+  for (const { name, fakes, action, error } of refused) {
+    it(`pays no account's rent for ${action.type} with ${name}: refused ${error}`, async () => {
+      const { chain, player, sent } = stubbedChain({ tableOnSolana: false, rollupMisses: 0, ...fakes });
+      await expect(chain.play(player, action, record)).rejects.toMatchObject({ code: "PROGRAM_ERROR", message: error });
+      expect(sent.solana).toHaveLength(0);
+      expect(sent.rollup).toHaveLength(0);
+    });
+  }
 });
 
-describe("rolling win cap", () => {
-  const SHORT_LOGS = [
-    "Program log: Instruction: SlotsSpin",
-    "Program log: Win cap short by 248000000",
-    "Program log: AnchorError occurred. Error Code: WinCapReached. Error Number: 6008. Error Message: Lifetime win cap reached.",
-  ];
-  const ledgerData = (player: PublicKey, maxWin: number) =>
-    new anchor.BorshAccountsCoder(idl as anchor.Idl).encode("Ledger", {
-      player,
-      deposited: new anchor.BN(0),
-      withdrawn_paid: new anchor.BN(0),
-      forfeited: new anchor.BN(0),
-      max_win: new anchor.BN(maxWin),
-      window_start: new anchor.BN(0),
-      window_paid: new anchor.BN(0),
-    });
-
-  it("reads by how much the program found the move past the cap", () => {
-    expect(winCapShortfall(SHORT_LOGS)).toBe(248_000_000n);
-    expect(winCapShortfall(["Program log: Error Code: InsufficientBalance."])).toBeUndefined();
+describe("risk pool", () => {
+  it("passes the house's risk pool to every round move and to withdrawals", async () => {
+    const { chain, player } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
+    vi.spyOn(chain, "fetchVault").mockResolvedValue({ mint: Keypair.generate().publicKey } as unknown as Vault);
+    const moves: GameAction[] = [
+      bet as GameAction,
+      { type: "blackjack_stand" },
+      { type: "slots_spin", amount: "1000000" },
+      { type: "mines_bet", amount: "1000000", mines: 3 },
+      { type: "dice_roll", amount: "1000000", target: 5_000, over: false },
+      { type: "roulette_chips", chips: [{ bet: { kind: "odd" }, amount: "1000000" }] },
+    ];
+    for (const move of [...moves, { type: "withdraw", amount: "1000000" } as const]) {
+      const [ix] = (await chain.playTransaction(player, move)).instructions;
+      expect(ix.keys.some((k) => k.pubkey.equals(riskPoolAddress()) && k.isWritable), move.type).toBe(true);
+    }
   });
 
-  const spin: Action = { type: "slots_spin", amount: "1000000" };
-  const ledgerInfo = async (player: PublicKey, maxWin: number) => ({ ...accountInfo(PROGRAM_ID), data: await ledgerData(player, maxWin) });
-
-  /** The ledger on Solana and the rollup's copies of it, read in turn (the last one repeats);
-   *  the first spin is refused 248 000 000 past the cap. */
-  async function refusedSpin(solanaMaxWin: number, rollupMaxWins: number[]) {
-    const { chain, player, sent } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
-    const onSolana = await ledgerInfo(player, solanaMaxWin);
-    vi.mocked(chain.base.getAccountInfo).mockImplementation(async (address) => (address.equals(ledgerAddress(player)) ? onSolana : null));
-    // Anchor reads accounts with their context.
-    vi.spyOn(chain.base, "getAccountInfoAndContext").mockResolvedValue({ context: { slot: 1 }, value: onSolana });
-    const copies = await Promise.all(rollupMaxWins.map((maxWin) => ledgerInfo(player, maxWin)));
-    vi.spyOn(chain.rollup, "getAccountInfoAndContext").mockImplementation(async () => ({ context: { slot: 1 }, value: copies.length > 1 ? copies.shift()! : copies[0] }));
-    vi.mocked(chain.rollup.simulateTransaction).mockImplementationOnce(async (tx) => {
-      if (!("version" in tx)) sent.rollup.push(tx);
-      return { context: { slot: 1 }, value: { err: { InstructionError: [0, { Custom: 6008 }] }, logs: SHORT_LOGS, accounts: null, unitsConsumed: 0, returnData: null } };
-    });
-    return { chain, player, sent };
-  }
-
-  it("raises the cap on Solana by exactly the shortfall, waits for the rollup, then sends the move again", async () => {
-    const { chain, player, sent } = await refusedSpin(2_000_000, [2_000_000, 2_000_000, 250_000_000]);
-
-    await chain.play(player, spin, record);
-
-    expect(sent.solana.map(instructionNames)).toEqual([["raise_win_cap"]]);
-    const raise = coder.decode(sent.solana[0].instructions[0].data)?.data;
-    expect(raise && "amount" in raise ? String(raise.amount) : undefined).toBe("248000000");
-    expect(sent.rollup.map(instructionNames)).toEqual([["slots_spin"], ["slots_spin"]]);
-  });
-
-  it("refuses the move, retryable, when the rollup never sees the raised cap", async () => {
-    const { chain, player, sent } = await refusedSpin(2_000_000, [2_000_000]);
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.mocked(chain.rollup.getAccountInfoAndContext).mockImplementation(async () => {
-      vi.setSystemTime(Date.now() + 10_000);
-      return { context: { slot: 1 }, value: await ledgerInfo(player, 2_000_000) };
-    });
-
-    await expect(chain.play(player, spin, record)).rejects.toMatchObject({ code: "NETWORK_ERROR" });
-    expect(sent.solana.map(instructionNames)).toEqual([["raise_win_cap"]]);
-    expect(sent.rollup.map(instructionNames)).toEqual([["slots_spin"]]);
-  });
-
-  it("never raises the cap again for a raise the rollup has not seen yet", async () => {
-    // A retry after the case above: Solana already holds 250 000 000, the rollup still checks 2 000 000.
-    const { chain, player, sent } = await refusedSpin(250_000_000, [2_000_000, 2_000_000, 250_000_000]);
-
-    await chain.play(player, spin, record);
-
-    expect(sent.solana).toHaveLength(0);
-    expect(sent.rollup.map(instructionNames)).toEqual([["slots_spin"], ["slots_spin"]]);
-  });
-
-  it("raises only what Solana's cap lacks when the rollup lags a smaller raise", async () => {
-    const { chain, player, sent } = await refusedSpin(100_000_000, [2_000_000, 250_000_000]);
-
-    await chain.play(player, spin, record);
-
-    const raise = coder.decode(sent.solana[0].instructions[0].data)?.data;
-    expect(raise && "amount" in raise ? String(raise.amount) : undefined).toBe("150000000");
-  });
-
-  it("never raises the cap for a move that stakes nothing", async () => {
+  it("passes a bet the pool cannot cover on as the program's refusal, sending nothing to Solana", async () => {
     const { chain, player, sent } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
     vi.mocked(chain.rollup.simulateTransaction).mockImplementationOnce(async () => ({
       context: { slot: 1 },
-      value: { err: { InstructionError: [0, { Custom: 6008 }] }, logs: SHORT_LOGS, accounts: null, unitsConsumed: 0, returnData: null },
+      value: { err: { InstructionError: [0, { Custom: 6008 }] }, logs: ["Program log: Error Code: RiskPoolFull."], accounts: null, unitsConsumed: 0, returnData: null },
     }));
 
-    await expect(chain.play(player, { type: "hilo_guess", guess: "higher" }, record)).rejects.toMatchObject({ code: "PROGRAM_ERROR", message: "WinCapReached" });
+    await expect(chain.play(player, { type: "slots_spin", amount: "1000000" }, record)).rejects.toMatchObject({ code: "PROGRAM_ERROR", message: "RiskPoolFull" });
     expect(sent.solana).toHaveLength(0);
   });
 
-  it("passes any other refusal on, untouched", async () => {
-    const { chain, player, sent } = stubbedChain({ tableOnSolana: true, rollupMisses: 0 });
-    vi.mocked(chain.rollup.simulateTransaction).mockImplementationOnce(async () => ({
-      context: { slot: 1 },
-      value: { err: { InstructionError: [0, { Custom: 6007 }] }, logs: ["Program log: Error Code: InsufficientBalance."], accounts: null, unitsConsumed: 0, returnData: null },
-    }));
+  it("opens and delegates the risk pool once, on a fresh deployment", async () => {
+    const { chain, sent } = stubbedChain({ tableOnSolana: false, rollupMisses: 1 });
+    const onSolana = vi.mocked(chain.base.getAccountInfo);
+    const inRollup = vi.mocked(chain.rollup.getAccountInfo);
+    let opened = false;
+    onSolana.mockImplementation(async (address) => (address.equals(riskPoolAddress()) && opened ? accountInfo(PROGRAM_ID) : null));
+    vi.mocked(chain.base.sendRawTransaction).mockImplementation(async () => {
+      opened = true;
+      return "solana-sig";
+    });
+    inRollup.mockImplementation(async (address) => (address.equals(riskPoolAddress()) && opened ? accountInfo(PROGRAM_ID) : null));
 
-    await expect(chain.play(player, { type: "slots_spin", amount: "1000000" }, record)).rejects.toMatchObject({ code: "PROGRAM_ERROR", message: "InsufficientBalance" });
-    expect(sent.solana).toHaveLength(0);
+    await chain.ensureRiskPool();
+    await chain.ensureRiskPool();
+
+    expect(sent.solana.map(instructionNames)).toEqual([["open_risk_pool", "delegate_risk_pool"]]);
   });
 });

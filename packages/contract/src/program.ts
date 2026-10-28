@@ -44,6 +44,10 @@ export const rouletteTableAddress = (player: PublicKey) => pda(Buffer.from("roul
 /** Solana's record of a player's deposits and paid withdrawals. */
 export const ledgerAddress = (player: PublicKey) => pda(Buffer.from("ledger"), player.toBuffer());
 
+/** The house's risk pool: what open rounds may still win and wins not yet secured on Solana,
+ *  against the bankroll line Solana granted it (`Vault.poolLine`); lives in the rollup. */
+export const riskPoolAddress = () => pda(Buffer.from("risk_pool"));
+
 /** Sponsor prize pool and its USDC token account (Solana). */
 export const promoAddress = () => pda(Buffer.from("promo"));
 export const promoTokenAddress = () => pda(Buffer.from("promo_token"));

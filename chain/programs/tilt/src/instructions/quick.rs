@@ -6,7 +6,7 @@ use anchor_lang::prelude::*;
 use ephemeral_rollups_sdk::anchor::{delegate, vrf, vrf_callback};
 use ephemeral_rollups_sdk::cpi::DelegateConfig;
 
-use crate::constants::{ACCOUNT_SEED, LEDGER_SEED, QUICK_SEED, VAULT_SEED};
+use crate::constants::{ACCOUNT_SEED, LEDGER_SEED, QUICK_SEED, RISK_POOL_SEED, VAULT_SEED};
 use crate::errors::TiltError;
 use crate::games::{
     flip::CoinSide,
@@ -16,8 +16,9 @@ use crate::games::{
 use crate::instructions::play::{
     callback_account, draw_request, expired_draw, now, pending_draw, settle_round,
 };
+use crate::risk::RiskPool;
 use crate::rng::Rng;
-use crate::state::{Config, Draw, Ledger, PlayerAccount, Round, Vault};
+use crate::state::{Bankroll, Draw, Ledger, PlayerAccount, Round, Vault};
 
 #[derive(Accounts)]
 pub struct OpenQuickTable<'info> {
@@ -91,6 +92,8 @@ pub struct QuickPlay<'info> {
     pub ledger: Account<'info, Ledger>,
     #[account(mut, seeds = [QUICK_SEED, account.player.as_ref()], bump)]
     pub quick: Account<'info, QuickTable>,
+    #[account(mut, seeds = [RISK_POOL_SEED], bump = risk_pool.bump)]
+    pub risk_pool: Account<'info, RiskPool>,
     /// CHECK: the configured MagicBlock VRF queue; also validated by the VRF program
     #[account(mut, address = vault.config.vrf_queue @ TiltError::Unauthorized)]
     pub oracle_queue: UncheckedAccount<'info>,
@@ -104,6 +107,8 @@ pub struct ConsumeQuickRandomness<'info> {
     pub account: Account<'info, PlayerAccount>,
     #[account(mut, seeds = [QUICK_SEED, account.player.as_ref()], bump)]
     pub quick: Account<'info, QuickTable>,
+    #[account(mut, seeds = [RISK_POOL_SEED], bump = risk_pool.bump)]
+    pub risk_pool: Account<'info, RiskPool>,
 }
 
 /// Takes the stake of a new round on `round` after checking the choice. Its worst case is
@@ -113,12 +118,12 @@ fn start_quick(
     quick: &mut QuickTable,
     amount: u64,
     round: QuickRound,
-    config: &Config,
+    bank: &mut Bankroll,
     now: i64,
 ) -> Result<()> {
     let game = round.game().ok_or(TiltError::InvalidChoice)?;
     let max_gain = round.max_gain(amount).ok_or(TiltError::InvalidChoice)?;
-    account.start_round(game, amount, 1, max_gain, config, now)?;
+    account.start_round(game, amount, 1, max_gain, bank, now)?;
     quick.start(amount, round);
     Ok(())
 }
@@ -133,12 +138,13 @@ fn check_quick_draw(round: &Round, quick: &QuickTable, request_id: u64) -> Resul
     Ok(())
 }
 
-/// Asks for the round's draw, answered by `consume_quick_randomness` with the player account
-/// and the table.
+/// Asks for the round's draw, answered by `consume_quick_randomness` with the player account,
+/// the table and the risk pool.
 fn request_quick_draw(ctx: &mut Context<QuickPlay>, client_seed: [u8; 32]) -> Result<()> {
     let accounts = vec![
         callback_account(ctx.accounts.account.key()),
         callback_account(ctx.accounts.quick.key()),
+        callback_account(ctx.accounts.risk_pool.key()),
     ];
     let ix = draw_request(
         &mut ctx.accounts.account.round,
@@ -160,14 +166,19 @@ fn play(
     round: QuickRound,
     client_seed: [u8; 32],
 ) -> Result<()> {
-    let accounts = &mut ctx.accounts;
-    accounts.account.sync_ledger(&accounts.ledger);
+    let a = &mut ctx.accounts;
+    a.account.sync_ledger(&a.ledger);
+    let mut bank = Bankroll {
+        config: &a.vault.config,
+        pool: &mut a.risk_pool,
+        line: a.vault.pool_line,
+    };
     start_quick(
-        &mut accounts.account,
-        &mut accounts.quick,
+        &mut a.account,
+        &mut a.quick,
         amount,
         round,
-        &accounts.vault.config,
+        &mut bank,
         now()?,
     )?;
     request_quick_draw(&mut ctx, client_seed)
@@ -242,7 +253,7 @@ pub fn wheel_spin(
 pub fn expire_quick_round(mut ctx: Context<QuickPlay>, client_seed: [u8; 32]) -> Result<()> {
     let round = &ctx.accounts.account.round;
     require!(round.game.is_quick(), TiltError::WrongState);
-    expired_draw(round, ctx.accounts.vault.config.round_timeout_secs)?;
+    expired_draw(round, &ctx.accounts.vault.config)?;
     request_quick_draw(&mut ctx, client_seed)
 }
 
@@ -255,7 +266,13 @@ pub fn consume_quick_randomness(
     let accounts = ctx.accounts;
     check_quick_draw(&accounts.account.round, &accounts.quick, request_id)?;
     let gross = accounts.quick.play(&mut Rng::from_vrf(randomness));
-    settle_round(&mut accounts.account, gross, request_id, randomness);
+    settle_round(
+        &mut accounts.account,
+        &mut accounts.risk_pool,
+        gross,
+        request_id,
+        randomness,
+    );
     Ok(())
 }
 
@@ -263,13 +280,28 @@ pub fn consume_quick_randomness(
 mod tests {
     use super::*;
     use crate::games::{dice, keno, limbo};
-    use crate::instructions::testing::{account, config};
+    use crate::instructions::testing::{account, bank, config, pool_of};
     use crate::settlement::settle;
     use crate::state::{Game, RoundStatus};
 
+    /// `start_quick` against a risk pool whose line is `line`.
+    fn start(
+        a: &mut PlayerAccount,
+        q: &mut QuickTable,
+        round: QuickRound,
+        line: u64,
+    ) -> Result<()> {
+        let (c, mut pool) = (config(), RiskPool::default());
+        let mut bank = Bankroll {
+            line,
+            ..bank(&c, &mut pool)
+        };
+        start_quick(a, q, 1_000_000, round, &mut bank, 0)
+    }
+
     fn started(round: QuickRound) -> Result<(PlayerAccount, QuickTable)> {
         let (mut a, mut q) = (account(), QuickTable::default());
-        start_quick(&mut a, &mut q, 1_000_000, round, &config(), 0)?;
+        start(&mut a, &mut q, round, u64::MAX)?;
         Ok((a, q))
     }
 
@@ -279,7 +311,7 @@ mod tests {
         a.round.status = RoundStatus::AwaitingDraw(Draw::Spin);
         check_quick_draw(&a.round, q, a.round.request_id).unwrap();
         let gross = q.play(&mut Rng::from_vrf(randomness));
-        a.finish_round(settle(a.round.stake, gross));
+        a.finish_round(settle(a.round.stake, gross), &mut pool_of(a));
         gross
     }
 
@@ -328,7 +360,7 @@ mod tests {
         ] {
             let (mut a, mut q) = (account(), QuickTable::default());
             assert_eq!(
-                start_quick(&mut a, &mut q, 1_000_000, round, &config(), 0),
+                start(&mut a, &mut q, round, u64::MAX),
                 Err(TiltError::InvalidChoice.into()),
                 "{round:?}"
             );
@@ -363,20 +395,19 @@ mod tests {
     }
 
     #[test]
-    fn the_win_cap_applies() {
-        let (mut a, mut q) = (account(), QuickTable::default());
-        a.max_win = 959_999;
+    fn the_risk_pool_applies() {
+        // A 1 000 000 flip on one coin may gain 960 000.
         let flip = QuickRound::Flip {
             side: CoinSide::Heads,
             flips: 1,
             coins: 0,
         };
+        let (mut a, mut q) = (account(), QuickTable::default());
         assert_eq!(
-            start_quick(&mut a, &mut q, 1_000_000, flip, &config(), 0),
-            Err(TiltError::WinCapReached.into())
+            start(&mut a, &mut q, flip, 959_999),
+            Err(TiltError::RiskPoolFull.into())
         );
-        a.max_win = 960_000;
-        start_quick(&mut a, &mut q, 1_000_000, flip, &config(), 0).unwrap();
+        start(&mut a, &mut q, flip, 960_000).unwrap();
     }
 
     #[test]
@@ -420,7 +451,7 @@ mod tests {
         a.round.status = RoundStatus::AwaitingDraw(Draw::Spin);
         let before = q.clone();
         assert_eq!(
-            start_quick(&mut a, &mut q, 1_000_000, dice(5_000, true), &config(), 0),
+            start(&mut a, &mut q, dice(5_000, true), u64::MAX),
             Err(TiltError::RoundInProgress.into())
         );
         assert_eq!(q, before, "a refused bet leaves the table alone");

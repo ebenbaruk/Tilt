@@ -18,8 +18,8 @@ pub enum TiltError {
     Unauthorized,
     #[msg("Insufficient balance")]
     InsufficientBalance,
-    #[msg("Lifetime win cap reached")]
-    WinCapReached,
+    #[msg("The house's risk pool cannot cover this bet right now")]
+    RiskPoolFull,
     #[msg("This bet could win more than one round allows")]
     RoundGainTooHigh,
     #[msg("Invalid bet")]
@@ -30,11 +30,9 @@ pub enum TiltError {
     FraudSuspected,
     #[msg("Paused")]
     Paused,
-    #[msg("Max win above the allowed limit")]
-    MaxWinTooHigh,
     #[msg("Withdrawal below the minimum")]
     WithdrawalTooSmall,
-    #[msg("No loss to release")]
+    #[msg("No loss or secured win to release")]
     NothingToCheckpoint,
     #[msg("Randomness does not answer the pending request")]
     StaleRandomness,

@@ -4,7 +4,8 @@
 // scenarios. Runs against the local MagicBlock stack by default (README), or devnet with
 // BASE_RPC / ER_RPC / ER_WS / VALIDATOR / VRF_ER_QUEUE.
 //
-// Uses its own test USDC mint, so it never touches real funds. The admin is the wallet
+// Uses its own test USDC mint, so it never touches real funds (USDC_MINT reuses an earlier
+// test mint the admin can mint, when it installs a new vault). The admin is the wallet
 // (ANCHOR_WALLET, must be the program's upgrade authority); the relayer is a separate key
 // kept in .anchor/e2e-relayer.json.
 //
@@ -71,12 +72,12 @@ const LOCAL_RPC = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/;
 
 const usdc = (x: number) => Math.round(x * 1_000_000);
 const ROUND_TIMEOUT_SECS = 3;
+/** Long enough for every pause the scenario takes mid-round, short enough to wait out. */
+const ABANDONED_ROUND_SECS = 20;
 const CONFIG: Config = {
   minBet: new BN(usdc(0.1)),
   maxBet: new BN(usdc(10)),
   maxRoundGain: new BN(usdc(2_500)),
-  maxPlayerWin: new BN(usdc(3_000)),
-  maxWinMultiple: new BN(20),
   onboardingFee: new BN(usdc(1.3)),
   minDeposit: new BN(usdc(1)),
   minWithdrawal: new BN(usdc(1)),
@@ -84,6 +85,7 @@ const CONFIG: Config = {
   playerDailyCap: new BN(usdc(1_000)),
   dailyCap: new BN(usdc(10_000)),
   roundTimeoutSecs: new BN(ROUND_TIMEOUT_SECS),
+  abandonedRoundSecs: new BN(ABANDONED_ROUND_SECS),
   validator: VALIDATOR,
   vrfQueue: VRF_ER_QUEUE,
   depositsPaused: false,
@@ -114,6 +116,9 @@ const quick = pda(Buffer.from("quick"), player.publicKey.toBuffer());
 const hiloBoard = pda(Buffer.from("hilo"), player.publicKey.toBuffer());
 const towerBoard = pda(Buffer.from("tower"), player.publicKey.toBuffer());
 const rouletteTable = pda(Buffer.from("roulette"), player.publicKey.toBuffer());
+const riskPool = pda(Buffer.from("risk_pool"));
+/** Bankroll granted to the risk pool when the house is set up. */
+const RISK_POOL_LINE = usdc(5_000);
 const MAX_HANDS = 6;
 const MAX_SPLITS = 4;
 const MINES_TILES = 25;
@@ -190,13 +195,15 @@ async function erSend(tx: Transaction, signer = relayer, simulateFirst = false, 
 }
 
 // Blackjack needs the player's table; the other games pass none (Anchor sends the program id).
-const playAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, table: null, oracleQueue: VRF_ER_QUEUE });
+const playAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, table: null, riskPool, oracleQueue: VRF_ER_QUEUE });
 const blackjackAccounts = () => ({ ...playAccounts(), table });
-const minesAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, board, oracleQueue: VRF_ER_QUEUE });
-const quickAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, quick, oracleQueue: VRF_ER_QUEUE });
-const hiloAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, board: hiloBoard, oracleQueue: VRF_ER_QUEUE });
-const towerAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, board: towerBoard, oracleQueue: VRF_ER_QUEUE });
-const rouletteAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, roulette: rouletteTable, oracleQueue: VRF_ER_QUEUE });
+const minesAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, board, riskPool, oracleQueue: VRF_ER_QUEUE });
+const quickAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, quick, riskPool, oracleQueue: VRF_ER_QUEUE });
+const hiloAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, board: hiloBoard, riskPool, oracleQueue: VRF_ER_QUEUE });
+const towerAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, board: towerBoard, riskPool, oracleQueue: VRF_ER_QUEUE });
+const rouletteAccounts = () => ({ vault, payer: relayer.publicKey, account, ledger, roulette: rouletteTable, riskPool, oracleQueue: VRF_ER_QUEUE });
+const fundPool = (amount: number, signer = relayer) => program.methods.fundRiskPool(new BN(amount))
+  .accountsPartial({ relayer: signer.publicKey, vault, vaultToken }).signers([signer]);
 
 async function act(label: string, tx: Promise<Transaction>, accept: (a: PlayerAccount) => boolean | Promise<boolean>) {
   const transaction = await tx;
@@ -209,7 +216,9 @@ async function act(label: string, tx: Promise<Transaction>, accept: (a: PlayerAc
   });
 }
 
-const feeOn = (stake: number, gross: number) => (gross > stake ? Math.floor((gross - stake) / 100) : 0);
+/** Tilt's 1% of a round's gain, at least `MIN_FEE` (1 unit) on any win (`settlement.rs`). */
+const MIN_FEE = 1;
+const feeOn = (stake: number, gross: number) => (gross > stake ? Math.max(Math.floor((gross - stake) / 100), MIN_FEE) : 0);
 
 /** Runs one round to the end; checks the balance moved by payout - stake and the payout matches `expectedGross`. */
 async function round(
@@ -668,7 +677,7 @@ async function setUpHouse() {
       await program.methods.setRoles(admin.publicKey, relayer.publicKey).accountsPartial({ admin: admin.publicKey, vault }).rpc();
     }
   } else {
-    mint = await createMint(base, admin, admin.publicKey, null, 6);
+    mint = process.env.USDC_MINT ? new PublicKey(process.env.USDC_MINT) : await createMint(base, admin, admin.publicKey, null, 6);
     const treasury = await createAssociatedTokenAccountIdempotent(base, admin, mint, admin.publicKey);
     const intruder = Keypair.generate();
     await fundSol(intruder.publicKey, 0.05);
@@ -685,6 +694,15 @@ async function setUpHouse() {
     .accountsPartial({ funder: admin.publicKey, vault, vaultToken, source: houseToken, mint }).rpc();
   await relayerProvider.sendAndConfirm(new Transaction().add(
     createTopUpEscrowInstruction(escrowPdaFromEscrowAuthority(relayer.publicKey), relayer.publicKey, relayer.publicKey, 0.005 * LAMPORTS_PER_SOL)));
+  if (!(await base.getAccountInfo(riskPool))) {
+    const poolAccounts = { vault, payer: relayer.publicKey, riskPool };
+    await relayerProvider.sendAndConfirm(new Transaction().add(
+      await program.methods.openRiskPool().accountsPartial(poolAccounts).instruction(),
+      await program.methods.delegateRiskPool().accountsPartial(poolAccounts).instruction(),
+    ));
+  }
+  await until(() => erProgram.account.riskPool.fetchNullable(riskPool).then((p) => p ?? undefined), "risk pool in rollup");
+  await fundPool(RISK_POOL_LINE).rpc();
 }
 
 async function run(): Promise<number> {
@@ -703,15 +721,14 @@ async function run(): Promise<number> {
   const delegate = () => program.methods.delegateAccount()
     .accountsPartial({ vault, payer: relayer.publicKey, player: player.publicKey, ledger, account });
   await rejects("entrée dans le rollup sans dépôt refusée", () => delegate().signers([relayer]).rpc(), /AccountNotInitialized|ledger/);
-  const open = (amount: number, maxWin = usdc(3_000)) => program.methods.openAccount(new BN(amount), new BN(maxWin))
+  const open = (amount: number) => program.methods.openAccount(new BN(amount))
     .accountsPartial({ vault, payer: relayer.publicKey, player: player.publicKey, vaultToken, treasury, playerToken, mint, account, ledger });
   await rejects("premier dépôt ≤ frais d'ouverture refusé", () => open(usdc(1.3)).signers([relayer, player]).rpc(), /DepositTooSmall/);
-  await rejects("plafond de gains disproportionné par rapport au dépôt refusé", () =>
-    open(usdc(10), usdc(3_000)).signers([relayer, player]).rpc(), /MaxWinTooHigh/);
 
   const treasuryBefore = (await getAccount(base, treasury)).amount;
   // The vault may already hold other players (earlier runs): compare this player's share only.
-  const reservedBefore = (await program.account.vault.fetch(vault)).reserved;
+  const poolBefore = await program.account.vault.fetch(vault);
+  const reservedBefore = poolBefore.reserved;
   const tableAccounts = { vault, payer: relayer.publicKey, player: player.publicKey, ledger, table };
   await time("premier dépôt + entrée dans le rollup, compte et table (Solana)", async () =>
     relayerProvider.sendAndConfirm(new Transaction().add(
@@ -731,7 +748,7 @@ async function run(): Promise<number> {
 
   console.log("\n--- 2. Blackjack multi-mains et splits (gains recalculés depuis les cartes) ---");
   await rejectsInRollup("blackjack sans table refusé", () =>
-    erProgram.methods.blackjackBet(new BN(usdc(1)), 1, seed()).accountsPartial(playAccounts()).transaction(), /MissingTable|6020/);
+    erProgram.methods.blackjackBet(new BN(usdc(1)), 1, seed()).accountsPartial(playAccounts()).transaction(), /MissingTable|6019/);
   await rejectsInRollup("plus de 6 mains refusé", () =>
     erProgram.methods.blackjackBet(new BN(usdc(1)), MAX_HANDS + 1, seed()).accountsPartial(blackjackAccounts()).transaction(), /InvalidBet|6010/);
   await rejectsInRollup("mise par main au-dessus du maximum refusée", () =>
@@ -902,14 +919,14 @@ async function run(): Promise<number> {
   await rejectsInRollup("encaissement sans case révélée refusé", () =>
     erProgram.methods.minesCashout().accountsPartial(minesAccounts()).transaction(), /WrongState|6005/);
   await rejectsInRollup("case hors du plateau refusée", () =>
-    erProgram.methods.minesReveal(MINES_TILES, seed()).accountsPartial(minesAccounts()).transaction(), /InvalidTile|6021/);
+    erProgram.methods.minesReveal(MINES_TILES, seed()).accountsPartial(minesAccounts()).transaction(), /InvalidTile|6020/);
   await rejectsInRollup("coup de blackjack sur une manche de mines refusé", () =>
     erProgram.methods.blackjackHit(seed()).accountsPartial(blackjackAccounts()).transaction(), /WrongState|6005/);
   await rejectsInRollup("nouvelle manche refusée tant que le plateau est ouvert", () =>
     erProgram.methods.slotsSpin(new BN(usdc(1)), seed()).accountsPartial(playAccounts()).transaction(), /RoundInProgress|6004/);
   await sleep((ROUND_TIMEOUT_SECS + 1) * 1_000);
-  await rejectsInRollup("plateau en attente du joueur jamais clôturé à sa place, même après le délai", () =>
-    erProgram.methods.expireMinesRound(seed()).accountsPartial(minesAccounts()).transaction(), /WrongState|6005/);
+  await rejectsInRollup("plateau en attente du joueur pas clôturé à sa place avant le délai d'abandon", () =>
+    erProgram.methods.expireMinesRound(seed()).accountsPartial(minesAccounts()).transaction(), /RoundNotExpired|6011/);
   await rejectsInRollup("expire_round sans plateau refusé sur une manche de mines", () =>
     erProgram.methods.expireRound(seed()).accountsPartial(playAccounts()).transaction(), /WrongState|6005/);
   const beforeReveal = m;
@@ -917,7 +934,7 @@ async function run(): Promise<number> {
     (x) => !isAwaiting(x.round) && x.round.requestId.gt(beforeReveal.round.requestId));
   if (isPlayerTurn(m.round)) {
     await rejectsInRollup("case déjà révélée refusée", () =>
-      erProgram.methods.minesReveal(0, seed()).accountsPartial(minesAccounts()).transaction(), /InvalidTile|6021/);
+      erProgram.methods.minesReveal(0, seed()).accountsPartial(minesAccounts()).transaction(), /InvalidTile|6020/);
     const roundsBefore = m.rounds;
     m = await act("mines encaissement", erProgram.methods.minesCashout().accountsPartial(minesAccounts()).transaction(), (x) => x.rounds === roundsBefore + 1);
   }
@@ -963,7 +980,7 @@ async function run(): Promise<number> {
     ["keno hors de 1 à 40 refusé", kenoTx([41])],
     ["roue à 15 segments refusée", wheelTx(15, "low")],
   ];
-  for (const [name, tx] of invalidChoices) await rejectsInRollup(name, tx, /InvalidChoice|6022/);
+  for (const [name, tx] of invalidChoices) await rejectsInRollup(name, tx, /InvalidChoice|6021/);
   await rejectsInRollup("dice à 98x sur 10 USDC refusé (gain possible > plafond par manche), jamais plafonné", async () => {
     await setConfig({ maxRoundGain: new BN(usdc(300)) });
     return diceTx(usdc(10), 9_900, true)();
@@ -1021,12 +1038,12 @@ async function run(): Promise<number> {
     const prev = h;
     h = await act("hilo passe", hiloGuessTx("skip")(), (x) => !isAwaiting(x.round) && x.round.requestId.gt(prev.round.requestId));
   }
-  await rejectsInRollup("11e passe refusée", hiloGuessTx("skip"), /InvalidChoice|6022/);
+  await rejectsInRollup("11e passe refusée", hiloGuessTx("skip"), /InvalidChoice|6021/);
   await rejectsInRollup("nouvelle manche refusée tant que le plateau hilo est ouvert", () =>
     erProgram.methods.slotsSpin(new BN(usdc(1)), seed()).accountsPartial(playAccounts()).transaction(), /RoundInProgress|6004/);
   await sleep((ROUND_TIMEOUT_SECS + 1) * 1_000);
-  await rejectsInRollup("plateau hilo en attente du joueur jamais clôturé à sa place, même après le délai", () =>
-    erProgram.methods.expireHiloRound(seed()).accountsPartial(hiloAccounts()).transaction(), /WrongState|6005/);
+  await rejectsInRollup("plateau hilo en attente du joueur pas clôturé à sa place avant le délai d'abandon", () =>
+    erProgram.methods.expireHiloRound(seed()).accountsPartial(hiloAccounts()).transaction(), /RoundNotExpired|6011/);
   await rejectsInRollup("expire_round refusé sur une manche de hilo", () =>
     erProgram.methods.expireRound(seed()).accountsPartial(playAccounts()).transaction(), /WrongState|6005/);
   while (isPlayerTurn(h.round)) {
@@ -1067,7 +1084,7 @@ async function run(): Promise<number> {
   let t = await act("mise tower", erProgram.methods.towerBet(new BN(usdc(1)), { hard: {} }).accountsPartial(towerAccounts()).transaction(), (x) => isPlayerTurn(x.round));
   check("mise tower sans tirage : le plateau attend le joueur", (await fetchTower()).level === 0);
   await rejectsInRollup("encaissement sans étage refusé", towerCashoutTx, /WrongState|6005/);
-  await rejectsInRollup("case hors de l'étage refusée (difficile : 2 cases)", towerClimbTx(2), /InvalidChoice|6022/);
+  await rejectsInRollup("case hors de l'étage refusée (difficile : 2 cases)", towerClimbTx(2), /InvalidChoice|6021/);
   await rejectsInRollup("coup de mines sur une manche de tower refusé", () =>
     erProgram.methods.minesReveal(0, seed()).accountsPartial(minesAccounts()).transaction(), /WrongState|6005/);
   await rejectsInRollup("expire_round refusé sur une manche de tower", () =>
@@ -1117,16 +1134,38 @@ async function run(): Promise<number> {
   await rejectsInRollup("expiration refusée avant le délai", () =>
     erProgram.methods.expireRound(seed()).accountsPartial(blackjackAccounts()).transaction(), /RoundNotExpired|6011/);
   await sleep((ROUND_TIMEOUT_SECS + 1) * 1_000);
-  await rejectsInRollup("main en attente du joueur jamais clôturée à sa place, même après le délai", () =>
-    erProgram.methods.expireRound(seed()).accountsPartial(blackjackAccounts()).transaction(), /WrongState|6005/);
+  await rejectsInRollup("main en attente du joueur pas clôturée à sa place avant le délai d'abandon", () =>
+    erProgram.methods.expireRound(seed()).accountsPartial(blackjackAccounts()).transaction(), /RoundNotExpired|6011/);
   const roundsBefore = a.rounds;
   a = await act("stand du joueur après le délai", erProgram.methods.blackjackStand(seed()).accountsPartial(blackjackAccounts()).transaction(), (x) => x.rounds === roundsBefore + 1);
   check("le joueur reprend sa main quand il veut", isIdle(a.round) && (await fetchTable()).nDealer >= 2);
   check("chaque tirage porte un identifiant de requête qui ne fait que croître", a.round.requestId.gtn(0));
 
+  // Left past the abandon delay, the relay closes the round as the player could have.
+  let closedByRelay = false;
+  const waitOutThenExpire = (label: string, expire: () => Promise<Transaction>) => async (x: PlayerAccount) => {
+    if (!isPlayerTurn(x.round)) return x;
+    await sleep((ABANDONED_ROUND_SECS + 1) * 1_000);
+    closedByRelay = true;
+    return act(label, expire(), (y) => y.rounds > x.rounds);
+  };
+  for (let i = 0; i < 10 && !closedByRelay; i++) {
+    await round("main abandonnée close par le relais (stand, le croupier joue)",
+      () => erProgram.methods.blackjackBet(new BN(usdc(1)), 1, seed()).accountsPartial(blackjackAccounts()).transaction(),
+      waitOutThenExpire("clôture de la main abandonnée", () => erProgram.methods.expireRound(seed()).accountsPartial(blackjackAccounts()).transaction()),
+      async (r) => blackjackGross(await fetchTable(), r.stake.toNumber()));
+  }
+  check("main abandonnée close par le relais et payée comme un stand", closedByRelay);
+  closedByRelay = false;
+  a = await round("plateau mines abandonné encaissé par le relais",
+    () => erProgram.methods.minesBet(new BN(usdc(1)), 3).accountsPartial(minesAccounts()).transaction(),
+    waitOutThenExpire("encaissement du plateau abandonné", () => erProgram.methods.expireMinesRound(seed()).accountsPartial(minesAccounts()).transaction()),
+    async () => minesGross(await fetchBoard(), BigInt(CONFIG.maxRoundGain.toString())));
+  check("plateau mines abandonné encaissé à 0,99x la mise", closedByRelay && a.round.payout.eq(new BN(usdc(0.99))), `(${a.round.payout})`);
+
   console.log("\n--- 8. Retraits vérifiés, plafonnés, mis en attente ---");
   await rejectsInRollup("retrait supérieur au solde refusé", async () => withdrawTx((await fetchAccount()).balance.toNumber() + 1), /InsufficientBalance|6007/);
-  await rejectsInRollup("retrait sous le minimum refusé", () => withdrawTx(usdc(0.5)), /WithdrawalTooSmall|6015/);
+  await rejectsInRollup("retrait sous le minimum refusé", () => withdrawTx(usdc(0.5)), /WithdrawalTooSmall|6014/);
   await setConfig({ maxWithdrawal: new BN(usdc(20)) });
   check("retrait au-dessus du plafond par retrait (25 > 20) mis en attente", !(await withdraw(usdc(25), false)));
   await rejects("libération par quelqu'un d'autre que l'admin refusée", () =>
@@ -1158,29 +1197,26 @@ async function run(): Promise<number> {
   await setConfig();
   check("libéré après la pause", (await release()) === usdc(5));
 
-  console.log("\n--- 8b. Plafond de gains glissant ---");
-  const raise = (amount: number, signer = relayer) => program.methods.raiseWinCap(new BN(amount))
-    .accountsPartial({ relayer: signer.publicKey, vault, vaultToken, ledger }).signers([signer]);
-  await rejects("relèvement du plafond par un autre que le relais refusé", () => raise(usdc(1), player).rpc(), /Unauthorized|6006/);
-  await rejects("relèvement au-delà du gain max d'une manche refusé", () => raise(usdc(2_500) + 1).rpc(), /AmountOutOfRange|6000/);
-  await setConfig({ betsPaused: true });
-  await rejects("relèvement refusé pendant la pause des mises", () => raise(usdc(1)).rpc(), /Paused|6013/);
-  await setConfig();
-  const capBefore = (await fetchLedger()).maxWin;
-  const reservedBeforeRaise = (await program.account.vault.fetch(vault)).reserved;
-  await raise(usdc(100)).rpc();
-  const raisedBy = (await fetchLedger()).maxWin.sub(capBefore);
-  const reservedBy = (await program.account.vault.fetch(vault)).reserved.sub(reservedBeforeRaise);
-  check("plafond relevé et réservé du même montant", raisedBy.eq(new BN(usdc(100))) && reservedBy.eq(raisedBy), `(+${raisedBy}, réservé +${reservedBy})`);
-  await until(async () => ((await erProgram.account.ledger.fetch(ledger)).maxWin.gt(capBefore) ? true : undefined), "raised cap in rollup");
+  console.log("\n--- 8b. Pool de risque (réserve mutualisée, Bernstein) ---");
+  await rejects("ligne du pool accordée par un autre que le relais refusée", () => fundPool(usdc(1), player).rpc(), /Unauthorized|6006/);
+  const vBefore = await program.account.vault.fetch(vault);
+  const freeBefore = BigInt((await getAccount(base, vaultToken)).amount) - BigInt(vBefore.reserved.toString());
+  await rejects("ligne au-delà de la bankroll libre refusée", () => fundPool(Number(freeBefore) + 1).rpc(), /VaultTooSmall|6003/);
+  await fundPool(usdc(100)).rpc();
+  const vAfter = await program.account.vault.fetch(vault);
+  check(
+    "ligne accordée et réservée du même montant",
+    vAfter.poolLine.sub(vBefore.poolLine).eq(new BN(usdc(100))) && vAfter.reserved.sub(vBefore.reserved).eq(new BN(usdc(100))),
+  );
   await playBlackjack(usdc(1), 1, false);
-  check("le rollup prend le plafond relevé au coup suivant", (await fetchAccount()).maxWin.eq(capBefore.add(raisedBy)));
+  const pool = await erProgram.account.riskPool.fetch(riskPool);
+  check("une manche réglée rend au pool tout ce qu'elle tenait", pool.gains.isZero() && pool.stakes.isZero() && pool.exposure.isZero(), `(gains ${pool.gains})`);
 
   console.log("\n--- 9. Pertes rendues à la maison (checkpoint) ---");
   const netWinOf = (x: PlayerAccount) => x.balance.add(x.withdrawn).sub(x.credited.sub(x.forfeited));
   if (!netWinOf(await fetchAccount()).isNeg()) {
     await rejectsInRollup("checkpoint refusé tant que le joueur n'a pas perdu", () =>
-      erProgram.methods.checkpoint().accountsPartial({ vault, payer: relayer.publicKey, account, ledger }).transaction(), /NothingToCheckpoint|6016/);
+      erProgram.methods.checkpoint().accountsPartial({ vault, payer: relayer.publicKey, account, ledger }).transaction(), /NothingToCheckpoint|6015/);
   }
   // Tie bets lose about 90% of the time: play them until the player is down overall.
   for (let i = 0; i < 60; i++) {
@@ -1203,7 +1239,7 @@ async function run(): Promise<number> {
   // push the same checkpoint again (Solana releases nothing twice): wait for its copy first.
   await until(async () => ((await erProgram.account.ledger.fetch(ledger)).forfeited.eq(forfeited) ? true : undefined), "ledger copy in rollup");
   await rejectsInRollup("deuxième checkpoint sans nouvelle perte refusé", () =>
-    erProgram.methods.checkpoint().accountsPartial({ vault, payer: relayer.publicKey, account, ledger }).transaction(), /NothingToCheckpoint|6016/);
+    erProgram.methods.checkpoint().accountsPartial({ vault, payer: relayer.publicKey, account, ledger }).transaction(), /NothingToCheckpoint|6015/);
   const v = await program.account.vault.fetch(vault);
   const free = BigInt((await getAccount(base, vaultToken)).amount) - BigInt(v.reserved.toString());
   await rejects("l'admin ne peut pas sortir plus que l'argent non réservé", () =>
@@ -1219,8 +1255,11 @@ async function run(): Promise<number> {
   const vEnd = await program.account.vault.fetch(vault);
   check("comptes justes : tout ce qui a été retiré a été payé", l.withdrawnPaid.eq(end.withdrawn) && end.balance.isZero());
   check("le joueur a reçu exactement ses retraits", (await playerUsdc()) === BigInt(usdc(500 - 300 - 50) + end.withdrawn.toNumber()));
-  const reservedForPlayer = vEnd.reserved.sub(reservedBefore);
-  check("réserve de la trésorerie cohérente", reservedForPlayer.eq(l.deposited.add(l.maxWin).sub(l.withdrawnPaid).sub(l.forfeited)),
+  // Reserved for this player: deposits − losses released − paid + secured wins; the rest of
+  // the change is the pool's line, granted minus what moved to players' secured wins.
+  const lineChange = vEnd.poolLine.sub(poolBefore.poolLine).sub(vEnd.poolTransferred.sub(poolBefore.poolTransferred));
+  const reservedForPlayer = vEnd.reserved.sub(reservedBefore).sub(lineChange);
+  check("réserve de la trésorerie cohérente", reservedForPlayer.eq(l.deposited.add(l.winReserved).sub(l.winReleased).sub(l.withdrawnPaid).sub(l.forfeited)),
     `(réservé pour ce joueur ${reservedForPlayer}, frais Tilt ${end.fees}, manches ${end.rounds})`);
   await setConfig();
 
@@ -1245,7 +1284,7 @@ async function run(): Promise<number> {
   await payPromo(payoutId, usdc(15));
   check("gain promo versé dans le wallet du joueur", (await playerUsdc()) - winnings === BigInt(usdc(15)));
   await rejects("même gain promo payé deux fois refusé", () => payPromo(payoutId, usdc(15)), /already in use|0x0/);
-  await rejects("gain promo au-delà du plafond par gain refusé", () => payPromo(randomBytes(16), usdc(21)), /PromoCapReached|6019/);
+  await rejects("gain promo au-delà du plafond par gain refusé", () => payPromo(randomBytes(16), usdc(21)), /PromoCapReached|6018/);
   const stranger = Keypair.generate();
   await fundSol(stranger.publicKey, 0.05);
   await rejects("gain promo payé par une autre clé que le relais refusé", () => payPromo(randomBytes(16), usdc(1), stranger), /Unauthorized|6006/);
