@@ -46,22 +46,32 @@ const FACTS = [
 const STEPS = [
   {
     title: "Install the mod",
-    command: "/plugin install tilt",
-    body: "From inside Claude Code. The mod only sees when a turn starts and ends: never your prompts, your code or your tool calls.",
+    command: "/plugin install tilt@tilt",
+    body: "In Claude Code. Your invite comes with one prompt to paste: it adds the Tilt marketplace, installs the mod and sets it up. The mod only sees when a turn starts and ends: never your prompts, your code or your tool calls.",
   },
   {
     title: "Log in, add USDC",
     command: "/tilt login",
-    body: "Opens your browser. Email, Google, X or Phantom; a Solana wallet is made for you. Fund it by card. No SOL needed.",
+    body: "Opens your browser. Log in with email, Google or X and a Solana wallet is made for you. Enter the code your terminal shows, then add USDC on your account page, by card or from another wallet. No SOL needed.",
   },
   {
     title: "Play while it works",
     command: "n deal · 5.00",
-    body: "Send a prompt and the panel opens. One key per move. When the agent finishes, your hand waits for the next turn.",
+    body: "Send a prompt and the panel opens. ctrl+x tab gives Tilt the keys, one key per move, Esc hands them back. When the agent finishes, your hand waits for the next turn.",
   },
 ];
 
 const FAQ = [
+  {
+    flag: "--invite",
+    q: "How do I get in?",
+    a: "Join the waitlist. Tilt opens to it first: your invite has one prompt to paste into Claude Code, which installs and sets up the mod. Then /tilt login, add USDC and play.",
+  },
+  {
+    flag: "--demo",
+    q: "Are the games on this page real?",
+    a: "No. They are scripted demos: each replays one example round on a loop, with no draw and no money. In the mod, every card, roll and spin comes from a verifiable random draw on Solana.",
+  },
   {
     flag: "--currency",
     q: "What do I play with?",
@@ -70,7 +80,7 @@ const FAQ = [
   {
     flag: "--wallet",
     q: "Do I need a crypto wallet?",
-    a: "No. Log in with email, Google or X and a Solana wallet is created for you. Already on Phantom? Use it.",
+    a: "No. Log in with email, Google or X and a Solana wallet is created for you.",
   },
   {
     flag: "--fees",
@@ -211,7 +221,8 @@ export default function Landing() {
             </h2>
             <p className={styles.headNote}>
               Return to player before Tilt&apos;s fee: 1% of the gain, on winning rounds only. Wins are capped at
-              10,000× the stake.
+              10,000× the stake. The tables below are scripted demos: each replays one example round on a loop, with no
+              draw and no money.
             </p>
           </div>
           <GamesFloor />

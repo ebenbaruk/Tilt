@@ -121,14 +121,14 @@ export function GamesFloor() {
             </div>
             <div className={styles.side}>
               <p className={styles.eyebrow}>
-                GAME {String(index + 1).padStart(2, "0")} / {GAMES.length}
+                GAME {String(index + 1).padStart(2, "0")} / {GAMES.length} · DEMO
               </p>
               <p className={styles.name}>{game.name}</p>
               <p className={styles.rtp}>
                 <span className={styles.rtpValue}>{game.rtp}</span> rtp
               </p>
               <p className={styles.rule}>{game.rule}</p>
-              <p className="visually-hidden">Demo round: {game.about}</p>
+              <p className={styles.demo}>Demo round, on a loop: {game.about}</p>
               <p className={styles.status} aria-hidden="true">
                 <span className={styles.progress}>
                   {"▰".repeat(progress)}
@@ -193,7 +193,7 @@ function GameCard({
       <p className="visually-hidden">Demo round: {game.about}</p>
       <button type="button" className={styles.watch} onClick={onWatch}>
         <span aria-hidden="true">▸ </span>
-        Play {game.name} in the big terminal
+        Watch the {game.name} demo in the big terminal
       </button>
     </li>
   );

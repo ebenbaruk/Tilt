@@ -27,7 +27,7 @@ export function AccountView({ withdrawOnly = false }: { withdrawOnly?: boolean }
         <Button variant="solid" onClick={login}>
           log in
         </Button>
-        <span className={styles.muted}>email, Google, X or Phantom</span>
+        <span className={styles.muted}>email, Google or X</span>
       </div>
     );
   }

@@ -100,7 +100,7 @@ function Approve({ userCode }: { userCode: string | null }) {
         <Button variant="solid" onClick={login}>
           log in to approve
         </Button>
-        <span className={styles.muted}>email, Google, X or Phantom</span>
+        <span className={styles.muted}>email, Google or X</span>
       </div>
     );
   }
