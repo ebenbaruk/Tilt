@@ -48,7 +48,7 @@ const STEPS = [
   {
     title: "Install the mod",
     command: "paste the install prompt",
-    body: "Paste the prompt below into Claude Code. Your agent audits the mod's code first, tells you what it can and cannot do, and installs it only on your go. The mod only sees when a turn starts and ends: never your prompts, your code or your tool calls.",
+    body: "Paste the prompt below into your coding agent: Claude Code, Codex, OpenCode, omp, Gemini CLI and more. Your agent audits Tilt's code first, tells you what it can and cannot do, and installs it only on your go. Tilt only sees when a turn starts and ends: never your prompts, your code or your tool calls.",
   },
   {
     title: "Log in, add USDC",
@@ -58,7 +58,7 @@ const STEPS = [
   {
     title: "Play while it works",
     command: "n deal · 5.00",
-    body: "Send a prompt and the panel opens. ctrl+x tab gives Tilt the keys, one key per move, Esc hands them back. When the agent finishes, your hand waits for the next turn.",
+    body: "Send a prompt and the table opens in your agent, or in a pane beside it. One key per move, and when the agent finishes, your hand waits for the next turn.",
   },
 ];
 
@@ -66,12 +66,12 @@ const FAQ = [
   {
     flag: "--invite",
     q: "How do I get in?",
-    a: "Join the waitlist. Tilt opens to it first: your invite gives you access to the code and the API URL. Paste the install prompt into Claude Code, then /tilt login, add USDC and play.",
+    a: "Join the waitlist. Tilt opens to it first: your invite gives you access to the code and the API URL. Paste the install prompt into your coding agent, then log in, add USDC and play.",
   },
   {
     flag: "--agents",
     q: "Does it work in Codex, Grok or other agents?",
-    a: "Not yet. Tilt is a Claude Code mod: it draws its panel with Claude Code's own mod engine. The install prompt checks which agent runs it and stops anywhere else.",
+    a: "Yes. Tilt runs inside Claude Code, omp, pi, OpenCode, Kilo and DeepSeek Harness, shows its status in Amp, Copilot, Grok, Qwen, Kimi, Droid and Cursor, and plays in a companion pane next to Codex, Gemini CLI, goose, Cline, Crush, CodeWhale and Aider. The install prompt finds your agent's integration and stops if there is none.",
   },
   {
     flag: "--demo",
@@ -158,15 +158,16 @@ export default function Landing() {
         <section className={styles.hero} aria-labelledby="hero-title">
           <div className={styles.heroText}>
             <p className={styles.heroMeta}>
-              <span className={styles.pink}>›</span> a claude code mod · 12 games · usdc on solana · 18+
+              <span className={styles.pink}>›</span> for claude code, codex, opencode and more · 12 games · usdc on
+              solana · 18+
             </p>
             <WavyWordmark id="hero" className={styles.wordmark} />
             <h1 id="hero-title" className={styles.tagline}>
               The casino you play while your agent codes
             </h1>
             <p className={styles.lede}>
-              Blackjack, roulette and ten more games in a panel inside Claude Code. Real USDC on Solana, every draw
-              provably fair, and the panel steps aside the second your agent needs you.
+              Blackjack, roulette and ten more games inside your coding agent. Real USDC on Solana, every draw provably
+              fair, and the table steps aside the second your agent needs you.
             </p>
             <div id="waitlist" className={styles.waitlist}>
               <WaitlistForm />

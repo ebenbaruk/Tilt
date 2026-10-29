@@ -6,10 +6,12 @@ export const metadata: Metadata = { title: "Privacy (draft)" };
 export default function PrivacyPage() {
   return (
     <LegalPage title="Privacy policy">
-      <h2>What the mod sees</h2>
+      <h2>What Tilt sees in your agent</h2>
       <p>
         The Claude Code mod reads only when an agent turn starts and ends. It never reads your prompts, your code or
-        your tool calls, and its source is public.
+        your tool calls, and its source is public. The integrations for other coding agents read the same and no more:
+        their hook scripts only signal a turn start or end and never read their input, and the companion app only reads
+        its own keys. All of them send data only to the Tilt API.
       </p>
       <h2>What Tilt stores</h2>
       <ul>

@@ -19,7 +19,7 @@ const archivo = Archivo({ subsets: ["latin"], variable: "--font-archivo", displa
 export const metadata: Metadata = {
   title: { default: "Tilt · the casino you play while your agent codes", template: "%s · Tilt" },
   description:
-    "Blackjack, roulette, baccarat, slots, mines, dice, limbo, flip, keno, wheel, hilo and tower inside Claude Code. USDC on Solana, provably fair, played while your agent works. 18+.",
+    "Blackjack, roulette, baccarat, slots, mines, dice, limbo, flip, keno, wheel, hilo and tower inside your coding agent: Claude Code, Codex, OpenCode and more. USDC on Solana, provably fair, played while your agent works. 18+.",
 };
 
 export const viewport: Viewport = {
