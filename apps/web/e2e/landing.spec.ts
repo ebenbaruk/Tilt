@@ -80,6 +80,16 @@ test("switches games in the showcase with the keyboard and the grid", async ({ p
   await expect(page.getByRole("tab", { name: "Tower" })).toHaveAttribute("aria-selected", "true");
 });
 
+test("how it works gives the install prompt: audit first, Claude Code only", async ({ page }) => {
+  await page.goto("/");
+  const prompt = page.locator("#how").getByLabel("Install prompt");
+  await expect(prompt).toContainText("https://github.com/ebenbaruk/Tilt");
+  await expect(prompt).toContainText("Audit it before anything runs");
+  await expect(prompt).toContainText("wait for my go");
+  await expect(prompt).toContainText("claude plugin install tilt@tilt");
+  await expect(page.locator("#how").getByRole("button", { name: "copy prompt" })).toBeVisible();
+});
+
 test("the first landing stays reachable as an archive", async ({ page }) => {
   await page.goto("/archive/landing-v1");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("The casino you play while your agent codes");

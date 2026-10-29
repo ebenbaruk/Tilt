@@ -5,6 +5,7 @@ import { GamesFloor } from "@/components/landing/demo/Games";
 import { HeroTerminal } from "@/components/landing/demo/HeroTerminal";
 import { VerifyOutput } from "@/components/landing/demo/VerifyOutput";
 import { Chip, Die } from "@/components/landing/Illustrations";
+import { InstallPrompt } from "@/components/landing/InstallPrompt";
 import { WaitlistForm } from "@/components/landing/WaitlistForm";
 import { WavyWordmark } from "@/components/landing/WavyWordmark";
 import { SponsorBlock } from "@/components/tilt/SponsorBlock";
@@ -46,8 +47,8 @@ const FACTS = [
 const STEPS = [
   {
     title: "Install the mod",
-    command: "/plugin install tilt@tilt",
-    body: "In Claude Code. Your invite comes with one prompt to paste: it adds the Tilt marketplace, installs the mod and sets it up. The mod only sees when a turn starts and ends: never your prompts, your code or your tool calls.",
+    command: "paste the install prompt",
+    body: "Paste the prompt below into Claude Code. Your agent audits the mod's code first, tells you what it can and cannot do, and installs it only on your go. The mod only sees when a turn starts and ends: never your prompts, your code or your tool calls.",
   },
   {
     title: "Log in, add USDC",
@@ -65,7 +66,12 @@ const FAQ = [
   {
     flag: "--invite",
     q: "How do I get in?",
-    a: "Join the waitlist. Tilt opens to it first: your invite has one prompt to paste into Claude Code, which installs and sets up the mod. Then /tilt login, add USDC and play.",
+    a: "Join the waitlist. Tilt opens to it first: your invite gives you access to the code and the API URL. Paste the install prompt into Claude Code, then /tilt login, add USDC and play.",
+  },
+  {
+    flag: "--agents",
+    q: "Does it work in Codex, Grok or other agents?",
+    a: "Not yet. Tilt is a Claude Code mod: it draws its panel with Claude Code's own mod engine. The install prompt checks which agent runs it and stops anywhere else.",
   },
   {
     flag: "--demo",
@@ -252,6 +258,9 @@ export default function Landing() {
               </li>
             ))}
           </ol>
+          <div className={styles.installPrompt}>
+            <InstallPrompt />
+          </div>
         </section>
 
         <section id="fair" className={styles.fair} aria-labelledby="fair-title">
