@@ -1,0 +1,19 @@
+#!/bin/sh
+# Launches the Tilt companion (the table, playable with keys) from a clone, with Bun when present,
+# else Node through a pinned tsx. Run it in a split pane next to the coding agent.
+set -eu
+
+dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+app="$dir/../tilt.ts"
+
+if command -v bun >/dev/null 2>&1; then
+  exec bun "$app" "$@"
+fi
+if command -v npx >/dev/null 2>&1; then
+  # npx looks for tsx in the project around the current directory first; from a pnpm workspace it
+  # finds the store copy without a bin link and fails. The companion folder has no node_modules.
+  cd "$dir/.."
+  exec npx --yes tsx@4.23.15 "$app" "$@"
+fi
+echo "tilt: install Bun (https://bun.sh) or Node.js 22+ (with npx) to run the companion." >&2
+exit 1

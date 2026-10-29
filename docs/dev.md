@@ -51,6 +51,8 @@ pnpm --filter @tilt/contract test
 TEST_DATABASE_URL=postgres://postgres:tilt@127.0.0.1:55432/tilt_test pnpm --filter @tilt/wallet test
 TEST_DATABASE_URL=postgres://postgres:tilt@127.0.0.1:55432/tilt_api_test pnpm --filter @tilt/api test
 pnpm --filter @tilt/mod test           # claude plugin validate + test
+pnpm --filter @tilt/play test          # cœur partagé des autres harnais
+pnpm --filter @tilt/harnesses typecheck
 pnpm --filter @tilt/web test && pnpm --filter @tilt/web e2e
 (cd chain && cargo +1.89.0 test)
 ```
@@ -115,3 +117,14 @@ pnpm --filter @tilt/api admin prize:pay   # idempotent : relancer ne paie rien d
 ```
 
 `pnpm --filter @tilt/api admin` sans argument affiche l'aide.
+
+## 7. Autres harnais
+
+Tilt se joue aussi dans d'autres agents de code (omp, OpenCode, Codex, Gemini CLI…) : index, niveaux d'intégration et installation dans [`harnesses/README.md`](../harnesses/README.md).
+
+Pour un essai sans la stack, lance la fausse API puis pointe le harnais (ou le compagnon) dessus :
+
+```sh
+bun packages/play/test/fake-api.ts 8099
+TILT_API_URL=http://127.0.0.1:8099 harnesses/companion/bin/tilt
+```
