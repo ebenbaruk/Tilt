@@ -1,6 +1,6 @@
 # Installer Tilt (testeurs invités)
 
-Le testeur colle un prompt dans Claude Code, qui installe et règle le mod Tilt. Il redémarre Claude Code, tape `/tilt login`, se connecte sur le web, dépose et joue. Tout se passe sur devnet : l'argent est de l'USDC de test, sans valeur.
+Le testeur colle un prompt dans Claude Code : son agent audite le code du mod, l'installe une fois que le testeur a donné son feu vert, puis le règle. Il redémarre Claude Code, tape `/tilt login`, se connecte sur le web, dépose et joue. Tout se passe sur devnet : l'argent est de l'USDC de test, sans valeur.
 
 Deux valeurs sont à remplir par l'équipe avant d'envoyer ce document (partout où elles apparaissent) :
 
@@ -16,27 +16,32 @@ Deux valeurs sont à remplir par l'équipe avant d'envoyer ce document (partout 
 
 ## Le prompt à coller
 
-Colle ce bloc tel quel dans Claude Code. L'agent lancera les commandes `git` et `claude plugin` ci-dessous ; Claude Code te demande d'approuver chacune. Elles ne touchent qu'à ta config Claude Code (marketplace `tilt`, plugin `tilt@tilt`, son réglage `apiUrl`) et peuvent être relancées sans risque.
+C'est le même prompt que sur la landing, dans la section « How it works » (`apps/web/components/landing/InstallPrompt.tsx`, à garder identique). Le testeur le colle dans Claude Code, et son agent :
+
+1. vérifie qu'il tourne bien dans Claude Code. Tilt est un mod Claude Code : ailleurs (Codex, Grok, omp…), l'agent s'arrête ;
+2. récupère le dépôt comme marketplace, sans rien installer, et note le commit ;
+3. audite le code du mod (`apps/mod`, le seul que Claude Code charge), point par point avec `fichier:ligne`, puis donne un verdict et **attend le feu vert du testeur** ;
+4. installe le mod et vérifie que la copie installée est exactement celle qu'il a auditée ;
+5. règle `apiUrl` avec l'URL de l'invitation (`<TILT_API_URL>`), qu'il demande au testeur.
+
+Claude Code demande d'approuver chaque commande. Elles ne touchent qu'à la config Claude Code (marketplace `tilt`, plugin `tilt@tilt`, son réglage `apiUrl`) et peuvent être relancées.
 
 ```text
-Installe le mod Claude Code « Tilt » depuis le dépôt GitHub privé ebenbaruk/Tilt, puis règle son URL d'API. Lance les commandes une par une, exactement comme écrites. Si l'une échoue, arrête-toi, montre-moi la sortie et n'essaie pas de contournement (ne modifie pas ~/.claude/settings.json à la main, ne clone pas le dépôt ailleurs).
+Install Tilt, the Claude Code mod at https://github.com/ebenbaruk/Tilt. Audit it before anything runs, and stop at the first problem.
 
-1. Vérifie les prérequis :
-   - `claude --version` : la version doit être 2.1.287 ou plus. Sinon, arrête-toi et dis-moi de mettre Claude Code à jour.
-   - `git ls-remote https://github.com/ebenbaruk/Tilt.git HEAD` : doit afficher un hash. Sinon, arrête-toi et dis-moi que mon accès GitHub au dépôt ne marche pas (invitation non acceptée, ou git sans identifiants : `gh auth login` puis `gh auth setup-git`).
-   - L'URL d'API de l'étape 5 doit commencer par https://. Si ce n'est pas le cas, ou si elle contient encore « TILT_API_URL », arrête-toi : le document n'a pas été rempli par l'équipe.
-2. Ajoute la marketplace (sans effet si elle est déjà là) :
-   `claude plugin marketplace add ebenbaruk/Tilt`
-3. Mets-la à jour (utile si elle était déjà ajoutée) :
-   `claude plugin marketplace update tilt`
-4. Installe le plugin pour mon utilisateur (sans effet s'il est déjà installé) :
-   `claude plugin install tilt@tilt --scope user`
-5. Règle l'URL de l'API (remplace la valeur précédente, garde les autres réglages) :
-   `printf '%s\n' '{"apiUrl":"<TILT_API_URL>"}' | claude plugin configure tilt@tilt --values-stdin`
-6. Vérifie :
-   - `claude plugin list` doit montrer `tilt@tilt`, scope `user`, statut enabled.
-   - `claude plugin configure tilt@tilt --json` doit montrer `"apiUrl": "<TILT_API_URL>"` dans `inputs`.
-7. Dis-moi : « Tilt est installé. Quitte Claude Code et relance-le, puis tape /tilt login. »
+1. Check the harness. Tilt runs only in Claude Code 2.1.287 or later, as a mod. If you are another agent (Codex, Grok, omp...) or `claude --version` is older, stop and tell me: there is nothing to set up for you yet.
+2. Fetch it without installing: run `claude plugin marketplace add ebenbaruk/Tilt` (`claude plugin marketplace update tilt` if it is already there). If GitHub refuses, stop: my access to the repo is missing (invite not accepted, or git without credentials: `gh auth login`, then `gh auth setup-git`). Find its folder (installLocation in `claude plugin marketplace list --json`) and note `git -C <folder> rev-parse HEAD`.
+3. Audit <folder>/apps/mod, the only code Claude Code loads (hooks/hooks.json names the entry). Read every file in hooks/, plus .claude-plugin/plugin.json and package.json, and confirm each point with file:line:
+   - no install script and no runtime dependency;
+   - network calls only to its apiUrl setting;
+   - the only command it runs is `open <login url>` on /tilt login, and only for a URL on the API's own site;
+   - no file system access, and nothing that reads my prompts, your replies, my code, tool calls or transcripts;
+   - it stores only its session token and its own choices, and changes only its own settings;
+   - the clipboard only when I press w on a win, sounds only from its own sounds/ folder.
+   Flag anything else it can do and anything obfuscated. Give me a verdict with the commit you audited, and wait for my go.
+4. On my go: `claude plugin install tilt@tilt --scope user` (`claude plugin update tilt@tilt` if it is already installed). Then check that `diff -r <folder>/apps/mod <installPath>` (installPath from `claude plugin list --json`) shows nothing but Claude Code's .in_use marker: what is installed is what you audited.
+5. Set the API URL from my invite (ask me for it; it must start with https://): `printf '%s\n' '{"apiUrl":"<url>"}' | claude plugin configure tilt@tilt --values-stdin`.
+6. Tell me to restart Claude Code and type /tilt login.
 ```
 
 ## Après le prompt
@@ -83,4 +88,5 @@ claude plugin marketplace remove tilt
   Le bouton « add funds by card » de `/account` vise l'USDC devnet de Circle (`4zMMC9…`), pas ce mint : sur devnet il ne crédite rien de déposable.
 - **Mises à jour du mod** : `claude plugin update` a répondu « already at the latest version (0.1.0) » après un `marketplace update` ; sans incrément de `version` dans `apps/mod/.claude-plugin/plugin.json`, les testeurs ne reçoivent probablement rien (non vérifié avec un vrai changement).
 - **Clé du réglage** : la CLI enregistre `apiUrl` sous `pluginConfigs."tilt@tilt".options` dans `~/.claude/settings.json`, alors que `apps/mod/README.md` et `docs/dev.md` (section 5) parlent de `pluginConfigs.tilt.options`. Le prompt passe par la CLI, donc il n'est pas touché ; ces deux docs sont à vérifier pour une install par marketplace.
-- **Page de connexion** : elle annonce « email, Google, X or Phantom », mais Phantom n'est pas encore branché (`apps/web/components/privy/PrivyProviders.tsx`).
+- **Phantom** : il n'est pas branché (`apps/web/components/privy/PrivyProviders.tsx`). #18 le retire des pages qui l'annonçaient.
+- **Mise à jour et audit** : à chaque changement du mod, monter sa `version`. Sinon `claude plugin update` ne fait rien, et à la relance du prompt la vérification « copie installée = copie auditée » échoue : l'agent s'arrête, ce qui est voulu.
