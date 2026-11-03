@@ -12,7 +12,7 @@ export const INSTALL_PROMPT = `Install Tilt, the casino at https://github.com/eb
    - the only command it runs opens the login URL in my browser;
    - files written only under ~/.tilt, plus the harness config the README tells you to edit (Claude Code: only its own plugin settings);
    - hook scripts never read stdin, and nothing reads my prompts, your replies, my code, tool calls or transcripts;
-   - no install script and no runtime dependency.
+   - no install script, and nothing downloaded at run time.
    Flag anything else it can do and anything obfuscated. Give me a verdict with the commit you audited, and wait for my go.
 4. On my go, ask me for the API URL from my invite (it must start with https://). Claude Code: \`claude plugin install tilt@tilt --scope user\`, check that \`diff -r <folder>/apps/mod <installPath>\` (installPath from \`claude plugin list --json\`) shows nothing but the .in_use marker, then \`printf '%s\\n' '{"apiUrl":"<url>"}' | claude plugin configure tilt@tilt --values-stdin\`. Others: install exactly as <folder>/harnesses/<name>/README.md says, with <TILT_DIR> = ~/.tilt/src and the URL as TILT_API_URL or apiUrl, as it says.
 5. Tell me how to start playing in this agent (its key or command, or the companion command to run in a split pane) and how to log in.`;
