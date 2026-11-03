@@ -58,6 +58,7 @@ const RESULT: VerifyResponse = {
   },
   onChain: { stake: "3000000", payout: "4000000", fee: "10000" },
   matches: true,
+  choicesRecorded: true,
 };
 
 test("the form rejects a malformed signature and opens a valid one", async ({ page }) => {
@@ -335,6 +336,14 @@ test("flags a mismatch", async ({ page }) => {
   await page.goto(`/verify/${SIGNATURE}`);
   await expect(page.getByText("Replay does not match on-chain.")).toBeVisible();
   await expect(page.getByLabel("differs")).toHaveText("✗");
+});
+
+test("says when the player's choices weren't recorded", async ({ page }) => {
+  const unrecorded: VerifyResponse = { ...RESULT, choicesRecorded: false };
+  await page.route(`**/v1/rounds/${SIGNATURE}/verify`, (route) => json(route, 200, unrecorded));
+  await page.goto(`/verify/${SIGNATURE}`);
+  await expect(page.getByText("the player's choices weren't recorded")).toBeVisible();
+  await expect(page.getByText("Replay matches on-chain.")).toHaveCount(0);
 });
 
 test("explains an unknown round", async ({ page }) => {
