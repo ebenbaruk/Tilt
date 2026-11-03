@@ -83,7 +83,7 @@ test("switches games in the showcase with the keyboard and the grid", async ({ p
 test("how it works gives the install prompt: audit first, any supported agent", async ({ page }) => {
   await page.goto("/");
   const prompt = page.locator("#how").getByLabel("Install prompt");
-  await expect(prompt).toContainText("https://github.com/ebenbaruk/Tilt");
+  await expect(prompt).toContainText("https://github.com/ebenbaruk/tilt-client");
   await expect(prompt).toContainText("Audit it before anything runs");
   await expect(prompt).toContainText("wait for my go");
   await expect(prompt).toContainText("claude plugin install tilt@tilt");
