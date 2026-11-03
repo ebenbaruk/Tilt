@@ -30,7 +30,7 @@ docker exec tilt-pg psql -U postgres -c "create database tilt_api_test" -c "crea
 
 ## 2. Stack Solana + rollup + VRF
 
-- **Linux (et CI) :** `chain/scripts/local-stack.sh`.
+- **Linux :** `chain/scripts/local-stack.sh`.
 - **macOS :** `scripts/local-stack-macos.sh`. Le script Linux exige le réseau hôte Docker et `io_uring`, absents sur Mac.
 
 ```sh
@@ -44,6 +44,10 @@ ANCHOR_WALLET=/tmp/tilt-admin.json pnpm --filter @tilt/chain e2e  # installe la 
 Ports : Solana `8899`/`8900`, rollup `7799`/`7800`.
 
 ## 3. Tests
+
+Tout d'un coup, comme une CI (il n'y a pas de CI GitHub) : `scripts/ci.sh`, et `scripts/ci.sh --e2e` avec la stack de l'étape 2 lancée. À passer avant chaque merge.
+
+Suite par suite :
 
 ```sh
 pnpm -r typecheck && pnpm lint && pnpm format:check
