@@ -5,9 +5,9 @@
   "scripts": {
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "lint": "eslint apps/api apps/mod apps/web",
-    "format": "prettier --write apps/api apps/mod apps/web",
-    "format:check": "prettier --check apps/api apps/mod apps/web"
+    "lint": "eslint apps/api apps/mod apps/web packages/play harnesses",
+    "format": "prettier --write apps/api apps/mod apps/web packages/play harnesses",
+    "format:check": "prettier --check apps/api apps/mod apps/web packages/play harnesses"
   },
   "devDependencies": {
     "@next/eslint-plugin-next": "16.4.4",

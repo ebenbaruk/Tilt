@@ -1,6 +1,6 @@
 chain/
 apps/wallet/
-packages/
+packages/contract/
 docs/
 .claude/
 pnpm-lock.yaml
