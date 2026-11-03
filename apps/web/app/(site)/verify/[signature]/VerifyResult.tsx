@@ -68,10 +68,15 @@ function Verified({ result }: { result: VerifyResponse }) {
   ];
   return (
     <div className={styles.stack}>
-      <Box tone={result.matches ? "success" : "loss"}>
-        {result.matches ? (
+      <Box tone={!result.matches ? "loss" : result.choicesRecorded ? "success" : "plain"}>
+        {result.matches && result.choicesRecorded ? (
           <Status tone="success">
             Replay matches on-chain. This round was dealt by the VRF and paid by the rules.
+          </Status>
+        ) : result.matches ? (
+          <Status tone="info">
+            The draws are the VRF&apos;s and the payout fits the rules, but the player&apos;s choices weren&apos;t
+            recorded for this round, so the replay can&apos;t check them.
           </Status>
         ) : (
           <Status tone="loss">Replay does not match on-chain. Keep this signature and report it.</Status>
