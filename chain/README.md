@@ -8,7 +8,7 @@ Un seul programme Anchor, `tilt`, déployé sur Solana et utilisé dans un Ephem
 - **Le jeu se passe dans le rollup** : le compte du joueur (`PlayerAccount`) y entre à son premier dépôt et y reste. Une manche n'est qu'une mise à jour de solde, avec un tirage VRF MagicBlock (gratuit dans le rollup).
 - **Les retraits** sont demandés dans le rollup et payés sur Solana par une Magic Action, après vérification contre le registre.
 
-Adresse du programme (devnet) : `7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8`. L'IDL partagée avec le reste du monorepo est copiée dans `packages/contract/src/idl` par `scripts/sync-idl.sh` (la CI vérifie qu'elle est à jour).
+Adresse du programme (devnet) : `7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8`. L'IDL partagée avec le reste du monorepo est copiée dans `packages/contract/src/idl` par `scripts/sync-idl.sh` (`scripts/ci.sh` vérifie qu'elle est à jour).
 
 ## Organisation
 
