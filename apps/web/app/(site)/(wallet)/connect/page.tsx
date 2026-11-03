@@ -14,7 +14,7 @@ export default async function ConnectPage({ searchParams }: { searchParams: Prom
     <Page
       eyebrow="tilt login"
       title="Connect your terminal"
-      lede="Approve the Tilt mod running in Claude Code. It gets a game-only session: it can play, never withdraw."
+      lede="Approve Tilt running in your coding agent. It gets a game-only session: it can play, never withdraw."
     >
       <GeoGate>
         <ConnectFlow linkCode={linkCode} />

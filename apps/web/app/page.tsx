@@ -5,6 +5,7 @@ import { GamesFloor } from "@/components/landing/demo/Games";
 import { HeroTerminal } from "@/components/landing/demo/HeroTerminal";
 import { VerifyOutput } from "@/components/landing/demo/VerifyOutput";
 import { Chip, Die } from "@/components/landing/Illustrations";
+import { InstallPrompt } from "@/components/landing/InstallPrompt";
 import { WaitlistForm } from "@/components/landing/WaitlistForm";
 import { WavyWordmark } from "@/components/landing/WavyWordmark";
 import { SponsorBlock } from "@/components/tilt/SponsorBlock";
@@ -46,22 +47,37 @@ const FACTS = [
 const STEPS = [
   {
     title: "Install the mod",
-    command: "/plugin install tilt",
-    body: "From inside Claude Code. The mod only sees when a turn starts and ends: never your prompts, your code or your tool calls.",
+    command: "paste the install prompt",
+    body: "Paste the prompt below into your coding agent: Claude Code, Codex, OpenCode, omp, Gemini CLI and more. Your agent audits Tilt's code first, tells you what it can and cannot do, and installs it only on your go. Tilt only sees when a turn starts and ends: never your prompts, your code or your tool calls.",
   },
   {
     title: "Log in, add USDC",
     command: "/tilt login",
-    body: "Opens your browser. Email, Google, X or Phantom; a Solana wallet is made for you. Fund it by card. No SOL needed.",
+    body: "Opens your browser. Log in with email, Google or X and a Solana wallet is made for you. Enter the code your terminal shows, then add USDC on your account page, by card or from another wallet. No SOL needed.",
   },
   {
     title: "Play while it works",
     command: "n deal · 5.00",
-    body: "Send a prompt and the panel opens. One key per move. When the agent finishes, your hand waits for the next turn.",
+    body: "Send a prompt and the table opens in your agent, or in a pane beside it. One key per move, and when the agent finishes, your hand waits for the next turn.",
   },
 ];
 
 const FAQ = [
+  {
+    flag: "--invite",
+    q: "How do I get in?",
+    a: "Join the waitlist. Tilt opens to it first: your invite gives you access to the code and the API URL. Paste the install prompt into your coding agent, then log in, add USDC and play.",
+  },
+  {
+    flag: "--agents",
+    q: "Does it work in Codex, Grok or other agents?",
+    a: "Yes. Tilt runs inside Claude Code, omp, pi, OpenCode, Kilo and DeepSeek Harness, shows its status in Amp, Copilot, Grok, Qwen, Kimi, Droid and Cursor, and plays in a companion pane next to Codex, Gemini CLI, goose, Cline, Crush, CodeWhale and Aider. The install prompt finds your agent's integration and stops if there is none.",
+  },
+  {
+    flag: "--demo",
+    q: "Are the games on this page real?",
+    a: "No. They are scripted demos: each replays one example round on a loop, with no draw and no money. In the mod, every card, roll and spin comes from a verifiable random draw on Solana.",
+  },
   {
     flag: "--currency",
     q: "What do I play with?",
@@ -70,7 +86,7 @@ const FAQ = [
   {
     flag: "--wallet",
     q: "Do I need a crypto wallet?",
-    a: "No. Log in with email, Google or X and a Solana wallet is created for you. Already on Phantom? Use it.",
+    a: "No. Log in with email, Google or X and a Solana wallet is created for you.",
   },
   {
     flag: "--fees",
@@ -142,15 +158,16 @@ export default function Landing() {
         <section className={styles.hero} aria-labelledby="hero-title">
           <div className={styles.heroText}>
             <p className={styles.heroMeta}>
-              <span className={styles.pink}>›</span> a claude code mod · 12 games · usdc on solana · 18+
+              <span className={styles.pink}>›</span> for claude code, codex, opencode and more · 12 games · usdc on
+              solana · 18+
             </p>
             <WavyWordmark id="hero" className={styles.wordmark} />
             <h1 id="hero-title" className={styles.tagline}>
               The casino you play while your agent codes
             </h1>
             <p className={styles.lede}>
-              Blackjack, roulette and ten more games in a panel inside Claude Code. Real USDC on Solana, every draw
-              provably fair, and the panel steps aside the second your agent needs you.
+              Blackjack, roulette and ten more games inside your coding agent. Real USDC on Solana, every draw provably
+              fair, and the table steps aside the second your agent needs you.
             </p>
             <div id="waitlist" className={styles.waitlist}>
               <WaitlistForm />
@@ -211,7 +228,8 @@ export default function Landing() {
             </h2>
             <p className={styles.headNote}>
               Return to player before Tilt&apos;s fee: 1% of the gain, on winning rounds only. Wins are capped at
-              10,000× the stake.
+              10,000× the stake. The tables below are scripted demos: each replays one example round on a loop, with no
+              draw and no money.
             </p>
           </div>
           <GamesFloor />
@@ -241,6 +259,9 @@ export default function Landing() {
               </li>
             ))}
           </ol>
+          <div className={styles.installPrompt}>
+            <InstallPrompt />
+          </div>
         </section>
 
         <section id="fair" className={styles.fair} aria-labelledby="fair-title">

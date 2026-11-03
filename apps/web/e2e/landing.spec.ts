@@ -38,6 +38,9 @@ test("landing shows the pitch, the waitlist and key sections", async ({ page }) 
   }
   await expect(page.getByText("1% of the gain, on winning rounds only")).toBeVisible();
   await expect(page.getByText("Wins are capped at 10,000× the stake.")).toBeVisible();
+  // The game tables are scripted: the page says so, beside them and in the showcase.
+  await expect(page.getByText("The tables below are scripted demos")).toBeVisible();
+  await expect(page.locator("#showcase")).toContainText("Demo round, on a loop:");
   // Waitlist mode: no way into the app pages from the landing.
   for (const path of ["/account", "/verify", "/leaderboard"]) {
     await expect(page.locator(`a[href="${path}"]`)).toHaveCount(0);
@@ -73,8 +76,20 @@ test("switches games in the showcase with the keyboard and the grid", async ({ p
   await page.keyboard.press("ArrowRight");
   await expect(page.getByRole("tab", { name: "Slots" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("tabpanel")).toContainText("Top win 250×");
-  await page.getByRole("button", { name: "Play Tower in the big terminal" }).click();
+  await page.getByRole("button", { name: "Watch the Tower demo in the big terminal" }).click();
   await expect(page.getByRole("tab", { name: "Tower" })).toHaveAttribute("aria-selected", "true");
+});
+
+test("how it works gives the install prompt: audit first, any supported agent", async ({ page }) => {
+  await page.goto("/");
+  const prompt = page.locator("#how").getByLabel("Install prompt");
+  await expect(prompt).toContainText("https://github.com/ebenbaruk/tilt-client");
+  await expect(prompt).toContainText("Audit it before anything runs");
+  await expect(prompt).toContainText("wait for my go");
+  await expect(prompt).toContainText("claude plugin install tilt@tilt");
+  await expect(prompt).toContainText("harnesses/");
+  await expect(page.locator("#how")).toContainText("paste into your coding agent");
+  await expect(page.locator("#how").getByRole("button", { name: "copy prompt" })).toBeVisible();
 });
 
 test("the first landing stays reachable as an archive", async ({ page }) => {
