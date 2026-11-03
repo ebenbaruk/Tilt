@@ -9,8 +9,8 @@ Deux valeurs sont à remplir par l'équipe avant d'envoyer ce document (partout 
 
 ## Prérequis
 
-- Un accès en lecture au dépôt privé GitHub `ebenbaruk/Tilt` (invitation acceptée).
-- Une auth GitHub qui marche pour `git` : `git ls-remote https://github.com/ebenbaruk/Tilt.git HEAD` doit répondre sans erreur. Claude Code clone le dépôt en SSH si SSH est configuré pour GitHub, sinon en HTTPS ; les autres agents le clonent en HTTPS dans `~/.tilt/src`. Avec la CLI GitHub : `gh auth login`, puis `gh auth setup-git`.
+- Un accès en lecture au dépôt privé GitHub `ebenbaruk/tilt-client` (invitation acceptée). Il ne contient que le code qui tourne chez le testeur ; le monorepo `ebenbaruk/Tilt` ne s'ouvre jamais aux testeurs.
+- Une auth GitHub qui marche pour `git` : `git ls-remote https://github.com/ebenbaruk/tilt-client.git HEAD` doit répondre sans erreur. Claude Code clone le dépôt en SSH si SSH est configuré pour GitHub, sinon en HTTPS ; les autres agents le clonent en HTTPS dans `~/.tilt/src`. Avec la CLI GitHub : `gh auth login`, puis `gh auth setup-git`.
 - Un agent de la liste ci-dessus. Pour Claude Code : 2.1.287 ou plus récent (`claude --version`).
 - Pas besoin de SOL : le relais Tilt paie les frais de transaction.
 
@@ -27,16 +27,16 @@ C'est le même prompt que sur la landing, dans la section « How it works » (`a
 L'agent demande d'approuver chaque commande. Pour Claude Code, elles ne touchent qu'à sa config (marketplace `tilt`, plugin `tilt@tilt`, son réglage `apiUrl`) ; pour les autres, au clone `~/.tilt/src` et à la config indiquée par le README. Elles peuvent être relancées.
 
 ```text
-Install Tilt, the casino at https://github.com/ebenbaruk/Tilt, in the coding agent you are running in. Audit it before anything runs, and stop at the first problem.
+Install Tilt, the casino at https://github.com/ebenbaruk/tilt-client, in the coding agent you are running in. Audit it before anything runs, and stop at the first problem.
 
 1. Identify the agent you are running in and its folder: Claude Code 2.1.287+ (apps/mod); omp or pi (harnesses/pi); OpenCode or Kilo Code (harnesses/opencode); DeepSeek Harness (harnesses/deepseek); Amp (harnesses/amp); GitHub Copilot CLI (harnesses/copilot); Grok Build or grok-cli (harnesses/grok); Qwen Code (harnesses/qwen); Kimi Code (harnesses/kimi); Factory Droid (harnesses/droid); Cursor CLI (harnesses/cursor); Codex CLI (harnesses/codex); Gemini CLI (harnesses/gemini); goose (harnesses/goose); Cline (harnesses/cline); Crush (harnesses/crush); CodeWhale (harnesses/codewhale); Aider (harnesses/aider). If none matches, stop and tell me Tilt has no integration for it yet.
-2. Fetch it without installing. Claude Code: `claude plugin marketplace add ebenbaruk/Tilt` (`claude plugin marketplace update tilt` if it is already there); <folder> is its installLocation in `claude plugin marketplace list --json`. Any other agent: `git clone --depth 1 https://github.com/ebenbaruk/Tilt ~/.tilt/src` (`git -C ~/.tilt/src pull --ff-only` if it is already there); <folder> is ~/.tilt/src. If GitHub refuses, stop: my access to the repo is missing (invite not accepted, or git without credentials: `gh auth login`, then `gh auth setup-git`). Note `git -C <folder> rev-parse HEAD`.
+2. Fetch it without installing. Claude Code: `claude plugin marketplace add ebenbaruk/tilt-client` (`claude plugin marketplace update tilt` if it is already there); <folder> is its installLocation in `claude plugin marketplace list --json`. Any other agent: `git clone --depth 1 https://github.com/ebenbaruk/tilt-client ~/.tilt/src` (`git -C ~/.tilt/src pull --ff-only` if it is already there); <folder> is ~/.tilt/src. If GitHub refuses, stop: my access to the repo is missing (invite not accepted, or git without credentials: `gh auth login`, then `gh auth setup-git`). Note `git -C <folder> rev-parse HEAD`.
 3. Audit the code that will run, and confirm each point with file:line. Claude Code: <folder>/apps/mod. Others: <folder>/harnesses/<name> with its README.md, packages/play/src, apps/mod/hooks/{protocol,guards,keys,format,model}.ts, and harnesses/companion if the README uses it.
    - network calls only to the Tilt API URL;
    - the only command it runs opens the login URL in my browser;
    - files written only under ~/.tilt, plus the harness config the README tells you to edit (Claude Code: only its own plugin settings);
    - hook scripts never read stdin, and nothing reads my prompts, your replies, my code, tool calls or transcripts;
-   - no install script and no runtime dependency.
+   - no install script, and nothing downloaded at run time.
    Flag anything else it can do and anything obfuscated. Give me a verdict with the commit you audited, and wait for my go.
 4. On my go, ask me for the API URL from my invite (it must start with https://). Claude Code: `claude plugin install tilt@tilt --scope user`, check that `diff -r <folder>/apps/mod <installPath>` (installPath from `claude plugin list --json`) shows nothing but the .in_use marker, then `printf '%s\n' '{"apiUrl":"<url>"}' | claude plugin configure tilt@tilt --values-stdin`. Others: install exactly as <folder>/harnesses/<name>/README.md says, with <TILT_DIR> = ~/.tilt/src and the URL as TILT_API_URL or apiUrl, as it says.
 5. Tell me how to start playing in this agent (its key or command, or the companion command to run in a split pane) and how to log in.
@@ -53,16 +53,9 @@ Install Tilt, the casino at https://github.com/ebenbaruk/Tilt, in the coding age
 
 ## Mise à jour et désinstallation
 
-Claude Code : mettre à jour (puis relancer Claude Code) :
+Pour mettre à jour, quel que soit l'agent, recolle le prompt : il récupère la nouvelle version, l'audite et attend ton feu vert avant de réinstaller. Ne fais jamais de `git pull` seul dans `~/.tilt/src` : les hooks et plugins exécutent directement ses fichiers, sans nouvel audit.
 
-```sh
-claude plugin marketplace update tilt
-claude plugin update tilt@tilt
-```
-
-`claude plugin update` compare la `version` de `apps/mod/.claude-plugin/plugin.json` : tant qu'elle reste `0.1.0`, il répond « already at the latest version ». Dans ce cas, désinstalle puis réinstalle (étape 4 du prompt).
-
-Autres agents : `git -C ~/.tilt/src pull --ff-only`, puis refais l'installation de `harnesses/<nom>/README.md`, et relance l'agent.
+Pour Claude Code, la réinstallation passe par `claude plugin update tilt@tilt`, qui compare la `version` de `apps/mod/.claude-plugin/plugin.json` : tant qu'elle reste `0.1.0`, il répond « already at the latest version ». Dans ce cas, désinstalle puis réinstalle (étape 4 du prompt).
 
 Désinstaller : déconnecte-toi d'abord (`/tilt logout` dans Claude Code ; les sessions se révoquent aussi depuis la page compte). Pour Claude Code, ensuite :
 
