@@ -36,7 +36,9 @@ step "secret scan"
 if command -v gitleaks >/dev/null; then
   gitleaks git . --redact --no-banner
 else
-  docker run --rm -v "$PWD:/repo" "$GITLEAKS_IMAGE" git /repo --redact --no-banner
+  # Same paths inside the container, with git's own directory, so a worktree scans too.
+  git_dir=$(cd "$(git rev-parse --git-common-dir)" && pwd)
+  docker run --rm -v "$PWD:$PWD" -v "$git_dir:$git_dir" -w "$PWD" "$GITLEAKS_IMAGE" git "$PWD" --redact --no-banner
 fi
 
 step "contract"
