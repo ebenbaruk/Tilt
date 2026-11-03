@@ -21,6 +21,7 @@ Act like a pragmatic senior engineer. Write code a strong teammate would approve
 pnpm monorepo (pnpm 12.3.4, Node 22+). Full local setup (Postgres, Solana + MagicBlock rollup + VRF): `docs/dev.md`.
 
 ```sh
+scripts/ci.sh            # the whole CI, locally (no GitHub CI); --e2e adds the stack end-to-end tests
 pnpm install --frozen-lockfile
 pnpm -r typecheck && pnpm lint && pnpm format:check   # lint/format cover apps/api, apps/mod, apps/web only
 pnpm --filter @tilt/contract test
@@ -43,7 +44,7 @@ A move goes **mod → api → relay → program**, and state comes back **progra
 - `apps/mod`: a Claude Code mod (hooks module, not a Node app). It only sends intents (`POST /v1/play`) and draws `GET /v1/state`. Every `$` call lives in `hooks/register.tsx`; the other files are pure functions over data (views, keys, guards). It owns the api↔mod protocol, `hooks/protocol.ts`, which `apps/api` imports as `@tilt/mod/protocol`.
 - `apps/api` (Hono + Postgres): device-code login for the mod, `buildState` (chain + indexer + competitions), intents, rate limits, sponsors and competitions (`pnpm --filter @tilt/api admin`). It reaches the chain only through the relay.
 - `apps/wallet` (relay, private network only): Privy signers, fee payer, sending transactions to the rollup. It validates requests with the schemas in `packages/contract`.
-- `packages/contract`: the program IDL (synced from `chain/` by `chain/scripts/sync-idl.sh`, checked in CI) and the relay API zod schemas. It is the only boundary between Eli's and Armand's zones.
+- `packages/contract`: the program IDL (synced from `chain/` by `chain/scripts/sync-idl.sh`, checked by `scripts/ci.sh`) and the relay API zod schemas. It is the only boundary between Eli's and Armand's zones.
 - `chain/`: one Anchor program, `tilt`. Money stays on Solana (USDC vault + per-player `Ledger`); rounds run in a MagicBlock Ephemeral Rollup with MagicBlock VRF; withdrawals are paid on Solana by a Magic Action. Game rules are pure Rust in `programs/tilt/src/games/`. Details: `chain/README.md`; ops: `docs/runbook.md`.
 - `apps/web` (Next.js): landing, login confirmation, deposits and withdrawals (the mod never moves money).
 
