@@ -142,6 +142,9 @@ export interface VerifyResponse {
   onChain: { stake: Amount; payout: Amount; fee: Amount };
   /** True when the replay matches the on-chain payout. */
   matches: boolean;
+  /** Whether the player's choices (target, picks, bets, moves) were recorded when the round
+   *  settled. Without them the replay only shows that some choice explains the payout. */
+  choicesRecorded: boolean;
 }
 
 /** GET /v1/geo (public): whether the caller's country may play. */
