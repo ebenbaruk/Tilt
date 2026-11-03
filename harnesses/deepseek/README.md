@@ -30,17 +30,18 @@ replies, tool calls or session events, and runs no shell command except the plat
 
    A local path is linked, not copied, so the plugin keeps finding `packages/play` in your clone.
    Check the layer with `dsh --profile tui --dump-config` (it shows a `@tilt/dsh` layer).
+
 3. Start dsh as usual (`dsh --profile tui`, `dsh web`).
 
 ## Play
 
-| Command | What it does |
-| --- | --- |
-| `/tilt login` | Opens the login page and answers with the code to confirm. |
-| `/tilt` | Terminal UI: opens the table; press its keys, Esc goes back to the prompt. Elsewhere: the table as text. |
-| `/tilt table` | The table as text. |
-| `/tilt <key>` | Presses one key (e.g. `/tilt 1`). |
-| `/tilt logout` | Signs out on this machine. |
+| Command        | What it does                                                                                             |
+| -------------- | -------------------------------------------------------------------------------------------------------- |
+| `/tilt login`  | Opens the login page and answers with the code to confirm.                                               |
+| `/tilt`        | Terminal UI: opens the table; press its keys, Esc goes back to the prompt. Elsewhere: the table as text. |
+| `/tilt table`  | The table as text.                                                                                       |
+| `/tilt <key>`  | Presses one key (e.g. `/tilt 1`).                                                                        |
+| `/tilt logout` | Signs out on this machine.                                                                               |
 
 The overlay is modal (dsh shows one overlay at a time): while it is open, keys go to Tilt and the
 agent keeps working. The plugin also writes the turn file `~/.tilt/agent.json`, so

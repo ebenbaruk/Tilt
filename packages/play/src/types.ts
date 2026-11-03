@@ -43,6 +43,8 @@ export interface Snapshot {
 /** Where a session keeps its token and the player's table choices between runs. */
 export interface Saved {
   token: string | null;
+  /** The API the token was issued by: it is never sent anywhere else. */
+  apiBase: string | null;
   prefs: unknown;
 }
 

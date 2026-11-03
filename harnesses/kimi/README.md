@@ -4,14 +4,15 @@ For Kimi Code CLI (`MoonshotAI/kimi-code`, the TypeScript successor of the archi
 
 - **Hooks** (this plugin, `kimi.plugin.json`) tell the companion when a turn starts and ends by calling `harnesses/companion/bin/tilt-signal`:
 
-  | Kimi hook | Signal |
-  |---|---|
-  | `TurnStarted` | `working` |
-  | `Stop` | `idle` |
-  | `Interrupt` (Esc, fires instead of `Stop`) | `idle` |
-  | `StopFailure` | `idle` |
+  | Kimi hook                                  | Signal    |
+  | ------------------------------------------ | --------- |
+  | `TurnStarted`                              | `working` |
+  | `Stop`                                     | `idle`    |
+  | `Interrupt` (Esc, fires instead of `Stop`) | `idle`    |
+  | `StopFailure`                              | `idle`    |
 
   `tilt-signal` never reads stdin; Kimi pipes the prompt there (`TurnStarted`) and it isn't read. It prints nothing.
+
 - **Status line** (`[status_line].command` in `~/.kimi-code/tui.toml`) runs `harnesses/companion/bin/tilt-status`, whose first line replaces Kimi's footer.
 
 `<TILT_DIR>` is the absolute path of your Tilt clone.

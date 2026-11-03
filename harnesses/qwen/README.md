@@ -4,14 +4,15 @@ Qwen Code can't draw a panel or capture keys, so you play Tilt in the **companio
 
 - **Hooks** (this extension, `hooks/hooks.json`) tell the companion when a turn starts and ends by calling `harnesses/companion/bin/tilt-signal`:
 
-  | Qwen hook | Signal |
-  |---|---|
-  | `UserPromptSubmit` | `working` |
-  | `Stop` | `idle` |
-  | `StopFailure` (API error or loop detection, fires instead of `Stop`) | `idle` |
-  | `SessionEnd` | `idle` |
+  | Qwen hook                                                            | Signal    |
+  | -------------------------------------------------------------------- | --------- |
+  | `UserPromptSubmit`                                                   | `working` |
+  | `Stop`                                                               | `idle`    |
+  | `StopFailure` (API error or loop detection, fires instead of `Stop`) | `idle`    |
+  | `SessionEnd`                                                         | `idle`    |
 
   `tilt-signal` never reads stdin; Qwen pipes the prompt there and it isn't read. It prints nothing (Qwen would add plain stdout to the model context on `UserPromptSubmit`).
+
 - **Status line** (`ui.statusLine` in your settings) runs `harnesses/companion/bin/tilt-status`, which prints the companion's one-line status in Qwen's footer.
 
 The hooks use `${CLAUDE_PLUGIN_ROOT}/../companion/bin/tilt-signal` (the only variable Qwen substitutes in `hooks/hooks.json`). With `qwen extensions link`, it is your clone's `harnesses/qwen` folder, so nothing needs editing. Don't use `qwen extensions install` on this folder: it copies the extension and the relative path to the companion breaks.

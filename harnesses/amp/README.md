@@ -58,6 +58,7 @@ Then run `plugins: reload` in Amp.
 Checked against the official docs on 2026-10-29 ([Plugins manual](https://ampcode.com/manual/plugins.md), [Plugin API reference](https://ampcode.com/docs/plugin-api)). Amp is not installed on this machine, so **the plugin has not been run in Amp.**
 
 Verified in the docs:
+
 - Plugin locations, directory plugins (`<name>/index.ts`), the default export receiving `PluginAPI`, the optional static `description` export, and that plugins run with Bun (and can use `process.env` and `node:` modules).
 - `amp.experimental?.createStatusItem()` with `update({ text, url })`; `url: "command:<id>"` runs a plugin command. Shown in the CLI only; other clients ignore it. It is an **experimental** API that may change or disappear.
 - `amp.registerCommand(id, { title, category, description }, handler)`; the palette shows `category: title`.
@@ -66,6 +67,7 @@ Verified in the docs:
 - `amp.system.open(url)` / `ctx.system.open(url)` opens the browser and, in the CLI, also shows the URL.
 
 Not verified:
+
 - Whether the status item renders ANSI colors, and how wide it can be. The plugin sends plain text at 80 columns.
 - How the select and confirm dialogs render a 72-column fenced code block, and whether a long option list scrolls well.
 - Whether Amp follows a symlinked plugin directory back to the clone for relative imports (Bun does by default), and whether an entry file may import an absolute path outside the plugins folder.

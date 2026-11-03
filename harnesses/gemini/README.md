@@ -2,11 +2,11 @@
 
 Gemini CLI has no API to draw a panel, capture keys or run a custom status line (the footer only takes built-in items), so you play Tilt in the **companion** app in a split pane. This extension only tells the companion when Gemini is working, through hooks that call `harnesses/companion/bin/tilt-signal`:
 
-| Gemini hook | Signal |
-|---|---|
+| Gemini hook                | Signal           |
+| -------------------------- | ---------------- |
 | `BeforeAgent` (turn start) | `working --json` |
-| `AfterAgent` (turn end) | `idle --json` |
-| `SessionEnd` | `idle --json` |
+| `AfterAgent` (turn end)    | `idle --json`    |
+| `SessionEnd`               | `idle --json`    |
 
 Gemini parses hook stdout as JSON, so every call uses `--json` (prints `{}`). `tilt-signal` never reads stdin; Gemini pipes the prompt and the reply there, and neither is read.
 

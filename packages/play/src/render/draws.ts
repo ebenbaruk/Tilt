@@ -41,7 +41,11 @@ function verdict(round: RoundView, color: boolean): string {
 }
 
 /** `round` when it is an open one of `detail`'s game, or a settled one played with the choices on the table. */
-function shown<D extends RoundView["detail"]>(round: RoundView | null, detail: D | null, isSameChoice: boolean): (RoundView & { detail: D }) | null {
+function shown<D extends RoundView["detail"]>(
+  round: RoundView | null,
+  detail: D | null,
+  isSameChoice: boolean,
+): (RoundView & { detail: D }) | null {
   return round !== null && detail !== null && (round.phase !== "idle" || isSameChoice) ? { ...round, detail } : null;
 }
 
@@ -70,7 +74,9 @@ export function renderDice(round: RoundView | null, ctx: RenderContext): string[
   const roll = played?.detail.roll ?? null;
   const isSettled = played !== null && played.phase === "idle" && roll !== null;
   const marker =
-    roll === null ? "" : `${" ".repeat(Math.floor(roll / ROLLS_PER_CELL))}${isSettled ? tone(played, color, "▼") : "▼"}`;
+    roll === null
+      ? ""
+      : `${" ".repeat(Math.floor(roll / ROLLS_PER_CELL))}${isSettled ? tone(played, color, "▼") : "▼"}`;
   const multiplier = shortMultiplier(played?.detail.multiplier ?? diceMultiplier(chance));
   const result =
     played === null

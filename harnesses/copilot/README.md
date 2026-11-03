@@ -32,13 +32,13 @@ Extensions are an **experimental** Copilot CLI feature and may change.
 
 ## Play
 
-| Command | What it does |
-| --- | --- |
-| `/tilt login` | Opens the login page and prints the code to confirm; the timeline says when you're in. |
-| `/tilt` | Opens a dialog with the table and its keys; pick moves until you cancel it. |
-| `/tilt table` | Prints the table in the timeline. |
-| `/tilt <key>` | Presses one key (e.g. `/tilt 1`), then prints the table. Use it where dialogs are unavailable. |
-| `/tilt logout` | Signs out on this machine. |
+| Command        | What it does                                                                                   |
+| -------------- | ---------------------------------------------------------------------------------------------- |
+| `/tilt login`  | Opens the login page and prints the code to confirm; the timeline says when you're in.         |
+| `/tilt`        | Opens a dialog with the table and its keys; pick moves until you cancel it.                    |
+| `/tilt table`  | Prints the table in the timeline.                                                              |
+| `/tilt <key>`  | Presses one key (e.g. `/tilt 1`), then prints the table. Use it where dialogs are unavailable. |
+| `/tilt logout` | Signs out on this machine.                                                                     |
 
 The extension also writes the turn file `~/.tilt/agent.json`, so the companion app
 (`harnesses/companion/bin/tilt` in a split pane) shows a live table you play with single keys

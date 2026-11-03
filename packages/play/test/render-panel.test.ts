@@ -28,7 +28,20 @@ const PREFS: Prefs = {
   towerDifficulty: "easy",
 };
 
-const GAMES: Game[] = ["blackjack", "roulette", "baccarat", "slots", "mines", "dice", "limbo", "flip", "keno", "wheel", "hilo", "tower"];
+const GAMES: Game[] = [
+  "blackjack",
+  "roulette",
+  "baccarat",
+  "slots",
+  "mines",
+  "dice",
+  "limbo",
+  "flip",
+  "keno",
+  "wheel",
+  "hilo",
+  "tower",
+];
 
 function state(round: RoundView | null): StateResponse {
   return {
@@ -164,7 +177,10 @@ const text = (lines: string[]): string => lines.join("\n");
 
 describe("renderPanel", () => {
   it("invites a logged-out player to log in, with the last message", () => {
-    const lines = renderPanel(snapshot({ auth: { status: "out", message: "Login expired." } }), { color: false, width: WIDTH });
+    const lines = renderPanel(snapshot({ auth: { status: "out", message: "Login expired." } }), {
+      color: false,
+      width: WIDTH,
+    });
 
     expect(text(lines)).toContain("TILT");
     expect(text(lines)).toContain("/tilt login");
@@ -193,9 +209,27 @@ describe("renderPanel", () => {
       snapshot({
         state: state(BLACKJACK_ROUND),
         keys: [
-          { key: "game-blackjack", hotkey: "1", label: "Blackjack", isSelected: true, command: { kind: "switch", game: "blackjack" } },
-          { key: "hit", hotkey: "h", label: "hit", isSelected: false, command: { kind: "play", action: { type: "blackjack_hit" } } },
-          { key: "stand", hotkey: "s", label: "stand", isSelected: false, command: { kind: "play", action: { type: "blackjack_stand" } } },
+          {
+            key: "game-blackjack",
+            hotkey: "1",
+            label: "Blackjack",
+            isSelected: true,
+            command: { kind: "switch", game: "blackjack" },
+          },
+          {
+            key: "hit",
+            hotkey: "h",
+            label: "hit",
+            isSelected: false,
+            command: { kind: "play", action: { type: "blackjack_hit" } },
+          },
+          {
+            key: "stand",
+            hotkey: "s",
+            label: "stand",
+            isSelected: false,
+            command: { kind: "play", action: { type: "blackjack_stand" } },
+          },
         ],
       }),
       { color: false, width: WIDTH },
@@ -234,7 +268,12 @@ describe("renderPanel", () => {
   });
 
   it("shows a blocked reason and the deposit hint for an unopened account", () => {
-    const blocked = text(renderPanel(snapshot({ state: { ...state(null), blocked: "Self-excluded until May." } }), { color: false, width: WIDTH }));
+    const blocked = text(
+      renderPanel(snapshot({ state: { ...state(null), blocked: "Self-excluded until May." } }), {
+        color: false,
+        width: WIDTH,
+      }),
+    );
     expect(blocked).toContain("Self-excluded until May.");
 
     const unopened = renderPanel(
@@ -248,19 +287,28 @@ describe("renderPanel", () => {
 
 describe("renderStatusLine", () => {
   it("asks to log in when logged out", () => {
-    expect(renderStatusLine(snapshot({ auth: { status: "out", message: null } }), { color: false, width: WIDTH })).toContain(
-      "TILT · /tilt login",
-    );
+    expect(
+      renderStatusLine(snapshot({ auth: { status: "out", message: null } }), { color: false, width: WIDTH }),
+    ).toContain("TILT · /tilt login");
   });
 
   it("sums up balance, game, last result and the agent in one line", () => {
-    const line = renderStatusLine(snapshot({ state: state(BACCARAT_WIN), prefs: { ...PREFS, game: "baccarat" }, agent: { isWorking: false, notice: null } }), {
-      color: false,
-      width: WIDTH,
-    });
+    const line = renderStatusLine(
+      snapshot({
+        state: state(BACCARAT_WIN),
+        prefs: { ...PREFS, game: "baccarat" },
+        agent: { isWorking: false, notice: null },
+      }),
+      {
+        color: false,
+        width: WIDTH,
+      },
+    );
 
     expect(line.trimEnd()).toBe("TILT 12.40 · Baccarat · +0.94 · agent idle");
-    expect(visibleWidth(renderStatusLine(snapshot({ state: state(BACCARAT_WIN) }), { color: true, width: 20 }))).toBe(20);
+    expect(visibleWidth(renderStatusLine(snapshot({ state: state(BACCARAT_WIN) }), { color: true, width: 20 }))).toBe(
+      20,
+    );
   });
 });
 
@@ -291,7 +339,12 @@ describe("card renderers", () => {
     if (detail.game !== "blackjack") throw new Error("fixture");
     const hand = detail.hands[0];
     if (hand === undefined) throw new Error("fixture");
-    const round: RoundView = { ...BLACKJACK_ROUND, phase: "idle", net: "-10000000", detail: { ...detail, hands: Array.from({ length: 10 }, () => ({ ...hand, result: "lose" as const })) } };
+    const round: RoundView = {
+      ...BLACKJACK_ROUND,
+      phase: "idle",
+      net: "-10000000",
+      detail: { ...detail, hands: Array.from({ length: 10 }, () => ({ ...hand, result: "lose" as const })) },
+    };
     const lines = renderBlackjack(round, ctx(NARROW));
 
     expect(lines.length).toBeLessThanOrEqual(12);

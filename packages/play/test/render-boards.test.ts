@@ -84,7 +84,11 @@ const KENO_HITS = round(
   "500000",
 );
 
-const DICE_LOSS = round({ game: "dice", target: 4_900, over: false, roll: 7_500, multiplier: "2.0000" }, "idle", "-1000000");
+const DICE_LOSS = round(
+  { game: "dice", target: 4_900, over: false, roll: 7_500, multiplier: "2.0000" },
+  "idle",
+  "-1000000",
+);
 
 const text = (lines: string[]): string => lines.join("\n");
 

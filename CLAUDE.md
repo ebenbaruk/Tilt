@@ -24,7 +24,7 @@ pnpm monorepo (pnpm 12.3.4, Node 22+). Full local setup (Postgres, Solana + Magi
 ```sh
 scripts/ci.sh            # the whole CI, locally (no GitHub CI); --e2e adds the stack end-to-end tests
 pnpm install --frozen-lockfile
-pnpm -r typecheck && pnpm lint && pnpm format:check   # lint/format cover apps/api, apps/mod, apps/web only
+pnpm -r typecheck && pnpm lint && pnpm format:check   # lint/format cover the clients: apps/api, apps/mod, apps/web, packages/play, harnesses
 pnpm --filter @tilt/contract test
 TEST_DATABASE_URL=postgres://postgres:tilt@127.0.0.1:55432/tilt_api_test pnpm --filter @tilt/api test
 TEST_DATABASE_URL=postgres://postgres:tilt@127.0.0.1:55432/tilt_test pnpm --filter @tilt/wallet test

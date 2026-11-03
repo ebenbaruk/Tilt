@@ -7,10 +7,10 @@ Grok Build (`grok`, xAI) can't host an interactive panel: extensions can't draw 
 
 Files:
 
-| File | Goes to |
-| --- | --- |
-| `tilt.json` | `~/.grok/hooks/tilt.json` (Grok Build) |
-| `config.toml` | append to `~/.grok/config.toml` (Grok Build) |
+| File                          | Goes to                                                       |
+| ----------------------------- | ------------------------------------------------------------- |
+| `tilt.json`                   | `~/.grok/hooks/tilt.json` (Grok Build)                        |
+| `config.toml`                 | append to `~/.grok/config.toml` (Grok Build)                  |
 | `grok-cli/user-settings.json` | merge into `~/.grok/user-settings.json` (superagent grok-cli) |
 
 `<TILT_DIR>` is the absolute path of your Tilt clone.

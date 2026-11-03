@@ -11,8 +11,8 @@ same v1 TUI plugin API, so the same files serve both.
   keys the table doesn't offer at that moment are dropped. `Esc` (or `alt+t` again) takes you back
   to the prompt. The host's own shortcuts are paused during game mode because they belong to the
   `base` mode.
-- **`/tilt`:** opens a menu with *Play*, *Show/Hide the table*, and *Log in* or *Log out*. The
-  command palette also has *Tilt: play*.
+- **`/tilt`:** opens a menu with _Play_, _Show/Hide the table_, and _Log in_ or _Log out_. The
+  command palette also has _Tilt: play_.
 - **Agent working/idle:** read only from `session.status` events, and only their `busy`/`idle`/
   `retry` type. The agent counts as working while any session is busy. The plugin never reads
   messages, parts, prompts, tool calls or the shared KV store.
@@ -61,7 +61,8 @@ one-line notice and never guesses a host.
    With options, the entry becomes a tuple:
    `["<TILT_DIR>/harnesses/opencode/tui.tsx", { "apiUrl": "https://…", "key": "ctrl+alt+j" }]`.
    `key` replaces `alt+t`.
-3. Restart `opencode`. The table appears at the bottom; run `/tilt`, then *Log in*.
+
+3. Restart `opencode`. The table appears at the bottom; run `/tilt`, then _Log in_.
 
 To try it without editing your config, point OpenCode at the bundled file. OpenCode merges it
 over your global `tui.json` and resolves `./tui.tsx` relative to the file:

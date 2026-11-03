@@ -741,7 +741,10 @@ function startMove(intentId: string, action: Json): string | null {
 // ---- Routes ----
 
 function leaderboard(): LeaderboardEntry[] {
-  const players = [...RIVALS.map((rival) => ({ ...rival, isYou: false })), { handle: "you", net: playerNet, isYou: true }];
+  const players = [
+    ...RIVALS.map((rival) => ({ ...rival, isYou: false })),
+    { handle: "you", net: playerNet, isYou: true },
+  ];
 
   players.sort((a, b) => (b.net > a.net ? 1 : b.net < a.net ? -1 : 0));
 
@@ -939,7 +942,7 @@ function send(response: ServerResponse, reply: Reply): void {
 }
 
 const server = createServer((request, response) => {
-  console.log(`${request.method ?? "GET"} ${new URL(request.url ?? "/", "http://fake").pathname}`);
+  console.info(`${request.method ?? "GET"} ${new URL(request.url ?? "/", "http://fake").pathname}`);
   route(request).then(
     (reply) => send(response, reply),
     (failure: unknown) => {
@@ -955,5 +958,5 @@ const server = createServer((request, response) => {
 });
 
 server.listen(port, "127.0.0.1", () => {
-  console.log(`tilt fake api on ${webUrl}`);
+  console.info(`tilt fake api on ${webUrl}`);
 });

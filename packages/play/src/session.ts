@@ -212,7 +212,9 @@ export class TiltSession {
   // ---- public API ----
 
   start(): void {
-    void this.ensureLoaded().catch((error: unknown) => this.setMessage(`Could not read the tilt session: ${errorText(error)}`, "loss"));
+    void this.ensureLoaded().catch((error: unknown) =>
+      this.setMessage(`Could not read the tilt session: ${errorText(error)}`, "loss"),
+    );
     this.ensureTicker();
   }
 
@@ -285,7 +287,10 @@ export class TiltSession {
 
     const link = cleanText(verifyUrl);
 
-    this.setMessage(isOpened ? `Opened ${link} · confirm code ${code} there.` : `Open ${link} and confirm code ${code}.`, "neutral");
+    this.setMessage(
+      isOpened ? `Opened ${link} · confirm code ${code} there.` : `Open ${link} and confirm code ${code}.`,
+      "neutral",
+    );
   }
 
   async logout(): Promise<void> {
@@ -401,7 +406,9 @@ export class TiltSession {
     const saved = await this.store.read();
     const kept = storedPrefs(saved.prefs);
 
-    this.token = saved.token;
+    // Every client shares the file and takes its API from TILT_API_URL: a token from another
+    // API (a repo's .envrc pointing elsewhere) must not reach this one.
+    this.token = saved.apiBase === this.base ? saved.token : null;
 
     if (kept !== null) {
       this.prefs = prefsView(kept);
@@ -417,7 +424,7 @@ export class TiltSession {
 
   /** Writes the token and the choices, one write after the other so the last one wins. */
   private save(): void {
-    const saved = { token: this.token, prefs: this.prefs };
+    const saved = { token: this.token, apiBase: this.base, prefs: this.prefs };
 
     this.saving = this.saving
       .then(() => this.store.write(saved))
@@ -554,7 +561,8 @@ export class TiltSession {
 
     const { failure } = result;
     const isRateLimited = failure.status === 429;
-    const isTransient = failure.kind === "network" || isRateLimited || (failure.status !== null && failure.status >= 500);
+    const isTransient =
+      failure.kind === "network" || isRateLimited || (failure.status !== null && failure.status >= 500);
 
     if (isRateLimited) {
       this.rateLimitedUntil = this.now() + RATE_LIMIT_BACKOFF_MS;
@@ -663,7 +671,9 @@ export class TiltSession {
       return;
     }
 
-    await this.sendMove(startAction(activeGame(state, this.prefs), currentBet(state.limits, this.prefs.betIndex), this.prefs));
+    await this.sendMove(
+      startAction(activeGame(state, this.prefs), currentBet(state.limits, this.prefs.betIndex), this.prefs),
+    );
   }
 
   /** A chip of the bet's size on `bet`, or on the cursor's cell; a full table or bet says why instead. */
@@ -706,7 +716,10 @@ export class TiltSession {
 
         // A round in play pins its game: the press says so rather than doing nothing.
         if (isRoundOpen(state) && state?.round) {
-          this.setMessage(`Finish this ${GAME_LABELS[state.round.detail.game]} round before switching game.`, "neutral");
+          this.setMessage(
+            `Finish this ${GAME_LABELS[state.round.detail.game]} round before switching game.`,
+            "neutral",
+          );
 
           return;
         }

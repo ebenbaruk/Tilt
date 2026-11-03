@@ -1,7 +1,14 @@
 // Mines, Tower and Keno as plain text: the board on the left, the round's state beside it (Keno
 // stacks, its 40 numbers take the whole width). Same content as the mod's games.tsx, climb.tsx
 // and quick.tsx tables, without their animations: a harness redraws on each snapshot.
-import { cashOutPayout, formatSigned, formatUsdc, hundredths, shortMultiplier, towerMultiplier } from "../../../../apps/mod/hooks/format";
+import {
+  cashOutPayout,
+  formatSigned,
+  formatUsdc,
+  hundredths,
+  shortMultiplier,
+  towerMultiplier,
+} from "../../../../apps/mod/hooks/format";
 import {
   CASH_OUT_HOTKEY,
   clampMines,
@@ -156,7 +163,9 @@ export function renderMines(round: RoundView | null, ctx: RenderContext): string
 function shownTower(round: RoundView | null, ctx: RenderContext): TowerView | null {
   const detail = round?.detail.game === "tower" ? round.detail : null;
 
-  return round !== null && detail !== null && (round.phase !== "idle" || detail.difficulty === ctx.prefs.towerDifficulty)
+  return round !== null &&
+    detail !== null &&
+    (round.phase !== "idle" || detail.difficulty === ctx.prefs.towerDifficulty)
     ? detail
     : null;
 }
@@ -204,8 +213,11 @@ export function renderTower(round: RoundView | null, ctx: RenderContext): string
     const level = TOWER_LEVELS - 1 - index;
     const pay = (pays[level] ?? "").padStart(paysWidth);
     const isCurrent = isOpen && level === climbed;
-    const label =
-      isCurrent ? pink(color, bold(color, pay)) : level < climbed ? gold(color, bold(color, pay)) : dim(color, pay);
+    const label = isCurrent
+      ? pink(color, bold(color, pay))
+      : level < climbed
+        ? gold(color, bold(color, pay))
+        : dim(color, pay);
     const cells = Array.from({ length: tiles }, (_, tile) => towerTile(level, tile, detail, isOpen, color));
 
     return `${label} ${cells.join(" ")}`;
@@ -309,7 +321,11 @@ function kenoStatus(round: (RoundView & { detail: KenoView }) | null, hits: numb
   const net = BigInt(round.net);
   const verdict = net > 0n ? "WIN" : net < 0n ? "LOSE" : "PUSH";
 
-  return toned(color, round.net, bold(color, `${hits} ${hits === 1 ? "hit" : "hits"} ${verdict} ${formatSigned(round.net)}`));
+  return toned(
+    color,
+    round.net,
+    bold(color, `${hits} ${hits === 1 ? "hit" : "hits"} ${verdict} ${formatSigned(round.net)}`),
+  );
 }
 
 /** The 40 numbers ten a row, the picks, the draw and its hits, then what each hit count pays. */

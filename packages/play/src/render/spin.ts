@@ -122,7 +122,14 @@ function betName(bet: RouletteBet): string {
  * A cell `width` columns wide: its label, `●` right after it where chips are on it. The cursor's
  * cell is inverse, the landed pocket and the cells that won gold; otherwise the label in its felt's color.
  */
-function cell(felt: Felt, bet: RouletteBet, label: string, width: number, paint: Paint, align: "end" | "center"): string {
+function cell(
+  felt: Felt,
+  bet: RouletteBet,
+  label: string,
+  width: number,
+  paint: Paint,
+  align: "end" | "center",
+): string {
   const mark = stakeOn(felt.chips, bet) > 0n ? CHIP : " ";
   const room = Math.max(0, width - label.length - mark.length);
   const left = " ".repeat(align === "end" ? room : Math.floor(room / 2));
@@ -151,12 +158,14 @@ function feltLines(felt: Felt, size: FeltSize): string[] {
     const numbers = Array.from({ length: NUMBERS_ACROSS }, (_, index) =>
       numberCell(index * 3 + column, size.number),
     ).join("");
-    const columnBet = size.column > 0 ? cell(felt, { kind: "column", column }, COLUMN_LABEL, size.column, plain, "end") : "";
+    const columnBet =
+      size.column > 0 ? cell(felt, { kind: "column", column }, COLUMN_LABEL, size.column, plain, "end") : "";
 
     return `${zero}${numbers}${columnBet}`;
   });
   const sideCells = (bets: readonly RouletteBet[], width: number): string =>
-    indent + bets.map((bet) => cell(felt, bet, betName(bet), width, OUTSIDE_PAINT[bet.kind] ?? plain, "center")).join("");
+    indent +
+    bets.map((bet) => cell(felt, bet, betName(bet), width, OUTSIDE_PAINT[bet.kind] ?? plain, "center")).join("");
   const dozens = sideCells(
     DOZENS.map((dozen): RouletteBet => ({ kind: "dozen", dozen })),
     size.number * 4,
@@ -288,7 +297,10 @@ function wheelStrip(color: boolean, pays: readonly string[], landed: number | nu
   const count = isAll ? pays.length : fitting - (fitting % 2 === 0 ? 1 : 0);
   const focus = landed ?? 0;
   const first = isAll ? 0 : focus - Math.floor(count / 2);
-  const indices = Array.from({ length: count }, (_, slot) => (((first + slot) % pays.length) + pays.length) % pays.length);
+  const indices = Array.from(
+    { length: count },
+    (_, slot) => (((first + slot) % pays.length) + pays.length) % pays.length,
+  );
   const best = pays.reduce((top, pay) => (hundredths(pay) > top ? hundredths(pay) : top), 0n);
   const strip = indices
     .map((index) => {
@@ -416,7 +428,8 @@ export function renderSlots(round: RoundView | null, ctx: RenderContext): string
   const shown = landed ?? (isDrawing ? [UNDRAWN_REEL, UNDRAWN_REEL, UNDRAWN_REEL] : IDLE_REELS);
   const lit = landed === null ? null : (paidLine(landed)?.line ?? null);
   const machine = `${reelsLine(color, shown, landed === null, lit !== null)}  ${dim(color, `speed ${prefs.slotsSpeed}`)}`;
-  const status = round !== null && landed !== null ? outcomeLine(color, round, slotsSentence(landed)) : statusText(color, isDrawing);
+  const status =
+    round !== null && landed !== null ? outcomeLine(color, round, slotsSentence(landed)) : statusText(color, isDrawing);
   const pays = PAYS.map((pay) => {
     const text = `${pay.line} ×${pay.times}`;
 

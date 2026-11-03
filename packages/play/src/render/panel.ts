@@ -165,7 +165,9 @@ function notices(snapshot: Snapshot, state: StateResponse, color: boolean): stri
   if (snapshot.error !== null) lines.push(dim(color, cleanText(snapshot.error)));
   if (state.sponsor !== null) {
     const { name, pool } = state.sponsor;
-    lines.push(`${dim(color, "presented by ")}${bold(color, cleanText(name))}${dim(color, `${SEPARATOR}pool `)}${gold(color, formatUsdc(pool))}`);
+    lines.push(
+      `${dim(color, "presented by ")}${bold(color, cleanText(name))}${dim(color, `${SEPARATOR}pool `)}${gold(color, formatUsdc(pool))}`,
+    );
   }
 
   return lines;
@@ -175,7 +177,11 @@ function keyChips(snapshot: Snapshot, color: boolean): string[] {
   return snapshot.keys
     .filter((action) => action.hotkey !== "" && !action.key.startsWith(SWITCH_KEY_PREFIX))
     .map((action) => {
-      const label = snapshot.isBusy ? dim(color, action.label) : action.isSelected ? bold(color, action.label) : action.label;
+      const label = snapshot.isBusy
+        ? dim(color, action.label)
+        : action.isSelected
+          ? bold(color, action.label)
+          : action.label;
       return `${gold(color, bold(color, action.hotkey))} ${label}`;
     });
 }
@@ -219,7 +225,8 @@ export function renderStatusLine(
   const { auth, state } = snapshot;
 
   if (auth.status === "out") return fit(`${brand}${SEPARATOR}${gold(color, loginHint)}`, width);
-  if (auth.status === "pending") return fit(`${brand}${SEPARATOR}confirm code ${gold(color, cleanText(auth.userCode))}`, width);
+  if (auth.status === "pending")
+    return fit(`${brand}${SEPARATOR}confirm code ${gold(color, cleanText(auth.userCode))}`, width);
   if (state === null) return fit(`${brand}${SEPARATOR}${dim(color, "connecting…")}`, width);
 
   const parts = [

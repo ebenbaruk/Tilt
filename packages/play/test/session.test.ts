@@ -126,7 +126,7 @@ describe("TiltSession", () => {
       },
       "GET /v1/state": () => json(STATE),
     });
-    const store = memoryStore({ token: null, prefs: null });
+    const store = memoryStore({ token: null, apiBase: null, prefs: null });
     const openUrl = vi.fn(async (_url: string) => true);
     const session = new TiltSession({ apiUrl: API, store, fetch, openUrl });
 
@@ -153,7 +153,12 @@ describe("TiltSession", () => {
         json({ deviceCode: "d", userCode: "C", verifyUrl: "https://evil.example/login", expiresIn: 600, interval: 1 }),
     });
     const openUrl = vi.fn(async (_url: string) => true);
-    const session = new TiltSession({ apiUrl: API, store: memoryStore({ token: null, prefs: null }), fetch, openUrl });
+    const session = new TiltSession({
+      apiUrl: API,
+      store: memoryStore({ token: null, apiBase: null, prefs: null }),
+      fetch,
+      openUrl,
+    });
 
     await session.login();
 
@@ -174,7 +179,11 @@ describe("TiltSession", () => {
           : json({ intentId: intentIdOf(request), status: "submitted", error: null });
       },
     });
-    const session = new TiltSession({ apiUrl: API, store: memoryStore({ token: "mod-token", prefs: null }), fetch });
+    const session = new TiltSession({
+      apiUrl: API,
+      store: memoryStore({ token: "mod-token", apiBase: API, prefs: null }),
+      fetch,
+    });
 
     session.start();
     await vi.advanceTimersByTimeAsync(200);
@@ -203,7 +212,11 @@ describe("TiltSession", () => {
           error: { code: "InsufficientBalance", message: "InsufficientBalance" },
         }),
     });
-    const session = new TiltSession({ apiUrl: API, store: memoryStore({ token: "mod-token", prefs: null }), fetch });
+    const session = new TiltSession({
+      apiUrl: API,
+      store: memoryStore({ token: "mod-token", apiBase: API, prefs: null }),
+      fetch,
+    });
 
     session.start();
     await vi.advanceTimersByTimeAsync(200);
@@ -219,7 +232,7 @@ describe("TiltSession", () => {
     const { fetch } = fakeFetch({
       "GET /v1/state": () => json({ error: { code: "UNAUTHORIZED", message: "token expired" } }, 401),
     });
-    const store = memoryStore({ token: "mod-token", prefs: null });
+    const store = memoryStore({ token: "mod-token", apiBase: API, prefs: null });
     const session = new TiltSession({ apiUrl: API, store, fetch });
     const changes = vi.fn();
 
@@ -238,7 +251,11 @@ describe("TiltSession", () => {
       "GET /v1/state": () => json(STATE),
       "POST /v1/play": () => "hang",
     });
-    const session = new TiltSession({ apiUrl: API, store: memoryStore({ token: "mod-token", prefs: null }), fetch });
+    const session = new TiltSession({
+      apiUrl: API,
+      store: memoryStore({ token: "mod-token", apiBase: API, prefs: null }),
+      fetch,
+    });
 
     session.start();
     await vi.advanceTimersByTimeAsync(200);
@@ -255,7 +272,7 @@ describe("TiltSession", () => {
 
   it("keeps the table choices in the store", async () => {
     const { fetch } = fakeFetch({ "GET /v1/state": () => json(STATE) });
-    const store = memoryStore({ token: "mod-token", prefs: null });
+    const store = memoryStore({ token: "mod-token", apiBase: API, prefs: null });
     const session = new TiltSession({ apiUrl: API, store, fetch });
 
     await session.run({ kind: "switch", game: "dice" });
@@ -271,11 +288,27 @@ describe("TiltSession", () => {
   });
 
   it("refuses an insecure api url without throwing", async () => {
-    const session = new TiltSession({ apiUrl: "http://tilt.example", store: memoryStore({ token: null, prefs: null }) });
+    const session = new TiltSession({
+      apiUrl: "http://tilt.example",
+      store: memoryStore({ token: null, apiBase: null, prefs: null }),
+    });
 
     await session.login();
 
     expect(session.snapshot().auth.status).toBe("out");
+  });
+
+  it("never sends a token to an API other than the one that issued it", async () => {
+    const { fetch, sent } = fakeFetch({ "GET /v1/state": () => json(STATE) });
+    const store = memoryStore({ token: "mod-token", apiBase: "https://api.tilt.example", prefs: null });
+    const session = new TiltSession({ apiUrl: API, store, fetch });
+
+    session.start();
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(session.snapshot().auth.status).toBe("out");
+    expect(sent).toEqual([]);
+    session.stop();
   });
 
   it("keeps polling after a fetch throws a value that is not an Error", async () => {
@@ -294,7 +327,11 @@ describe("TiltSession", () => {
     const onRejection = (reason: unknown): void => {
       rejections.push(reason);
     };
-    const session = new TiltSession({ apiUrl: API, store: memoryStore({ token: "mod-token", prefs: null }), fetch });
+    const session = new TiltSession({
+      apiUrl: API,
+      store: memoryStore({ token: "mod-token", apiBase: API, prefs: null }),
+      fetch,
+    });
 
     process.on("unhandledRejection", onRejection);
     session.start();
@@ -321,7 +358,11 @@ describe("TiltSession", () => {
         return json({ ...STATE, balance: String(polls) });
       },
     });
-    const session = new TiltSession({ apiUrl: API, store: memoryStore({ token: "mod-token", prefs: null }), fetch });
+    const session = new TiltSession({
+      apiUrl: API,
+      store: memoryStore({ token: "mod-token", apiBase: API, prefs: null }),
+      fetch,
+    });
     const changes = vi.fn();
 
     session.onChange(() => {
@@ -374,7 +415,9 @@ describe("trustedVerifyUrl", () => {
   });
 
   it("treats loopback hosts as one site", () => {
-    expect(trustedVerifyUrl("http://localhost:3000/login", "http://127.0.0.1:8080")).toBe("http://localhost:3000/login");
+    expect(trustedVerifyUrl("http://localhost:3000/login", "http://127.0.0.1:8080")).toBe(
+      "http://localhost:3000/login",
+    );
     expect(trustedVerifyUrl("http://example.com/login", "http://127.0.0.1:8080")).toBeNull();
   });
 });

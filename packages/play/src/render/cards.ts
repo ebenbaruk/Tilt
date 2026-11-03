@@ -78,7 +78,10 @@ function handLine(color: boolean, detail: BlackjackView, hand: BlackjackHandView
   const isSplitAces = hand.split && hand.cards[0]?.rank === ACE_RANK;
   const marks = [hand.doubled ? "doubled" : "", hand.split ? "split" : "", isSplitAces ? "1 card" : ""].filter(Boolean);
   const stake = dim(color, [`bet ${formatUsdc(hand.stake)}`, ...marks].join(" "));
-  const result = hand.result === null ? "" : `  ${HAND_RESULTS[hand.result].paint(color, bold(color, HAND_RESULTS[hand.result].label))}`;
+  const result =
+    hand.result === null
+      ? ""
+      : `  ${HAND_RESULTS[hand.result].paint(color, bold(color, HAND_RESULTS[hand.result].label))}`;
 
   return `${isActive ? pink(color, bold(color, head)) : head}  ${faces(color, hand.cards)}  ${stake}${result}`;
 }
@@ -87,7 +90,9 @@ function dealerLine(color: boolean, round: RoundView, detail: BlackjackView): st
   if (detail.dealer.length === 0) return `DEALER  ${dim(color, "dealing…")}`;
 
   const isMoreToCome = round.phase === "player_turn" && detail.dealer.length === 1;
-  const total = isMoreToCome ? `${detail.dealerTotal} + ?` : `${detail.dealerTotal}${detail.dealerTotal > BLACKJACK ? " bust" : ""}`;
+  const total = isMoreToCome
+    ? `${detail.dealerTotal} + ?`
+    : `${detail.dealerTotal}${detail.dealerTotal > BLACKJACK ? " bust" : ""}`;
   const hole = isMoreToCome ? ` ${dim(color, HIDDEN_FACE)}` : "";
 
   return `DEALER ${bold(color, total)}  ${faces(color, detail.dealer)}${hole}`;
@@ -107,7 +112,10 @@ export function renderBlackjack(round: RoundView | null, ctx: RenderContext): st
   }
 
   const detail = round.detail;
-  const lines = [dealerLine(color, round, detail), ...detail.hands.map((hand, index) => handLine(color, detail, hand, index))];
+  const lines = [
+    dealerLine(color, round, detail),
+    ...detail.hands.map((hand, index) => handLine(color, detail, hand, index)),
+  ];
 
   if (round.phase === "idle") lines.push(verdict(color, round.net));
   if (round.phase === "drawing" && detail.dealer.length > 0) lines.push(dim(color, "drawing…"));
@@ -123,11 +131,20 @@ const winnerOf = ({ playerPoints, bankerPoints }: BaccaratView): BaccaratBet =>
 const betLine = (color: boolean, bet: BaccaratBet): string =>
   `bet ${bold(color, bet)} ${dim(color, `${SEPARATOR.trim()} pays ×${BACCARAT_PAYS[bet]}`)}`;
 
-function sideLine(color: boolean, label: string, name: BaccaratBet, cards: readonly Card[], points: number, winner: BaccaratBet | null): string {
+function sideLine(
+  color: boolean,
+  label: string,
+  name: BaccaratBet,
+  cards: readonly Card[],
+  points: number,
+  winner: BaccaratBet | null,
+): string {
   const tags = [
     winner === name ? gold(color, bold(color, "WINS")) : "",
     winner === "tie" ? bold(color, "TIE") : "",
-    winner !== null && cards.length === BACCARAT_FIRST_CARDS && points >= NATURAL_POINTS ? gold(color, bold(color, "NATURAL")) : "",
+    winner !== null && cards.length === BACCARAT_FIRST_CARDS && points >= NATURAL_POINTS
+      ? gold(color, bold(color, "NATURAL"))
+      : "",
   ].filter(Boolean);
 
   return [`${label} ${bold(color, String(points))}`, faces(color, cards), ...tags].join("  ");
@@ -138,17 +155,20 @@ export function renderBaccarat(round: RoundView | null, ctx: RenderContext): str
   const { color, width } = ctx;
 
   if (round === null || round.detail.game !== "baccarat") {
-    return [betLine(color, ctx.prefs.baccarat), dim(color, "Pick player, banker or tie, then deal with n.")].map((line) =>
-      clip(line, width),
+    return [betLine(color, ctx.prefs.baccarat), dim(color, "Pick player, banker or tie, then deal with n.")].map(
+      (line) => clip(line, width),
     );
   }
 
   const detail = round.detail;
 
   if (detail.player.length === 0) {
-    return [betLine(color, detail.bet), `PLAYER  ${dim(color, `${HIDDEN_FACE} ${HIDDEN_FACE}`)}`, `BANKER  ${dim(color, `${HIDDEN_FACE} ${HIDDEN_FACE}`)}`, dim(color, "dealing…")].map(
-      (line) => clip(line, width),
-    );
+    return [
+      betLine(color, detail.bet),
+      `PLAYER  ${dim(color, `${HIDDEN_FACE} ${HIDDEN_FACE}`)}`,
+      `BANKER  ${dim(color, `${HIDDEN_FACE} ${HIDDEN_FACE}`)}`,
+      dim(color, "dealing…"),
+    ].map((line) => clip(line, width));
   }
 
   const isSettled = round.phase === "idle";
@@ -174,9 +194,7 @@ function hiloTrail(color: boolean, detail: HiloView, width: number): string {
     const guess = index === 0 ? undefined : detail.guesses[index - 1];
     const isWrong = detail.busted && index === detail.cards.length - 1;
     const glyph =
-      guess === undefined
-        ? ""
-        : `${(guess === "skip" ? dim : isWrong ? red : green)(color, HILO_GLYPHS[guess])} `;
+      guess === undefined ? "" : `${(guess === "skip" ? dim : isWrong ? red : green)(color, HILO_GLYPHS[guess])} `;
 
     return `${glyph}${face(color, card)}`;
   });

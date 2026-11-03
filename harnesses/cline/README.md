@@ -2,10 +2,10 @@
 
 The Cline CLI (`cline -i`) has no documented API to draw in its TUI or capture keys, so you play Tilt in the **companion** app in a split pane. Cline's **file hooks** tell the companion when the agent works:
 
-| Hook file | Marks |
-| --- | --- |
-| `TaskStart.sh`, `TaskResume.sh`, `UserPromptSubmit.sh` | working |
-| `TaskComplete.sh`, `TaskError.sh`, `TaskCancel.sh`, `SessionShutdown.sh` | idle |
+| Hook file                                                                | Marks   |
+| ------------------------------------------------------------------------ | ------- |
+| `TaskStart.sh`, `TaskResume.sh`, `UserPromptSubmit.sh`                   | working |
+| `TaskComplete.sh`, `TaskError.sh`, `TaskCancel.sh`, `SessionShutdown.sh` | idle    |
 
 Each one runs `harnesses/companion/bin/tilt-signal <state> --json` with stdin closed, so the event JSON Cline pipes in (with the prompt, for `UserPromptSubmit`) is never read. Cline expects JSON on stdout; `--json` prints `{}`, which means "do nothing".
 

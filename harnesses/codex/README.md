@@ -2,11 +2,11 @@
 
 Codex has no API to draw a panel, capture keys or run a custom status line (`tui.status_line` only takes built-in items), so you play Tilt in the **companion** app in a split pane. This pack only tells the companion when Codex is working, through three hooks that call `harnesses/companion/bin/tilt-signal`:
 
-| Codex hook | Signal |
-|---|---|
-| `UserPromptSubmit` | `working` |
-| `Stop` | `idle --json` (Codex requires JSON on stdout for `Stop`) |
-| `Interrupt` | `idle` |
+| Codex hook         | Signal                                                   |
+| ------------------ | -------------------------------------------------------- |
+| `UserPromptSubmit` | `working`                                                |
+| `Stop`             | `idle --json` (Codex requires JSON on stdout for `Stop`) |
+| `Interrupt`        | `idle`                                                   |
 
 `tilt-signal` never reads stdin. Codex pipes the prompt (`UserPromptSubmit`) and the last reply (`Stop`) there; neither is read.
 

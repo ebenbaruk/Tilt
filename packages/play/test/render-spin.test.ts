@@ -166,10 +166,7 @@ describe("renderSlots", () => {
   });
 
   it.each(WIDTHS)("shows the drawn reels and the paid line within %i columns", (width) => {
-    const lines = renderSlots(
-      round(slots(["7", "7", "7"]), { payout: "250000000", net: "246510000" }),
-      context(width),
-    );
+    const lines = renderSlots(round(slots(["7", "7", "7"]), { payout: "250000000", net: "246510000" }), context(width));
 
     expectFits(lines, width);
     expect(lines[0]).toContain("[ 7 | 7 | 7 ]");

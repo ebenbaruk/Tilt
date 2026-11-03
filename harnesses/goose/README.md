@@ -2,11 +2,11 @@
 
 The goose CLI is a line-by-line loop with no panel, status line or key capture, so you play Tilt in the **companion** app in a split pane. This Open Plugins package only tells the companion when goose is working, through hooks that call `harnesses/companion/bin/tilt-signal`:
 
-| goose hook | Signal |
-|---|---|
-| `UserPromptSubmit` | `working` |
-| `Stop` (turn end or stop event) | `idle` |
-| `SessionEnd` | `idle` |
+| goose hook                      | Signal    |
+| ------------------------------- | --------- |
+| `UserPromptSubmit`              | `working` |
+| `Stop` (turn end or stop event) | `idle`    |
+| `SessionEnd`                    | `idle`    |
 
 `tilt-signal` never reads stdin; goose pipes the prompt (`UserPromptSubmit`) and the last reply (`Stop`) there, and neither is read. It prints nothing: on `Stop`, goose reads stdout as a block decision, and empty stdout means "allow".
 

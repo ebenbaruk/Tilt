@@ -33,7 +33,7 @@ export async function writeJsonAtomic(path: string, value: unknown): Promise<voi
   }
 }
 
-const EMPTY: Saved = { token: null, prefs: null };
+const EMPTY: Saved = { token: null, apiBase: null, prefs: null };
 
 function savedOf(text: string): Saved {
   let value: unknown;
@@ -49,8 +49,9 @@ function savedOf(text: string): Saved {
   }
 
   const token = typeof value.token === "string" && value.token !== "" ? value.token : null;
+  const apiBase = "apiBase" in value && typeof value.apiBase === "string" ? value.apiBase : null;
 
-  return { token, prefs: "prefs" in value ? value.prefs : null };
+  return { token, apiBase, prefs: "prefs" in value ? value.prefs : null };
 }
 
 /** A Store in one JSON file; a missing or corrupt file reads as logged out with no choices. */

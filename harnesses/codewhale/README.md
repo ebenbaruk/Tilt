@@ -2,10 +2,10 @@
 
 CodeWhale (`codewhale` / `codew`, formerly `deepseek`) has a status bar that only accepts built-in items, and its extension host is sandboxed without network access. So you play Tilt in the **companion** app in a split pane, and CodeWhale's hooks tell the companion when the agent works:
 
-| Event | Marks |
-| --- | --- |
-| `session_busy` (an idle or waiting session starts or resumes work) | working |
-| `session_idle`, `waiting_for_user` (approval or question), `session_error` | idle |
+| Event                                                                      | Marks   |
+| -------------------------------------------------------------------------- | ------- |
+| `session_busy` (an idle or waiting session starts or resumes work)         | working |
+| `session_idle`, `waiting_for_user` (approval or question), `session_error` | idle    |
 
 These four events carry only the state transition, no prompt or reply text. The hooks call `harnesses/companion/bin/tilt-signal`, which never reads stdin.
 

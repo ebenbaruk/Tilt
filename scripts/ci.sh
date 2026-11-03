@@ -42,6 +42,10 @@ fi
 step "contract"
 pnpm --filter @tilt/contract test
 
+step "play core and harnesses"
+pnpm --filter @tilt/play test
+pnpm --filter @tilt/harnesses test
+
 step "api"
 TEST_DATABASE_URL=$PG/tilt_api_test pnpm --filter @tilt/api test
 

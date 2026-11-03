@@ -56,14 +56,14 @@ from `config.yml` or `settings.json`. To sign out as well, delete `~/.tilt/sessi
 
 ## Play
 
-| Input | Effect |
-|---|---|
-| `/tilt login` | Starts the device login. Your browser opens the confirmation page (`xdg-open`, `open` or `rundll32`, depending on the platform) and the table shows the code. |
-| `/tilt logout` | Signs out. |
-| `/tilt` | Shows or hides the table. A hidden table shrinks to one status line. |
-| `alt+t` | Turns game mode on or off. |
-| letters and digits, in game mode | Play the table. The table lists the key for each move. |
-| `esc`, in game mode | Leaves game mode so you can type prompts again. |
+| Input                            | Effect                                                                                                                                                        |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/tilt login`                    | Starts the device login. Your browser opens the confirmation page (`xdg-open`, `open` or `rundll32`, depending on the platform) and the table shows the code. |
+| `/tilt logout`                   | Signs out.                                                                                                                                                    |
+| `/tilt`                          | Shows or hides the table. A hidden table shrinks to one status line.                                                                                          |
+| `alt+t`                          | Turns game mode on or off.                                                                                                                                    |
+| letters and digits, in game mode | Play the table. The table lists the key for each move.                                                                                                        |
+| `esc`, in game mode              | Leaves game mode so you can type prompts again.                                                                                                               |
 
 `alt+t` isn't bound by default in pi or omp. omp uses it only inside its `/tree` selector overlay,
 where the overlay gets the key first. In game mode every single typed character is taken from the

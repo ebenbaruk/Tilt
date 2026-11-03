@@ -6,9 +6,8 @@ folders that have turn hooks or a status line point at the scripts in `bin/`.
 
 ## Requirements
 
-A clone of this repo and either [Bun](https://bun.sh) or Node.js 22+ with `npx`. Nothing to
-install: `bin/tilt` runs `bun tilt.ts`, or `npx --yes tsx@4.23.15 tilt.ts` when Bun is missing
-(npx downloads that pinned tsx once).
+A clone of this repo and [Bun](https://bun.sh). `bin/tilt` runs `bun tilt.ts`: nothing is
+downloaded when it starts, so the code that runs is the code in the clone.
 
 ## Run
 
@@ -24,15 +23,15 @@ export TILT_API_URL=https://your-tilt-api.example # https only; plain http only 
 - **WezTerm:** `wezterm cli split-pane --right --percent 40 -- <TILT_DIR>/harnesses/companion/bin/tilt`.
 - **iTerm2:** split the window with Cmd+D, then run `bin/tilt` in the new pane.
 - **Windows Terminal:** `wt -w 0 split-pane -V bun <TILT_DIR>\harnesses\companion\tilt.ts`
-  (`bin/tilt` is a POSIX sh script; on Windows call Bun, or `npx --yes tsx@4.23.15`, on `tilt.ts` directly).
+  (`bin/tilt` is a POSIX sh script; on Windows call Bun on `tilt.ts` directly).
 
 Keys:
 
-| Key | Action |
-| --- | --- |
-| letters / digits | the hotkeys shown on the table (Caps Lock is fine) |
-| Ctrl+L | log in when logged out; log out (or cancel a pending login) on a second Ctrl+L |
-| Ctrl+C / Ctrl+D | quit |
+| Key              | Action                                                                         |
+| ---------------- | ------------------------------------------------------------------------------ |
+| letters / digits | the hotkeys shown on the table (Caps Lock is fine)                             |
+| Ctrl+L           | log in when logged out; log out (or cancel a pending login) on a second Ctrl+L |
+| Ctrl+C / Ctrl+D  | quit                                                                           |
 
 Login opens the confirmation page with `open` (macOS), `xdg-open` (Linux) or `rundll32`
 (Windows), without a shell; the code and link also stay on the table. The session token lives in
@@ -68,8 +67,8 @@ delete `~/.tilt/` (the token, the turn signal and the status line).
 - Verified: `tilt-signal` / `tilt-status` on Linux (dash): atomic write, 0600, `{}` with `--json`,
   stdin closed, exit 0. On Linux under Bun in a pseudo-terminal: the table draws, a
   `tilt-signal working` shows up, Ctrl+L starts a login, Ctrl+C / Ctrl+D quit and restore the
-  terminal, and `status.txt` is written 0600 then removed on exit. The Node path (`npx tsx@4.23.15`)
-  starts and refuses a non-terminal stdin, as intended.
+  terminal, and `status.txt` is written 0600 then removed on exit. It refuses a non-terminal stdin,
+  as intended.
 - Verified on 2026-10-29 on Linux (Bun 1.4.2, in tmux) against the fake API
   (`bun packages/play/test/fake-api.ts 8099`), not the real one: `TILT_API_URL=… bin/tilt` renders
   the table and `n` rolls the dice; `tilt-signal working --json`, with text piped on stdin (not

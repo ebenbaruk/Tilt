@@ -6,4 +6,4 @@
 #       apiUrl: https://your-tilt-api.example
 - insert:
     - id: tilt
-      name: '@tilt/dsh'
+      name: "@tilt/dsh"
