@@ -17,6 +17,8 @@ export interface Limiters {
   approveAttempts: RateLimiter;
   play: RateLimiter;
   money: RateLimiter;
+  /** Public round replays per IP: a replay without the round's snapshot is CPU-heavy. */
+  verify: RateLimiter;
 }
 
 export interface AppDeps {

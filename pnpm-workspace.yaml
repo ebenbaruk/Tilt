@@ -2,6 +2,7 @@ packages:
   - chain
   - packages/*
   - apps/*
+  - harnesses
 
 # Dependency install scripts stay disabled (spec §10.6); everything used here works without them.
 allowBuilds:
@@ -17,7 +18,9 @@ overrides:
   # GHSA-96hv-2xvq-fx4p (memory exhaustion), via Privy's wallet connectors and web3.js.
   ws@>=8.0.0 <8.21.0: ^8.21.3
   # GHSA-82x6-q7mm-w9cf, GHSA-v5mp-jgw5-2x6j; only Anchor's `workspace` helper parses TOML.
-  toml: ^4.2.0
+  toml: ^5.0.1
+  # GHSA for follow-redirects 1.16.0-1.16.1 (sensitive headers kept across realms), via axios.
+  follow-redirects@>=1.16.0 <1.16.2: ^1.16.2
 
 # No patched release exists. bigint-buffer's toBigIntLE() reads past a buffer shorter than
 # the requested width; @solana/buffer-layout-utils only passes it fixed-size slices of
@@ -25,3 +28,23 @@ overrides:
 auditConfig:
   ignoreGhsas:
     - GHSA-3gc7-fjrx-p6mg
+    # zod 3 (GHSA-mrhx-c7xc-m3w5) and decode-uri-component 0.2 (GHSA-qr28-fpjm-wq7f) come only
+    # through Privy's EVM wallet connectors (wagmi, walletconnect, coinbase cdp). They run in the
+    # player's browser on the connectors' own data, so the worst case is that player's tab
+    # hanging. The fixes are majors those packages can't load (zod 4, ESM-only decoder);
+    # our own zod is 4.6.6. Revisit when Privy moves its connectors.
+    - GHSA-mrhx-c7xc-m3w5
+    - GHSA-qr28-fpjm-wq7f
+
+minimumReleaseAgeExclude:
+  - '@next/env@16.4.4'
+  - '@next/eslint-plugin-next@16.4.4'
+  - '@next/swc-darwin-arm64@16.4.4'
+  - '@next/swc-darwin-x64@16.4.4'
+  - '@next/swc-linux-arm64-gnu@16.4.4'
+  - '@next/swc-linux-arm64-musl@16.4.4'
+  - '@next/swc-linux-x64-gnu@16.4.4'
+  - '@next/swc-linux-x64-musl@16.4.4'
+  - '@next/swc-win32-arm64-msvc@16.4.4'
+  - '@next/swc-win32-x64-msvc@16.4.4'
+  - next@16.4.4

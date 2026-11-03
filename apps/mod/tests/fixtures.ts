@@ -1,5 +1,13 @@
 // StateResponses as apps/api sends them, one per screen the mod draws.
-import type { BlackjackHandView, Card, RoundView, StateResponse } from "../hooks/protocol";
+import type {
+  BlackjackHandView,
+  Card,
+  HiloView,
+  MinesView,
+  RoundView,
+  StateResponse,
+  TowerView,
+} from "../hooks/protocol";
 import { NOW } from "./world";
 
 const HOUR = 3_600_000;
@@ -11,7 +19,20 @@ export const BASE: StateResponse = {
   round: null,
   pendingIntentId: null,
   limits: { minBet: "500000", maxBet: "25000000" },
-  rtp: { blackjack: "99.00", roulette: "97.30", baccarat: "98.94", slots: "96.16" },
+  rtp: {
+    blackjack: "99.00",
+    roulette: "97.30",
+    baccarat: "98.94",
+    slots: "96.16",
+    mines: "99.00",
+    dice: "98.00",
+    limbo: "98.00",
+    flip: "98.00",
+    keno: "95.00",
+    wheel: "98.00",
+    hilo: "98.00",
+    tower: "98.00",
+  },
   sponsor: {
     name: "Northwind Cloud",
     tagline: "gpus by the minute",
@@ -245,7 +266,36 @@ export const BLACKJACK_SPLIT_SETTLED: StateResponse = {
 
 export const ROULETTE: StateResponse = {
   ...BASE,
-  round: round({ detail: { game: "roulette", bet: { kind: "red" }, number: 17 } }),
+  round: round({
+    detail: {
+      game: "roulette",
+      bet: { kind: "red" },
+      chips: [{ bet: { kind: "red" }, amount: "1000000" }],
+      number: 17,
+    },
+  }),
+};
+
+/** Three chips, the ball in 17: the number pays 35:1 and the second dozen 2:1, red loses. */
+export const ROULETTE_CHIPS: StateResponse = {
+  ...BASE,
+  round: round({
+    stake: "2300000",
+    payout: "20400000",
+    fee: "181000",
+    net: "17919000",
+    number: 8,
+    detail: {
+      game: "roulette",
+      bet: { kind: "red" },
+      chips: [
+        { bet: { kind: "red" }, amount: "1000000" },
+        { bet: { kind: "straight", number: 17 }, amount: "500000" },
+        { bet: { kind: "dozen", dozen: 2 }, amount: "800000" },
+      ],
+      number: 17,
+    },
+  }),
 };
 
 export const BACCARAT: StateResponse = {
@@ -277,7 +327,19 @@ export const SLOTS: StateResponse = {
     payout: "5000000",
     fee: "40000",
     net: "3960000",
-    detail: { game: "slots", reels: ["7", "7", "★"] },
+    detail: { game: "slots", reels: ["◎", "◎", "◎"] },
+  }),
+};
+
+/** The top line: a big win, 247.51 over a 1.00 stake. */
+export const SLOTS_JACKPOT: StateResponse = {
+  ...BASE,
+  balance: "259910000",
+  round: round({
+    payout: "250000000",
+    fee: "2490000",
+    net: "247510000",
+    detail: { game: "slots", reels: ["7", "7", "7"] },
   }),
 };
 
@@ -286,6 +348,330 @@ export const SLOTS_DRAWING: StateResponse = {
   round: round({ phase: "drawing", net: "0", detail: { game: "slots", reels: null } }),
 };
 
+const minesBoard = (fields: Partial<MinesView>): MinesView => ({
+  game: "mines",
+  mines: 3,
+  revealed: [],
+  pending: null,
+  busted: null,
+  multiplier: "1.0000",
+  nextMultiplier: "1.1250",
+  canCashOut: false,
+  canReveal: false,
+  ...fields,
+});
+
+/** Three mines, g and m safe: the next tile or a cash-out at ×1.2857. */
+export const MINES_TURN: StateResponse = {
+  ...BASE,
+  round: round({
+    phase: "player_turn",
+    net: "0",
+    detail: minesBoard({
+      revealed: [6, 12],
+      multiplier: "1.2857",
+      nextMultiplier: "1.4785",
+      canCashOut: true,
+      canReveal: true,
+    }),
+  }),
+};
+
+/** m revealed after g: its draw is on its way. */
+export const MINES_DRAWING: StateResponse = {
+  ...BASE,
+  round: round({
+    phase: "drawing",
+    net: "0",
+    detail: minesBoard({ revealed: [6], pending: 12, multiplier: "1.1250", nextMultiplier: "1.2857" }),
+  }),
+};
+
+/** g safe, then a mine on h. */
+export const MINES_BUSTED: StateResponse = {
+  ...BASE,
+  round: round({
+    detail: minesBoard({ revealed: [6], busted: 7, multiplier: "1.1250", nextMultiplier: null }),
+  }),
+};
+
+/** Cashed out after g, m and s: 1.00 × 99 × C(25,3) / (100 × C(22,3)) = 1.478571, less 1% of the gain. */
+export const MINES_CASHED: StateResponse = {
+  ...BASE,
+  round: round({
+    payout: "1478571",
+    fee: "4785",
+    net: "473786",
+    detail: minesBoard({ revealed: [6, 12, 18], multiplier: "1.4785", nextMultiplier: null }),
+  }),
+};
+
 export const NOT_OPEN: StateResponse = { ...BASE, accountOpen: false, balance: "0", leaderboard: [], rank: null };
 
 export const BLOCKED: StateResponse = { ...BASE, blocked: "Self-exclusion until 2026-11-01." };
+
+/** Under 49.00 rolled 37.42: ×2 less 1% of the gain. */
+export const DICE: StateResponse = {
+  ...BASE,
+  round: round({
+    payout: "2000000",
+    fee: "10000",
+    net: "990000",
+    detail: { game: "dice", target: 4900, over: false, roll: 3742, multiplier: "2.0000" },
+  }),
+};
+
+/** Over 75.00 (25% to win), rolled 12.00. */
+export const DICE_LOSS: StateResponse = {
+  ...BASE,
+  round: round({ detail: { game: "dice", target: 7500, over: true, roll: 1200, multiplier: "3.9200" } }),
+};
+
+/** Over 2.00 (98% to win), rolled 57.00: a win at ×1, the stake back. */
+export const DICE_PUSH: StateResponse = {
+  ...BASE,
+  round: round({
+    payout: "1000000",
+    net: "0",
+    detail: { game: "dice", target: 200, over: true, roll: 5700, multiplier: "1.0000" },
+  }),
+};
+
+export const DICE_DRAWING: StateResponse = {
+  ...BASE,
+  round: round({
+    phase: "drawing",
+    net: "0",
+    detail: { game: "dice", target: 4900, over: false, roll: null, multiplier: "2.0000" },
+  }),
+};
+
+/** ×1.53 under a ×2.00 target. */
+export const LIMBO: StateResponse = {
+  ...BASE,
+  round: round({ detail: { game: "limbo", target: "2.00", result: "1.53" } }),
+};
+
+export const LIMBO_WIN: StateResponse = {
+  ...BASE,
+  round: round({
+    payout: "2000000",
+    fee: "10000",
+    net: "990000",
+    detail: { game: "limbo", target: "2.00", result: "3.12" },
+  }),
+};
+
+/** Three heads on three coins: 0.98 × 2³ = ×7.84, a big win. */
+export const FLIP: StateResponse = {
+  ...BASE,
+  round: round({
+    payout: "7840000",
+    fee: "68400",
+    net: "5771600",
+    detail: { game: "flip", side: "heads", flips: 3, results: ["heads", "heads", "heads"], multiplier: "7.8400" },
+  }),
+};
+
+export const FLIP_LOSS: StateResponse = {
+  ...BASE,
+  round: round({
+    detail: { game: "flip", side: "heads", flips: 2, results: ["heads", "tails"], multiplier: "3.9200" },
+  }),
+};
+
+const KENO_PAYS = ["0.00", "0.00", "1.50", "4.00", "12.00", "50.00"];
+
+/** Five picks, 4, 12 and 27 drawn: three hits at ×4. */
+export const KENO: StateResponse = {
+  ...BASE,
+  round: round({
+    payout: "4000000",
+    fee: "30000",
+    net: "2970000",
+    detail: {
+      game: "keno",
+      picks: [4, 12, 19, 27, 35],
+      drawn: [1, 4, 8, 12, 15, 22, 27, 30, 33, 40],
+      hits: 3,
+      paytable: KENO_PAYS,
+    },
+  }),
+};
+
+export const KENO_DRAWING: StateResponse = {
+  ...BASE,
+  round: round({
+    phase: "drawing",
+    net: "0",
+    detail: { game: "keno", picks: [4, 12, 19, 27, 35], drawn: null, hits: null, paytable: KENO_PAYS },
+  }),
+};
+
+const WHEEL_LOW_10 = ["1.50", "1.20", "1.20", "1.20", "0.00", "1.50", "1.20", "1.20", "0.80", "0.00"];
+
+/** Ten segments at low risk, landed on the first: ×1.50. */
+export const WHEEL: StateResponse = {
+  ...BASE,
+  round: round({
+    payout: "1500000",
+    fee: "5000",
+    net: "495000",
+    detail: { game: "wheel", segments: 10, risk: "low", multipliers: WHEEL_LOW_10, segment: 0 },
+  }),
+};
+
+export const WHEEL_DRAWING: StateResponse = {
+  ...BASE,
+  round: round({
+    phase: "drawing",
+    net: "0",
+    detail: { game: "wheel", segments: 10, risk: "low", multipliers: WHEEL_LOW_10, segment: null },
+  }),
+};
+
+const hiloBoard = (fields: Partial<HiloView>): HiloView => ({
+  game: "hilo",
+  cards: [card(12, "♠"), card(9, "♥"), card(5, "♦")],
+  guesses: ["lower", "lower"],
+  pending: null,
+  multiplier: "1.5335",
+  higherMultiplier: null,
+  lowerMultiplier: null,
+  skipsLeft: 10,
+  canGuess: false,
+  canCashOut: false,
+  busted: false,
+  ...fields,
+});
+
+/** Q♠, lower to 9♥, lower to 5♦: the next guess or a cash-out at ×1.5335. */
+export const HILO_TURN: StateResponse = {
+  ...BASE,
+  round: round({
+    phase: "player_turn",
+    net: "0",
+    detail: hiloBoard({ higherMultiplier: "2.2151", lowerMultiplier: "3.9871", canGuess: true, canCashOut: true }),
+  }),
+};
+
+/** An ace, no skip left: higher is strict (×13/12), lower is the ace only (×13). */
+export const HILO_ACE: StateResponse = {
+  ...BASE,
+  round: round({
+    phase: "player_turn",
+    net: "0",
+    detail: hiloBoard({
+      cards: [card(1, "♣")],
+      guesses: [],
+      multiplier: "0.9800",
+      higherMultiplier: "1.0616",
+      lowerMultiplier: "12.7400",
+      skipsLeft: 0,
+      canGuess: true,
+    }),
+  }),
+};
+
+/** A king, no skip left: lower is strict (×13/12), higher is the king only (×13). */
+export const HILO_KING: StateResponse = {
+  ...BASE,
+  round: round({
+    phase: "player_turn",
+    net: "0",
+    detail: hiloBoard({
+      cards: [card(13, "♦")],
+      guesses: [],
+      multiplier: "0.9800",
+      higherMultiplier: "12.7400",
+      lowerMultiplier: "1.0616",
+      skipsLeft: 0,
+      canGuess: true,
+    }),
+  }),
+};
+
+/** Higher after 9♥: its card is on its way. */
+export const HILO_DRAWING: StateResponse = {
+  ...BASE,
+  round: round({
+    phase: "drawing",
+    net: "0",
+    detail: hiloBoard({
+      cards: [card(12, "♠"), card(9, "♥")],
+      guesses: ["lower"],
+      pending: "higher",
+      multiplier: "1.0616",
+    }),
+  }),
+};
+
+/** A round just started: its first card on its way. */
+export const HILO_FIRST_DRAWING: StateResponse = {
+  ...BASE,
+  round: round({
+    phase: "drawing",
+    net: "0",
+    detail: hiloBoard({ cards: [], guesses: [], multiplier: "0.9800" }),
+  }),
+};
+
+/** Lower from 9♥, and a J♦ came. */
+export const HILO_BUSTED: StateResponse = {
+  ...BASE,
+  round: round({
+    detail: hiloBoard({ cards: [card(12, "♠"), card(9, "♥"), card(11, "♦")], multiplier: "1.0616", busted: true }),
+  }),
+};
+
+export const HILO_CASHED: StateResponse = {
+  ...BASE,
+  round: round({ payout: "1533500", fee: "5335", net: "528165", detail: hiloBoard({}) }),
+};
+
+const towerBoard = (fields: Partial<TowerView>): TowerView => ({
+  game: "tower",
+  difficulty: "easy",
+  tiles: 4,
+  levels: 9,
+  climbed: [1, 3],
+  pending: null,
+  busted: null,
+  multiplier: "1.7422",
+  nextMultiplier: "2.3229",
+  canClimb: false,
+  canCashOut: false,
+  ...fields,
+});
+
+/** Easy, two levels up (b, then d): the next level or a cash-out at ×1.7422. */
+export const TOWER_TURN: StateResponse = {
+  ...BASE,
+  round: round({ phase: "player_turn", net: "0", detail: towerBoard({ canClimb: true, canCashOut: true }) }),
+};
+
+/** c picked on the second level: its draw is on its way. */
+export const TOWER_DRAWING: StateResponse = {
+  ...BASE,
+  round: round({
+    phase: "drawing",
+    net: "0",
+    detail: towerBoard({ climbed: [1], pending: 2, multiplier: "1.3066", nextMultiplier: "1.7422" }),
+  }),
+};
+
+/** Two levels up, then a fall on a of the third. */
+export const TOWER_BUSTED: StateResponse = {
+  ...BASE,
+  round: round({ detail: towerBoard({ busted: 0, nextMultiplier: null }) }),
+};
+
+export const TOWER_CASHED: StateResponse = {
+  ...BASE,
+  round: round({
+    payout: "1742200",
+    fee: "7422",
+    net: "734778",
+    detail: towerBoard({ nextMultiplier: null }),
+  }),
+};

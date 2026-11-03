@@ -254,6 +254,7 @@ export const generousLimits = () => ({
   approveAttempts: new RateLimiter({ capacity: 5, refillPerSecond: 5 / 600 }),
   play: RateLimiter.perMinute(100_000),
   money: RateLimiter.perMinute(100_000),
+  verify: RateLimiter.perMinute(100_000),
 });
 
 export function testApp(db: Db, relay: FakeRelay, chain: FakeChain, overrides: Partial<AppDeps> = {}) {

@@ -32,12 +32,16 @@ export const PANE: RenderInput<"Pane"> = {
   },
 };
 
-/** The same pane on the main screen: no raw keys there, so no table surface module either. */
-export const PANE_INLINE: RenderInput<"Pane"> = {
+/** The same pane on the main screen: no clicks nor raw keys there, but the table surface module animates. */
+export const PANE_INLINE: RenderInput<"Pane", "terminal"> = {
   ...PANE,
+  surface: "terminal",
   viewport: { columns: 180, rows: 48, isFullscreen: false },
   props: { ...PANE.props, placement: "inline" },
 };
+
+/** A pane no table surface module draws in (Claude Code Desktop): the still table, moved by the hooks module's clock. */
+export const PANE_STILL: RenderInput<"Pane", "desktop"> = { ...PANE_INLINE, surface: "desktop" };
 
 export const BAND: RenderInput<"AbovePrompt"> = {
   component: "AbovePrompt",

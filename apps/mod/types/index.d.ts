@@ -3,7 +3,19 @@
 // `unknown` here and checked with the guards in hooks/guards.ts on every read: any plugin can read
 // this state and hook its writes, so the mod does not trust it blindly either.
 
-export type TiltGame = "blackjack" | "roulette" | "baccarat" | "slots";
+export type TiltGame =
+  | "blackjack"
+  | "roulette"
+  | "baccarat"
+  | "slots"
+  | "mines"
+  | "dice"
+  | "limbo"
+  | "flip"
+  | "keno"
+  | "wheel"
+  | "hilo"
+  | "tower";
 
 export type TiltAuth =
   | { status: "out"; message: string | null }
@@ -24,11 +36,31 @@ export type TiltPrefs = {
   betIndex: number;
   /** Blackjack hands per round, 1 to 6, each at the bet. */
   hands: number;
-  /** A `RouletteBet`. */
-  roulette: unknown;
+  /** Roulette chips placed, in order: `RouletteChip`s (a bet and a stake); absent from prefs stored before the chips. */
+  rouletteChips?: unknown;
+  /** The roulette cursor's cell, an index into the cursor's cells. */
+  rouletteCursor?: number;
   baccarat: "player" | "banker" | "tie";
   /** How fast the slots reels turn: turbo shows the draw at once. */
   slotsSpeed: "normal" | "fast" | "turbo";
+  /** Mines per board, 1 to 24; absent from prefs stored before Mines. */
+  mines?: number;
+  // The games below were added after Mines: absent from prefs stored before them.
+  /** Dice winning count, 100 to 9800 (1 % to 98 % of the rolls). */
+  diceChance?: number;
+  /** Dice wins over the target (true) or under it. */
+  diceOver?: boolean;
+  /** Limbo target multiplier × 100, 101 to 1 000 000. */
+  limboTarget?: number;
+  flipSide?: "heads" | "tails";
+  /** Coins per flip, 1 to 10. */
+  flips?: number;
+  /** Keno numbers picked, 1 to 10 distinct numbers from 1 to 40. */
+  kenoPicks?: unknown;
+  /** Wheel segments: 10, 20, 30, 40 or 50. */
+  wheelSegments?: number;
+  wheelRisk?: "low" | "medium" | "high";
+  towerDifficulty?: "easy" | "medium" | "hard" | "expert" | "master";
 };
 
 /** A move sent to the api and not drawn yet; resent with the same id until it settles. */
@@ -42,19 +74,6 @@ export type TiltIntent = {
   roundSeen: string;
   /** `$.clock.now()` when the api answered `submitted`; null before. */
   submittedAt: number | null;
-};
-
-/** A play key as drawn: its Button's address, hotkey and label. */
-export type TiltKey = { key: string; hotkey: string; label: string };
-
-/**
- * The play keys live when the last move was sent: once it settles they stay drawn, dim and inert,
- * for a moment, so the rest of a mashed key does not land in the prompt.
- */
-export type TiltEcho = {
-  keys: TiltKey[];
-  /** `$.clock.now()` when they go; null while the move is in flight. */
-  until: number | null;
 };
 
 export type TiltAgent = {
@@ -105,11 +124,14 @@ export type TiltDeal = {
   balance: string;
 };
 
-/** The win whose sparkles the table plays, once its last card shows or its spin lands. */
-export type TiltCelebration = {
+/** The settled round whose result the table plays (a win counted up and its sparkles, a loss
+ * shaken), once its last card shows or its spin lands. */
+export type TiltResult = {
   round: number | null;
   /** `$.clock.now()` when its result shows. */
   startsAt: number;
+  /** The balance before its result, shown until then so the header does not tell it first. */
+  balance: string;
 };
 
 declare module "claude-code" {
@@ -119,7 +141,6 @@ declare module "claude-code" {
       remote: TiltRemote;
       prefs: TiltPrefs;
       intent: TiltIntent | null;
-      echo: TiltEcho;
       /** Last move's error, cleared by the next move. */
       message: string | null;
       agent: TiltAgent;
@@ -127,7 +148,7 @@ declare module "claude-code" {
       session: TiltSession;
       spin: TiltSpin;
       deal: TiltDeal;
-      celebration: TiltCelebration;
+      result: TiltResult;
     };
   }
 }

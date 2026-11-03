@@ -3,7 +3,20 @@ import type { On, TurnCompleteInput } from "claude-code";
 
 import type { ImpressionRequest } from "../hooks/protocol";
 import { BASE, BLACKJACK_TURN } from "./fixtures";
-import { BAND, command, FIRST_TICK_MS, LOGGED_IN, NOW, PANE, PLUGIN, seat, SESSION, textOf, worldOf } from "./world";
+import {
+  BAND,
+  command,
+  FIRST_TICK_MS,
+  LOGGED_IN,
+  NOW,
+  PANE,
+  PLUGIN,
+  seat,
+  SESSION,
+  shownText,
+  textOf,
+  worldOf,
+} from "./world";
 
 interface TurnEnd {
   reason?: "answer" | "aborted" | "error";
@@ -18,6 +31,38 @@ const turnEnd = ({ reason = "answer", durationMs = 374_000, agentId }: TurnEnd):
   turnId: "t1",
   reason,
   ...(agentId === undefined ? {} : { agentId }),
+});
+
+describe("the player's choices outlive a restart", () => {
+  const KENO_CHOICES = {
+    game: "keno",
+    betIndex: 2,
+    hands: 1,
+    baccarat: "banker",
+    slotsSpeed: "normal",
+    mines: 6,
+    kenoPicks: [5, 26, 29, 35, 37],
+  };
+
+  test("a new session opens on the game last shown, with its bet and settings, not the last round's", async ($, on) => {
+    // The last round played was blackjack: the stored choices win.
+    await seat($, on, BASE, {}, { ...LOGGED_IN, prefs: KENO_CHOICES });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
+    const text = textOf(await ui.drawn());
+
+    expect(text).toContain("play · 2.00 · 5 picks");
+    await ui.press({ key: "game-mines" });
+    expect(textOf(await ui.drawn())).toContain("play · 2.00 · 6 mines");
+  });
+
+  test("stored choices of the wrong shape are ignored: the table opens as a first session's", async ($, on) => {
+    await seat($, on, BASE, {}, { ...LOGGED_IN, prefs: { game: "poker", betIndex: "high" } });
+    const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
+
+    expect(textOf(await ui.drawn())).toContain("deal · 0.50");
+    await ui.press({ key: "bet-up" });
+    expect(textOf(await ui.drawn())).toContain("deal · 1.00");
+  });
 });
 
 describe("the agent comes first", () => {
@@ -40,14 +85,14 @@ describe("the agent comes first", () => {
     expect(world.opened).toEqual([{ id: "tilt", focus: true }]);
   });
 
-  test("the turn end says how long the agent took and that the hand is saved", async ($, on) => {
+  test("the turn end says how long the agent took and how long the hand is saved", async ($, on) => {
     await seat($, on, BASE);
     await $.turn.start({ text: "", turnId: "t1" });
     await $.turn.complete(turnEnd({}));
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
     const text = textOf(await ui.drawn());
 
-    expect(text).toContain("✓ agent finished in 6m 14s · your hand is saved");
+    expect(text).toContain("✓ agent finished in 6m 14s · your hand is saved for 6 hours");
     expect(text).not.toContain("agent is working");
   });
 
@@ -57,7 +102,7 @@ describe("the agent comes first", () => {
     await $.turn.complete(turnEnd({ reason: "aborted", durationMs: 31_000 }));
     const ui = await $.ui.mount({ plugin: PLUGIN, ...PANE });
 
-    expect(textOf(await ui.drawn())).toContain("agent stopped after 31s · your hand is saved");
+    expect(textOf(await ui.drawn())).toContain("agent stopped after 31s · your hand is saved for 6 hours");
   });
 
   test("a subagent's turn end is not the agent finishing", async ($, on) => {
@@ -123,7 +168,7 @@ describe("the agent comes first", () => {
     const { world, band } = await startOver($, on, "inline", true);
 
     expect(world.opened).toEqual([]);
-    expect(textOf(await band.drawn())).toContain("DEALER");
+    expect(await shownText(band)).toContain("DEALER");
   });
 
   test("a player of the docked pane gets it back docked", async ($, on) => {

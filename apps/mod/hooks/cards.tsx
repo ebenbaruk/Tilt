@@ -2,7 +2,7 @@
 import type { RenderElement } from "claude-code";
 
 import { cardFace, isRedSuit, rankLabel } from "./format";
-import type { Card } from "./protocol";
+import type { Card, RoundView } from "./protocol";
 import { CARD_FACE, CARD_INK, FG1, FG4, FG6, GOLD, LINE4, RED, type Ui } from "./theme";
 
 export const BLACKJACK = 21;
@@ -22,6 +22,48 @@ export const largeHandColumns = (count: number): number =>
 
 const BACK_ROW = "░".repeat(LARGE_CARD_COLUMNS - 2);
 const BACK_ART = ["╭─────╮", `│${BACK_ROW}│`, `│${BACK_ROW}│`, `│${BACK_ROW}│`, "╰─────╯"];
+
+/** One card turned over every step, on the fullscreen table and on the main screen alike. */
+export const DEAL_STEP_MS = 150;
+
+/** A round's first cards turn from the first one at once (they lay face down while the move was in
+ *  flight); a card drawn into a round in play lies face down a step first, so its face never shows in
+ *  the frame it lands. */
+const leadOf = (from: number): number => (from === 0 ? 1 : 0);
+
+/** Cards turned over `elapsed` ms into a deal that found `from` of `total` already shown; null once all are. */
+export function revealedAt(from: number, total: number, elapsed: number): number | null {
+  const revealed = from + leadOf(from) + Math.floor(elapsed / DEAL_STEP_MS);
+
+  return revealed >= total ? null : revealed;
+}
+
+/** How long after a deal starts its last card is turned over. */
+export const dealMs = (from: number, total: number): number => Math.max(0, total - from - leadOf(from)) * DEAL_STEP_MS;
+
+/** The cards on a blackjack, baccarat or Hilo table, all hands together; 0 for the other games. */
+export function dealtCards(round: RoundView | null): number {
+  const detail = round?.detail;
+
+  switch (detail?.game) {
+    case "blackjack":
+      return detail.hands.reduce((sum, hand) => sum + hand.cards.length, detail.dealer.length);
+    case "baccarat":
+      return detail.player.length + detail.banker.length;
+    case "hilo":
+      return detail.cards.length;
+    default:
+      return 0;
+  }
+}
+
+/** Cards not drawn yet, to lay face down (`faceDown`) where they will fall: their faces are never shown. */
+export const faceDownCards = (count: number): Card[] =>
+  Array.from({ length: count }, (): Card => ({ rank: 1, suit: "♠" }));
+
+/** How many of a hand's cards, dealt at these places in the deal, are still face down. */
+export const faceDownOf = (order: readonly number[], revealed: number | null): number =>
+  revealed === null ? 0 : order.filter((index) => index >= revealed).length;
 
 function faceArt(card: Card): string[] {
   const corner = `${rankLabel(card.rank)}${card.suit}`;

@@ -9,19 +9,51 @@ use crate::state::{Config, Ledger, PlayerAccount, Vault};
 
 /// What Solana is willing to pay for a claim coming from the rollup. Whatever the rollup
 /// says, a player can never have been credited more than they really deposited on Solana,
-/// nor take out more than those deposits, minus released losses, plus their win cap.
+/// nor take out more than those deposits, minus released losses, plus their secured wins.
 pub fn checked_due(claim: &PlayerAccount, ledger: &Ledger) -> Result<u64> {
     require_keys_eq!(claim.player, ledger.player, TiltError::FraudSuspected);
     require!(
         claim.credited <= ledger.deposited,
         TiltError::FraudSuspected
     );
-    let allowance = ledger.deposited as u128 - ledger.forfeited as u128 + ledger.max_win as u128;
+    let allowance = ledger.deposited as u128 - ledger.forfeited as u128 + ledger.secured() as u128;
     require!(
         claim.withdrawn as u128 <= allowance,
         TiltError::FraudSuspected
     );
     Ok(claim.withdrawn.saturating_sub(ledger.withdrawn_paid))
+}
+
+/// Takes a committed claim's secured wins onto Solana, before anything is paid or released:
+/// wins the risk pool moved to the player (`win_reserved`) come out of the pool's line, wins
+/// lost again (`win_released`) go back to the house. Returns the wins released. Whatever the
+/// rollup says, the pool's line is never overdrawn, nothing is released twice, and the
+/// player's allowance never falls below what was already paid. An older claim changes
+/// nothing: both totals only grow.
+pub fn apply_secured_wins(
+    vault: &mut Vault,
+    ledger: &mut Ledger,
+    claim: &PlayerAccount,
+) -> Result<u64> {
+    require_keys_eq!(claim.player, ledger.player, TiltError::FraudSuspected);
+    let transferred = claim.win_reserved.saturating_sub(ledger.win_reserved);
+    let win_reserved = ledger.win_reserved + transferred;
+    let win_released = ledger.win_released.max(claim.win_released);
+    let pool_transferred = vault.pool_transferred as u128 + transferred as u128;
+    let allowance = ledger.deposited as u128 - ledger.forfeited as u128 + win_reserved as u128
+        - win_released.min(win_reserved) as u128;
+    require!(
+        win_released <= win_reserved
+            && pool_transferred <= vault.pool_line as u128
+            && allowance >= ledger.withdrawn_paid as u128,
+        TiltError::FraudSuspected
+    );
+    let released = win_released - ledger.win_released;
+    vault.pool_transferred += transferred;
+    vault.reserved -= released;
+    ledger.win_reserved = win_reserved;
+    ledger.win_released = win_released;
+    Ok(released)
 }
 
 /// A 24 h block of automatic payments. Blocks are fixed: `paid` resets when a block ends.
@@ -106,6 +138,14 @@ pub struct LossReleased {
     pub forfeited_total: u64,
 }
 
+/// Secured wins the player lost again, back to the house.
+#[event]
+pub struct WinsReleased {
+    pub player: Pubkey,
+    pub amount: u64,
+    pub released_total: u64,
+}
+
 pub struct PayAccounts<'a, 'info> {
     pub vault: &'a mut Account<'info, Vault>,
     pub vault_token: &'a Account<'info, TokenAccount>,
@@ -115,8 +155,8 @@ pub struct PayAccounts<'a, 'info> {
     pub token_program: &'a Program<'info, Token>,
 }
 
-/// Pays what is due for the last state the rollup committed. With `enforce_limits`,
-/// amounts outside the automatic limits are held instead.
+/// Pays what is due for the last state the rollup committed, once its secured wins are on
+/// Solana. With `enforce_limits`, amounts outside the automatic limits are held instead.
 pub fn pay_due(accounts: PayAccounts, committed: &AccountInfo, enforce_limits: bool) -> Result<()> {
     let claim = read_claim(committed)?;
     let PayAccounts {
@@ -127,6 +167,14 @@ pub fn pay_due(accounts: PayAccounts, committed: &AccountInfo, enforce_limits: b
         ledger,
         token_program,
     } = accounts;
+    let released = apply_secured_wins(vault, ledger, &claim)?;
+    if released > 0 {
+        emit!(WinsReleased {
+            player: claim.player,
+            amount: released,
+            released_total: ledger.win_released
+        });
+    }
     let due = checked_due(&claim, ledger)?;
     if due == 0 {
         return Ok(());
@@ -188,7 +236,7 @@ pub fn checked_forfeit(claim: &PlayerAccount, ledger: &Ledger) -> Result<u64> {
     require_keys_eq!(claim.player, ledger.player, TiltError::FraudSuspected);
     require!(
         claim.forfeited as u128 + ledger.withdrawn_paid as u128
-            <= ledger.deposited as u128 + ledger.max_win as u128
+            <= ledger.deposited as u128 + ledger.secured() as u128
             && claim.forfeited <= ledger.deposited,
         TiltError::FraudSuspected
     );
@@ -199,13 +247,15 @@ pub fn checked_forfeit(claim: &PlayerAccount, ledger: &Ledger) -> Result<u64> {
 mod tests {
     use super::*;
 
-    fn ledger(deposited: u64, withdrawn_paid: u64, max_win: u64) -> Ledger {
+    /// A ledger whose player has `secured` wins on Solana.
+    fn ledger(deposited: u64, withdrawn_paid: u64, secured: u64) -> Ledger {
         Ledger {
             player: Pubkey::default(),
             deposited,
             withdrawn_paid,
             forfeited: 0,
-            max_win,
+            win_reserved: secured,
+            win_released: 0,
             window_start: 0,
             window_paid: 0,
         }
@@ -224,8 +274,6 @@ mod tests {
             min_bet: 0,
             max_bet: 0,
             max_round_gain: 0,
-            max_player_win: 0,
-            max_win_multiple: 0,
             onboarding_fee: 0,
             min_deposit: 0,
             min_withdrawal: 0,
@@ -233,6 +281,7 @@ mod tests {
             player_daily_cap: 150,
             daily_cap: 1_000,
             round_timeout_secs: 0,
+            abandoned_round_secs: 0,
             validator: Pubkey::default(),
             vrf_queue: Pubkey::default(),
             deposits_paused: false,
@@ -242,6 +291,104 @@ mod tests {
     }
 
     const EMPTY: Window = Window { start: 0, paid: 0 };
+
+    /// A vault whose risk pool has a line of `line`, of which `transferred` went to players.
+    fn vault(reserved: u64, line: u64, transferred: u64) -> Vault {
+        Vault {
+            reserved,
+            pool_line: line,
+            pool_transferred: transferred,
+            ..crate::instructions::testing::vault()
+        }
+    }
+
+    fn securing(win_reserved: u64, win_released: u64) -> PlayerAccount {
+        PlayerAccount {
+            win_reserved,
+            win_released,
+            ..PlayerAccount::default()
+        }
+    }
+
+    #[test]
+    fn wins_secured_in_the_rollup_come_out_of_the_pools_line() {
+        let (mut v, mut l) = (vault(1_000, 500, 100), ledger(100, 0, 0));
+        assert_eq!(
+            apply_secured_wins(&mut v, &mut l, &securing(300, 0)).unwrap(),
+            0
+        );
+        // The line was already reserved: moving it to the player leaves `reserved` as it was.
+        assert_eq!(
+            (v.reserved, v.pool_transferred, l.win_reserved),
+            (1_000, 400, 300)
+        );
+        assert_eq!(checked_due(&claim(100, 400), &l).unwrap(), 400);
+    }
+
+    #[test]
+    fn a_claim_overdrawing_the_pools_line_is_refused() {
+        let (mut v, mut l) = (vault(1_000, 500, 400), ledger(100, 0, 0));
+        assert_eq!(
+            apply_secured_wins(&mut v, &mut l, &securing(101, 0)),
+            Err(TiltError::FraudSuspected.into())
+        );
+        apply_secured_wins(&mut v, &mut l, &securing(100, 0)).unwrap();
+        assert_eq!(v.pool_transferred, 500);
+    }
+
+    #[test]
+    fn wins_lost_again_go_back_to_the_house_once() {
+        let (mut v, mut l) = (vault(1_000, 500, 300), ledger(100, 0, 300));
+        assert_eq!(
+            apply_secured_wins(&mut v, &mut l, &securing(300, 200)).unwrap(),
+            200
+        );
+        assert_eq!((v.reserved, l.secured()), (800, 100));
+        assert_eq!(
+            apply_secured_wins(&mut v, &mut l, &securing(300, 200)).unwrap(),
+            0,
+            "replay"
+        );
+        assert_eq!(v.reserved, 800);
+    }
+
+    #[test]
+    fn an_older_claim_changes_nothing() {
+        let (mut v, mut l) = (vault(1_000, 500, 300), ledger(100, 0, 300));
+        l.win_released = 200;
+        assert_eq!(
+            apply_secured_wins(&mut v, &mut l, &securing(100, 50)).unwrap(),
+            0
+        );
+        assert_eq!(
+            (
+                v.reserved,
+                v.pool_transferred,
+                l.win_reserved,
+                l.win_released
+            ),
+            (1_000, 300, 300, 200)
+        );
+    }
+
+    #[test]
+    fn releasing_wins_already_paid_out_is_refused() {
+        // 100 deposited + 300 secured, 350 already paid: at most 50 can still be released.
+        let (mut v, mut l) = (vault(1_000, 500, 300), ledger(100, 350, 300));
+        assert_eq!(
+            apply_secured_wins(&mut v, &mut l, &securing(300, 51)),
+            Err(TiltError::FraudSuspected.into())
+        );
+        assert_eq!(
+            apply_secured_wins(&mut v, &mut l, &securing(300, 50)).unwrap(),
+            50
+        );
+        assert_eq!(
+            apply_secured_wins(&mut v, &mut l, &securing(300, 301)),
+            Err(TiltError::FraudSuspected.into()),
+            "more than ever secured"
+        );
+    }
 
     #[test]
     fn honest_claim_pays_only_the_unpaid_part() {

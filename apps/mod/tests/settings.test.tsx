@@ -6,8 +6,10 @@ import { BAND, command, PANE, PLUGIN, seat, shownText, textOf } from "./world";
 
 const LARGE_CARD_TOP = "╭─────╮";
 const SETUP_PANE = { ...PANE, requestId: "tilt-setup" };
+/** A band of 30 rows on the main screen of a terminal tall enough for it to take them. */
 const BAND_ROOMY = {
   ...BAND,
+  viewport: { columns: 125, rows: 80, isFullscreen: false },
   props: { ...BAND.props, maxRows: 30, bodyColumns: 120, scroll: { offset: 0, bodyRows: 29 } },
 };
 
@@ -79,7 +81,7 @@ describe("where the table sits", () => {
       await $.command.run(command());
 
       expect(world.opened).toEqual([]);
-      const band = textOf(await (await $.ui.mount({ plugin: PLUGIN, ...BAND_ROOMY })).drawn());
+      const band = await shownText(await $.ui.mount({ plugin: PLUGIN, ...BAND_ROOMY }));
 
       for (const part of ["DEALER 9 + ?", "▶ YOU 11", "LEADERBOARD", "rtp 99.00%"]) {
         expect(band, part).toContain(part);

@@ -1,4 +1,4 @@
-// Lint covers Eli's apps for now (spec §11.1); Armand's zone can opt in later.
+// Lint covers the clients (Eli's apps, the play core and the harnesses); Armand's zone can opt in later.
 import tseslint from "typescript-eslint";
 import nextPlugin from "@next/eslint-plugin-next";
 import prettier from "eslint-config-prettier";
@@ -8,7 +8,7 @@ export default tseslint.config(
     ignores: ["**/node_modules/**", "**/.next/**", "**/dist/**", "apps/mod/.claude-plugin/types/**", "apps/web/next-env.d.ts"],
   },
   {
-    files: ["apps/api/**/*.ts", "apps/mod/**/*.{ts,tsx}", "apps/web/**/*.{ts,tsx}"],
+    files: ["apps/api/**/*.ts", "apps/mod/**/*.{ts,tsx}", "apps/web/**/*.{ts,tsx}", "packages/play/**/*.ts", "harnesses/**/*.{ts,tsx}"],
     extends: [...tseslint.configs.strict],
     rules: {
       "@typescript-eslint/no-explicit-any": "error",

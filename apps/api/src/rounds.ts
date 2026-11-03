@@ -18,6 +18,13 @@ export interface SettledRound {
   settledAt: Date;
 }
 
+/** Games whose rounds can settle by a cash-out, without a VRF draw: its RoundSettled carries
+ *  zero randomness and the request id of the last draw, already indexed. */
+const CASH_OUT_GAMES: ReadonlySet<Game> = new Set(["mines", "hilo", "tower"]);
+
+export const isCashout = (r: Pick<SettledRound, "game" | "randomness">) =>
+  CASH_OUT_GAMES.has(r.game) && r.randomness.every((b) => b === 0);
+
 export interface IndexedRound extends SettledRound {
   detail: Outcome | null;
 }
@@ -127,10 +134,15 @@ export async function previousRequestId(db: Queryable, player: string, round: nu
 }
 
 /** The account's draws with after < request id <= upTo, in request order. */
-export async function drawsBetween(db: Queryable, account: string, after: bigint, upTo: bigint): Promise<Buffer[]> {
-  const { rows } = await db.query<{ randomness: string }>(
-    `SELECT randomness FROM draws WHERE account = $1 AND request_id > $2 AND request_id <= $3 ORDER BY request_id`,
+export async function drawsBetween(
+  db: Queryable,
+  account: string,
+  after: bigint,
+  upTo: bigint,
+): Promise<{ requestId: bigint; randomness: Buffer }[]> {
+  const { rows } = await db.query<{ request_id: string; randomness: string }>(
+    `SELECT request_id, randomness FROM draws WHERE account = $1 AND request_id > $2 AND request_id <= $3 ORDER BY request_id`,
     [account, after.toString(), upTo.toString()],
   );
-  return rows.map((r) => Buffer.from(r.randomness, "hex"));
+  return rows.map((r) => ({ requestId: BigInt(r.request_id), randomness: Buffer.from(r.randomness, "hex") }));
 }

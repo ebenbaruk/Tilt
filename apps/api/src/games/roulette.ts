@@ -1,8 +1,10 @@
-// Port of `games/roulette.rs`: European wheel, one bet per spin.
-import type { RouletteBet } from "@tilt/mod/protocol";
+// Port of `games/roulette.rs`: European wheel, 1 to 20 chips per spin, each on its own bet.
+import type { RouletteBet, RouletteChip } from "@tilt/mod/protocol";
 import type { Rng } from "./rng";
 
 const POCKETS = 37;
+/** The roulette table's pocket until the spin lands. */
+export const NO_POCKET = 255;
 const RED = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
 
 export const isRed = (n: number) => RED.has(n);
@@ -40,6 +42,10 @@ export function wins(bet: RouletteBet, n: number): boolean {
 export const spin = (rng: Rng) => rng.below(POCKETS);
 
 export const gross = (bet: RouletteBet, n: number, stake: bigint) => (wins(bet, n) ? stake * winMultiple(bet) : 0n);
+
+/** What a spin's chips return together, stakes included. */
+export const chipsGross = (chips: readonly RouletteChip[], n: number) =>
+  chips.reduce((sum, chip) => sum + gross(chip.bet, n, BigInt(chip.amount)), 0n);
 
 /** Every bet the program accepts, for searching which one explains a settled payout. */
 export const ALL_BETS: readonly RouletteBet[] = [

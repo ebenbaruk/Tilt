@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/tilt.json`.
  */
 export type Tilt = {
-  "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd",
+  "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8",
   "metadata": {
     "name": "tilt",
     "version": "0.1.0",
@@ -94,7 +94,7 @@ export type Tilt = {
         },
         {
           "name": "thisProgram",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "escrowAuth"
@@ -224,6 +224,28 @@ export type Tilt = {
                 "kind": "account",
                 "path": "account.player",
                 "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -412,6 +434,28 @@ export type Tilt = {
           }
         },
         {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -591,6 +635,28 @@ export type Tilt = {
           }
         },
         {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -757,6 +823,28 @@ export type Tilt = {
                 "kind": "account",
                 "path": "account.player",
                 "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -933,6 +1021,28 @@ export type Tilt = {
           }
         },
         {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -1104,6 +1214,28 @@ export type Tilt = {
           }
         },
         {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -1248,6 +1380,338 @@ export type Tilt = {
       "args": []
     },
     {
+      "name": "consumeHiloRandomness",
+      "discriminator": [
+        37,
+        137,
+        187,
+        222,
+        247,
+        7,
+        145,
+        67
+      ],
+      "accounts": [
+        {
+          "name": "vrfProgramIdentity",
+          "docs": [
+            "Scoped VRF identity PDA, bound to this program. Its presence as a signer proves",
+            "the callback was issued by the VRF program for this program."
+          ],
+          "signer": true
+        },
+        {
+          "name": "account",
+          "docs": [
+            "Must be a player account PDA, like in `consume_randomness`."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  105,
+                  108,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "randomness",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "requestId",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "consumeMinesRandomness",
+      "discriminator": [
+        174,
+        238,
+        197,
+        25,
+        162,
+        187,
+        47,
+        82
+      ],
+      "accounts": [
+        {
+          "name": "vrfProgramIdentity",
+          "docs": [
+            "Scoped VRF identity PDA, bound to this program. Its presence as a signer proves",
+            "the callback was issued by the VRF program for this program."
+          ],
+          "signer": true
+        },
+        {
+          "name": "account",
+          "docs": [
+            "Must be a player account PDA, like in `consume_randomness`."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "randomness",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "requestId",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "consumeQuickRandomness",
+      "discriminator": [
+        23,
+        133,
+        148,
+        195,
+        1,
+        101,
+        50,
+        186
+      ],
+      "accounts": [
+        {
+          "name": "vrfProgramIdentity",
+          "docs": [
+            "Scoped VRF identity PDA, bound to this program. Its presence as a signer proves",
+            "the callback was issued by the VRF program for this program."
+          ],
+          "signer": true
+        },
+        {
+          "name": "account",
+          "docs": [
+            "Must be a player account PDA, like in `consume_randomness`."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "quick",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  105,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "randomness",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "requestId",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "consumeRandomness",
       "discriminator": [
         190,
@@ -1322,6 +1786,253 @@ export type Tilt = {
                 "kind": "account",
                 "path": "account.player",
                 "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "randomness",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "requestId",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "consumeRouletteRandomness",
+      "discriminator": [
+        117,
+        66,
+        145,
+        192,
+        102,
+        107,
+        238,
+        43
+      ],
+      "accounts": [
+        {
+          "name": "vrfProgramIdentity",
+          "docs": [
+            "Scoped VRF identity PDA, bound to this program. Its presence as a signer proves",
+            "the callback was issued by the VRF program for this program."
+          ],
+          "signer": true
+        },
+        {
+          "name": "account",
+          "docs": [
+            "Must be a player account PDA, like in `consume_randomness`."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "roulette",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  108,
+                  101,
+                  116,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "randomness",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "requestId",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "consumeTowerRandomness",
+      "discriminator": [
+        44,
+        114,
+        165,
+        76,
+        206,
+        99,
+        162,
+        214
+      ],
+      "accounts": [
+        {
+          "name": "vrfProgramIdentity",
+          "docs": [
+            "Scoped VRF identity PDA, bound to this program. Its presence as a signer proves",
+            "the callback was issued by the VRF program for this program."
+          ],
+          "signer": true
+        },
+        {
+          "name": "account",
+          "docs": [
+            "Must be a player account PDA, like in `consume_randomness`."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  119,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -1427,38 +2138,38 @@ export type Tilt = {
             "program": {
               "kind": "const",
               "value": [
-                24,
-                12,
-                135,
-                51,
-                234,
-                253,
-                132,
-                42,
-                23,
-                91,
-                143,
-                100,
-                117,
-                247,
-                92,
-                216,
-                69,
-                90,
-                227,
-                83,
-                114,
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
                 248,
-                108,
-                194,
-                137,
-                171,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
                 145,
-                243,
-                105,
-                204,
-                132,
-                234
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
               ]
             }
           }
@@ -1560,7 +2271,1036 @@ export type Tilt = {
         },
         {
           "name": "ownerProgram",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
+        },
+        {
+          "name": "delegationProgram",
+          "address": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "delegateHiloBoard",
+      "discriminator": [
+        51,
+        208,
+        96,
+        164,
+        114,
+        83,
+        129,
+        94
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "player"
+        },
+        {
+          "name": "bufferBoard",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  102,
+                  102,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "board"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
+                248,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
+                145,
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "name": "delegationRecordBoard",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "board"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegationProgram"
+            }
+          }
+        },
+        {
+          "name": "delegationMetadataBoard",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  109,
+                  101,
+                  116,
+                  97,
+                  100,
+                  97,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "board"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegationProgram"
+            }
+          }
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  105,
+                  108,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ownerProgram",
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
+        },
+        {
+          "name": "delegationProgram",
+          "address": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "delegateMinesBoard",
+      "discriminator": [
+        129,
+        56,
+        185,
+        149,
+        207,
+        164,
+        206,
+        200
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "player"
+        },
+        {
+          "name": "bufferBoard",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  102,
+                  102,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "board"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
+                248,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
+                145,
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "name": "delegationRecordBoard",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "board"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegationProgram"
+            }
+          }
+        },
+        {
+          "name": "delegationMetadataBoard",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  109,
+                  101,
+                  116,
+                  97,
+                  100,
+                  97,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "board"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegationProgram"
+            }
+          }
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ownerProgram",
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
+        },
+        {
+          "name": "delegationProgram",
+          "address": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "delegateQuickTable",
+      "discriminator": [
+        155,
+        142,
+        124,
+        85,
+        189,
+        1,
+        22,
+        14
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "player"
+        },
+        {
+          "name": "bufferQuick",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  102,
+                  102,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "quick"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
+                248,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
+                145,
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "name": "delegationRecordQuick",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "quick"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegationProgram"
+            }
+          }
+        },
+        {
+          "name": "delegationMetadataQuick",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  109,
+                  101,
+                  116,
+                  97,
+                  100,
+                  97,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "quick"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegationProgram"
+            }
+          }
+        },
+        {
+          "name": "quick",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  105,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ownerProgram",
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
+        },
+        {
+          "name": "delegationProgram",
+          "address": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "delegateRiskPool",
+      "discriminator": [
+        139,
+        10,
+        122,
+        135,
+        85,
+        99,
+        226,
+        193
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "bufferRiskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  102,
+                  102,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "riskPool"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
+                248,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
+                145,
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "name": "delegationRecordRiskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "riskPool"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegationProgram"
+            }
+          }
+        },
+        {
+          "name": "delegationMetadataRiskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  109,
+                  101,
+                  116,
+                  97,
+                  100,
+                  97,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "riskPool"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegationProgram"
+            }
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "ownerProgram",
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
+        },
+        {
+          "name": "delegationProgram",
+          "address": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "delegateRouletteTable",
+      "discriminator": [
+        254,
+        4,
+        230,
+        223,
+        145,
+        226,
+        99,
+        243
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "player"
+        },
+        {
+          "name": "bufferRoulette",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  102,
+                  102,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "roulette"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
+                248,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
+                145,
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "name": "delegationRecordRoulette",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "roulette"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegationProgram"
+            }
+          }
+        },
+        {
+          "name": "delegationMetadataRoulette",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  109,
+                  101,
+                  116,
+                  97,
+                  100,
+                  97,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "roulette"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegationProgram"
+            }
+          }
+        },
+        {
+          "name": "roulette",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  108,
+                  101,
+                  116,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ownerProgram",
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "delegationProgram",
@@ -1635,38 +3375,38 @@ export type Tilt = {
             "program": {
               "kind": "const",
               "value": [
-                24,
-                12,
-                135,
-                51,
-                234,
-                253,
-                132,
-                42,
-                23,
-                91,
-                143,
-                100,
-                117,
-                247,
-                92,
-                216,
-                69,
-                90,
-                227,
-                83,
-                114,
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
                 248,
-                108,
-                194,
-                137,
-                171,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
                 145,
-                243,
-                105,
-                204,
-                132,
-                234
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
               ]
             }
           }
@@ -1768,7 +3508,213 @@ export type Tilt = {
         },
         {
           "name": "ownerProgram",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
+        },
+        {
+          "name": "delegationProgram",
+          "address": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "delegateTowerBoard",
+      "discriminator": [
+        20,
+        220,
+        121,
+        220,
+        11,
+        238,
+        211,
+        102
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "player"
+        },
+        {
+          "name": "bufferBoard",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  102,
+                  102,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "board"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                96,
+                10,
+                250,
+                66,
+                124,
+                27,
+                10,
+                166,
+                248,
+                127,
+                94,
+                74,
+                147,
+                64,
+                223,
+                145,
+                92,
+                38,
+                248,
+                135,
+                182,
+                46,
+                43,
+                235,
+                104,
+                144,
+                196,
+                179,
+                231,
+                250,
+                235,
+                127
+              ]
+            }
+          }
+        },
+        {
+          "name": "delegationRecordBoard",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "board"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegationProgram"
+            }
+          }
+        },
+        {
+          "name": "delegationMetadataBoard",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  109,
+                  101,
+                  116,
+                  97,
+                  100,
+                  97,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "board"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegationProgram"
+            }
+          }
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  119,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ownerProgram",
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "delegationProgram",
@@ -1882,6 +3828,950 @@ export type Tilt = {
         {
           "name": "amount",
           "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "diceRoll",
+      "discriminator": [
+        234,
+        73,
+        108,
+        215,
+        140,
+        60,
+        156,
+        90
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "Read-only copy of the Solana vault: relayer key and limits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The Tilt relay, acting on the player's intents."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Read-only copy of the Solana ledger, to credit new deposits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "quick",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  105,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracleQueue",
+          "writable": true
+        },
+        {
+          "name": "programIdentity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrfProgram",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slotHashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "target",
+          "type": "u16"
+        },
+        {
+          "name": "over",
+          "type": "bool"
+        },
+        {
+          "name": "clientSeed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "expireHiloRound",
+      "discriminator": [
+        15,
+        225,
+        190,
+        88,
+        2,
+        101,
+        44,
+        155
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "Read-only copy of the Solana vault: relayer key and limits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The Tilt relay, acting on the player's intents."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Read-only copy of the Solana ledger, to credit new deposits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  105,
+                  108,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracleQueue",
+          "writable": true
+        },
+        {
+          "name": "programIdentity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrfProgram",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slotHashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "clientSeed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "expireMinesRound",
+      "discriminator": [
+        174,
+        204,
+        13,
+        246,
+        67,
+        255,
+        164,
+        88
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "Read-only copy of the Solana vault: relayer key and limits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The Tilt relay, acting on the player's intents."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Read-only copy of the Solana ledger, to credit new deposits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracleQueue",
+          "writable": true
+        },
+        {
+          "name": "programIdentity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrfProgram",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slotHashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "clientSeed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "expireQuickRound",
+      "discriminator": [
+        137,
+        150,
+        110,
+        6,
+        153,
+        80,
+        237,
+        4
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "Read-only copy of the Solana vault: relayer key and limits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The Tilt relay, acting on the player's intents."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Read-only copy of the Solana ledger, to credit new deposits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "quick",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  105,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracleQueue",
+          "writable": true
+        },
+        {
+          "name": "programIdentity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrfProgram",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slotHashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "clientSeed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "expireRouletteRound",
+      "discriminator": [
+        237,
+        22,
+        3,
+        152,
+        43,
+        146,
+        109,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "Read-only copy of the Solana vault: relayer key and limits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The Tilt relay, acting on the player's intents."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Read-only copy of the Solana ledger, to credit new deposits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "roulette",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  108,
+                  101,
+                  116,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracleQueue",
+          "writable": true
+        },
+        {
+          "name": "programIdentity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrfProgram",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slotHashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "clientSeed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
         }
       ]
     },
@@ -2008,6 +4898,28 @@ export type Tilt = {
           }
         },
         {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -2045,6 +4957,394 @@ export type Tilt = {
         }
       ],
       "args": [
+        {
+          "name": "clientSeed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "expireTowerRound",
+      "discriminator": [
+        28,
+        106,
+        79,
+        164,
+        112,
+        188,
+        98,
+        174
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "Read-only copy of the Solana vault: relayer key and limits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The Tilt relay, acting on the player's intents."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Read-only copy of the Solana ledger, to credit new deposits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  119,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracleQueue",
+          "writable": true
+        },
+        {
+          "name": "programIdentity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrfProgram",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slotHashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "clientSeed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "flipPlay",
+      "discriminator": [
+        235,
+        86,
+        68,
+        222,
+        71,
+        50,
+        124,
+        35
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "Read-only copy of the Solana vault: relayer key and limits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The Tilt relay, acting on the player's intents."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Read-only copy of the Solana ledger, to credit new deposits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "quick",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  105,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracleQueue",
+          "writable": true
+        },
+        {
+          "name": "programIdentity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrfProgram",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slotHashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "side",
+          "type": {
+            "defined": {
+              "name": "coinSide"
+            }
+          }
+        },
+        {
+          "name": "flips",
+          "type": "u8"
+        },
         {
           "name": "clientSeed",
           "type": {
@@ -2154,6 +5454,72 @@ export type Tilt = {
       ]
     },
     {
+      "name": "fundRiskPool",
+      "discriminator": [
+        231,
+        167,
+        50,
+        246,
+        96,
+        115,
+        103,
+        21
+      ],
+      "accounts": [
+        {
+          "name": "relayer",
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vaultToken",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "fundVault",
       "discriminator": [
         26,
@@ -2230,6 +5596,563 @@ export type Tilt = {
         {
           "name": "amount",
           "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "hiloBet",
+      "discriminator": [
+        118,
+        3,
+        52,
+        186,
+        203,
+        2,
+        131,
+        90
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "Read-only copy of the Solana vault: relayer key and limits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The Tilt relay, acting on the player's intents."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Read-only copy of the Solana ledger, to credit new deposits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  105,
+                  108,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracleQueue",
+          "writable": true
+        },
+        {
+          "name": "programIdentity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrfProgram",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slotHashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "clientSeed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "hiloCashout",
+      "discriminator": [
+        204,
+        176,
+        5,
+        148,
+        52,
+        151,
+        121,
+        197
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "Read-only copy of the Solana vault: relayer key and limits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The Tilt relay, acting on the player's intents."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Read-only copy of the Solana ledger, to credit new deposits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  105,
+                  108,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracleQueue",
+          "writable": true
+        },
+        {
+          "name": "programIdentity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrfProgram",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slotHashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "hiloGuess",
+      "discriminator": [
+        105,
+        169,
+        249,
+        238,
+        217,
+        122,
+        252,
+        172
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "Read-only copy of the Solana vault: relayer key and limits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The Tilt relay, acting on the player's intents."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Read-only copy of the Solana ledger, to credit new deposits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  105,
+                  108,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracleQueue",
+          "writable": true
+        },
+        {
+          "name": "programIdentity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrfProgram",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slotHashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "guess",
+          "type": {
+            "defined": {
+              "name": "hiloMove"
+            }
+          }
+        },
+        {
+          "name": "clientSeed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
         }
       ]
     },
@@ -2365,7 +6288,7 @@ export type Tilt = {
         },
         {
           "name": "program",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "programData"
@@ -2438,6 +6361,945 @@ export type Tilt = {
             "defined": {
               "name": "config"
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "kenoPlay",
+      "discriminator": [
+        242,
+        188,
+        242,
+        121,
+        145,
+        221,
+        18,
+        110
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "Read-only copy of the Solana vault: relayer key and limits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The Tilt relay, acting on the player's intents."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Read-only copy of the Solana ledger, to credit new deposits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "quick",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  105,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracleQueue",
+          "writable": true
+        },
+        {
+          "name": "programIdentity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrfProgram",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slotHashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "picks",
+          "type": "bytes"
+        },
+        {
+          "name": "clientSeed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "limboPlay",
+      "discriminator": [
+        232,
+        13,
+        252,
+        254,
+        68,
+        163,
+        240,
+        9
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "Read-only copy of the Solana vault: relayer key and limits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The Tilt relay, acting on the player's intents."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Read-only copy of the Solana ledger, to credit new deposits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "quick",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  105,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracleQueue",
+          "writable": true
+        },
+        {
+          "name": "programIdentity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrfProgram",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slotHashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "target",
+          "type": "u32"
+        },
+        {
+          "name": "clientSeed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "minesBet",
+      "discriminator": [
+        25,
+        147,
+        75,
+        108,
+        163,
+        85,
+        219,
+        79
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "Read-only copy of the Solana vault: relayer key and limits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The Tilt relay, acting on the player's intents."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Read-only copy of the Solana ledger, to credit new deposits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracleQueue",
+          "writable": true
+        },
+        {
+          "name": "programIdentity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrfProgram",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slotHashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "mines",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "minesCashout",
+      "discriminator": [
+        179,
+        158,
+        112,
+        181,
+        138,
+        69,
+        229,
+        82
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "Read-only copy of the Solana vault: relayer key and limits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The Tilt relay, acting on the player's intents."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Read-only copy of the Solana ledger, to credit new deposits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracleQueue",
+          "writable": true
+        },
+        {
+          "name": "programIdentity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrfProgram",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slotHashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "minesReveal",
+      "discriminator": [
+        64,
+        219,
+        35,
+        218,
+        106,
+        67,
+        52,
+        132
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "Read-only copy of the Solana vault: relayer key and limits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The Tilt relay, acting on the player's intents."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Read-only copy of the Solana ledger, to credit new deposits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracleQueue",
+          "writable": true
+        },
+        {
+          "name": "programIdentity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrfProgram",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slotHashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "tile",
+          "type": "u8"
+        },
+        {
+          "name": "clientSeed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
           }
         }
       ]
@@ -2586,12 +7448,457 @@ export type Tilt = {
         {
           "name": "amount",
           "type": "u64"
-        },
-        {
-          "name": "maxWin",
-          "type": "u64"
         }
       ]
+    },
+    {
+      "name": "openHiloBoard",
+      "discriminator": [
+        118,
+        243,
+        36,
+        96,
+        9,
+        31,
+        42,
+        50
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The relay: pays the rent."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "player"
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Only players with an account get a board."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  105,
+                  108,
+                  111
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "openMinesBoard",
+      "discriminator": [
+        90,
+        34,
+        4,
+        159,
+        90,
+        65,
+        81,
+        128
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The relay: pays the rent."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "player"
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Only players with an account get a board."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "openQuickTable",
+      "discriminator": [
+        129,
+        0,
+        10,
+        24,
+        182,
+        8,
+        97,
+        166
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The relay: pays the rent."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "player"
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Only players with an account get a table."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "quick",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  105,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "openRiskPool",
+      "discriminator": [
+        63,
+        125,
+        127,
+        255,
+        173,
+        96,
+        42,
+        40
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The relay: pays the rent."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "openRouletteTable",
+      "discriminator": [
+        49,
+        44,
+        68,
+        140,
+        203,
+        78,
+        16,
+        227
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The relay: pays the rent."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "player"
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Only players with an account get a table."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "roulette",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  108,
+                  101,
+                  116,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
     },
     {
       "name": "openTable",
@@ -2674,6 +7981,101 @@ export type Tilt = {
                   98,
                   108,
                   101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "openTowerBoard",
+      "discriminator": [
+        174,
+        47,
+        60,
+        198,
+        232,
+        108,
+        18,
+        17
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The relay: pays the rent."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "player"
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Only players with an account get a board."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  119,
+                  101,
+                  114
                 ]
               },
               {
@@ -2953,7 +8355,7 @@ export type Tilt = {
         },
         {
           "name": "thisProgram",
-          "address": "2css9q2M2SH4ekVjLYs9dfnEQpsxMprrYUrM2hWzVokd"
+          "address": "7TurAMr1B6VWq5U3KSkXgNc7debxV6rWUAGsNARbHEB8"
         },
         {
           "name": "escrowAuth"
@@ -3070,96 +8472,6 @@ export type Tilt = {
           "type": {
             "vec": "bytes"
           }
-        }
-      ]
-    },
-    {
-      "name": "raiseWinCap",
-      "discriminator": [
-        65,
-        167,
-        19,
-        207,
-        172,
-        97,
-        6,
-        209
-      ],
-      "accounts": [
-        {
-          "name": "relayer",
-          "signer": true
-        },
-        {
-          "name": "vault",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  118,
-                  97,
-                  117,
-                  108,
-                  116
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "vaultToken",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  118,
-                  97,
-                  117,
-                  108,
-                  116,
-                  95,
-                  116,
-                  111,
-                  107,
-                  101,
-                  110
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "ledger",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  108,
-                  101,
-                  100,
-                  103,
-                  101,
-                  114
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "ledger.player",
-                "account": "ledger"
-              }
-            ]
-          }
-        }
-      ],
-      "args": [
-        {
-          "name": "amount",
-          "type": "u64"
         }
       ]
     },
@@ -3291,6 +8603,205 @@ export type Tilt = {
       "args": []
     },
     {
+      "name": "rouletteChips",
+      "discriminator": [
+        249,
+        169,
+        216,
+        6,
+        47,
+        108,
+        68,
+        58
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "Read-only copy of the Solana vault: relayer key and limits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The Tilt relay, acting on the player's intents."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Read-only copy of the Solana ledger, to credit new deposits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "roulette",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  108,
+                  101,
+                  116,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracleQueue",
+          "writable": true
+        },
+        {
+          "name": "programIdentity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrfProgram",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slotHashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "chips",
+          "type": {
+            "vec": {
+              "defined": {
+                "name": "rouletteChip"
+              }
+            }
+          }
+        },
+        {
+          "name": "clientSeed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
       "name": "rouletteSpin",
       "discriminator": [
         146,
@@ -3408,6 +8919,28 @@ export type Tilt = {
                 "kind": "account",
                 "path": "account.player",
                 "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -3763,6 +9296,28 @@ export type Tilt = {
           }
         },
         {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "oracleQueue",
           "writable": true
         },
@@ -3803,6 +9358,763 @@ export type Tilt = {
         {
           "name": "amount",
           "type": "u64"
+        },
+        {
+          "name": "clientSeed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "towerBet",
+      "discriminator": [
+        181,
+        251,
+        4,
+        223,
+        81,
+        204,
+        188,
+        39
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "Read-only copy of the Solana vault: relayer key and limits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The Tilt relay, acting on the player's intents."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Read-only copy of the Solana ledger, to credit new deposits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  119,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracleQueue",
+          "writable": true
+        },
+        {
+          "name": "programIdentity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrfProgram",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slotHashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "difficulty",
+          "type": {
+            "defined": {
+              "name": "towerDifficulty"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "towerCashout",
+      "discriminator": [
+        32,
+        176,
+        240,
+        31,
+        80,
+        146,
+        198,
+        141
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "Read-only copy of the Solana vault: relayer key and limits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The Tilt relay, acting on the player's intents."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Read-only copy of the Solana ledger, to credit new deposits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  119,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracleQueue",
+          "writable": true
+        },
+        {
+          "name": "programIdentity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrfProgram",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slotHashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "towerClimb",
+      "discriminator": [
+        188,
+        8,
+        210,
+        174,
+        14,
+        117,
+        173,
+        140
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "Read-only copy of the Solana vault: relayer key and limits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The Tilt relay, acting on the player's intents."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Read-only copy of the Solana ledger, to credit new deposits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  119,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracleQueue",
+          "writable": true
+        },
+        {
+          "name": "programIdentity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrfProgram",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slotHashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "tile",
+          "type": "u8"
+        },
+        {
+          "name": "clientSeed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "wheelSpin",
+      "discriminator": [
+        33,
+        80,
+        241,
+        178,
+        59,
+        53,
+        115,
+        118
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "Read-only copy of the Solana vault: relayer key and limits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "The Tilt relay, acting on the player's intents."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ledger",
+          "docs": [
+            "Read-only copy of the Solana ledger, to credit new deposits."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  100,
+                  103,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "quick",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  105,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "account.player",
+                "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracleQueue",
+          "writable": true
+        },
+        {
+          "name": "programIdentity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrfProgram",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slotHashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "segments",
+          "type": "u8"
+        },
+        {
+          "name": "risk",
+          "type": {
+            "defined": {
+              "name": "wheelRisk"
+            }
+          }
         },
         {
           "name": "clientSeed",
@@ -3897,6 +10209,28 @@ export type Tilt = {
                 "kind": "account",
                 "path": "account.player",
                 "account": "playerAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "riskPool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  115,
+                  107,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               }
             ]
           }
@@ -4135,6 +10469,19 @@ export type Tilt = {
       ]
     },
     {
+      "name": "hiloBoard",
+      "discriminator": [
+        237,
+        183,
+        5,
+        178,
+        43,
+        57,
+        187,
+        183
+      ]
+    },
+    {
       "name": "ledger",
       "discriminator": [
         43,
@@ -4145,6 +10492,19 @@ export type Tilt = {
         176,
         95,
         32
+      ]
+    },
+    {
+      "name": "minesBoard",
+      "discriminator": [
+        103,
+        212,
+        51,
+        227,
+        187,
+        87,
+        125,
+        68
       ]
     },
     {
@@ -4184,6 +10544,58 @@ export type Tilt = {
         140,
         32,
         93
+      ]
+    },
+    {
+      "name": "quickTable",
+      "discriminator": [
+        177,
+        219,
+        22,
+        66,
+        61,
+        202,
+        93,
+        72
+      ]
+    },
+    {
+      "name": "riskPool",
+      "discriminator": [
+        101,
+        46,
+        90,
+        100,
+        248,
+        9,
+        6,
+        213
+      ]
+    },
+    {
+      "name": "rouletteTable",
+      "discriminator": [
+        176,
+        198,
+        27,
+        37,
+        5,
+        37,
+        240,
+        139
+      ]
+    },
+    {
+      "name": "towerBoard",
+      "discriminator": [
+        168,
+        237,
+        122,
+        115,
+        60,
+        25,
+        237,
+        159
       ]
     },
     {
@@ -4238,6 +10650,19 @@ export type Tilt = {
         200,
         234,
         222
+      ]
+    },
+    {
+      "name": "winsReleased",
+      "discriminator": [
+        200,
+        218,
+        6,
+        169,
+        223,
+        22,
+        124,
+        244
       ]
     },
     {
@@ -4310,8 +10735,8 @@ export type Tilt = {
     },
     {
       "code": 6008,
-      "name": "winCapReached",
-      "msg": "Lifetime win cap reached"
+      "name": "riskPoolFull",
+      "msg": "The house's risk pool cannot cover this bet right now"
     },
     {
       "code": 6009,
@@ -4340,38 +10765,43 @@ export type Tilt = {
     },
     {
       "code": 6014,
-      "name": "maxWinTooHigh",
-      "msg": "Max win above the allowed limit"
-    },
-    {
-      "code": 6015,
       "name": "withdrawalTooSmall",
       "msg": "Withdrawal below the minimum"
     },
     {
-      "code": 6016,
+      "code": 6015,
       "name": "nothingToCheckpoint",
-      "msg": "No loss to release"
+      "msg": "No loss or secured win to release"
     },
     {
-      "code": 6017,
+      "code": 6016,
       "name": "staleRandomness",
       "msg": "Randomness does not answer the pending request"
     },
     {
-      "code": 6018,
+      "code": 6017,
       "name": "invalidConfig",
       "msg": "Invalid configuration"
     },
     {
-      "code": 6019,
+      "code": 6018,
       "name": "promoCapReached",
       "msg": "Promo payout above the pool's limits"
     },
     {
-      "code": 6020,
+      "code": 6019,
       "name": "missingTable",
       "msg": "Blackjack needs the player's table account"
+    },
+    {
+      "code": 6020,
+      "name": "invalidTile",
+      "msg": "Mines tile already revealed or off the board"
+    },
+    {
+      "code": 6021,
+      "name": "invalidChoice",
+      "msg": "Choice outside the game's rules"
     }
   ],
   "types": [
@@ -4545,6 +10975,20 @@ export type Tilt = {
       }
     },
     {
+      "name": "coinSide",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "heads"
+          },
+          {
+            "name": "tails"
+          }
+        ]
+      }
+    },
+    {
       "name": "config",
       "type": {
         "kind": "struct",
@@ -4552,35 +10996,24 @@ export type Tilt = {
           {
             "name": "minBet",
             "docs": [
-              "Smallest stake; below it the 1% fee would round to nothing while Tilt still pays the round."
+              "Smallest stake, at least `MIN_BET_FLOOR`. Whatever a round gains, a win pays Tilt at",
+              "least `MIN_FEE` (`settle`)."
             ],
             "type": "u64"
           },
           {
             "name": "maxBet",
             "docs": [
-              "Largest stake for one round, in USDC base units."
+              "Largest stake of one bet, in USDC base units: a blackjack hand, a roulette chip (a",
+              "`roulette_chips` spin stakes up to `MAX_CHIPS` of them), the bet of any other round."
             ],
             "type": "u64"
           },
           {
             "name": "maxRoundGain",
             "docs": [
-              "Largest gain one round may produce (caps e.g. straight-up roulette and slot jackpots)."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "maxPlayerWin",
-            "docs": [
-              "Largest lifetime net win reserved for one player."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "maxWinMultiple",
-            "docs": [
-              "A player's reserved max win may not exceed this multiple of their first deposit."
+              "Largest gain one round may produce (caps e.g. straight-up roulette and slot jackpots).",
+              "Also the most one round can take from the risk pool (`risk::required_reserve`)."
             ],
             "type": "u64"
           },
@@ -4632,7 +11065,17 @@ export type Tilt = {
           {
             "name": "roundTimeoutSecs",
             "docs": [
-              "A round untouched this long can be closed by the relayer."
+              "A draw not answered this long can be requested again by the relayer."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "abandonedRoundSecs",
+            "docs": [
+              "A round left waiting for the player this long (a blackjack hand, a Mines, Hilo or Tower",
+              "board) is closed for them by the relayer: stand, or cash-out at the current value. Until",
+              "then it holds its share of the risk pool and blocks `checkpoint`. At least",
+              "`round_timeout_secs`."
             ],
             "type": "i64"
           },
@@ -4690,6 +11133,15 @@ export type Tilt = {
           },
           {
             "name": "split"
+          },
+          {
+            "name": "reveal"
+          },
+          {
+            "name": "card"
+          },
+          {
+            "name": "climb"
           }
         ]
       }
@@ -4710,6 +11162,131 @@ export type Tilt = {
           },
           {
             "name": "slots"
+          },
+          {
+            "name": "mines"
+          },
+          {
+            "name": "dice"
+          },
+          {
+            "name": "limbo"
+          },
+          {
+            "name": "flip"
+          },
+          {
+            "name": "keno"
+          },
+          {
+            "name": "wheel"
+          },
+          {
+            "name": "hilo"
+          },
+          {
+            "name": "tower"
+          }
+        ]
+      }
+    },
+    {
+      "name": "hiloBoard",
+      "docs": [
+        "The player's Hilo round. Lives in the rollup next to the player account; between rounds",
+        "it keeps the last round for display."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "player",
+            "type": "pubkey"
+          },
+          {
+            "name": "bet",
+            "type": "u64"
+          },
+          {
+            "name": "maxGain",
+            "docs": [
+              "Most this round can gain, the cap on its gross return."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "fair",
+            "docs": [
+              "Fair multiplier (×`FAIR_ONE`), before the house edge."
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "cards",
+            "docs": [
+              "Cards drawn, the first `n_cards` count."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          },
+          {
+            "name": "nCards",
+            "type": "u8"
+          },
+          {
+            "name": "guesses",
+            "docs": [
+              "`guesses[i]` (a `HiloMove` code) led to `cards[i + 1]`."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                63
+              ]
+            }
+          },
+          {
+            "name": "nRight",
+            "type": "u8"
+          },
+          {
+            "name": "skips",
+            "type": "u8"
+          },
+          {
+            "name": "pending",
+            "docs": [
+              "The guess awaiting its card (`HiloMove` code), `NONE` otherwise."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "busted",
+            "docs": [
+              "The last card proved the guess wrong."
+            ],
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "hiloMove",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "higher"
+          },
+          {
+            "name": "lower"
+          },
+          {
+            "name": "skip"
           }
         ]
       }
@@ -4746,9 +11323,18 @@ export type Tilt = {
             "type": "u64"
           },
           {
-            "name": "maxWin",
+            "name": "winReserved",
             "docs": [
-              "The player's win cap: set at the first deposit, raised by `raise_win_cap` as they win."
+              "House money reserved for the player's wins, moved from the risk pool's line when a",
+              "withdrawal needs it; never decreases."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "winReleased",
+            "docs": [
+              "Part of `win_reserved` given back to the house by `checkpoint` once the player lost",
+              "it again; never decreases."
             ],
             "type": "u64"
           },
@@ -4784,6 +11370,74 @@ export type Tilt = {
       }
     },
     {
+      "name": "minesBoard",
+      "docs": [
+        "The player's Mines round. Lives in the rollup next to the player account; between rounds",
+        "it keeps the last round for display."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "player",
+            "type": "pubkey"
+          },
+          {
+            "name": "bet",
+            "type": "u64"
+          },
+          {
+            "name": "mines",
+            "type": "u8"
+          },
+          {
+            "name": "revealed",
+            "docs": [
+              "One bit per tile revealed safe (bit `tile`)."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "order",
+            "docs": [
+              "Tiles revealed safe, in reveal order; the first `n_revealed` count."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                25
+              ]
+            }
+          },
+          {
+            "name": "nRevealed",
+            "type": "u8"
+          },
+          {
+            "name": "pending",
+            "docs": [
+              "Tile awaiting its draw, `NONE` otherwise."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "busted",
+            "docs": [
+              "The mine that ended the round, `NONE` otherwise."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "maxGain",
+            "docs": [
+              "Most this round can gain (`max_gain`), the cap on its gross return."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "playerAccount",
       "docs": [
         "The player's balance and current round. Lives in the rollup permanently."
@@ -4794,10 +11448,6 @@ export type Tilt = {
           {
             "name": "player",
             "type": "pubkey"
-          },
-          {
-            "name": "maxWin",
-            "type": "u64"
           },
           {
             "name": "credited",
@@ -4817,6 +11467,30 @@ export type Tilt = {
             "name": "withdrawn",
             "docs": [
               "Total ever withdrawn; never decreases."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "winReserved",
+            "docs": [
+              "House money moved from the risk pool to Solana for this player's wins (`secure_wins`,",
+              "before a withdrawal); never decreases. Solana mirrors it in `Ledger::win_reserved`."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "winReleased",
+            "docs": [
+              "Part of `win_reserved` given back to the house once lost again (`checkpoint`); never",
+              "decreases."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "uncovered",
+            "docs": [
+              "Net wins beyond the secured ones: the risk pool pays them until a withdrawal secures",
+              "them (its share of `RiskPool::uncovered`)."
             ],
             "type": "u64"
           },
@@ -4842,6 +11516,26 @@ export type Tilt = {
                 "name": "round"
               }
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "pooled",
+      "docs": [
+        "What an open round puts on the pool: the part of its worst case the player's secured wins",
+        "do not already cover (`gain`), and its stake. `gain` is at most `max_round_gain`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "gain",
+            "type": "u64"
+          },
+          {
+            "name": "stake",
+            "type": "u64"
           }
         ]
       }
@@ -4960,6 +11654,201 @@ export type Tilt = {
       }
     },
     {
+      "name": "quickRound",
+      "docs": [
+        "A one-draw round: the player's choice, and the outcome once drawn (zeros before)."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "empty"
+          },
+          {
+            "name": "dice",
+            "fields": [
+              {
+                "name": "target",
+                "type": "u16"
+              },
+              {
+                "name": "over",
+                "type": "bool"
+              },
+              {
+                "name": "roll",
+                "type": "u16"
+              }
+            ]
+          },
+          {
+            "name": "limbo",
+            "fields": [
+              {
+                "name": "target",
+                "type": "u32"
+              },
+              {
+                "name": "result",
+                "type": "u32"
+              }
+            ]
+          },
+          {
+            "name": "flip",
+            "fields": [
+              {
+                "name": "side",
+                "type": {
+                  "defined": {
+                    "name": "coinSide"
+                  }
+                }
+              },
+              {
+                "name": "flips",
+                "type": "u8"
+              },
+              {
+                "name": "coins",
+                "type": "u16"
+              }
+            ]
+          },
+          {
+            "name": "keno",
+            "fields": [
+              {
+                "name": "picks",
+                "type": {
+                  "array": [
+                    "u8",
+                    10
+                  ]
+                }
+              },
+              {
+                "name": "nPicks",
+                "type": "u8"
+              },
+              {
+                "name": "drawn",
+                "type": {
+                  "array": [
+                    "u8",
+                    10
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "name": "wheel",
+            "fields": [
+              {
+                "name": "segments",
+                "type": "u8"
+              },
+              {
+                "name": "risk",
+                "type": {
+                  "defined": {
+                    "name": "wheelRisk"
+                  }
+                }
+              },
+              {
+                "name": "segment",
+                "type": "u8"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "quickTable",
+      "docs": [
+        "The player's last one-draw round, of any of the five games. Lives in the rollup next to",
+        "the player account."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "player",
+            "type": "pubkey"
+          },
+          {
+            "name": "bet",
+            "type": "u64"
+          },
+          {
+            "name": "round",
+            "type": {
+              "defined": {
+                "name": "quickRound"
+              }
+            }
+          },
+          {
+            "name": "drawn",
+            "docs": [
+              "The outcome in `round` has been drawn."
+            ],
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "riskPool",
+      "docs": [
+        "Lives in the rollup (delegated once), next to the player accounts. Every round that puts",
+        "something on the pool reprices it at its start (`reprice`) and takes it off at its end",
+        "(`close`): the bankroll it needed is free again at once."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "gains",
+            "docs": [
+              "Open rounds: Σ `gain`, Σ `stake` and Σ `gain × stake`."
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "stakes",
+            "type": "u128"
+          },
+          {
+            "name": "exposure",
+            "type": "u128"
+          },
+          {
+            "name": "uncovered",
+            "docs": [
+              "Players' net wins the pool pays and Solana has not secured yet (Σ their `uncovered`)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "transferred",
+            "docs": [
+              "Total moved from the pool to players' secured wins (`secure`); never decreases.",
+              "Solana mirrors it in `Vault::pool_transferred`."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "rouletteBet",
       "type": {
         "kind": "enum",
@@ -5004,6 +11893,29 @@ export type Tilt = {
       }
     },
     {
+      "name": "rouletteChip",
+      "docs": [
+        "One chip of a `roulette_chips` spin: its own bet and amount."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bet",
+            "type": {
+              "defined": {
+                "name": "rouletteBet"
+              }
+            }
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "rouletteSpin",
       "type": {
         "kind": "struct",
@@ -5020,6 +11932,49 @@ export type Tilt = {
             "name": "number",
             "docs": [
               "0 to 36 once spun."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "rouletteTable",
+      "docs": [
+        "The player's last `roulette_chips` spin: its chips, then the pocket once landed. Lives in",
+        "the rollup next to the player account."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "player",
+            "type": "pubkey"
+          },
+          {
+            "name": "chips",
+            "docs": [
+              "The first `n_chips` count."
+            ],
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "rouletteChip"
+                  }
+                },
+                20
+              ]
+            }
+          },
+          {
+            "name": "nChips",
+            "type": "u8"
+          },
+          {
+            "name": "pocket",
+            "docs": [
+              "0 to 36 once landed, `NO_POCKET` before."
             ],
             "type": "u8"
           }
@@ -5113,6 +12068,17 @@ export type Tilt = {
             "type": {
               "defined": {
                 "name": "slotsSpin"
+              }
+            }
+          },
+          {
+            "name": "pooled",
+            "docs": [
+              "What the round puts on the risk pool until it settles."
+            ],
+            "type": {
+              "defined": {
+                "name": "pooled"
               }
             }
           }
@@ -5247,6 +12213,97 @@ export type Tilt = {
       }
     },
     {
+      "name": "towerBoard",
+      "docs": [
+        "The player's Tower round. Lives in the rollup next to the player account; between rounds",
+        "it keeps the last round for display."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "player",
+            "type": "pubkey"
+          },
+          {
+            "name": "bet",
+            "type": "u64"
+          },
+          {
+            "name": "maxGain",
+            "docs": [
+              "Most this round can gain, the cap on its gross return."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "difficulty",
+            "type": {
+              "defined": {
+                "name": "towerDifficulty"
+              }
+            }
+          },
+          {
+            "name": "climbed",
+            "docs": [
+              "The tile picked on each safe level; the first `level` count."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                9
+              ]
+            }
+          },
+          {
+            "name": "level",
+            "docs": [
+              "Safe levels climbed."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "pending",
+            "docs": [
+              "Tile awaiting its draw on level `level`, `NONE` otherwise."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "busted",
+            "docs": [
+              "The tile that ended the round on level `level`, `NONE` otherwise."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "towerDifficulty",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "easy"
+          },
+          {
+            "name": "medium"
+          },
+          {
+            "name": "hard"
+          },
+          {
+            "name": "expert"
+          },
+          {
+            "name": "master"
+          }
+        ]
+      }
+    },
+    {
       "name": "vault",
       "docs": [
         "House state, on Solana. Owns the USDC token account that pays every player."
@@ -5290,8 +12347,9 @@ export type Tilt = {
           {
             "name": "reserved",
             "docs": [
-              "What the vault may owe in the worst case: for every player,",
-              "deposited - forfeited - withdrawn_paid + max_win."
+              "What the vault may owe in the worst case: for every player, deposited - forfeited -",
+              "withdrawn_paid + their secured wins, plus what is left of the risk pool's line",
+              "(pool_line - pool_transferred)."
             ],
             "type": "u64"
           },
@@ -5309,6 +12367,61 @@ export type Tilt = {
           },
           {
             "name": "windowPaid",
+            "type": "u64"
+          },
+          {
+            "name": "poolLine",
+            "docs": [
+              "Bankroll granted to the risk pool so far (`fund_risk_pool`), reserved; never decreases."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "poolTransferred",
+            "docs": [
+              "Part of `pool_line` moved to players' secured wins (`Ledger::win_reserved`), as the",
+              "rollup's `RiskPool::transferred` reports it; never decreases."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "wheelRisk",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "low"
+          },
+          {
+            "name": "medium"
+          },
+          {
+            "name": "high"
+          }
+        ]
+      }
+    },
+    {
+      "name": "winsReleased",
+      "docs": [
+        "Secured wins the player lost again, back to the house."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "player",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "releasedTotal",
             "type": "u64"
           }
         ]

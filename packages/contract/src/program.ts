@@ -21,8 +21,32 @@ export const playerAccountAddress = (player: PublicKey) => pda(Buffer.from("acco
  *  `table` accounts, which delegated accounts could not grow into. */
 export const tableAddress = (player: PublicKey) => pda(Buffer.from("bjtable"), player.toBuffer());
 
+/** A player's Mines board (bet, mines, tiles revealed in order, pending and busting tile of the
+ *  current or last round); lives in the rollup next to the player account. */
+export const minesBoardAddress = (player: PublicKey) => pda(Buffer.from("mines"), player.toBuffer());
+
+/** A player's last one-draw round (Dice, Limbo, Flip, Keno or Wheel: the choice, then its
+ *  outcome); lives in the rollup next to the player account. */
+export const quickTableAddress = (player: PublicKey) => pda(Buffer.from("quick"), player.toBuffer());
+
+/** A player's Hilo board (cards, guesses and multiplier of the current or last round); lives in
+ *  the rollup next to the player account. */
+export const hiloBoardAddress = (player: PublicKey) => pda(Buffer.from("hilo"), player.toBuffer());
+
+/** A player's Tower board (difficulty, tiles climbed, pending and busting tile of the current or
+ *  last round); lives in the rollup next to the player account. */
+export const towerBoardAddress = (player: PublicKey) => pda(Buffer.from("tower"), player.toBuffer());
+
+/** A player's last multi-chip roulette spin (`roulette_chips`: the chips, then the pocket); lives
+ *  in the rollup next to the player account. Single-bet spins keep their bet in the round. */
+export const rouletteTableAddress = (player: PublicKey) => pda(Buffer.from("roulette"), player.toBuffer());
+
 /** Solana's record of a player's deposits and paid withdrawals. */
 export const ledgerAddress = (player: PublicKey) => pda(Buffer.from("ledger"), player.toBuffer());
+
+/** The house's risk pool: what open rounds may still win and wins not yet secured on Solana,
+ *  against the bankroll line Solana granted it (`Vault.poolLine`); lives in the rollup. */
+export const riskPoolAddress = () => pda(Buffer.from("risk_pool"));
 
 /** Sponsor prize pool and its USDC token account (Solana). */
 export const promoAddress = () => pda(Buffer.from("promo"));

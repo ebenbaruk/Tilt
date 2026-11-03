@@ -16,6 +16,8 @@ import { HttpRelay } from "./relay";
 const APPROVE_ATTEMPTS = 5;
 const APPROVE_ATTEMPT_WINDOW_S = 600;
 const SHUTDOWN_GRACE_MS = 10_000;
+// A real player checks a handful of rounds; replays are CPU-heavy, so scrapers wait.
+const VERIFY_PER_IP_PER_MIN = 30;
 
 const config = loadConfig();
 const db = createDb(config.DATABASE_URL);
@@ -44,6 +46,7 @@ const app = createApp({
     }),
     play: RateLimiter.perMinute(config.RATE_PLAY_PER_MIN),
     money: RateLimiter.perMinute(config.RATE_MONEY_PER_MIN),
+    verify: RateLimiter.perMinute(VERIFY_PER_IP_PER_MIN),
   },
   geo: geoPolicy(config),
   config,

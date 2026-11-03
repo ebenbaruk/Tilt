@@ -26,12 +26,13 @@ pnpm refuse les paquets publiés il y a moins d'un jour (règle de la chaîne d'
 
 ```sh
 docker run -d --name tilt-pg -e POSTGRES_PASSWORD=tilt -e POSTGRES_DB=tilt_test -p 55432:5432 postgres:17
-docker exec tilt-pg psql -U postgres -c "create database tilt_api_test" -c "create database tilt_api" -c "create database tilt"
+docker exec tilt-pg psql -U postgres -c "create database tilt_api_test" -c "create database tilt_api" -c "create database tilt" \
+  -c "create database tilt_stack_relay" -c "create database tilt_stack_api"   # bases du e2e api (étape 3)
 ```
 
 ## 2. Stack Solana + rollup + VRF
 
-- **Linux (et CI) :** `chain/scripts/local-stack.sh`.
+- **Linux :** `chain/scripts/local-stack.sh`.
 - **macOS :** `scripts/local-stack-macos.sh`. Le script Linux exige le réseau hôte Docker et `io_uring`, absents sur Mac.
 
 ```sh
@@ -46,12 +47,18 @@ Ports : Solana `8899`/`8900`, rollup `7799`/`7800`.
 
 ## 3. Tests
 
+Tout d'un coup, comme une CI (il n'y a pas de CI GitHub) : `scripts/ci.sh`, et `scripts/ci.sh --e2e` avec la stack de l'étape 2 lancée. À passer avant chaque merge.
+
+Suite par suite :
+
 ```sh
 pnpm -r typecheck && pnpm lint && pnpm format:check
 pnpm --filter @tilt/contract test
 TEST_DATABASE_URL=postgres://postgres:tilt@127.0.0.1:55432/tilt_test pnpm --filter @tilt/wallet test
 TEST_DATABASE_URL=postgres://postgres:tilt@127.0.0.1:55432/tilt_api_test pnpm --filter @tilt/api test
 pnpm --filter @tilt/mod test           # claude plugin validate + test
+pnpm --filter @tilt/play test          # cœur partagé des autres harnais
+pnpm --filter @tilt/harnesses typecheck
 pnpm --filter @tilt/web test && pnpm --filter @tilt/web e2e
 (cd chain && cargo +1.89.0 test)
 ```
@@ -116,3 +123,26 @@ pnpm --filter @tilt/api admin prize:pay   # idempotent : relancer ne paie rien d
 ```
 
 `pnpm --filter @tilt/api admin` sans argument affiche l'aide.
+
+## 7. Autres harnais
+
+Tilt se joue aussi dans d'autres agents de code (omp, OpenCode, Codex, Gemini CLI…) : index, niveaux d'intégration et installation dans [`harnesses/README.md`](../harnesses/README.md).
+
+Pour un essai sans la stack, lance la fausse API puis pointe le harnais (ou le compagnon) dessus :
+
+```sh
+bun packages/play/test/fake-api.ts 8099
+TILT_API_URL=http://127.0.0.1:8099 harnesses/companion/bin/tilt
+```
+
+## Publier le client
+
+Les testeurs n'ont jamais accès à ce monorepo. Ils clonent et auditent `ebenbaruk/tilt-client` (privé, sur invitation), qui ne contient que `apps/mod`, `packages/play` et `harnesses` (sans les tests), plus `scripts/client/` (README et marketplace).
+
+Après un merge qui touche ces dossiers, depuis `main` à jour et `scripts/ci.sh` vert :
+
+```sh
+scripts/publish-client.sh   # un commit « Publish Tilt <sha> » sur tilt-client
+```
+
+Le prompt d'installation (landing, `docs/onboarding.md`) pointe vers `tilt-client` : chaque publication arrive chez les testeurs à leur prochain passage du prompt, qui refait l'audit.
