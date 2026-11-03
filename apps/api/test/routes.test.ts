@@ -876,11 +876,14 @@ describe.skipIf(!db)("api routes", () => {
         game: "roulette",
         randomness: v.seed,
         matches: true,
+        choicesRecorded: true,
         onChain: { stake: "1000000", payout: v.red, fee: fee.toString() },
         replayed: { payout: v.red, detail: { number: v.number, bet: { kind: "red" }, chips } },
       });
       await db.query("UPDATE rounds SET payout = payout + 1");
-      expect(((await (await app.request(`/v1/rounds/${SIGNATURE}/verify`)).json()) as VerifyResponse).matches).toBe(
+      // A settled round never changes, so the first replay is kept: a fresh app replays again.
+      const fresh = testApp(db, relay, chain).app;
+      expect(((await (await fresh.request(`/v1/rounds/${SIGNATURE}/verify`)).json()) as VerifyResponse).matches).toBe(
         false,
       );
       expect((await app.request(`/v1/rounds/${"4".repeat(88)}/verify`)).status).toBe(404);
@@ -1094,8 +1097,66 @@ describe.skipIf(!db)("api routes", () => {
       expect(res.status).toBe(200);
       expect((await res.json()) as VerifyResponse).toMatchObject({
         matches: true,
+        // No snapshot: the mines count the player chose is not known, only that one fits.
+        choicesRecorded: false,
         replayed: { payout: ((stake * 99n) / 100n).toString(), detail: { game: "mines", revealed: [], busted: null } },
       });
+    });
+
+    it("does not call a cash-out a match before its last reveal's draw is indexed", async () => {
+      const account = playerAccountAddress(new PublicKey(wallet)).toBase58();
+      const v = must(
+        vectors.mines.find((m) => m.cashout && m.draws.length > 1),
+        "cash-out after several tiles",
+      );
+      const last = BigInt(v.draws.length);
+      for (const [j, draw] of v.draws.slice(0, -1).entries()) {
+        await saveDraw(db, {
+          account,
+          requestId: BigInt(j + 1),
+          randomness: Buffer.from(draw, "hex"),
+          signature: `d${j}`,
+        });
+      }
+      await saveRound(db, {
+        player: wallet,
+        game: "mines",
+        stake: 1_000_000n,
+        settledAt: new Date(),
+        signature: SIGNATURE,
+        round: 1,
+        payout: BigInt(v.payout),
+        fee: BigInt(v.fee),
+        requestId: last,
+        randomness: Buffer.alloc(32),
+      });
+      const detail = {
+        game: "mines" as const,
+        mines: v.mines,
+        order: v.order,
+        pending: null,
+        busted: v.busted,
+        maxGain: v.maxGain,
+      };
+      await saveDetail(db, wallet, 1, last, detail);
+      const verify = async () => (await (await app.request(`/v1/rounds/${SIGNATURE}/verify`)).json()) as VerifyResponse;
+      expect((await verify()).matches).toBe(false);
+      await saveDraw(db, {
+        account,
+        requestId: last,
+        randomness: Buffer.from(v.draws[v.draws.length - 1], "hex"),
+        signature: "dl",
+      });
+      expect(await verify()).toMatchObject({ matches: true, choicesRecorded: true });
+    });
+
+    it("rate-limits /verify per IP on its own", async () => {
+      ({ app } = testApp(db, relay, chain, {
+        limiters: { ...testApp(db, relay, chain).deps.limiters, verify: RateLimiter.perMinute(1) },
+      }));
+      expect((await app.request(`/v1/rounds/${SIGNATURE}/verify`)).status).toBe(404);
+      expect((await app.request(`/v1/rounds/${SIGNATURE}/verify`)).status).toBe(429);
+      expect((await app.request("/v1/leaderboard")).status).toBe(200);
     });
 
     it("verifies one-draw, hilo and tower rounds from their draws, cash-outs included", async () => {

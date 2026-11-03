@@ -435,15 +435,15 @@ Objectif : un code qu'une équipe pro relirait sans grimacer, et une **chaîne t
 
 ### 11.3 CI et branches
 
-- GitHub Actions sur chaque PR : typecheck, lint, tests, build, `pnpm audit`, scan de secrets (gitleaks).
-- `main` protégée : PR obligatoire, CI verte obligatoire, pas de push direct ni de force-push.
-- Déploiements uniquement depuis la CI. Environnements séparés : local → devnet/staging → mainnet.
+- CI locale, pas de GitHub Actions : `scripts/ci.sh` (typecheck, lint, tests, build, `pnpm audit`, scan de secrets gitleaks, build du programme et IDL à jour) passe sur la machine de l'auteur avant chaque merge ; `--e2e` ajoute les E2E sur la stack locale pour tout ce qui touche la chaîne ou le relais.
+- `main` : PR obligatoire, `scripts/ci.sh` vert, pas de push direct ni de force-push.
+- Environnements séparés : local → devnet/staging → mainnet.
 
 ### 11.4 Définition de « fini »
 
 Une feature est finie quand :
 1. Elle fait ce que la spec dit.
-2. Elle est testée au bon niveau, et la CI est verte.
+2. Elle est testée au bon niveau, et `scripts/ci.sh` est vert.
 3. La ligne « Sécurité : » de la PR est remplie.
 4. Elle est relue (croisée si elle touche à une zone sensible).
 5. La spec et la doc sont à jour.

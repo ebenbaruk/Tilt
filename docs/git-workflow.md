@@ -23,6 +23,7 @@ Clean up what is yours (see "After a merge"). Never delete another person's bran
 - Small commits, imperative subject (`Add split to blackjack`), the why in the body when it isn't obvious.
 - Stage files by name. Never `git add -A` blindly: no `.env*`, keys, build output, `node_modules`, logs.
 - Before pushing: the tests, linter and type checker of what you touched pass (docs/dev.md §3).
+- Before merging: `scripts/ci.sh` passes on your machine (add `--e2e` when the PR touches `chain/`, `apps/wallet` or `packages/contract`). There is no GitHub CI; say in the PR that it passed.
 - Keep the branch fresh: `git fetch && git rebase origin/main`. Rebase your own branch only; never rewrite `main` or someone else's branch.
 
 ## Pull request
