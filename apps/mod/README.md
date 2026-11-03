@@ -1,6 +1,6 @@
 # Tilt for Claude Code
 
-A Claude Code mod that opens a small casino pane (twelve games: blackjack, roulette, baccarat, slots, Mines, dice, Limbo, flip, Keno, the wheel, Hilo and Tower) while your agent works. On a narrow terminal it shows a compact band above the prompt instead. Bets are real USDC, settled on-chain by Tilt (see `docs/spec.md`).
+A Claude Code mod that opens a small casino pane (twelve games: blackjack, roulette, baccarat, slots, Mines, dice, Limbo, flip, Keno, the wheel, Hilo and Tower) while your agent works. On a narrow terminal it shows a compact band above the prompt instead. Bets are real USDC, settled on-chain by Tilt.
 
 ## What the mod reads and sends
 
@@ -27,7 +27,7 @@ It runs one command on your machine, `open <login url>`, when you type `/tilt lo
 In Claude Code:
 
 ```
-/plugin install tilt --marketplace ebenbaruk/Tilt
+/plugin install tilt --marketplace ebenbaruk/tilt-client
 ```
 
 Answer `y` to add the marketplace, pick a scope, then set where the table sits on the screen that follows (you can change it any time). Then `/tilt login`, confirm the code in your browser, and play.
