@@ -165,8 +165,8 @@ export function HeroTerminal() {
         </TerminalWindow>
       </div>
       <figcaption className={styles.caption}>
-        Claude Code fixes a test suite while a blackjack hand plays in the Tilt panel; when the agent finishes, the hand
-        waits. Names and numbers are examples.
+        A scripted demo: Claude Code fixes a test suite while a blackjack hand plays in the Tilt panel; when the agent
+        finishes, the hand waits. Names and numbers are examples.
       </figcaption>
     </figure>
   );

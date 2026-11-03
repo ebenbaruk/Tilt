@@ -77,7 +77,7 @@ function Approve({ userCode }: { userCode: string | null }) {
   if (step.kind === "approved") {
     return (
       <Box tone="success" title="terminal approved">
-        <Status tone="success">Back to Claude Code: the panel picks up your session in a few seconds.</Status>
+        <Status tone="success">Back to your agent: Tilt picks up your session in a few seconds.</Status>
         <p className={styles.muted}>You can revoke this session any time from your account page.</p>
       </Box>
     );
@@ -87,8 +87,8 @@ function Approve({ userCode }: { userCode: string | null }) {
     return (
       <Box tone="loss" title="code not accepted">
         <p>
-          This code is wrong, expired or already used. Check it against your terminal, or run <code>/tilt login</code>{" "}
-          again in Claude Code.
+          This code is wrong, expired or already used. Check it against your terminal, or start the login again in your
+          agent.
         </p>
       </Box>
     );
@@ -100,7 +100,7 @@ function Approve({ userCode }: { userCode: string | null }) {
         <Button variant="solid" onClick={login}>
           log in to approve
         </Button>
-        <span className={styles.muted}>email, Google, X or Phantom</span>
+        <span className={styles.muted}>email, Google or X</span>
       </div>
     );
   }

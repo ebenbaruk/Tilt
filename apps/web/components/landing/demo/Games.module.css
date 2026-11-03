@@ -132,6 +132,11 @@
   color: var(--fg-3);
 }
 
+.demo {
+  color: var(--fg-5);
+  font-size: var(--text-xs);
+}
+
 .status {
   margin-top: auto;
   display: flex;

@@ -22,14 +22,9 @@
 .code {
   margin: 0;
   padding: var(--space-6) var(--space-7);
+  color: var(--fg-2);
   font-family: inherit;
-  overflow-x: auto;
-}
-
-.line {
-  color: var(--fg-1);
-}
-
-.chevron {
-  color: var(--tilt-gold);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
