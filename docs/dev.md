@@ -132,3 +132,15 @@ Pour un essai sans la stack, lance la fausse API puis pointe le harnais (ou le c
 bun packages/play/test/fake-api.ts 8099
 TILT_API_URL=http://127.0.0.1:8099 harnesses/companion/bin/tilt
 ```
+
+## Publier le client
+
+Les testeurs n'ont jamais accès à ce monorepo. Ils clonent et auditent `ebenbaruk/tilt-client` (privé, sur invitation), qui ne contient que `apps/mod`, `packages/play` et `harnesses` (sans les tests), plus `scripts/client/` (README et marketplace).
+
+Après un merge qui touche ces dossiers, depuis `main` à jour et `scripts/ci.sh` vert :
+
+```sh
+scripts/publish-client.sh   # un commit « Publish Tilt <sha> » sur tilt-client
+```
+
+Le prompt d'installation (landing, `docs/onboarding.md`) pointe vers `tilt-client` : chaque publication arrive chez les testeurs à leur prochain passage du prompt, qui refait l'audit.

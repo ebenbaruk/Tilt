@@ -15,7 +15,7 @@ Act like a pragmatic senior engineer. Write code a strong teammate would approve
   - **Shared:** `packages/contract` (program IDL + relay API), the only boundary between the two zones. Changes need both to agree.
 - **Stack:** pnpm monorepo, TypeScript (Node 22, Hono, Postgres, Next.js, Privy) and Rust/Anchor for `chain/`. Spec D7 still to confirm formally.
 - **Design:** the Tilt design system is the project skill `.claude/skills/tilt-design/` (brand, tokens, components); use it for any UI.
-- **Repo:** Private GitHub repo `ebenbaruk/Tilt`. It must stay **private**. Never make it public or publish this code anywhere else.
+- **Repo:** Private GitHub repo `ebenbaruk/Tilt`. It must stay **private**. Never make it public or publish this code anywhere else, except the client: `scripts/publish-client.sh` copies `apps/mod`, `packages/play` and `harnesses` (no tests) to the private repo `ebenbaruk/tilt-client`, the only one testers are invited to. Never give testers access to this monorepo.
 
 ## Commands
 
