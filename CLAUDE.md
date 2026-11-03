@@ -11,6 +11,7 @@ Act like a pragmatic senior engineer. Write code a strong teammate would approve
 - **Ownership:** Stay inside the zone you're working for (spec §8). Never edit the other person's zone; open an issue or ask.
   - **Armand:** everything that touches money or game rules: `chain/` (Anchor program: games, VRF, bankroll) and `apps/wallet` (relay: Privy, signers, fee payer, transaction sending).
   - **Eli:** `apps/mod` (Claude Code mod, displays on-chain state), `apps/api` (mod sessions, reads program events, competitions, sponsors) and `apps/web`.
+  - `packages/play` and `harnesses/` are client-side like `apps/mod` and need Eli's review.
   - **Shared:** `packages/contract` (program IDL + relay API), the only boundary between the two zones. Changes need both to agree.
 - **Stack:** pnpm monorepo, TypeScript (Node 22, Hono, Postgres, Next.js, Privy) and Rust/Anchor for `chain/`. Spec D7 still to confirm formally.
 - **Design:** the Tilt design system is the project skill `.claude/skills/tilt-design/` (brand, tokens, components); use it for any UI.
@@ -23,7 +24,7 @@ pnpm monorepo (pnpm 12.3.4, Node 22+). Full local setup (Postgres, Solana + Magi
 ```sh
 scripts/ci.sh            # the whole CI, locally (no GitHub CI); --e2e adds the stack end-to-end tests
 pnpm install --frozen-lockfile
-pnpm -r typecheck && pnpm lint && pnpm format:check   # lint/format cover apps/api, apps/mod, apps/web only
+pnpm -r typecheck && pnpm lint && pnpm format:check   # lint/format cover the clients: apps/api, apps/mod, apps/web, packages/play, harnesses
 pnpm --filter @tilt/contract test
 TEST_DATABASE_URL=postgres://postgres:tilt@127.0.0.1:55432/tilt_api_test pnpm --filter @tilt/api test
 TEST_DATABASE_URL=postgres://postgres:tilt@127.0.0.1:55432/tilt_test pnpm --filter @tilt/wallet test
@@ -47,6 +48,8 @@ A move goes **mod → api → relay → program**, and state comes back **progra
 - `packages/contract`: the program IDL (synced from `chain/` by `chain/scripts/sync-idl.sh`, checked by `scripts/ci.sh`) and the relay API zod schemas. It is the only boundary between Eli's and Armand's zones.
 - `chain/`: one Anchor program, `tilt`. Money stays on Solana (USDC vault + per-player `Ledger`); rounds run in a MagicBlock Ephemeral Rollup with MagicBlock VRF; withdrawals are paid on Solana by a Magic Action. Game rules are pure Rust in `programs/tilt/src/games/`. Details: `chain/README.md`; ops: `docs/runbook.md`.
 - `apps/web` (Next.js): landing, login confirmation, deposits and withdrawals (the mod never moves money).
+- `packages/play`: harness-agnostic client core (session, API client, text renderer). It reuses the mod's pure modules by relative path.
+- `harnesses/`: one folder per coding agent, plus a companion terminal app for hook-only agents. Index: `harnesses/README.md`.
 
 Amounts cross every boundary as integer USDC base units (6 decimals) in decimal strings.
 
