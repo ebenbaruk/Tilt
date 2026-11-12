@@ -28,6 +28,7 @@ const LIMITS: RelayLimits = {
   dailyDepositLimitGlobal: 200_000_000n,
   minPromoPayout: 1_000_000n,
   maxPromoPayout: 10_000_000n,
+  dailyPromoLimitPerPlayer: 15_000_000n,
   dailyPromoLimit: 20_000_000n,
 };
 
@@ -37,7 +38,7 @@ beforeAll(async () => {
   await migrate(db);
 });
 afterAll(() => db.end());
-beforeEach(() => db.query("TRUNCATE intents, players"));
+beforeEach(() => db.query("TRUNCATE intents, players, consents"));
 
 const sent = (signature = `sig-${randomUUID()}`): SentTransaction => ({ network: "rollup", signature, lastValidBlockHeight: 100 });
 
@@ -383,6 +384,14 @@ describe("intents", () => {
     expect(results.filter((r) => r === "LIMIT_EXCEEDED")).toHaveLength(6);
   });
 
+  it("caps promo payouts per player per 24 h, without affecting other players", async () => {
+    const intents = new Intents(db, new FakeExecutor(), LIMITS);
+    expect((await intents.submit(promo(10_000_000))).status).toBe("submitted");
+    expect((await intents.submit(promo(5_000_000))).status).toBe("submitted");
+    await expect(intents.submit(promo(1_000_000))).rejects.toMatchObject({ code: "LIMIT_EXCEEDED" });
+    expect((await intents.submit(promo(5_000_000, NOBODY))).status).toBe("submitted");
+  });
+
   it("caps deposits of all players together per 24 h, even when concurrent", async () => {
     const intents = new Intents(db, new FakeExecutor(), { ...LIMITS, dailyDepositLimitGlobal: 120_000_000n });
     const results = await Promise.all(
@@ -420,7 +429,7 @@ describe("intents", () => {
   });
 });
 
-/** Stands in for Privy: "token|<user id>|<issued at, unix s>" is a valid identity token, anything else is not. */
+/** Stands in for Privy: "token|<user id>|<issued at, unix s>|<nonce>" is a valid identity token, anything else is not. */
 const consent: ConsentVerifier = {
   async verify(identityToken) {
     const [kind, userId, issuedAt] = identityToken.split("|");
@@ -428,7 +437,7 @@ const consent: ConsentVerifier = {
     return { userId, issuedAt: Number(issuedAt) };
   },
 };
-const identityToken = (userId = USER, ageSecs = 0) => ({ identityToken: `token|${userId}|${Math.floor(Date.now() / 1000) - ageSecs}` });
+const identityToken = (userId = USER, ageSecs = 0) => ({ identityToken: `token|${userId}|${Math.floor(Date.now() / 1000) - ageSecs}|${randomUUID()}` });
 
 describe("HTTP API", () => {
   const NEXT_KEY = "n".repeat(40);
@@ -489,6 +498,26 @@ describe("HTTP API", () => {
     const { rows } = await db.query<{ row: string }>("SELECT row_to_json(intents)::text AS row FROM intents");
     expect(rows).toHaveLength(2);
     for (const { row } of rows) expect(row).not.toContain(token.identityToken);
+  });
+
+  it("binds an identity token to one intent, which may replay it", async () => {
+    const token = identityToken();
+    const first = { ...intent(deposit(1)), consent: token };
+    expect(await (await post(first)).json()).toMatchObject({ status: "submitted" });
+    expect((await post(first)).status).toBe(200);
+    const reused = await post({ ...intent(deposit(1)), consent: token });
+    expect(reused.status).toBe(403);
+    expect(await reused.json()).toMatchObject({ error: { code: "CONSENT_REQUIRED" } });
+    expect(await (await post({ ...intent(deposit(1)), consent: identityToken() })).json()).toMatchObject({ status: "submitted" });
+
+    // A refused intent records nothing, so its retry with the same token is checked again, not refused for consent.
+    const capped = { ...intent(deposit(100_000_001)), consent: identityToken() };
+    expect((await post(capped)).status).toBe(422);
+    expect((await post(capped)).status).toBe(422);
+
+    const shared = identityToken();
+    const statuses = await Promise.all([1, 2, 3, 4].map(async () => (await post({ ...intent(deposit(1)), consent: shared })).status));
+    expect(statuses.sort()).toEqual([200, 403, 403, 403]);
   });
 
   it("maps request refusals to 409 and 422", async () => {

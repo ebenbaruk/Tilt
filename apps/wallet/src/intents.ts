@@ -32,6 +32,8 @@ export interface RelayLimits {
   minPromoPayout: bigint;
   /** Bounds what a leaked API key can pay out, on top of the program's pool caps. */
   maxPromoPayout: bigint;
+  /** Promo payouts of one player, per rolling 24 h: a leaked API key can't drain the daily cap into one account. */
+  dailyPromoLimitPerPlayer: bigint;
   /** All promo payouts together, per rolling 24 h. */
   dailyPromoLimit: bigint;
 }
@@ -216,7 +218,7 @@ export class Intents {
         return this.replay(rows[0], request);
       }
       if (isDeposit(request.action)) await this.checkDepositLimits(client, request.userId, BigInt(request.action.amount));
-      if (request.action.type === "promo_payout") await this.checkPromoLimits(client, BigInt(request.action.amount));
+      if (request.action.type === "promo_payout") await this.checkPromoLimits(client, request.userId, BigInt(request.action.amount));
       await client.query("INSERT INTO intents (intent_id, user_id, action, status) VALUES ($1, $2, $3, 'pending')", [
         request.intentId,
         request.userId,
@@ -266,16 +268,25 @@ export class Intents {
     }
   }
 
-  private async checkPromoLimits(client: pg.PoolClient, amount: bigint): Promise<void> {
+  private async checkPromoLimits(client: pg.PoolClient, userId: string, amount: bigint): Promise<void> {
     if (amount < this.limits.minPromoPayout) throw new IntentError("LIMIT_EXCEEDED", `promo payouts start at ${this.limits.minPromoPayout} base units`);
     if (amount > this.limits.maxPromoPayout) throw new IntentError("LIMIT_EXCEEDED", `promo payouts are capped at ${this.limits.maxPromoPayout} base units`);
+    const { rows } = await client.query<{ total: string }>(
+      `SELECT coalesce(sum((action->>'amount')::numeric), 0)::text AS total FROM intents
+       WHERE user_id = $1 AND action->>'type' = 'promo_payout' AND status <> 'failed'
+       AND created_at > now() - interval '24 hours'`,
+      [userId],
+    );
+    if (BigInt(rows[0].total) + amount > this.limits.dailyPromoLimitPerPlayer) {
+      throw new IntentError("LIMIT_EXCEEDED", `promo payouts are capped at ${this.limits.dailyPromoLimitPerPlayer} base units per player per 24 h`);
+    }
     // A global cap: serialized across players, not just under this player's lock.
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended('promo_payouts', 0))");
-    const { rows } = await client.query<{ total: string }>(
+    const all = await client.query<{ total: string }>(
       `SELECT coalesce(sum((action->>'amount')::numeric), 0)::text AS total FROM intents
        WHERE action->>'type' = 'promo_payout' AND status <> 'failed' AND created_at > now() - interval '24 hours'`,
     );
-    if (BigInt(rows[0].total) + amount > this.limits.dailyPromoLimit) {
+    if (BigInt(all.rows[0].total) + amount > this.limits.dailyPromoLimit) {
       throw new IntentError("LIMIT_EXCEEDED", `promo payouts are capped at ${this.limits.dailyPromoLimit} base units per 24 h`);
     }
   }

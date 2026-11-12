@@ -91,10 +91,10 @@ export function createApp(deps: AppDeps): Hono {
   app.post("/intents", async (c) => {
     const parsed = IntentRequest.safeParse(await c.req.json().catch(() => undefined));
     if (!parsed.success) return c.json(invalid(parsed.error.issues), 400);
-    // The identity token is checked, then dropped: it is never stored with the intent.
+    // The identity token is checked, then dropped: only its hash is kept, to refuse it for another intent.
     const { consent: _, ...intent } = parsed.data;
     const { body, status } = await run(async () => {
-      await requireConsent(deps.consent, parsed.data);
+      await requireConsent(deps.consent, deps.db, parsed.data);
       return deps.intents.submit(intent);
     }, (r) => r);
     return c.json(body, status);
