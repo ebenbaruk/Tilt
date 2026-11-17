@@ -15,8 +15,8 @@ declare module "claude-code" {
   }
 }
 
-declare var h: (type: unknown, props: Record<string, unknown> | null, ...children: unknown[]) => object;
-declare var Fragment: symbol;
+declare const h: (type: unknown, props: Record<string, unknown> | null, ...children: unknown[]) => object;
+declare const Fragment: symbol;
 
 declare namespace JSX {
   type Element = object;
