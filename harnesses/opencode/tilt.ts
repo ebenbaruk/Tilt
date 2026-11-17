@@ -1,7 +1,8 @@
 // Everything the OpenCode / Kilo TUI plugin does besides drawing: one TiltSession, the table's
 // shown/hidden and game-mode state, the agent's busy/idle from session statuses, and the /tilt
 // menu. tui.tsx only wires this to the host's slots, keymap and dialogs.
-import { TiltSession, fileStore, openInBrowser, renderPanel, renderStatusLine } from "../../packages/play/src/index";
+import { TiltSession, fileStore, openInBrowser, renderStatusLine } from "../../packages/play/src/index";
+import type { PaintReply, PaintRequest } from "./painter";
 
 /** Enters game mode; `alt+t` is free in both hosts' default keybinds. Override: plugin option `key`. */
 export const DEFAULT_PLAY_KEY = "alt+t";
@@ -48,11 +49,19 @@ export class TiltTable {
   private readonly busySessions = new Set<string>();
   private readonly listeners = new Set<() => void>();
   private readonly stopListening: () => void;
+  /** Draws the table off this thread (see painter.ts); the last lines it sent are shown meanwhile. */
+  private readonly painter = new Worker(new URL("./painter.ts", import.meta.url).href);
+  private painted: string[] = [];
+  private size = { width: 0, height: 0 };
+  private lastPaintId = 0;
+  private shownPaintId = 0;
 
   constructor(apiUrl: string) {
     this.session = new TiltSession({ apiUrl, store: fileStore(), openUrl: openInBrowser });
+    this.painter.onmessage = (event: MessageEvent<PaintReply>) => this.showPainted(event.data);
+    this.painter.onerror = (event) => this.showPainted({ id: this.lastPaintId, error: event.message });
     // Every change, and every frame while a spin, a deal or a result plays on the table.
-    this.stopListening = this.session.onFrame(() => this.emit());
+    this.stopListening = this.session.onFrame(() => this.changed());
     this.session.setVisible(true);
     this.session.start();
   }
@@ -70,13 +79,13 @@ export class TiltTable {
     this.shown = shown;
     if (!shown) this.playing = false;
     this.session.setVisible(shown);
-    this.emit();
+    this.changed();
   }
 
   setPlaying(playing: boolean): void {
     if (playing && !this.shown) this.setShown(true);
     this.playing = playing;
-    this.emit();
+    this.changed();
   }
 
   /** A key typed in game mode; keys the table does not offer now are dropped. */
@@ -95,9 +104,11 @@ export class TiltTable {
   lines(width: number, height: number): string[] {
     const snapshot = this.session.snapshot();
     if (!this.shown) return [renderStatusLine(snapshot, { color: true, width })];
-    // The table leaves the prompt and the session most of the terminal.
-    const rows = Math.max(MIN_TABLE_ROWS, Math.min(MAX_TABLE_ROWS, height - HOST_ROWS));
-    return renderPanel(snapshot, { color: true, width, rows }).slice(0, rows);
+    if (width !== this.size.width || height !== this.size.height) {
+      this.size = { width, height };
+      this.paint();
+    }
+    return this.painted;
   }
 
   menu(): { title: string; value: MenuAction }[] {
@@ -131,6 +142,7 @@ export class TiltTable {
   }
 
   dispose(): void {
+    this.painter.terminate();
     this.stopListening();
     this.listeners.clear();
     this.session.stop();
@@ -163,6 +175,34 @@ export class TiltTable {
       };
     }
     return { variant: "success", message: "Signed out of Tilt." };
+  }
+
+  /** Asks for the table at the last size drawn; `showPainted` draws it when it comes. */
+  private paint(): void {
+    if (!this.shown || this.size.width === 0) return;
+    // The table leaves the prompt and the session most of the terminal.
+    const rows = Math.max(MIN_TABLE_ROWS, Math.min(MAX_TABLE_ROWS, this.size.height - HOST_ROWS));
+    this.lastPaintId += 1;
+    const request: PaintRequest = {
+      id: this.lastPaintId,
+      snapshot: this.session.snapshot(),
+      width: this.size.width,
+      rows,
+    };
+    this.painter.postMessage(request);
+  }
+
+  /** A drawing done; one older than the one shown (it came late) is dropped. */
+  private showPainted(reply: PaintReply): void {
+    if (reply.id < this.shownPaintId) return;
+    this.shownPaintId = reply.id;
+    this.painted = "lines" in reply ? reply.lines : [`TILT · the table could not be drawn: ${reply.error}`];
+    this.emit();
+  }
+
+  private changed(): void {
+    this.paint();
+    this.emit();
   }
 
   private emit(): void {
