@@ -1,3 +1,6 @@
+/** @jsxRuntime classic */
+/** @jsx h */
+/** @jsxFrag Fragment */
 // The tilt mod: a game pane (or a band above the prompt) that plays against apps/api while the
 // agent works. Privacy (spec §4.4, §10.6): it hooks only the session's start, the turn's start and
 // end, its own command, pane and band. It never reads prompts, code, tool calls or files, and runs

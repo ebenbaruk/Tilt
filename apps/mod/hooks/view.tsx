@@ -1,3 +1,6 @@
+/** @jsxRuntime classic */
+/** @jsx h */
+/** @jsxFrag Fragment */
 // What the pane and the band draw, from the mod's state alone. No `$` here: the hooks module
 // hands in the surface's elements and one callback for every key.
 import type { RenderElement } from "claude-code";

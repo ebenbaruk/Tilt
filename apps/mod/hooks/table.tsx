@@ -1,3 +1,6 @@
+/** @jsxRuntime classic */
+/** @jsx h */
+/** @jsxFrag Fragment */
 // The table surface module: the game table drawn on the terminal's drawing thread (a `Client` in
 // the pane or the bottom band). In fullscreen it takes raw keys once a click gives it the focus and
 // posts the plan key each one presses to the hooks module; on the main screen it takes neither. It

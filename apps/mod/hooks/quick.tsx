@@ -1,3 +1,6 @@
+/** @jsxRuntime classic */
+/** @jsx h */
+/** @jsxFrag Fragment */
 // Dice, Limbo, Flip, Keno and Wheel: one draw each, drawn by the pane and the table surface module
 // alike. Each draw plays out on the spin clock (view.tsx `spinMs`): the roll tumbles, the
 // multiplier rises, the coins land and the numbers light one by one before the result shows. A

@@ -1,3 +1,6 @@
+/** @jsxRuntime classic */
+/** @jsx h */
+/** @jsxFrag Fragment */
 // The blackjack table: one dealer row over one to ten hands (up to six dealt, plus the splits),
 // side by side as far as the width allows, then wrapped. Drawn still by the pane, and frame by
 // frame by the table surface module.

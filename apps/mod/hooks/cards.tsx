@@ -1,3 +1,6 @@
+/** @jsxRuntime classic */
+/** @jsx h */
+/** @jsxFrag Fragment */
 // Cards and hand rows, shared by blackjack and baccarat.
 import type { RenderElement } from "claude-code";
 
