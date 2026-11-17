@@ -130,13 +130,27 @@ Run on 2026-10-29 in OpenCode 1.18.11 on Linux, with an isolated XDG config and
 - `alt+t` enters game mode; `n` rolls the dice and the balance updates.
 - Esc returns to the prompt, and text typed afterwards goes to the prompt.
 
+Since 2026-11-17 the table is the Claude Code mod's own pane (`apps/mod/hooks/view.tsx`), drawn as
+text by `packages/play`, and it moves while a round plays out (repainted every 80 ms). OpenCode runs
+OpenTUI's Solid transform on every `.tsx` file its process loads
+([solid-plugin.ts](https://github.com/anomalyco/opentui/blob/main/packages/solid/scripts/solid-plugin.ts),
+[solid-transform.ts](https://github.com/anomalyco/opentui/blob/main/packages/solid/scripts/solid-transform.ts)),
+which would compile the mod's view into Solid components. So `painter.ts` draws the table in a Bun
+Worker, where that runtime plugin does not apply, and the plugin shows the last lines it sent.
+Checked outside OpenCode, under Bun 1.4.2: a `Bun.plugin` that rewrites every `.tsx` on the main
+thread breaks the table there, and the Worker still draws it.
+
 Not verified:
 
+- **The mod's pane and the Worker have not been run in OpenCode.** The run above drew the previous
+  text table. In particular, that OpenCode's compiled binary starts a Worker from a `.ts` file on
+  disk, and that its Solid transform stays out of that Worker.
 - **Kilo hasn't been run**, only OpenCode. Nothing has been tried against the real API.
 - The busy/idle indicator during a real agent turn: no provider was configured, so no turn ran.
 - That a global keymap binding consumes a letter before the focused prompt textarea inserts it.
   If it doesn't, letters typed in game mode also land in the prompt.
 - How tall the `app_bottom` band can grow before it crowds the session view on small terminals.
+  The table takes 20 to 30 rows (the terminal's height less 12).
 - That the slot re-renders without visible flicker (it does re-render: the balance updated).
 - The opener on Windows and macOS. On Linux it needs `xdg-open`.
 - OpenCode v2 (`@opencode/plugin` 2.x, `cli.json`) has a different plugin API and is not

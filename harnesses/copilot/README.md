@@ -60,10 +60,15 @@ Verified against the docs and SDK source (2026-10-29, CLI 1.0.105):
   `session.capabilities.ui.elicitation`; `requestedEnvironmentVariables` (the CLI strips sensitive
   variables from extensions): `nodejs/src/session.ts`, `nodejs/src/types.ts`, `nodejs/src/extension.ts`
   and `nodejs/docs/extensions.md` in <https://github.com/github/copilot-sdk>.
-- The adapter and the shared table load under plain Node 22.23 with type stripping and the
-  resolve hook in `extension.mjs`, and answer `/tilt` against a fake session.
+- Until 2026-11-17, the adapter and the shared table loaded under plain Node 22.23 with type
+  stripping and the resolve hook in `extension.mjs`, and answered `/tilt` against a fake session.
 
 Not verified (no Copilot CLI was run):
+
+- **It does not load under plain Node any more.** Since 2026-11-17 the shared table is the Claude
+  Code mod's own pane (`apps/mod/hooks/*.tsx`), and Node's type stripping does not compile TSX. The
+  extension needs a loader that compiles TSX (Bun does); until the CLI runs extensions with one, use
+  the companion (`harnesses/companion/bin/tilt`) for the table.
 
 - That the CLI runs extensions on a Node with type stripping (22.18+) and `module.registerHooks`
   (22.15+). The 1.0.105 linux binary embeds Node v24.22.1, which has both, but how it forks

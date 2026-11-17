@@ -69,7 +69,7 @@ Verified in the docs:
 Not verified:
 
 - Whether the status item renders ANSI colors, and how wide it can be. The plugin sends plain text at 80 columns.
-- How the select and confirm dialogs render a 72-column fenced code block, and whether a long option list scrolls well.
+- How the select and confirm dialogs render a 72-column fenced code block, and whether a long option list scrolls well. Since 2026-11-17 that block is the Claude Code mod's own pane drawn as plain text (box-drawing cards and felt, no color), printed once the round has played out; Bun compiles its TSX files with their own JSX pragmas, but the plugin has not been run since.
 - Whether Amp follows a symlinked plugin directory back to the clone for relative imports (Bun does by default), and whether an entry file may import an absolute path outside the plugins folder.
 - Whether a plugin command ID can be bound to a key in `amp.keymap`.
 - Whether `TILT_API_URL` reaches the plugin process from the shell that starts `amp`. The kitchen-sink example reads `process.env`, but the plugin host's environment is not documented.

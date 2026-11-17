@@ -67,11 +67,17 @@ Verified against deepseek-ai/deepseek-harness `main` at commit
   `packages/core/agent/src/runtime-types.ts`.
 - `ctx.commands.register({ name, description, input, handler({ rawInput }) })` returning
   `{ kind: 'success' | 'error', text }`: `packages/interaction/commands/README.md`, `src/types.ts`.
-- The plugin and the shared table load under plain Node 22.23 with type stripping and the resolve
-  hook in `index.mjs`, and answer `/tilt` and draw the overlay against a fake context.
+- Until 2026-11-17, the plugin and the shared table loaded under plain Node 22.23 with type
+  stripping and the resolve hook in `index.mjs`, and answered `/tilt` and drew the overlay against
+  a fake context.
 
 Not verified:
 
+- **It does not load under plain Node any more.** Since 2026-11-17 the shared table is the Claude
+  Code mod's own pane (`apps/mod/hooks/*.tsx`), and Node's type stripping does not compile TSX:
+  importing `index.mjs` under Node 22.23 fails with `ERR_MODULE_NOT_FOUND` for
+  `apps/mod/hooks/view.ts`. The plugin needs a loader that compiles TSX (Bun does); until dsh runs
+  plugins with one, use the companion (`harnesses/companion/bin/tilt`) for the table.
 - **The overlay API.** The terminal UI left the dsh repo on 2026-08-04 (now `@deepseek-ai/dsh-tui`,
   <https://github.com/omdsh-dev/dsh-tui>, whose public repo has no `src/` and which is not on npm).
   `ctx.tui.openOverlay({ create(host) → { render, handleInput, invalidate }, options })` follows its
