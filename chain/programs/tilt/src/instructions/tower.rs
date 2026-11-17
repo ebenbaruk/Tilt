@@ -10,7 +10,7 @@ use crate::constants::{ACCOUNT_SEED, LEDGER_SEED, RISK_POOL_SEED, TOWER_SEED, VA
 use crate::errors::TiltError;
 use crate::games::tower::{self, TowerBoard, TowerDifficulty, NONE};
 use crate::instructions::play::{
-    callback_account, draw_request, expiry, now, pending_draw, settle_round, Expiry,
+    callback_account, draw_request, expire, now, pending_draw, settle_round, Expiry,
 };
 use crate::risk::RiskPool;
 use crate::rng::Rng;
@@ -226,7 +226,7 @@ fn cash_out(accounts: &mut TowerPlay) {
 pub fn expire_tower_round(mut ctx: Context<TowerPlay>, client_seed: [u8; 32]) -> Result<()> {
     let round = &ctx.accounts.account.round;
     require!(round.game == Game::Tower, TiltError::WrongState);
-    match expiry(round, &ctx.accounts.vault.config, now()?)? {
+    match expire(&ctx.accounts.account, &ctx.accounts.vault.config)? {
         Expiry::Retry(_) => request_climb(&mut ctx, client_seed),
         Expiry::Abandoned => {
             cash_out(ctx.accounts);

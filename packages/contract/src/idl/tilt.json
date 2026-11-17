@@ -10608,6 +10608,19 @@
   ],
   "events": [
     {
+      "name": "DrawRetried",
+      "discriminator": [
+        201,
+        113,
+        226,
+        247,
+        19,
+        159,
+        211,
+        163
+      ]
+    },
+    {
       "name": "LossReleased",
       "discriminator": [
         112,
@@ -11059,7 +11072,8 @@
           {
             "name": "round_timeout_secs",
             "docs": [
-              "A draw not answered this long can be requested again by the relayer."
+              "A draw not answered this long can be requested again by the relayer. At least",
+              "`MIN_ROUND_TIMEOUT_SECS`."
             ],
             "type": "i64"
           },
@@ -11136,6 +11150,41 @@
           },
           {
             "name": "Climb"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DrawRetried",
+      "docs": [
+        "A draw requested again by the relay: the abandoned request's answer can no longer play the",
+        "round. Public so anyone can see how often, and for whom, draws are retried."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "player",
+            "type": "pubkey"
+          },
+          {
+            "name": "round",
+            "type": "u32"
+          },
+          {
+            "name": "game",
+            "type": {
+              "defined": {
+                "name": "Game"
+              }
+            }
+          },
+          {
+            "name": "abandoned_request_id",
+            "docs": [
+              "The request given up on; the new one is `abandoned_request_id + 1`."
+            ],
+            "type": "u64"
           }
         ]
       }

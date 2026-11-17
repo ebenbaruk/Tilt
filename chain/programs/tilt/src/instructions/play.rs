@@ -300,7 +300,7 @@ pub fn expire_round(mut ctx: Context<Play>, client_seed: [u8; 32]) -> Result<()>
         round.game.draws_in_round() && !round.on_roulette_table(),
         TiltError::WrongState
     );
-    match expiry(round, &ctx.accounts.vault.config, now()?)? {
+    match expire(&ctx.accounts.account, &ctx.accounts.vault.config)? {
         Expiry::Retry(draw) => request_draw(&mut ctx, draw, client_seed),
         // Only blackjack hands wait for the player among these games.
         Expiry::Abandoned => {
@@ -331,10 +331,37 @@ pub(crate) fn expiry(round: &Round, config: &Config, now: i64) -> Result<Expiry>
     Ok(expiry)
 }
 
+/// A draw requested again by the relay: the abandoned request's answer can no longer play the
+/// round. Public so anyone can see how often, and for whom, draws are retried.
+#[event]
+pub struct DrawRetried {
+    pub player: Pubkey,
+    pub round: u32,
+    pub game: Game,
+    /// The request given up on; the new one is `abandoned_request_id + 1`.
+    pub abandoned_request_id: u64,
+}
+
+/// How the account's round expires now (`expiry`). A retry is published as `DrawRetried`
+/// before the new request replaces the abandoned one.
+pub(crate) fn expire(account: &PlayerAccount, config: &Config) -> Result<Expiry> {
+    let round = &account.round;
+    let outcome = expiry(round, config, now()?)?;
+    if let Expiry::Retry(_) = outcome {
+        emit!(DrawRetried {
+            player: account.player,
+            round: account.rounds,
+            game: round.game,
+            abandoned_request_id: round.request_id,
+        });
+    }
+    Ok(outcome)
+}
+
 /// The draw to request again for a game that never waits for the player (the one-draw
 /// games, roulette chips).
-pub(crate) fn expired_draw(round: &Round, config: &Config) -> Result<Draw> {
-    match expiry(round, config, now()?)? {
+pub(crate) fn expired_draw(account: &PlayerAccount, config: &Config) -> Result<Draw> {
+    match expire(account, config)? {
         Expiry::Retry(draw) => Ok(draw),
         Expiry::Abandoned => err!(TiltError::WrongState),
     }

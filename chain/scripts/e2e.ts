@@ -71,9 +71,11 @@ const SHARED_VAULT_FLAG = "--shared-vault";
 const LOCAL_RPC = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/;
 
 const usdc = (x: number) => Math.round(x * 1_000_000);
-const ROUND_TIMEOUT_SECS = 3;
-/** Long enough for every pause the scenario takes mid-round, short enough to wait out. */
-const ABANDONED_ROUND_SECS = 20;
+// The program refuses less (`MIN_ROUND_TIMEOUT_SECS`): retries are tested by waiting it out.
+const ROUND_TIMEOUT_SECS = 120;
+/** Long enough for every pause the scenario takes mid-round (a round timeout waited out, then a
+ *  few refusals), short enough to wait out. */
+const ABANDONED_ROUND_SECS = ROUND_TIMEOUT_SECS + 60;
 const CONFIG: Config = {
   minBet: new BN(usdc(0.1)),
   maxBet: new BN(usdc(10)),

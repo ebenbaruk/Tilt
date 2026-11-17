@@ -10,7 +10,7 @@ use crate::constants::{ACCOUNT_SEED, HILO_SEED, LEDGER_SEED, RISK_POOL_SEED, VAU
 use crate::errors::TiltError;
 use crate::games::hilo::{self, HiloBoard, HiloMove};
 use crate::instructions::play::{
-    callback_account, draw_request, expiry, now, pending_draw, settle_round, Expiry,
+    callback_account, draw_request, expire, now, pending_draw, settle_round, Expiry,
 };
 use crate::risk::RiskPool;
 use crate::rng::Rng;
@@ -223,7 +223,7 @@ fn cash_out(accounts: &mut HiloPlay) {
 pub fn expire_hilo_round(mut ctx: Context<HiloPlay>, client_seed: [u8; 32]) -> Result<()> {
     let round = &ctx.accounts.account.round;
     require!(round.game == Game::Hilo, TiltError::WrongState);
-    match expiry(round, &ctx.accounts.vault.config, now()?)? {
+    match expire(&ctx.accounts.account, &ctx.accounts.vault.config)? {
         Expiry::Retry(_) => request_card(&mut ctx, client_seed),
         Expiry::Abandoned => {
             cash_out(ctx.accounts);

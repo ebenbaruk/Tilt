@@ -25,3 +25,8 @@ pub const ACTION_ESCROW_INDEX: u8 = 255;
 pub const DAY_SECS: i64 = 86_400;
 /// Lowest `Config::min_bet` accepted: 0.1 USDC, in base units (6 decimals).
 pub const MIN_BET_FLOOR: u64 = 100_000;
+/// Shortest `Config::round_timeout_secs`. A retried draw abandons the pending VRF request; if
+/// that request could still be answered, a relay seeing an unwanted answer coming could retry
+/// until it liked the draw. The audit (2026-11-08, E3) puts a queued request's life at about
+/// two minutes.
+pub const MIN_ROUND_TIMEOUT_SECS: i64 = 120;

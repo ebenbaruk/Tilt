@@ -253,7 +253,7 @@ pub fn wheel_spin(
 pub fn expire_quick_round(mut ctx: Context<QuickPlay>, client_seed: [u8; 32]) -> Result<()> {
     let round = &ctx.accounts.account.round;
     require!(round.game.is_quick(), TiltError::WrongState);
-    expired_draw(round, &ctx.accounts.vault.config)?;
+    expired_draw(&ctx.accounts.account, &ctx.accounts.vault.config)?;
     request_quick_draw(&mut ctx, client_seed)
 }
 
