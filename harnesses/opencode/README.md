@@ -4,7 +4,8 @@ A TUI plugin that puts the Tilt table at the bottom of the OpenCode terminal UI,
 You play it with single keys while the agent works. Kilo Code CLI is a fork of OpenCode with the
 same v1 TUI plugin API, so the same files serve both.
 
-- **Table:** the shared core's `renderPanel`, in color, drawn full width in the `app_bottom` slot
+- **Table:** the shared core's `renderPanel` (the Claude Code mod's pane, drawn in a Worker by
+  `painter.ts`), in color, drawn full width in the `app_bottom` slot
   on every screen. No named slot sits directly above the prompt: `session_prompt` would replace
   the prompt itself. Hidden, it collapses to one status line.
 - **Game mode:** press `alt+t`. While game mode is on, letters and digits go to the table, and

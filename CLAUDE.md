@@ -48,7 +48,7 @@ A move goes **mod → api → relay → program**, and state comes back **progra
 - `packages/contract`: the program IDL (synced from `chain/` by `chain/scripts/sync-idl.sh`, checked by `scripts/ci.sh`) and the relay API zod schemas. It is the only boundary between Eli's and Armand's zones.
 - `chain/`: one Anchor program, `tilt`. Money stays on Solana (USDC vault + per-player `Ledger`); rounds run in a MagicBlock Ephemeral Rollup with MagicBlock VRF; withdrawals are paid on Solana by a Magic Action. Game rules are pure Rust in `programs/tilt/src/games/`. Details: `chain/README.md`; ops: `docs/runbook.md`.
 - `apps/web` (Next.js): landing, login confirmation, deposits and withdrawals (the mod never moves money).
-- `packages/play`: harness-agnostic client core (session, API client, text renderer). It reuses the mod's pure modules by relative path.
+- `packages/play`: harness-agnostic client core (session, API client, round motion, a terminal renderer). It draws the mod's own pane (`apps/mod/hooks/view.tsx`) and reuses the mod's modules by relative path, so a harness needs a loader that compiles TSX (Bun).
 - `harnesses/`: one folder per coding agent, plus a companion terminal app for hook-only agents. Index: `harnesses/README.md`.
 
 Amounts cross every boundary as integer USDC base units (6 decimals) in decimal strings.
