@@ -1121,7 +1121,7 @@ function sessionText(ui: Ui, session: TiltSession, parts: { net: string; rest: s
 }
 
 /** How to get the keys, or hand them back: its first words in gold, then the rest. */
-type KeysHint = readonly [string, string];
+export type KeysHint = readonly [string, string];
 
 /** Where clicks land, the table surface module that takes the keys a click gives it: drawn, or kept
  *  drawing nothing beside a still board (it takes no click there: a click reveals a tile). */
@@ -1133,6 +1133,10 @@ type ClickTable = "drawn" | "kept" | null;
  * it holds them (the engine never says when Esc takes them back): both, there.
  */
 function keysHints(layout: PaneLayout, table: ClickTable): readonly KeysHint[] {
+  if (layout.keysHint !== undefined) {
+    return layout.keysHint;
+  }
+
   if (layout.isBand || (!layout.isFocused && table === "kept")) {
     return [
       ["ctrl+x tab", " keys · esc hands them back"],
@@ -1436,6 +1440,9 @@ export interface PaneLayout {
   isClickable: boolean;
   /** Drawn in the band above the prompt, where a digit typed in an empty prompt presses a Button. */
   isBand: boolean;
+  /** The footer's key hints, longest first, from a client that hands out its keys otherwise
+   *  (packages/play's harnesses); Claude Code leaves it unset. */
+  keysHint?: readonly KeysHint[];
 }
 
 /** Everything around the table: header, agent line, outcome, status, keys (framed, as with large cards) and footer. */
