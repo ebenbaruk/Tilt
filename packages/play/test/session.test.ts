@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { StateResponse } from "../../../apps/mod/hooks/protocol";
 import { apiBase, trustedVerifyUrl } from "../src/api";
-import { TiltSession } from "../src/session";
+import { FRAME_MS, TiltSession } from "../src/session";
 import type { Saved, Store } from "../src/types";
 
 const API = "http://127.0.0.1:8080";
@@ -380,6 +380,59 @@ describe("TiltSession", () => {
     expect(polls).toBe(2);
     expect(session.snapshot().state?.balance).toBe("2");
     expect(() => session.setAgent(true)).not.toThrow();
+    session.stop();
+  });
+
+  it("draws every frame while a new round spins, then stops at rest", async () => {
+    let polls = 0;
+    const bet = { kind: "red" } as const;
+    const spun: StateResponse = {
+      ...STATE,
+      balance: "11400000",
+      round: {
+        phase: "idle",
+        stake: "1000000",
+        payout: "0",
+        fee: "0",
+        net: "-1000000",
+        number: 1,
+        settledSignature: "sig",
+        detail: { game: "roulette", bet, chips: [{ bet, amount: "1000000" }], number: 17 },
+      },
+    };
+    const { fetch } = fakeFetch({
+      "GET /v1/state": () => {
+        polls += 1;
+
+        return json(polls === 1 ? STATE : spun);
+      },
+    });
+    const session = new TiltSession({
+      apiUrl: API,
+      store: memoryStore({ token: "mod-token", apiBase: API, prefs: null }),
+      fetch,
+    });
+    const draw = vi.fn();
+
+    session.onFrame(draw);
+    session.start();
+    await vi.advanceTimersByTimeAsync(5_200);
+
+    expect(polls).toBe(2);
+    expect(session.snapshot()).toMatchObject({ isMoving: true, heldBalance: STATE.balance });
+
+    const atSpin = draw.mock.calls.length;
+
+    await vi.advanceTimersByTimeAsync(FRAME_MS * 10);
+    expect(draw.mock.calls.length - atSpin).toBeGreaterThanOrEqual(9);
+
+    // The spin, the result's lag and its effects are over well within 4 s.
+    await vi.advanceTimersByTimeAsync(4_000);
+    const atRest = draw.mock.calls.length;
+
+    expect(session.snapshot()).toMatchObject({ isMoving: false, heldBalance: null });
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(draw.mock.calls.length).toBe(atRest);
     session.stop();
   });
 });

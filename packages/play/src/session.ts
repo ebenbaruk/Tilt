@@ -1,7 +1,7 @@
-// One player's Tilt session for any harness: device login, the polled table state, the moves and
-// the table choices. It ports the non-UI logic of apps/mod/hooks/register.tsx (no sounds, no
-// animations, no clipboard, no shell). Privacy (spec §10): it learns only "agent working / idle"
-// from `setAgent`, never a prompt, a file or a tool call.
+// One player's Tilt session for any harness: device login, the polled table state, the moves, the
+// table choices and what plays out on the table (./motion). It ports the non-UI logic of
+// apps/mod/hooks/register.tsx (no sounds, no clipboard, no shell). Privacy (spec §10): it learns
+// only "agent working / idle" from `setAgent`, never a prompt, a file or a tool call.
 import {
   apiBase,
   type ApiFailure,
@@ -48,9 +48,13 @@ import {
 } from "../../../apps/mod/hooks/keys";
 import { type IntentView, type Prefs, prefsView, storedPrefs } from "../../../apps/mod/hooks/model";
 import type { IntentResponse, PlayAction, RouletteBet, StateResponse } from "../../../apps/mod/hooks/protocol";
+import { isPlayHeld } from "../../../apps/mod/hooks/view";
+import { MotionTracker } from "./motion";
 import type { Auth, Snapshot, Store, Tone } from "./types";
 
 const TICK_MS = 100;
+/** A frame of the table's motion (a spin, cards turning, a result counting up): about 12 a second. */
+export const FRAME_MS = 80;
 const FAST_POLL_MS = 300;
 const SLOW_POLL_MS = 5_000;
 const RETRY_MS = 1_000;
@@ -177,6 +181,7 @@ export class TiltSession {
   private agent: { isWorking: boolean; notice: string | null } = { isWorking: false, notice: null };
   private workStartedAt: number | null = null;
   private isVisible = true;
+  private readonly motion = new MotionTracker();
 
   private token: string | null = null;
   private device: Device | null = null;
@@ -347,20 +352,29 @@ export class TiltSession {
 
   snapshot(): Snapshot {
     const state = this.remote.state;
-    const isBusy = this.intent !== null;
+    const now = this.now();
+    const speed = this.prefs.slotsSpeed;
+    const motion = this.motion.view(state, now, speed);
+    // A round playing out holds the play keys too: a press would play on a table not shown yet.
+    const isHeld = isPlayHeld({ intent: this.intent, ...motion });
 
     return {
       auth: this.auth,
       state,
       error: this.remote.error,
+      fetchedAt: this.remote.fetchedAt,
       prefs: this.prefs,
-      isBusy,
+      intent: this.intent,
+      isBusy: this.intent !== null,
       message: this.message,
       agent: this.agent,
-      keys: state === null ? [] : planKeys({ state, prefs: this.prefs, isBusy }),
+      tally: this.motion.tally,
+      ...motion,
+      isMoving: this.motion.isMoving(state, now, speed),
+      keys: state === null ? [] : planKeys({ state, prefs: this.prefs, isBusy: isHeld }),
       // The web page to deposit on, only when the api named one on its own site.
       depositUrl: state?.webUrl === undefined || this.base === null ? null : trustedVerifyUrl(state.webUrl, this.base),
-      now: this.now(),
+      now,
     };
   }
 
@@ -369,6 +383,48 @@ export class TiltSession {
 
     return () => {
       this.listeners.delete(listener);
+    };
+  }
+
+  /**
+   * `draw` runs on every change, and every FRAME_MS while a spin, a deal or a result plays on the
+   * table (`snapshot().isMoving`), once more when it comes to rest; no timer runs while it is still.
+   */
+  onFrame(draw: () => void): () => void {
+    let timer: NodeJS.Timeout | null = null;
+    let isStopped = false;
+    const schedule = () => {
+      if (timer === null && !isStopped && this.snapshot().isMoving) {
+        timer = setTimeout(() => {
+          timer = null;
+          frame();
+        }, FRAME_MS);
+        timer.unref();
+      }
+    };
+    const frame = () => {
+      // As in `emit`: a harness's draw that throws misses this frame only, never the host's timers.
+      try {
+        draw();
+      } catch {
+        // The next change or frame draws again.
+      }
+
+      schedule();
+    };
+    const stopListening = this.onChange(frame);
+
+    // A table already moving plays on from now, not from its next change.
+    schedule();
+
+    return () => {
+      isStopped = true;
+      stopListening();
+
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
     };
   }
 
@@ -435,6 +491,7 @@ export class TiltSession {
     this.token = null;
     this.device = null;
     this.remote = EMPTY_REMOTE;
+    this.motion.reset();
     this.intent = null;
     // The next account's sponsor time starts from zero.
     this.sponsorMs = 0;
@@ -858,6 +915,10 @@ export class TiltSession {
       held.error === null &&
       minute(held.fetchedAt) === minute(now) &&
       JSON.stringify(held.state) === JSON.stringify(fetched.value);
+
+    // The deal, the spin and the result it holds back start before the state can be drawn: a
+    // drawing in between would show the settled round with nothing held, its balance first.
+    this.motion.observe(held.state, fetched.value, now, this.prefs.slotsSpeed);
 
     // An unchanged state is not announced, so the table is not redrawn on every poll.
     if (!isSame) {
