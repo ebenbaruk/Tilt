@@ -190,9 +190,16 @@ async function logout(session: TiltSession, ui: PluginUI): Promise<void> {
   await ui.notify("Signed out of Tilt.");
 }
 
-/** Resolves once no move is in flight, or after MOVE_SETTLE_MS so the loop never hangs. */
+/**
+ * Resolves once no move is in flight and the table is at rest (its spin, cards and result played
+ * out, so a printed table tells the result), or after MOVE_SETTLE_MS so the loop never hangs.
+ */
 function settled(session: TiltSession): Promise<void> {
-  if (!session.snapshot().isBusy) return Promise.resolve();
+  const isAtRest = (): boolean => {
+    const snapshot = session.snapshot();
+    return !snapshot.isBusy && !snapshot.isMoving;
+  };
+  if (isAtRest()) return Promise.resolve();
   return new Promise((resolve) => {
     const done = (): void => {
       clearTimeout(timer);
@@ -200,8 +207,8 @@ function settled(session: TiltSession): Promise<void> {
       resolve();
     };
     const timer = setTimeout(done, MOVE_SETTLE_MS);
-    const stop = session.onChange(() => {
-      if (!session.snapshot().isBusy) done();
+    const stop = session.onFrame(() => {
+      if (isAtRest()) done();
     });
   });
 }

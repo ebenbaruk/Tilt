@@ -63,6 +63,11 @@ const WIDGET_KEY = "tilt";
 // Free in both hosts' default bindings (omp only uses alt+t inside its tree selector overlay).
 const GAME_SHORTCUT = "alt+t";
 const FALLBACK_WIDTH = 80;
+// The table's rows, between the mod's two pane sizes (apps/mod/hooks/view.tsx PANE_ROWS), with
+// HOST_ROWS of the terminal left to the host's editor, its footer and some of the agent's output.
+const MIN_TABLE_ROWS = 20;
+const MAX_TABLE_ROWS = 30;
+const HOST_ROWS = 12;
 const OPEN_TIMEOUT_MS = 10_000;
 const NO_API_URL = "TILT · set TILT_API_URL";
 const USAGE = "Usage: /tilt [login|logout]";
@@ -91,7 +96,8 @@ class Table {
   constructor(session: TiltSession, ui: ExtensionUI) {
     this.session = session;
     this.ui = ui;
-    this.stopListening = session.onChange(() => this.tui?.requestRender());
+    // Every change, and every frame while a spin, a deal or a result plays on the table.
+    this.stopListening = session.onFrame(() => this.tui?.requestRender());
     this.attach(ui);
     session.setVisible(true);
     session.start();
@@ -151,7 +157,10 @@ class Table {
       ? `game mode: keys play the table · esc or ${GAME_SHORTCUT} to type again`
       : `${GAME_SHORTCUT} to play with the keys · /tilt to hide`;
     const hintLine = hint.slice(0, width).padEnd(width);
-    return [...renderPanel(snapshot, { color, width }), color ? `\x1b[2m${hintLine}\x1b[22m` : hintLine];
+    // The table leaves the prompt and the agent's output most of the terminal.
+    const rows = Math.max(MIN_TABLE_ROWS, Math.min(MAX_TABLE_ROWS, (process.stdout.rows ?? 0) - HOST_ROWS));
+    const table = renderPanel(snapshot, { color, width, rows }).slice(0, rows);
+    return [...table, color ? `\x1b[2m${hintLine}\x1b[22m` : hintLine];
   }
 
   // Outside game mode nothing is consumed: the person types prompts as usual.

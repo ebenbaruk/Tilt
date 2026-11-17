@@ -20,6 +20,11 @@ const TILT_DIR = join(homedir(), ".tilt");
 const STATUS_PATH = join(TILT_DIR, "status.txt");
 const STATUS_WIDTH = 80;
 const PRIVATE_FILE = 0o600;
+/** The table footer's keys, longest first (gold lead, then the rest): the companion holds them all. */
+const KEYS_HINT: readonly (readonly [string, string])[] = [
+  ["ctrl+c", " quits · ctrl+l logs out"],
+  ["ctrl+c", " quits"],
+];
 
 const ENTER_SCREEN = "\x1b[?1049h\x1b[?25l";
 const LEAVE_SCREEN = "\x1b[?25h\x1b[?1049l";
@@ -47,7 +52,8 @@ function main(): void {
   if (refusal.status === "out" && refusal.message) fail(refusal.message);
   session = created;
   takeScreen();
-  cleanups.push(created.onChange(() => redraw(created)));
+  // Every change, and every frame while a spin, a deal or a result plays on the table.
+  cleanups.push(created.onFrame(() => redraw(created)));
   cleanups.push(watchAgentSignal((isWorking) => created.setAgent(isWorking)));
   stdout.on("resize", () => redraw(created));
   stdin.on("data", (chunk: Buffer) => handleKeys(created, decodeKeys(chunk.toString("utf8"))));
@@ -126,20 +132,23 @@ function redraw(current: TiltSession): void {
 
 function draw(snapshot: Snapshot): void {
   const width = Math.max(1, stdout.columns ?? STATUS_WIDTH);
-  const panel = renderPanel(snapshot, { color: Boolean(stdout.isTTY), width, loginHint: "ctrl+l" });
-  const lines = [...panel, footer(snapshot).slice(0, width)];
-  const rows = stdout.rows ?? lines.length;
-  const visible = lines.slice(0, Math.max(1, rows));
+  // The last row is the companion's own line; past the rest, the table puts its keys first.
+  const tableRows = Math.max(1, (stdout.rows ?? 0) - 1);
+  const color = Boolean(stdout.isTTY) && !process.env.NO_COLOR;
+  const panel = renderPanel(snapshot, { color, width, rows: tableRows, loginHint: "ctrl+l", keysHint: KEYS_HINT });
+  const visible = [...panel.slice(0, tableRows), (footer(snapshot) ?? "").slice(0, width)];
   stdout.write(HOME + visible.join(`${CLEAR_LINE_END}\r\n`) + CLEAR_LINE_END + CLEAR_BELOW);
 }
 
-function footer(snapshot: Snapshot): string {
+/** The companion's line under the table; none while the table's own footer says the keys. */
+function footer(snapshot: Snapshot): string | null {
   if (note) return note;
   if (isLogoutArmed) {
     return snapshot.auth.status === "pending"
       ? "Ctrl+L again to cancel the login · any key to keep it"
       : "Ctrl+L again to log out · any key to stay";
   }
+  if (snapshot.auth.status === "in" && snapshot.state?.accountOpen === true) return null;
   const account = snapshot.auth.status === "out" ? "Ctrl+L log in" : "Ctrl+L log out";
   return `${account} · Ctrl+C quit`;
 }

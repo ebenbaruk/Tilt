@@ -101,7 +101,8 @@ function openTable(tui: TuiService, tilt: TiltSession): void {
     options: { anchor: "center", width: OVERLAY_WIDTH, maxHeight: "90%" },
     create: (host) => {
       tilt.setVisible(true);
-      const stopDrawing = tilt.onChange(() => host.invalidate());
+      // Every change, and every frame while a spin, a deal or a result plays on the table.
+      const stopDrawing = tilt.onFrame(() => host.invalidate());
       host.signal.addEventListener(
         "abort",
         () => {

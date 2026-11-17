@@ -157,9 +157,16 @@ function tableText(snapshot: Snapshot): string {
   return [status, "", ...renderPanel(snapshot, { color: false, width: PANEL_WIDTH })].join("\n");
 }
 
-/** Resolves once no move is in flight, or after MOVE_SETTLE_MS so the loop never hangs. */
+/**
+ * Resolves once no move is in flight and the table is at rest (its spin, cards and result played
+ * out, so a printed table tells the result), or after MOVE_SETTLE_MS so the loop never hangs.
+ */
 function settled(tilt: TiltSession): Promise<void> {
-  if (!tilt.snapshot().isBusy) return Promise.resolve();
+  const isAtRest = (): boolean => {
+    const snapshot = tilt.snapshot();
+    return !snapshot.isBusy && !snapshot.isMoving;
+  };
+  if (isAtRest()) return Promise.resolve();
   return new Promise((resolve) => {
     const done = (): void => {
       clearTimeout(timer);
@@ -167,8 +174,8 @@ function settled(tilt: TiltSession): Promise<void> {
       resolve();
     };
     const timer = setTimeout(done, MOVE_SETTLE_MS);
-    const stop = tilt.onChange(() => {
-      if (!tilt.snapshot().isBusy) done();
+    const stop = tilt.onFrame(() => {
+      if (isAtRest()) done();
     });
   });
 }

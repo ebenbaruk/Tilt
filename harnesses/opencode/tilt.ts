@@ -8,6 +8,12 @@ export const DEFAULT_PLAY_KEY = "alt+t";
 /** Every key a key plan can offer: one digit or one lowercase letter. */
 export const HOTKEYS: readonly string[] = [..."abcdefghijklmnopqrstuvwxyz0123456789"];
 
+// The table's rows, between the mod's two pane sizes (apps/mod/hooks/view.tsx PANE_ROWS), with
+// HOST_ROWS of the terminal left to the host's prompt, its footer and some of the session.
+const MIN_TABLE_ROWS = 20;
+const MAX_TABLE_ROWS = 30;
+const HOST_ROWS = 12;
+
 export const NO_API_URL = "TILT · set TILT_API_URL (or the plugin's apiUrl option) and restart";
 
 export interface PluginSettings {
@@ -45,7 +51,8 @@ export class TiltTable {
 
   constructor(apiUrl: string) {
     this.session = new TiltSession({ apiUrl, store: fileStore(), openUrl: openInBrowser });
-    this.stopListening = this.session.onChange(() => this.emit());
+    // Every change, and every frame while a spin, a deal or a result plays on the table.
+    this.stopListening = this.session.onFrame(() => this.emit());
     this.session.setVisible(true);
     this.session.start();
   }
@@ -84,11 +91,13 @@ export class TiltTable {
     this.session.setAgent(this.busySessions.size > 0);
   }
 
-  /** The lines to draw `width` columns wide, ANSI colored. */
-  lines(width: number): string[] {
+  /** The lines to draw `width` columns wide, ANSI colored, in a terminal `height` rows tall. */
+  lines(width: number, height: number): string[] {
     const snapshot = this.session.snapshot();
     if (!this.shown) return [renderStatusLine(snapshot, { color: true, width })];
-    return renderPanel(snapshot, { color: true, width });
+    // The table leaves the prompt and the session most of the terminal.
+    const rows = Math.max(MIN_TABLE_ROWS, Math.min(MAX_TABLE_ROWS, height - HOST_ROWS));
+    return renderPanel(snapshot, { color: true, width, rows }).slice(0, rows);
   }
 
   menu(): { title: string; value: MenuAction }[] {
