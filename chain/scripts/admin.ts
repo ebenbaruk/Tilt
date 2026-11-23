@@ -7,14 +7,15 @@
 //   pnpm admin withdraw-promo <usdc>   moves unspent promo money to the treasury
 //   pnpm admin set-relayer <pubkey>    rotates the relay's hot key
 //   pnpm admin set-admin <pubkey>      hands the admin role over (e.g. to a Squads vault)
+//   pnpm admin mint-test <wallet> <usdc>   devnet only: mints the vault's test USDC to a tester's wallet
 //
 // The admin signs with ANCHOR_WALLET. Once the admin is a Squads multisig, pass
 // `--squads`: the transaction is printed (base58) for the Squads app instead of being sent.
 // RPC: BASE_RPC (default devnet).
 import anchor from "@coral-xyz/anchor";
 import type { IdlTypes, Program as ProgramT } from "@coral-xyz/anchor";
-import { getAccount, getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { Connection, Keypair, PublicKey, Transaction, type TransactionInstruction } from "@solana/web3.js";
+import { createAssociatedTokenAccountIdempotentInstruction, createMintToInstruction, getAccount, getAssociatedTokenAddressSync, getMint } from "@solana/spl-token";
+import { Connection, Keypair, PublicKey, sendAndConfirmTransaction, Transaction, type TransactionInstruction } from "@solana/web3.js";
 import {
   idl,
   ledgerAddress,
@@ -29,6 +30,8 @@ import fs from "node:fs";
 import os from "node:os";
 
 type Config = IdlTypes<Tilt>["config"];
+/** The only cluster whose vault mint is ours to print: anywhere else the mint is real money. */
+const DEVNET_GENESIS_HASH = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
 const PAUSES = ["deposits", "bets", "payouts", "promo"] as const;
 type Pause = (typeof PAUSES)[number];
 const CONFIG_FLAG: Record<Exclude<Pause, "promo">, keyof Config> = {
@@ -88,6 +91,19 @@ async function setPauses(paused: boolean, which: string | undefined) {
   await run(v.admin, ...ixs);
 }
 
+/** Mints test USDC to a tester; refuses unless on devnet and ANCHOR_WALLET is the vault mint's authority. */
+async function mintTest(mint: PublicKey, owner: PublicKey, amount: anchor.BN) {
+  if ((await base.getGenesisHash()) !== DEVNET_GENESIS_HASH) throw new Error("mint-test only runs on devnet");
+  const { mintAuthority } = await getMint(base, mint);
+  if (!mintAuthority?.equals(wallet.publicKey)) throw new Error(`ANCHOR_WALLET is not the mint authority of ${mint.toBase58()}`);
+  const token = getAssociatedTokenAddressSync(mint, owner);
+  const tx = new Transaction().add(
+    createAssociatedTokenAccountIdempotentInstruction(wallet.publicKey, token, owner, mint),
+    createMintToInstruction(mint, token, wallet.publicKey, BigInt(amount.toString())),
+  );
+  console.log(`done: ${await sendAndConfirmTransaction(base, tx, [wallet], { commitment: "confirmed" })}`);
+}
+
 async function main() {
   const v = await program.account.vault.fetch(vault);
   switch (command) {
@@ -135,6 +151,8 @@ async function main() {
       return run(v.admin, await program.methods.setRoles(v.admin, pubkey(arg)).accountsPartial({ admin: v.admin, vault }).instruction());
     case "set-admin":
       return run(v.admin, await program.methods.setRoles(pubkey(arg), v.relayer).accountsPartial({ admin: v.admin, vault }).instruction());
+    case "mint-test":
+      return mintTest(v.mint, pubkey(arg), usdc(args[2]));
     default:
       throw new Error("usage: see the header of scripts/admin.ts");
   }
