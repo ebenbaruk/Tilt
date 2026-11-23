@@ -3,10 +3,15 @@ import { describe, expect, it } from "vitest";
 import { INSTALL_PROMPT } from "@/lib/install-prompt";
 
 const ONBOARDING = new URL("../../../docs/onboarding.md", import.meta.url);
+// Published as the client repo's README (scripts/publish-client.sh): what testers see on GitHub.
+const CLIENT_README = new URL("../../../scripts/client/README.md", import.meta.url);
 
 describe("install prompt", () => {
-  it("is the same on the landing and in the testers' onboarding doc", () => {
-    const doc = readFileSync(ONBOARDING, "utf8");
+  it.each([
+    ["the testers' onboarding doc", ONBOARDING],
+    ["the client repo's README", CLIENT_README],
+  ])("is the same on the landing and in %s", (_, file) => {
+    const doc = readFileSync(file, "utf8");
     const block = doc.match(/```text\n([\s\S]*?)\n```/);
     expect(block?.[1]).toBe(INSTALL_PROMPT);
   });
