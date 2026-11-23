@@ -9,6 +9,30 @@ const isDev = process.env.NODE_ENV === "development";
 const landingOnly = process.env.LANDING_ONLY === "true";
 const LANDING_PATHS = /^\/(legal\/[a-z-]+|api\/waitlist|archive\/landing-v1)?$/;
 
+// When the api runs on another host than the site (the site on Vercel, the api on our server), the
+// site relays /v1 and /health to it: the mod only opens a login link on the api's own host or its
+// parent domain (apps/mod/hooks/urls.ts), so players must reach both through one origin.
+const API_UPSTREAM = process.env.API_UPSTREAM || null;
+// Proves to the upstream edge that the caller's address and country below come from us.
+const EDGE_SECRET = process.env.EDGE_SECRET ?? "";
+if (API_UPSTREAM && EDGE_SECRET.length < 32) throw new Error("API_UPSTREAM needs an EDGE_SECRET of 32+ characters");
+const API_PATHS = /^\/(health|v1(\/.*)?)$/;
+const EDGE_HEADER = "x-tilt-edge";
+// Vercel overwrites x-real-ip and x-vercel-ip-country with the caller's address and country, but
+// drops its x-vercel-* headers on the way out, and the tunnel in front of the api replaces
+// X-Forwarded-For with its own caller (Vercel): both travel in our own headers.
+const CLIENT_IP_HEADER = "x-tilt-client-ip";
+const COUNTRY_HEADER = "x-tilt-country";
+
+function toApi(request: NextRequest, upstream: string): NextResponse {
+  const headers = new Headers(request.headers);
+  headers.set(EDGE_HEADER, EDGE_SECRET);
+  headers.set(CLIENT_IP_HEADER, request.headers.get("x-real-ip") ?? "");
+  headers.set(COUNTRY_HEADER, request.headers.get("x-vercel-ip-country") ?? "");
+  const url = new URL(request.nextUrl.pathname + request.nextUrl.search, upstream);
+  return NextResponse.rewrite(url, { request: { headers } });
+}
+
 /** Origin only: CSP sources must not carry a path. */
 function origin(url: string | undefined): string {
   if (!url) return "";
@@ -50,6 +74,9 @@ function contentSecurityPolicy(nonce: string): string {
 export function proxy(request: NextRequest) {
   if (landingOnly && !LANDING_PATHS.test(request.nextUrl.pathname)) {
     return NextResponse.redirect(new URL("/", request.url));
+  }
+  if (API_UPSTREAM && API_PATHS.test(request.nextUrl.pathname)) {
+    return toApi(request, API_UPSTREAM);
   }
   // Prefetches go through for the gate above, but get no nonce: it would not match the page's.
   if (request.headers.get("next-router-prefetch") || request.headers.get("purpose") === "prefetch") {
