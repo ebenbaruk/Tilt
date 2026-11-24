@@ -9,10 +9,24 @@ const isDev = process.env.NODE_ENV === "development";
 const landingOnly = process.env.LANDING_ONLY === "true";
 const LANDING_PATHS = /^\/(legal\/[a-z-]+|api\/waitlist|archive\/landing-v1)?$/;
 
+/** Fails at load rather than on every request; over plain http the edge secret and the mod's and
+ *  the web's tokens would cross the internet in clear. */
+function parseUpstream(value: string | undefined): string | null {
+  if (!value) return null;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`API_UPSTREAM is not a valid URL: "${value}"`);
+  }
+  if (url.protocol !== "https:") throw new Error(`API_UPSTREAM must be an https URL: "${value}"`);
+  return value;
+}
+
 // When the api runs on another host than the site (the site on Vercel, the api on our server), the
 // site relays /v1 and /health to it: the mod only opens a login link on the api's own host or its
 // parent domain (apps/mod/hooks/urls.ts), so players must reach both through one origin.
-const API_UPSTREAM = process.env.API_UPSTREAM || null;
+const API_UPSTREAM = parseUpstream(process.env.API_UPSTREAM);
 // Proves to the upstream edge that the caller's address and country below come from us.
 const EDGE_SECRET = process.env.EDGE_SECRET ?? "";
 if (API_UPSTREAM && EDGE_SECRET.length < 32) throw new Error("API_UPSTREAM needs an EDGE_SECRET of 32+ characters");
@@ -26,6 +40,9 @@ const COUNTRY_HEADER = "x-tilt-country";
 
 function toApi(request: NextRequest, upstream: string): NextResponse {
   const headers = new Headers(request.headers);
+  // The api authenticates with the authorization and identity-token headers only: the site's own
+  // session cookies (Privy) have no business on the api's server.
+  headers.delete("cookie");
   headers.set(EDGE_HEADER, EDGE_SECRET);
   headers.set(CLIENT_IP_HEADER, request.headers.get("x-real-ip") ?? "");
   headers.set(COUNTRY_HEADER, request.headers.get("x-vercel-ip-country") ?? "");

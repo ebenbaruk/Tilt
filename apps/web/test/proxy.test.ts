@@ -37,6 +37,19 @@ describe("proxy with API_UPSTREAM", () => {
     expect(response.headers.get("x-middleware-request-x-tilt-country")).toBe("CH");
   });
 
+  it("does not pass the site's cookies to the api", async () => {
+    const proxy = await loadProxy({ API_UPSTREAM: UPSTREAM, EDGE_SECRET: SECRET });
+    const request = new NextRequest("https://tilt.example.test/v1/state", {
+      headers: { cookie: "privy-token=abc; privy-session=t", authorization: "Bearer mod-token" },
+    });
+
+    const response = proxy(request);
+
+    expect(response.headers.get("x-middleware-request-cookie")).toBeNull();
+    expect(response.headers.get("x-middleware-override-headers")).not.toContain("cookie");
+    expect(response.headers.get("x-middleware-request-authorization")).toBe("Bearer mod-token");
+  });
+
   it.each(["/health", "/v1", "/v1/state"])("relays %s", async (path) => {
     const proxy = await loadProxy({ API_UPSTREAM: UPSTREAM, EDGE_SECRET: SECRET });
     const response = proxy(new NextRequest(`https://tilt.example.test${path}`));
@@ -53,6 +66,13 @@ describe("proxy with API_UPSTREAM", () => {
   it("refuses to start without a long enough edge secret", async () => {
     await expect(loadProxy({ API_UPSTREAM: UPSTREAM, EDGE_SECRET: "short" })).rejects.toThrow(/EDGE_SECRET/);
   });
+
+  it.each(["http://api.example.test", "api.example.test", "not a url"])(
+    "refuses to start with API_UPSTREAM=%s",
+    async (upstream) => {
+      await expect(loadProxy({ API_UPSTREAM: upstream, EDGE_SECRET: SECRET })).rejects.toThrow(/API_UPSTREAM/);
+    },
+  );
 
   it("relays nothing when unset", async () => {
     const proxy = await loadProxy({ API_UPSTREAM: "" });
