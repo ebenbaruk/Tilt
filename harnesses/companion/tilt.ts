@@ -138,11 +138,12 @@ function redraw(current: TiltSession): void {
 
 function draw(snapshot: Snapshot): void {
   const width = Math.max(1, stdout.columns ?? STATUS_WIDTH);
-  // The last row is the companion's own line; past the rest, the table puts its keys first.
-  const tableRows = Math.max(1, (stdout.rows ?? 0) - 1);
+  // The last row is the companion's own line; past the rest, the table puts its keys first. A
+  // terminal that tells no height (undefined or 0) gets the table at its own large size.
+  const tableRows = stdout.rows ? Math.max(1, stdout.rows - 1) : undefined;
   const color = Boolean(stdout.isTTY) && !process.env.NO_COLOR;
   const panel = renderPanel(snapshot, { color, width, rows: tableRows, loginHint: "ctrl+l", keysHint: KEYS_HINT });
-  const visible = [...panel.slice(0, tableRows), (footer(snapshot) ?? "").slice(0, width)];
+  const visible = [...panel.slice(0, tableRows ?? panel.length), (footer(snapshot) ?? "").slice(0, width)];
   stdout.write(HOME + visible.join(`${CLEAR_LINE_END}\r\n`) + CLEAR_LINE_END + CLEAR_BELOW);
 }
 
