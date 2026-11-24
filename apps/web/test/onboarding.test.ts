@@ -20,4 +20,8 @@ describe("install prompt", () => {
     expect(INSTALL_PROMPT).toContain("github.com/ebenbaruk/tilt-client");
     expect(INSTALL_PROMPT).not.toMatch(/ebenbaruk\/Tilt\b/);
   });
+
+  it("needs no invite: the client repo is public", () => {
+    expect(INSTALL_PROMPT).not.toMatch(/invit/i);
+  });
 });
