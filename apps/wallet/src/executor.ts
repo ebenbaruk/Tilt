@@ -26,6 +26,8 @@ export class ChainExecutor implements Executor {
         return this.chain.deposit(wallet, BigInt(action.amount), this.players, record);
       case "promo_payout":
         return this.chain.payPromo(wallet.address, action.payoutId, BigInt(action.amount), record);
+      case "faucet":
+        return this.chain.payFaucet(wallet.address, BigInt(action.amount), record);
       default:
         return this.chain.play(wallet.address, action, record);
     }

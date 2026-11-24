@@ -6,10 +6,13 @@ import type { Action, IntentResponse, PromoPayoutRequest } from "@tilt/contract"
 import pg from "pg";
 import { IntentError, type RecordSend, type SentTransaction, type TransactionStatus, UnconfirmedError } from "./chain";
 import type { Db } from "./db";
+import { checkFaucetLimits, type FaucetLimits } from "./faucet";
 
 /** A promo payout, run and stored like an intent: its payout id is the intent id. */
 export type PromoPayoutAction = { type: "promo_payout" } & Omit<PromoPayoutRequest, "userId">;
-export type RelayAction = Action | PromoPayoutAction;
+/** A devnet faucet claim, run and stored like an intent: its claim id is the intent id. */
+export type FaucetAction = { type: "faucet"; claimId: string; amount: string };
+export type RelayAction = Action | PromoPayoutAction | FaucetAction;
 export interface RelayIntent {
   intentId: string;
   userId: string;
@@ -24,6 +27,8 @@ export interface Executor {
 
 /** Relay-side bounds on what `apps/api` can trigger (defense in depth, spec §10.1). */
 export interface RelayLimits {
+  /** Devnet faucet caps; undefined: the faucet is disabled and every claim refused. */
+  faucet?: FaucetLimits;
   maxDeposit: bigint;
   dailyDepositLimit: bigint;
   /** All players together, per rolling 24 h. */
@@ -96,6 +101,8 @@ const SAFE_MESSAGES: Record<ErrorCodeValue, string> = {
   TABLE_NOT_READY: "the game table is not ready yet, try again",
   PROGRAM_ERROR: "refused by the program",
   NETWORK_ERROR: "the transaction could not be sent or confirmed",
+  FAUCET_DISABLED: "the faucet is not enabled on this relay",
+  FAUCET_EMPTY: "the faucet's reserve is too low, nothing was sent",
   INTERNAL_ERROR: "internal error",
 };
 /** The program's refusals are reported by their Anchor error name, e.g. "InsufficientBalance". */
@@ -143,6 +150,11 @@ export class Intents {
     private readonly executor: Executor,
     private readonly limits: RelayLimits,
   ) {}
+
+  /** The faucet's caps, read by the HTTP API; undefined when disabled. */
+  get faucet(): FaucetLimits | undefined {
+    return this.limits.faucet;
+  }
 
   /** An intent, or a promo payout when `promo` is set; undefined if the id is unknown or of the other kind. */
   async get(intentId: string, promo = false): Promise<IntentResponse | undefined> {
@@ -215,6 +227,7 @@ export class Intents {
         await client.query("COMMIT");
         return this.replay(rows[0], request);
       }
+      if (request.action.type === "faucet") await checkFaucetLimits(client, request.userId, this.limits.faucet);
       if (isDeposit(request.action)) await this.checkDepositLimits(client, request.userId, BigInt(request.action.amount));
       if (request.action.type === "promo_payout") await this.checkPromoLimits(client, BigInt(request.action.amount));
       await client.query("INSERT INTO intents (intent_id, user_id, action, status) VALUES ($1, $2, $3, 'pending')", [

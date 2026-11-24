@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest";
+import anchor from "@coral-xyz/anchor";
+import { PublicKey } from "@solana/web3.js";
+import { describe, expect, it, vi } from "vitest";
 import type { TiltChain } from "../src/chain";
 import type { Db } from "../src/db";
 import { check, evaluate, type MonitorThresholds, type Snapshot } from "../src/monitor";
+
+const { BN } = anchor;
 
 const thresholds: MonitorThresholds = { minRelayerLamports: 100n, minEscrowLamports: 10n, minFreeBankroll: 1_000n };
 const healthy: Snapshot = {
@@ -31,6 +35,28 @@ describe("monitor", () => {
       "STUCK_INTENTS",
       "PAUSED",
     ]);
+  });
+
+  it("flags a faucet reserve below a day of claims, only when the faucet is enabled", () => {
+    const faucet = { ...thresholds, minFaucetReserve: 1_000n };
+    expect(evaluate({ ...healthy, faucetReserve: 999n }, faucet)).toEqual([expect.objectContaining({ code: "LOW_FAUCET_RESERVE", severity: "warning" })]);
+    expect(evaluate({ ...healthy, faucetReserve: 1_000n }, faucet)).toEqual([]);
+    expect(codes({ faucetReserve: 0n })).toEqual([]);
+  });
+
+  it("reads the faucet reserve only when the faucet is enabled", async () => {
+    const fetchFaucetReserve = vi.fn(async () => 5n);
+    const chain = {
+      fetchVault: async () => ({ relayer: PublicKey.default, reserved: new BN(0), config: { depositsPaused: false, betsPaused: false, payoutsPaused: false } }),
+      // No vault token account: each pass ends in MONITOR_FAILED, after all reads were started.
+      base: { getAccountInfo: async () => null, getBalance: async () => 1_000 },
+      fetchFaucetReserve,
+    } as unknown as TiltChain;
+    const db = { query: async () => ({ rows: [{ n: "0" }] }) } as unknown as Db;
+    await check(db, chain, thresholds);
+    expect(fetchFaucetReserve).not.toHaveBeenCalled();
+    await check(db, chain, { ...thresholds, minFaucetReserve: 10n });
+    expect(fetchFaucetReserve).toHaveBeenCalledOnce();
   });
 
   it("reports a failed check as a critical alert, not a silent error", async () => {
