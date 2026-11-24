@@ -86,6 +86,14 @@ pnpm --filter @tilt/web dev        # web, http://localhost:3000
 **Config :**
 - `RELAY_API_KEY` (api) doit être l'une des `RELAY_API_KEYS` (relais).
 - Géo-blocage et IP client : en local, il n'y a pas de proxy, donc `GEO_ALLOW_UNKNOWN=true`. En production, `api` doit être derrière un proxy (edge) qui écrase l'en-tête pays (`COUNTRY_HEADER`), ajoute `x-tilt-edge: <EDGE_SECRET>` et ajoute l'IP du client à `X-Forwarded-For`. Mets alors `TRUST_PROXY=true`, `EDGE_SECRET` (32 caractères ou plus), `TRUSTED_PROXY_HOPS` (nombre de proxys qui ajoutent une entrée à `X-Forwarded-For`, 1 par défaut) et `GEO_ALLOW_UNKNOWN=false`. Sans le bon secret, le pays est inconnu, donc refusé.
+- Site et api sur deux hôtes (devnet : site sur Vercel, api sur notre serveur derrière un tunnel) : avec `API_UPSTREAM` (URL `https:`, sinon le site refuse de démarrer) et `EDGE_SECRET`, `apps/web/proxy.ts` relaie `/v1` et `/health` vers l'api, sans les cookies, avec `x-tilt-edge: <EDGE_SECRET du site>`, l'IP de l'appelant dans `x-tilt-client-ip` et son pays dans `x-tilt-country` (il écrase les valeurs envoyées par le client). Vercel ne transmet pas ses `x-vercel-*` et le tunnel remplace `X-Forwarded-For` par l'adresse de Vercel, donc une passerelle entre le tunnel et l'api doit rétablir le contrat ci-dessus :
+  - comparer `x-tilt-edge` au secret du site, en temps constant ;
+  - secret bon : `X-Forwarded-For` devient la seule adresse de `x-tilt-client-ip` (si c'est une IP), et `COUNTRY_HEADER` la valeur de `x-tilt-country` (si ce sont deux lettres) ;
+  - secret absent ou faux : aucun pays (donc refusé), et `X-Forwarded-For` devient la dernière entrée de celui reçu (écrite par le tunnel), à défaut l'adresse de la connexion ;
+  - dans tous les cas, supprimer les `x-tilt-edge`, `x-tilt-client-ip`, `x-tilt-country` et `COUNTRY_HEADER` reçus, puis ajouter `x-tilt-edge: <EDGE_SECRET de l'api>` ;
+  - côté api, `TRUSTED_PROXY_HOPS` est la position de l'IP du client, en partant de la droite, dans le `X-Forwarded-For` reçu : 1 quand la passerelle le remplace par cette seule IP.
+
+  Sans ce contrat, tous les joueurs ont l'adresse de Vercel pour l'api, et le compartiment d'auth (`RATE_AUTH_PER_MIN`, 10 par minute et par IP) bloque tout le monde. Implémentation de référence, en service sur le devnet : `ops/gateway.mjs` du déploiement devnet (hors dépôt).
 - Privy : une app de développement. Le relais a besoin de `PRIVY_AUTHORIZATION_KEY` (quorum de clés) ; `api` et le web ont besoin de l'id de l'app ; `api` a aussi besoin de `PRIVY_KEY_QUORUM_ID` / `PRIVY_POLICY_ID`. Le script `apps/wallet/scripts/privy-setup.ts` crée le quorum et la policy.
 
 ## 5. Le mod dans Claude Code
