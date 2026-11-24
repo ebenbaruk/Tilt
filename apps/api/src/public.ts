@@ -47,6 +47,8 @@ export interface AccountResponse {
   /** Values the web needs to add the relay's signer to the player's embedded wallet. */
   privySigner: { signerId: string; policyIds: string[] };
   limits: ResponsibleLimits;
+  /** Devnet test USDC faucet; null when the relay has none (always on mainnet) or can't say. */
+  faucet: { amount: Amount; nextClaimAt: string | null } | null;
 }
 
 /** POST /v1/account/deposit (access + identity token). First deposit opens the account. */
@@ -67,6 +69,20 @@ export interface MoneyIntentResponse {
   intentId: string;
   status: IntentStatus;
   /** Transaction signature once submitted. */
+  signature: string | null;
+  error: { code: string; message: string } | null;
+}
+
+/** POST /v1/account/faucet (access token), devnet only: test USDC from Tilt to the player's wallet.
+ *  At most one claim per player per 24 h; a refused claim is a BLOCKED error saying when the next is. */
+export interface FaucetRequest {
+  /** UUID from the web; resend the same id to retry. */
+  claimId: string;
+}
+export interface FaucetResponse {
+  claimId: string;
+  amount: Amount;
+  status: IntentStatus;
   signature: string | null;
   error: { code: string; message: string } | null;
 }

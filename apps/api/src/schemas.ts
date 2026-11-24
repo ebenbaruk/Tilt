@@ -22,7 +22,14 @@ import {
 } from "@tilt/contract";
 import type { ImpressionRequest, PlayAction, PlayRequest, RouletteBet } from "@tilt/mod/protocol";
 import { z } from "zod";
-import type { DepositRequest, DeviceApproveRequest, ExcludeRequest, LimitsRequest, WithdrawRequest } from "./public";
+import type {
+  DepositRequest,
+  DeviceApproveRequest,
+  ExcludeRequest,
+  FaucetRequest,
+  LimitsRequest,
+  WithdrawRequest,
+} from "./public";
 import { MAX_EXCLUSION_DAYS } from "./limits";
 
 // Lowercase: intents are stored lowercased, and limit checks compare ids in SQL.
@@ -158,6 +165,7 @@ export const DeviceApproveSchema = z
 const MoneySchema = z.object({ intentId: Uuid, amount: Amount }).strict();
 export const DepositSchema = MoneySchema satisfies z.ZodType<DepositRequest>;
 export const WithdrawSchema = MoneySchema satisfies z.ZodType<WithdrawRequest>;
+export const FaucetSchema = z.object({ claimId: Uuid }).strict() satisfies z.ZodType<FaucetRequest>;
 
 export const LimitsSchema = z
   .object({ dailyDeposit: Amount.nullable(), dailyLoss: Amount.nullable() })

@@ -10,8 +10,10 @@ import { ApiError } from "../errors";
 import { geoBlock, parseBody, parseParam, rateLimit, requireConsent, webAuth, type Ctx, type Env } from "../http";
 import type { IntentOutcome } from "../intents";
 import { blockReason, exclude, getLimits, setLimits } from "../limits";
-import type { AccountResponse, MoneyIntentResponse, SessionsResponse } from "../public";
-import { DepositSchema, ExcludeSchema, IdParam, LimitsSchema, WithdrawSchema } from "../schemas";
+import { log } from "../log";
+import type { AccountResponse, FaucetResponse, MoneyIntentResponse, SessionsResponse } from "../public";
+import { safeIntentError } from "../relay";
+import { DepositSchema, ExcludeSchema, FaucetSchema, IdParam, LimitsSchema, WithdrawSchema } from "../schemas";
 import { spendable } from "../state";
 import { walletOf } from "../wallets";
 
@@ -49,14 +51,27 @@ async function depositAction(deps: AppDeps, wallet: PublicKey, amount: string): 
   return { type: "deposit", amount };
 }
 
+/** The faucet as the account page shows it. Its status is best effort: the page must load (and
+ *  withdrawals stay reachable) when the relay can't say, so a failure only hides the faucet. */
+async function faucetOf(deps: AppDeps, userId: string): Promise<AccountResponse["faucet"]> {
+  try {
+    const status = await deps.relay.faucetStatus(userId);
+    return status.enabled && status.amount ? { amount: status.amount, nextClaimAt: status.nextClaimAt } : null;
+  } catch (e) {
+    log.warn("faucet status unavailable", { error: e instanceof Error ? e.message : String(e) });
+    return null;
+  }
+}
+
 async function account(deps: AppDeps, userId: string): Promise<AccountResponse> {
   const wallet = await requireWallet(deps, userId);
-  const [player, deposited, config, walletUsdc, limits] = await Promise.all([
+  const [player, deposited, config, walletUsdc, limits, faucet] = await Promise.all([
     deps.chain.playerAccount(wallet),
     deps.chain.deposited(wallet),
     deps.chain.config(),
     deps.chain.walletUsdc(wallet),
     getLimits(deps.db, userId),
+    faucetOf(deps, userId),
   ]);
   return {
     userId,
@@ -74,6 +89,7 @@ async function account(deps: AppDeps, userId: string): Promise<AccountResponse> 
     onboardingFee: config.onboardingFee.toString(),
     privySigner: { signerId: deps.config.PRIVY_KEY_QUORUM_ID, policyIds: [deps.config.PRIVY_POLICY_ID] },
     limits,
+    faucet,
   };
 }
 
@@ -114,6 +130,22 @@ export function webRoutes(app: Hono<Env>, deps: AppDeps): void {
     await requireWallet(deps, userId);
     const action = { type: "withdraw", amount } as const;
     return c.json(toMoneyResponse(await deps.intents.submit(userId, intentId, action, { consent: { identityToken } })));
+  });
+
+  // Devnet test USDC: the relay sets the amount and enforces the caps; it refuses when disabled.
+  app.post("/v1/account/faucet", moneyLimit, geoBlock(deps.geo), async (c) => {
+    const userId = c.get("userId");
+    const { claimId } = await parseBody(c, FaucetSchema);
+    await requireWallet(deps, userId);
+    const claim = await deps.relay.claimFaucet({ claimId, userId });
+    const body: FaucetResponse = {
+      claimId: claim.claimId,
+      amount: claim.amount,
+      status: claim.status,
+      signature: claim.signature ?? null,
+      error: safeIntentError(claim.error),
+    };
+    return c.json(body);
   });
 
   app.get("/v1/account/intents/:intentId", async (c) => {

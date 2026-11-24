@@ -5,10 +5,12 @@ import { serve, type ServerType } from "@hono/node-server";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import {
   ErrorResponse,
+  FaucetClaimRequest,
   IntentRequest,
   PromoPayoutRequest,
   type Action,
   type ErrorCode,
+  type FaucetStatusResponse,
   type IntentResponse,
 } from "@tilt/contract";
 import { Hono } from "hono";
@@ -59,7 +61,10 @@ export const RELAY_KEY = "r".repeat(40);
 
 interface StoredIntent {
   userId: string;
-  action: Action | { type: "promo_payout"; amount: string; poolId: string; reason: string };
+  action:
+    | Action
+    | { type: "promo_payout"; amount: string; poolId: string; reason: string }
+    | { type: "faucet"; amount: string };
   response: IntentResponse;
 }
 
@@ -82,6 +87,10 @@ export class FakeRelay {
   readonly consentTokens: string[] = [];
   /** Refuse money moves with 403 CONSENT_REQUIRED, as when the token expired on the way. */
   consentExpired = false;
+  /** The devnet faucet, null when disabled. Like the relay: one claim per player (until cleared). */
+  faucet: { amount: string } | null = null;
+  /** When each player who claimed may claim again (ISO 8601). */
+  readonly faucetClaims = new Map<string, string>();
   private server: ServerType | undefined;
   url = "";
 
@@ -167,12 +176,38 @@ export class FakeRelay {
       const { intentId, ...rest } = stored.response;
       return c.json({ payoutId: intentId, ...rest });
     });
+    app.get("/faucet/:userId", (c) => {
+      const status: FaucetStatusResponse = {
+        enabled: this.faucet !== null,
+        amount: this.faucet?.amount ?? null,
+        nextClaimAt: (this.faucet && this.faucetClaims.get(c.req.param("userId"))) ?? null,
+      };
+      return c.json(status);
+    });
+    app.post("/faucet/claims", async (c) => {
+      const parsed = FaucetClaimRequest.safeParse(await c.req.json().catch(() => undefined));
+      if (!parsed.success) return c.json(error("INVALID_REQUEST"), 400);
+      if (!this.faucet) return c.json(error("FAUCET_DISABLED"), 403);
+      const { claimId, userId } = parsed.data;
+      const retryAt = this.faucetClaims.get(userId);
+      if (retryAt && !this.intents.has(claimId)) {
+        return c.json({ error: { code: "LIMIT_EXCEEDED", message: "limit", retryAt } }, 422);
+      }
+      const { amount } = this.faucet;
+      const { status, body } = this.submit(claimId, userId, { type: "faucet", amount });
+      if (status !== 200) return c.json(body, status);
+      const { intentId, ...rest } = body as IntentResponse;
+      if (rest.status !== "failed") this.faucetClaims.set(userId, new Date(Date.now() + 86_400_000).toISOString());
+      return c.json({ claimId: intentId, amount, ...rest });
+    });
     return app;
   }
 
-  /** Intents of real actions (not payouts) the relay recorded. */
+  /** Intents of real actions (not payouts or faucet claims) the relay recorded. */
   actions(): Action[] {
-    return [...this.intents.values()].map((i) => i.action).filter((a): a is Action => a.type !== "promo_payout");
+    return [...this.intents.values()]
+      .map((i) => i.action)
+      .filter((a): a is Action => a.type !== "promo_payout" && a.type !== "faucet");
   }
 }
 
