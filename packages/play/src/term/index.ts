@@ -11,9 +11,29 @@ export type { TermElement } from "./tree";
 
 export const termUi = { Box: "Box", Text: "Text", Button: "Button", Link: "Link" } as const;
 
-/** Sets `globalThis.h` and `globalThis.Fragment`, which the view's files call. */
-export function installJsx(): void {
+/**
+ * Runs `draw` with `globalThis.h` and `globalThis.Fragment` set to ours, which the view's files
+ * call (their JSX pragmas), then puts back whatever the host had there.
+ */
+export function withJsx<T>(draw: () => T): T {
+  const names = ["h", "Fragment"] as const;
+  const host = names.map((name) => Object.getOwnPropertyDescriptor(globalThis, name));
+
   Object.assign(globalThis, { h, Fragment });
+
+  try {
+    return draw();
+  } finally {
+    names.forEach((name, index) => {
+      const own = host[index];
+
+      if (own === undefined) {
+        Reflect.deleteProperty(globalThis, name);
+      } else {
+        Object.defineProperty(globalThis, name, own);
+      }
+    });
+  }
 }
 
 export interface RenderOptions {

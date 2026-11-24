@@ -1,6 +1,5 @@
 // The Claude Code mod's own pane (apps/mod/hooks/view.tsx), drawn by the term renderer for one
-// fixture per game, at two widths and both card sizes. The drawings land in /tmp/term-renders.
-import { mkdirSync, writeFileSync } from "node:fs";
+// fixture per game, at two widths and both card sizes.
 import { beforeAll, describe, expect, test, vi } from "vitest";
 
 import { isStateResponse } from "../../../apps/mod/hooks/guards";
@@ -8,13 +7,12 @@ import { prefsView } from "../../../apps/mod/hooks/model";
 import type { Game, StateResponse } from "../../../apps/mod/hooks/protocol";
 import type { Ui } from "../../../apps/mod/hooks/theme";
 import { type PaneLayout, renderPane, type Snapshot } from "../../../apps/mod/hooks/view";
-import { installJsx, renderLines, termUi } from "../src/term/index";
+import { renderLines, termUi, withJsx } from "../src/term/index";
 import { stringWidth } from "../src/term/width";
 
 // The mod's fixtures take their clock from its test world, which loads Claude Code's test kit.
 vi.mock("claude-code/testing", () => ({ mock: {} }));
 
-const OUT_DIR = "/tmp/term-renders";
 const WIDTHS = [80, 120] as const;
 const SIZES = ["large", "small"] as const;
 const FIXTURE_OF: Record<Game, string> = {
@@ -37,7 +35,6 @@ let fixtures: Record<string, unknown> = {};
 let now = 0;
 
 beforeAll(async () => {
-  installJsx();
   // Computed paths: the mod's test modules stay out of the type check, which cannot see Claude
   // Code's test kit.
   const tests = "../../../apps/mod/tests";
@@ -49,7 +46,6 @@ beforeAll(async () => {
   }
 
   now = world.NOW;
-  mkdirSync(OUT_DIR, { recursive: true });
 });
 
 function stateOf(game: Game): StateResponse {
@@ -89,9 +85,15 @@ function render(game: Game, width: number, cards: "large" | "small"): string[] {
     isClickable: false,
     isBand: false,
   };
-  const pane = renderPane(termUi as unknown as Ui, snapshotOf(game, stateOf(game)), layout, () => {}, null);
-
-  return renderLines(pane, { width, color: false });
+  return withJsx(() =>
+    renderLines(
+      renderPane(termUi as unknown as Ui, snapshotOf(game, stateOf(game)), layout, () => {}, null),
+      {
+        width,
+        color: false,
+      },
+    ),
+  );
 }
 
 describe("the mod's pane drawn by term", () => {
@@ -103,7 +105,6 @@ describe("the mod's pane drawn by term", () => {
         test(`${game} at ${width} columns, ${size} cards`, () => {
           const lines = render(game, width, size);
 
-          writeFileSync(`${OUT_DIR}/${game}-${width}-${size}.txt`, `${lines.join("\n")}\n`);
           expect(lines.length).toBeGreaterThan(5);
           expect(lines.join("")).not.toContain("\x1b");
 

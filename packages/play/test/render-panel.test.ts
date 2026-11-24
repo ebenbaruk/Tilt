@@ -213,6 +213,24 @@ describe("renderPanel", () => {
     expectWidth(lines, WIDTH);
   });
 
+  it("leaves the host's own `h` and no `Fragment` on globalThis, before and after drawing", () => {
+    const hostH = (): string => "the host's h";
+
+    // Importing the panel installs nothing: the view's JSX globals exist only while it draws.
+    expect("h" in globalThis || "Fragment" in globalThis).toBe(false);
+    Object.assign(globalThis, { h: hostH });
+
+    try {
+      const lines = renderPanel(snapshot({ state: state(BLACKJACK_ROUND) }), { color: false, width: WIDTH, rows: 40 });
+
+      expect(text(lines)).toContain("h: hit");
+      expect(Reflect.get(globalThis, "h")).toBe(hostH);
+      expect("Fragment" in globalThis).toBe(false);
+    } finally {
+      Reflect.deleteProperty(globalThis, "h");
+    }
+  });
+
   it("gives way to small cards and puts the keys first in fewer rows", () => {
     const lines = renderPanel(snapshot({ state: state(BLACKJACK_ROUND) }), { color: false, width: WIDTH, rows: 20 });
     const all = text(lines);

@@ -12,7 +12,7 @@ import {
   type Snapshot as TableSnapshot,
 } from "../../../apps/mod/hooks/view";
 import { MOD_LOGIN_HINT, type StatusOptions } from "./status";
-import { h, installJsx, renderLines, termUi } from "./term/index";
+import { h, renderLines, termUi, withJsx } from "./term/index";
 import type { Snapshot } from "./types";
 
 export interface PanelOptions extends StatusOptions {
@@ -22,9 +22,6 @@ export interface PanelOptions extends StatusOptions {
    *  focused pane's ("esc hands the keys back"). */
   keysHint?: readonly KeysHint[];
 }
-
-// The mod's view files call the global `h` and `Fragment` (their JSX pragmas).
-installJsx();
 
 /** The elements the view draws with: ./term lays out the same four the Claude Code terminal has. */
 const ui = termUi as unknown as Ui;
@@ -106,9 +103,12 @@ export function renderPanel(
   const table = tableSnapshot(snapshot);
 
   applyTheme(light);
-  const pane = renderPane(ui, table, paneLayout(table, width, rows, keysHint), () => undefined, null);
-  const line = engineLine(snapshot, loginHint);
-  const shown = line === null ? pane : h(Box, { flexDirection: "column" }, pane, h(Box, { paddingX: 1 }, line));
 
-  return renderLines(shown, { width, color });
+  return withJsx(() => {
+    const pane = renderPane(ui, table, paneLayout(table, width, rows, keysHint), () => undefined, null);
+    const line = engineLine(snapshot, loginHint);
+    const shown = line === null ? pane : h(Box, { flexDirection: "column" }, pane, h(Box, { paddingX: 1 }, line));
+
+    return renderLines(shown, { width, color });
+  });
 }
