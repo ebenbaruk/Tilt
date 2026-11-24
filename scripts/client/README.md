@@ -31,7 +31,7 @@ Install Tilt, the casino at https://github.com/ebenbaruk/tilt-client, in the cod
 5. Tell me how to start playing in this agent (its key or command, or the companion command to run in a split pane) and how to log in.
 ```
 
-Then restart your agent and log in (`/tilt login` in Claude Code; other agents: their README). Everything runs on Solana devnet: the USDC is test money with no value, and there is no faucet. Ask the Tilt team for test USDC with your wallet address (shown on the site's `/account` page); they mint it to that wallet (`pnpm admin mint-test`, devnet only). Deposit and withdraw on `/account`; the agent never moves money.
+Then restart your agent and log in (`/tilt login` in Claude Code; other agents: their README). Everything runs on Solana devnet: the USDC is test money with no value. To get some, click **get 100 test USDC** on the site's `/account` page (once per 24 h), then deposit it there. Deposit and withdraw on `/account`; the agent never moves money.
 
 To update, paste the prompt again: it audits the new commit first. Never `git pull` an installed copy on its own, since it would skip the audit.
 

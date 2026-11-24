@@ -12,6 +12,7 @@ Le relais (`apps/wallet`) écrit une ligne JSON `{"level":"alert","code":…}` �
 | `LOW_FREE_BANKROLL` | avertissement | Peu de bankroll libre : le relais ne peut plus accorder de ligne au pool de risque, donc les mises vont être refusées (`RiskPoolFull`) une fois la ligne utilisée. | Alimenter le coffre (`fund_vault`) ou baisser `max_round_gain` (la réserve exigée en dépend). |
 | `LOW_RELAYER_SOL` | critique | Le relais paie les frais et les rents : sans SOL, plus rien ne passe. | Envoyer du SOL à l'adresse du relayer (`status`). |
 | `LOW_ESCROW` | critique | L'escrow MagicBlock du relayer paie les Magic Actions : sans lui, retraits et checkpoints restent bloqués. | Recharger l'escrow (`createTopUpEscrowInstruction` du SDK MagicBlock, voir `scripts/e2e.ts`). |
+| `LOW_FAUCET_RESERVE` | avertissement | Devnet seulement, faucet activé : la réserve du faucet a moins d'une journée de demandes (`FAUCET_DAILY_LIMIT`). La même ligne part quand une demande est refusée faute de réserve (`FAUCET_EMPTY`, rien d'envoyé). | Recharger la réserve (« Faucet devnet » ci-dessous). |
 | `STUCK_INTENTS` | avertissement | Des intentions sont `pending` depuis plus de 10 min : la réconciliation n'arrive pas à trancher. | Regarder les signatures en base (`intents`) sur l'explorateur ; vérifier les RPC. |
 | `PAUSED` | avertissement | Une pause est active. | Normal pendant un incident ; sinon `resume`. |
 | `MONITOR_FAILED` | critique | Le relais n'a pas pu lire l'état (RPC Solana ou Postgres injoignable) : toutes les autres alertes sont muettes tant que ça dure. | Vérifier les RPC et la base (`/health`) ; surveiller le coffre à la main (`status`) en attendant. |
@@ -41,6 +42,14 @@ Les lignes `sweep stuck` (un passage du cron dure plus de 5 min) et `intent sett
 **Rollup MagicBlock en panne.** Les fonds sont sur Solana (coffre) ; les comptes joueurs sont figés dans le rollup. `pause deposits` et `pause bets` pour ne pas accepter d'argent qu'on ne peut pas jouer. Il n'existe pas encore de sortie de secours (récupérer les comptes sur Solana) : chantier ouvert avant le mainnet (`chain/README.md`).
 
 **Crash du relais.** Le redémarrer : les intentions interrompues sont retrouvées sur la chaîne par la réconciliation (aucune n'est rejouée). Vérifier ensuite l'absence de `STUCK_INTENTS`.
+
+## Faucet devnet
+
+Le bouton « get 100 test USDC » de `/account` envoie de l'USDC de test depuis une réserve : le compte de token du relayer pour le mint du coffre (ATA de l'adresse du relayer, donnée par `status` et par la ligne `relay listening` au démarrage). Il n'existe que sur devnet : `FAUCET_ENABLED=true` (coupé par défaut), et le relais refuse de démarrer avec si `SOLANA_RPC_URL` n'a pas le hash de genèse de devnet. Plafonds du relais : `FAUCET_AMOUNT` (100 USDC) par joueur et par 24 h glissantes, `FAUCET_DAILY_LIMIT` (10 000 USDC) pour tous les joueurs par 24 h glissantes ; chaque demande est une intention (`action->>'type' = 'faucet'` dans `intents`).
+
+**Recharger la réserve** (alerte `LOW_FAUCET_RESERVE` ou `FAUCET_EMPTY`) : avec la clé qui est l'autorité du mint de test, `cd chain && ANCHOR_WALLET=<clé> pnpm admin mint-test <adresse du relayer> 10000` (10 000 USDC au plus par appel, crée l'ATA si besoin), à répéter pour garder au moins une journée de demandes. Ou `spl-token mint <mint> <montant> <ATA du relayer>` avec la même clé.
+
+**Couper le faucet** (abus, multi-comptes) : `FAUCET_ENABLED=false` et redémarrer le relais ; le bouton disparaît de `/account`. Rien d'autre ne dépend de la réserve : le relayer ne paie jamais un joueur depuis elle hors faucet.
 
 ## Passage de l'admin sur un multisig
 
