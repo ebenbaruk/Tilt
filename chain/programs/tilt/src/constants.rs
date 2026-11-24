@@ -27,6 +27,11 @@ pub const DAY_SECS: i64 = 86_400;
 pub const MIN_BET_FLOOR: u64 = 100_000;
 /// Shortest `Config::round_timeout_secs`. A retried draw abandons the pending VRF request; if
 /// that request could still be answered, a relay seeing an unwanted answer coming could retry
-/// until it liked the draw. The audit (2026-11-08, E3) puts a queued request's life at about
-/// two minutes.
-pub const MIN_ROUND_TIMEOUT_SECS: i64 = 120;
+/// until it liked the draw. MagicBlock's VRF (github.com/magicblock-labs/ephemeral-vrf, commit
+/// 692f989) gives a queued request `QUEUE_TTL_SECONDS = 120` (`api/src/consts.rs`), counted in
+/// 4 s steps (`CREATED_AT_UNIT_SECS`, `api/src/state/queue.rs`). Its oracle stops answering past
+/// the TTL by its own clock, which may trail the cluster's by up to 60 s (`CLOCK_SKEW_UNITS`,
+/// `vrf-oracle/src/oracle/processor.rs`), and `provide_randomness` does not check the age: an
+/// answer sent in time can still land until the request is purged. 120 + 8 + 60, plus an answer
+/// in flight, stays well under 300 s.
+pub const MIN_ROUND_TIMEOUT_SECS: i64 = 300;

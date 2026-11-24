@@ -9,8 +9,8 @@
 // (ANCHOR_WALLET, must be the program's upgrade authority); the relayer is a separate key
 // kept in .anchor/e2e-relayer.json.
 //
-// The scenario sets test limits (e.g. a 3 s round timeout) on the vault. On a vault others
-// use (any non-local RPC), it only runs with --shared-vault, and the config and roles it found
+// The scenario sets test limits (e.g. a small max bet) on the vault. On a vault others use
+// (any non-local RPC), it only runs with --shared-vault, and the config and roles it found
 // are put back at the end, on failure and on Ctrl-C.
 import anchor from "@coral-xyz/anchor";
 import type { IdlAccounts, IdlTypes, Program as ProgramT } from "@coral-xyz/anchor";
@@ -71,8 +71,8 @@ const SHARED_VAULT_FLAG = "--shared-vault";
 const LOCAL_RPC = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/;
 
 const usdc = (x: number) => Math.round(x * 1_000_000);
-// The program refuses less (`MIN_ROUND_TIMEOUT_SECS`): retries are tested by waiting it out.
-const ROUND_TIMEOUT_SECS = 120;
+// The program's floor (`MIN_ROUND_TIMEOUT_SECS`): the scenario waits it out three times mid-round.
+const ROUND_TIMEOUT_SECS = 300;
 /** Long enough for every pause the scenario takes mid-round (a round timeout waited out, then a
  *  few refusals), short enough to wait out. */
 const ABANDONED_ROUND_SECS = ROUND_TIMEOUT_SECS + 60;
@@ -672,6 +672,10 @@ async function setUpHouse() {
 
   const existing = (await base.getAccountInfo(vault)) ? await program.account.vault.fetch(vault) : undefined;
   if (existing) {
+    // The program would refuse to put such a config back at the end (`restoreVault`).
+    if (existing.config.roundTimeoutSecs.ltn(ROUND_TIMEOUT_SECS)) {
+      throw new Error(`the vault's round_timeout_secs (${existing.config.roundTimeoutSecs}) is under the program's floor (${ROUND_TIMEOUT_SECS}): raise it first (docs/runbook.md, "Mise à jour du programme").`);
+    }
     mint = existing.mint;
     original = { config: existing.config, relayer: existing.relayer };
     await setConfig();
