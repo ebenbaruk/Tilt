@@ -13,7 +13,7 @@ What it reads and sends is spelled out in [`apps/mod/README.md`](apps/mod/README
 
 Paste the prompt below into your coding agent (Claude Code, omp, pi, OpenCode, Codex, Gemini CLI, Cursor CLI… the full list is in step 1). The agent identifies itself, fetches this repo, audits the code that will run with `file:line` references, and waits for your go before installing.
 
-When it asks for the API URL, use the devnet test's: `https://tilt-casino.vercel.app`.
+API URL: `https://tilt-casino.vercel.app` (the devnet test; the agent reads it from this line).
 
 ```text
 Install Tilt, the casino at https://github.com/ebenbaruk/tilt-client, in the coding agent you are running in. Audit it before anything runs, and stop at the first problem.
@@ -27,7 +27,7 @@ Install Tilt, the casino at https://github.com/ebenbaruk/tilt-client, in the cod
    - hook scripts never read stdin, and nothing reads my prompts, your replies, my code, tool calls or transcripts;
    - no install script, and nothing downloaded at run time.
    Flag anything else it can do and anything obfuscated. Give me a verdict with the commit you audited, and wait for my go.
-4. On my go, ask me for the Tilt API URL (<folder>/README.md gives the current one; it must start with https://). Claude Code: `claude plugin install tilt@tilt --scope user`, check that `diff -r <folder>/apps/mod <installPath>` (installPath from `claude plugin list --json`) shows nothing but the .in_use marker, then `printf '%s\n' '{"apiUrl":"<url>"}' | claude plugin configure tilt@tilt --values-stdin`. Others: install exactly as <folder>/harnesses/<name>/README.md says, with <TILT_DIR> = ~/.tilt/src and the URL as TILT_API_URL or apiUrl, as it says.
+4. On my go, take the Tilt API URL from the "API URL:" line of <folder>/README.md; only if it is missing or does not start with https://, ask me for it. Claude Code: `claude plugin install tilt@tilt --scope user`, check that `diff -r <folder>/apps/mod <installPath>` (installPath from `claude plugin list --json`) shows nothing but the .in_use marker, then `printf '%s\n' '{"apiUrl":"<url>"}' | claude plugin configure tilt@tilt --values-stdin`. Others: install exactly as <folder>/harnesses/<name>/README.md says, with <TILT_DIR> = ~/.tilt/src and the URL as TILT_API_URL or apiUrl, as it says.
 5. Tell me how to start playing in this agent (its key or command, or the companion command to run in a split pane) and how to log in.
 ```
 

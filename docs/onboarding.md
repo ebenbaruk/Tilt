@@ -2,10 +2,10 @@
 
 Le testeur colle un prompt dans son agent de code (Claude Code, omp, pi, OpenCode, Kilo Code, DeepSeek Harness, Amp, Copilot CLI, Grok, Qwen Code, Kimi Code, Droid, Cursor CLI, Codex CLI, Gemini CLI, goose, Cline, Crush, CodeWhale ou Aider) : l'agent trouve l'intégration Tilt qui lui correspond, audite son code, l'installe une fois que le testeur a donné son feu vert, puis la règle. Le testeur se connecte ensuite sur le web, dépose et joue. Tout se passe sur devnet : l'argent est de l'USDC de test, sans valeur. La suite du document détaille le cas Claude Code ; pour les autres agents, la manière de jouer et de se connecter est dans `harnesses/<nom>/README.md`, que l'agent résume à la fin du prompt.
 
-Deux valeurs sont à remplir par l'équipe avant d'envoyer ce document (partout où elles apparaissent) :
+Deux valeurs, à garder à jour partout où elles apparaissent (la ligne « API URL: » de `scripts/client/README.md` est celle que lit l'agent) :
 
-- `<TILT_API_URL>` : l'URL publique de `apps/api`, en `https`, sans `/` final.
-- `<TILT_WEB_URL>` : l'URL publique de `apps/web`, sur le même hôte que l'api ou sur son domaine parent (voir « Dépannage »).
+- `<TILT_API_URL>` : l'URL publique de `apps/api`, en `https`, sans `/` final. Test devnet : `https://tilt-casino.vercel.app`.
+- `<TILT_WEB_URL>` : l'URL publique de `apps/web`, sur le même hôte que l'api ou sur son domaine parent (voir « Dépannage »). Test devnet : la même, le site relaie `/v1` vers l'api.
 
 ## Prérequis
 
@@ -21,7 +21,7 @@ C'est le même prompt que sur la landing, dans la section « How it works » (`a
 1. identifie l'agent dans lequel il tourne et son dossier : `apps/mod` pour Claude Code, `harnesses/<nom>` pour les autres. S'il n'est pas dans la liste, il s'arrête : Tilt n'a pas encore d'intégration pour lui ;
 2. récupère le dépôt sans rien installer (comme marketplace pour Claude Code, en clone dans `~/.tilt/src` sinon) et note le commit ;
 3. audite le code qui va tourner (pour Claude Code `apps/mod` ; sinon `harnesses/<nom>`, `packages/play/src`, les fichiers partagés de `apps/mod/hooks/` et `harnesses/companion` si le README s'en sert), point par point avec `fichier:ligne` : réseau vers l'API Tilt seulement, seule commande l'ouverture du lien de login, fichiers écrits seulement sous `~/.tilt` (plus la config de l'agent indiquée par le README), hooks qui ne lisent pas stdin, rien qui lise prompts, réponses, code, appels d'outils ou transcripts, pas de script d'install ni de dépendance. Puis il donne un verdict et **attend le feu vert du testeur** ;
-4. demande l'URL de l'api (`<TILT_API_URL>`, que donne le README du dépôt) et installe : pour Claude Code, il installe le plugin, vérifie que la copie installée est exactement celle qu'il a auditée et règle `apiUrl` ; sinon il suit `harnesses/<nom>/README.md` avec `<TILT_DIR>` = `~/.tilt/src` et l'URL en `TILT_API_URL` ou `apiUrl` ;
+4. prend l'URL de l'api dans la ligne « API URL: » du README du dépôt (`<TILT_API_URL>` ; il ne la demande que si elle manque) et installe : pour Claude Code, il installe le plugin, vérifie que la copie installée est exactement celle qu'il a auditée et règle `apiUrl` ; sinon il suit `harnesses/<nom>/README.md` avec `<TILT_DIR>` = `~/.tilt/src` et l'URL en `TILT_API_URL` ou `apiUrl` ;
 5. explique comment jouer dans cet agent (touche, commande, ou commande du compagnon à lancer dans un panneau à côté) et comment se connecter.
 
 L'agent demande d'approuver chaque commande. Pour Claude Code, elles ne touchent qu'à sa config (marketplace `tilt`, plugin `tilt@tilt`, son réglage `apiUrl`) ; pour les autres, au clone `~/.tilt/src` et à la config indiquée par le README. Elles peuvent être relancées.
@@ -38,7 +38,7 @@ Install Tilt, the casino at https://github.com/ebenbaruk/tilt-client, in the cod
    - hook scripts never read stdin, and nothing reads my prompts, your replies, my code, tool calls or transcripts;
    - no install script, and nothing downloaded at run time.
    Flag anything else it can do and anything obfuscated. Give me a verdict with the commit you audited, and wait for my go.
-4. On my go, ask me for the Tilt API URL (<folder>/README.md gives the current one; it must start with https://). Claude Code: `claude plugin install tilt@tilt --scope user`, check that `diff -r <folder>/apps/mod <installPath>` (installPath from `claude plugin list --json`) shows nothing but the .in_use marker, then `printf '%s\n' '{"apiUrl":"<url>"}' | claude plugin configure tilt@tilt --values-stdin`. Others: install exactly as <folder>/harnesses/<name>/README.md says, with <TILT_DIR> = ~/.tilt/src and the URL as TILT_API_URL or apiUrl, as it says.
+4. On my go, take the Tilt API URL from the "API URL:" line of <folder>/README.md; only if it is missing or does not start with https://, ask me for it. Claude Code: `claude plugin install tilt@tilt --scope user`, check that `diff -r <folder>/apps/mod <installPath>` (installPath from `claude plugin list --json`) shows nothing but the .in_use marker, then `printf '%s\n' '{"apiUrl":"<url>"}' | claude plugin configure tilt@tilt --values-stdin`. Others: install exactly as <folder>/harnesses/<name>/README.md says, with <TILT_DIR> = ~/.tilt/src and the URL as TILT_API_URL or apiUrl, as it says.
 5. Tell me how to start playing in this agent (its key or command, or the companion command to run in a split pane) and how to log in.
 ```
 
@@ -76,7 +76,7 @@ Pour les autres agents, suis la section « Uninstall » de `harnesses/<nom>/READ
 
 ## Ce qui manque encore côté équipe
 
-- **Héberger api, relais et web sur devnet** et remplir `<TILT_API_URL>` / `<TILT_WEB_URL>`. Contraintes : api en `https` ; web sur le même hôte que l'api ou sur son domaine parent (sinon le mod refuse le lien de login et n'affiche pas le lien de dépôt) ; relais sur réseau privé ; `LANDING_ONLY` vide sur ce déploiement web (sinon toutes les pages hors landing redirigent vers `/`) ; app Privy de dev avec le domaine du web autorisé ; `WEB_URL` / `WEB_ORIGIN` de l'api pointant sur le web.
+- **Hébergement devnet** : fait (site sur Vercel qui relaie `/v1` vers l'api, voir `docs/dev.md` §4). Contraintes pour tout autre déploiement : api en `https` ; web sur le même hôte que l'api ou sur son domaine parent (sinon le mod refuse le lien de login et n'affiche pas le lien de dépôt) ; relais sur réseau privé ; `LANDING_ONLY` vide sur ce déploiement web (sinon toutes les pages hors landing redirigent vers `/`) ; app Privy de dev avec le domaine du web autorisé ; `WEB_URL` / `WEB_ORIGIN` de l'api pointant sur le web.
 - **Géo-blocage** : la liste par défaut (`apps/api/src/config.ts`) bloque la France et d'autres pays où sont peut-être les testeurs, et la production exige un proxy edge (`EDGE_SECRET`, `TRUST_PROXY`) sinon le pays est inconnu, donc refusé. Il faut décider la config du déploiement de test (`BLOCKED_COUNTRIES`, edge) ; la page de connexion et l'approbation passent toutes deux par ce contrôle.
 - **USDC de test pour les testeurs : aucun faucet n'existe.** Le coffre devnet utilise son propre mint de test, `JAybbeVX1MQn9NDBWsE1RH1zdLVwT4fSE9Df4ADTLCYk` (autorité de mint `6aEPgBvxq7QBzC4VZ8vL6epiXn24eHbPyq2sVZY93t2N`, lu sur devnet le 2026-10-28). Seule la personne qui détient cette clé peut en envoyer, à la main, sur l'adresse que le testeur lit sur `/account` :
   `cd chain && ANCHOR_WALLET=<clé> pnpm admin mint-test <adresse> <montant>` (refusé hors devnet, si la clé n'est pas l'autorité du mint, pour 0 ou plus de 10 000 USDC par appel).
