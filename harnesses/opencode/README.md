@@ -137,9 +137,14 @@ OpenTUI's Solid transform on every `.tsx` file its process loads
 ([solid-plugin.ts](https://github.com/anomalyco/opentui/blob/main/packages/solid/scripts/solid-plugin.ts),
 [solid-transform.ts](https://github.com/anomalyco/opentui/blob/main/packages/solid/scripts/solid-transform.ts)),
 which would compile the mod's view into Solid components. So `painter.ts` draws the table in a Bun
-Worker, where that runtime plugin does not apply, and the plugin shows the last lines it sent.
-Checked outside OpenCode, under Bun 1.4.2: a `Bun.plugin` that rewrites every `.tsx` on the main
-thread breaks the table there, and the Worker still draws it.
+Worker, where that runtime plugin does not apply, and the plugin shows the last lines it sent. The
+main thread (`tilt.ts`) loads no `.tsx` at all: it runs the session from
+`packages/play/src/core.ts` (plain TypeScript), and the Worker tracks the round's spin, cards and
+result from the states the session announces and says when to draw the next frame and when the
+play keys are held. Checked outside OpenCode: under Bun 1.4.2, a `Bun.plugin` that rewrites every
+`.tsx` on the main thread breaks the table there, and the Worker still draws it; on 2026-11-24,
+`tilt.ts` loaded under plain Node 22.23, which cannot load a `.tsx`. Set `NO_COLOR` to turn colours
+off.
 
 Not verified:
 
