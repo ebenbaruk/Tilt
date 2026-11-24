@@ -2,7 +2,7 @@
 
 Tout tourne sur la machine : Solana + rollup MagicBlock + oracle VRF, Postgres, le relais (`apps/wallet`), `api`, le web et le mod Claude Code.
 
-Pour installer le mod chez un testeur invité (sans cloner le dépôt) : [onboarding.md](onboarding.md).
+Pour installer le mod chez un testeur (sans cloner le dépôt) : [onboarding.md](onboarding.md).
 
 ## Prérequis
 
@@ -145,7 +145,7 @@ TILT_API_URL=http://127.0.0.1:8099 harnesses/companion/bin/tilt
 
 ## Publier le client
 
-Les testeurs n'ont jamais accès à ce monorepo. Ils clonent et auditent `ebenbaruk/tilt-client` (privé, sur invitation), qui ne contient que `apps/mod`, `packages/play` et `harnesses` (sans les tests), plus `scripts/client/` (README et marketplace).
+Les testeurs n'ont jamais accès à ce monorepo. Ils clonent et auditent `ebenbaruk/tilt-client` (public), qui ne contient que `apps/mod`, `packages/play` et `harnesses` (sans les tests), plus `scripts/client/` (README et marketplace).
 
 Après un merge qui touche ces dossiers, depuis `main` à jour et `scripts/ci.sh` vert :
 

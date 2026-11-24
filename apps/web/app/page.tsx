@@ -64,9 +64,9 @@ const STEPS = [
 
 const FAQ = [
   {
-    flag: "--invite",
+    flag: "--join",
     q: "How do I get in?",
-    a: "Join the waitlist. Tilt opens to it first: your invite gives you access to the code and the API URL. Paste the install prompt into your coding agent, then log in, add USDC and play.",
+    a: "Paste the install prompt into your coding agent: the code is public, and your agent audits it before installing. Tilt runs on Solana devnet for now, with test USDC that has no value: log in, ask the team for test USDC, deposit and play. Join the waitlist to hear when Tilt launches.",
   },
   {
     flag: "--agents",

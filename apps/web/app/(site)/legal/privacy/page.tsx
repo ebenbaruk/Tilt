@@ -9,9 +9,9 @@ export default function PrivacyPage() {
       <h2>What Tilt sees in your agent</h2>
       <p>
         The Claude Code mod reads only when an agent turn starts and ends. It never reads your prompts, your code or
-        your tool calls, and invited players' agents audit its source before installing it. The integrations for other
-        coding agents read the same and no more: their hook scripts only signal a turn start or end and never read their
-        input, and the companion app only reads its own keys. All of them send data only to the Tilt API.
+        your tool calls, and the install prompt has your agent audit its source before installing it. The integrations
+        for other coding agents read the same and no more: their hook scripts only signal a turn start or end and never
+        read their input, and the companion app only reads its own keys. All of them send data only to the Tilt API.
       </p>
       <h2>What Tilt stores</h2>
       <ul>
