@@ -84,7 +84,7 @@ async function until<T>(f: () => Promise<T | undefined>, what: string, timeoutMs
 async function main() {
   const db = createDb(env("TEST_DATABASE_URL", "postgres://postgres:tilt@127.0.0.1:55432/tilt_test"));
   await migrate(db);
-  await db.query("TRUNCATE intents, players");
+  await db.query("TRUNCATE intents, players, consents");
   const players = new LocalPlayerWallets();
   const intents = new Intents(db, new ChainExecutor(chain, players, db), { maxDeposit: BigInt(usdc(50)), dailyDepositLimit: BigInt(usdc(100)), dailyDepositLimitGlobal: BigInt(usdc(1000)), minPromoPayout: BigInt(usdc(1)), maxPromoPayout: BigInt(usdc(50)), dailyPromoLimitPerPlayer: BigInt(usdc(100)), dailyPromoLimit: BigInt(usdc(100)) });
   // Stands in for Privy's identity tokens (checked by the HTTP tests): "<user id>|<nonce>", one per intent.
