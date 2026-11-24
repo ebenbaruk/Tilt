@@ -11175,6 +11175,9 @@ export type Tilt = {
           },
           {
             "name": "round",
+            "docs": [
+              "The round's number, the one its `RoundSettled` will carry."
+            ],
             "type": "u32"
           },
           {
