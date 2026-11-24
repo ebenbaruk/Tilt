@@ -8,6 +8,8 @@
 //   pnpm admin set-relayer <pubkey>    rotates the relay's hot key
 //   pnpm admin set-admin <pubkey>      hands the admin role over (e.g. to a Squads vault)
 //   pnpm admin mint-test <wallet> <usdc>   devnet only: mints the vault's test USDC to a tester's wallet
+//                                          (at most 10 000 USDC a call; ANCHOR_WALLET must be the mint
+//                                          authority and signs itself, so `--squads` is refused)
 //
 // The admin signs with ANCHOR_WALLET. Once the admin is a Squads multisig, pass
 // `--squads`: the transaction is printed (base58) for the Squads app instead of being sent.
@@ -32,6 +34,8 @@ import os from "node:os";
 type Config = IdlTypes<Tilt>["config"];
 /** The only cluster whose vault mint is ours to print: anywhere else the mint is real money. */
 const DEVNET_GENESIS_HASH = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
+/** Largest `mint-test`, 10 000 USDC in base units: a typo can't print millions. */
+const MAX_TEST_MINT = new anchor.BN(10_000_000_000);
 const PAUSES = ["deposits", "bets", "payouts", "promo"] as const;
 type Pause = (typeof PAUSES)[number];
 const CONFIG_FLAG: Record<Exclude<Pause, "promo">, keyof Config> = {
@@ -93,6 +97,8 @@ async function setPauses(paused: boolean, which: string | undefined) {
 
 /** Mints test USDC to a tester; refuses unless on devnet and ANCHOR_WALLET is the vault mint's authority. */
 async function mintTest(mint: PublicKey, owner: PublicKey, amount: anchor.BN) {
+  if (squads) throw new Error("mint-test is signed by the mint authority's key, not the admin: --squads does not apply");
+  if (amount.isZero() || amount.gt(MAX_TEST_MINT)) throw new Error("mint-test mints more than 0 and at most 10000 USDC");
   if ((await base.getGenesisHash()) !== DEVNET_GENESIS_HASH) throw new Error("mint-test only runs on devnet");
   const { mintAuthority } = await getMint(base, mint);
   if (!mintAuthority?.equals(wallet.publicKey)) throw new Error(`ANCHOR_WALLET is not the mint authority of ${mint.toBase58()}`);
