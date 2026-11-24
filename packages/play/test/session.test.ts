@@ -414,6 +414,9 @@ describe("TiltSession", () => {
   }
 
   it("draws every frame while a new round spins, then stops at rest", async () => {
+    // A fixed start, early in a minute: a new minute re-announces the state (one more drawing),
+    // and the real clock would let one fall inside this test's 14 s now and then.
+    vi.setSystemTime(new Date("2026-11-24T12:00:00.000Z"));
     const { fetch, polls } = spinFetch();
     const session = new TiltSession({
       apiUrl: API,
