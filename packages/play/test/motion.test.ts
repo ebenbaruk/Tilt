@@ -106,25 +106,31 @@ describe("MotionTracker", () => {
     tracker.observe(null, before, 0, "normal");
     tracker.observe(before, after, start, "normal");
 
-    expect(tracker.view(after, start, "normal")).toEqual({
+    expect(tracker.view(after, start, "normal")).toMatchObject({
       spinElapsed: 0,
       revealed: null,
       heldBalance: "10000000",
       resultElapsed: null,
+      holdsPlay: true,
     });
-    expect(tracker.isMoving(after, start, "normal")).toBe(true);
+    expect(tracker.view(after, start, "normal").isMoving).toBe(true);
 
     // Landed, but the result waits SURFACE_LAG_MS more: the balance stays held.
     const landed = start + ROULETTE_SPIN_MS;
     expect(tracker.view(after, landed, "normal")).toMatchObject({ spinElapsed: null, heldBalance: "10000000" });
-    expect(tracker.isMoving(after, landed, "normal")).toBe(true);
+    expect(tracker.view(after, landed, "normal").isMoving).toBe(true);
 
     const shows = landed + SURFACE_LAG_MS;
     expect(tracker.view(after, shows, "normal")).toMatchObject({ heldBalance: null, resultElapsed: 0 });
 
     // A loss has no celebration: it rests once the result's effects ran.
-    expect(tracker.isMoving(after, shows + RESULT_MS, "normal")).toBe(false);
-    expect(tracker.tally).toEqual({ net: "-1000000", rounds: 1, startedAt: start, lastRound: 5 });
+    expect(tracker.view(after, shows + RESULT_MS, "normal").isMoving).toBe(false);
+    expect(tracker.view(after, shows + RESULT_MS, "normal").tally).toEqual({
+      net: "-1000000",
+      rounds: 1,
+      startedAt: start,
+      lastRound: 5,
+    });
   });
 
   it("turns new blackjack cards over one step at a time, a drawn card a step late", () => {
@@ -140,7 +146,7 @@ describe("MotionTracker", () => {
     expect(tracker.view(dealt, DEAL_STEP_MS, "normal").revealed).toBe(2);
     expect(tracker.view(dealt, 2 * DEAL_STEP_MS, "normal").revealed).toBe(3);
     expect(tracker.view(dealt, 2 * DEAL_STEP_MS + SURFACE_LAG_MS, "normal").revealed).toBeNull();
-    expect(tracker.isMoving(dealt, 2 * DEAL_STEP_MS + SURFACE_LAG_MS, "normal")).toBe(false);
+    expect(tracker.view(dealt, 2 * DEAL_STEP_MS + SURFACE_LAG_MS, "normal").isMoving).toBe(false);
 
     const hit = state("9000000", blackjack(6, [card(10), card(5), card(3)], [card(9)]));
     const at = 10_000;
@@ -151,7 +157,7 @@ describe("MotionTracker", () => {
     expect(tracker.view(hit, at + DEAL_STEP_MS, "normal").revealed).toBe(4);
     expect(tracker.view(hit, at + DEAL_STEP_MS + SURFACE_LAG_MS, "normal").revealed).toBeNull();
     // A round in play is not counted.
-    expect(tracker.tally.rounds).toBe(0);
+    expect(tracker.view(hit, at, "normal").tally.rounds).toBe(0);
   });
 
   it("keeps a drawing round spinning and restarts the spin on its landing", () => {
@@ -178,8 +184,8 @@ describe("MotionTracker", () => {
       resultElapsed: 0,
     });
     // A win celebrates past the result's own effects.
-    expect(tracker.isMoving(landed, at + DICE_ROLL_MS + SURFACE_LAG_MS + RESULT_MS, "normal")).toBe(true);
-    expect(tracker.tally).toMatchObject({ net: "960000", rounds: 1 });
+    expect(tracker.view(landed, at + DICE_ROLL_MS + SURFACE_LAG_MS + RESULT_MS, "normal").isMoving).toBe(true);
+    expect(tracker.view(landed, at, "normal").tally).toMatchObject({ net: "960000", rounds: 1 });
   });
 
   it("plays nothing for the table found at the first look, and never counts it", () => {
@@ -189,8 +195,8 @@ describe("MotionTracker", () => {
     tracker.observe(null, first, 0, "normal");
     tracker.observe(first, first, 100, "normal");
 
-    expect(tracker.isMoving(first, 0, "normal")).toBe(false);
-    expect(tracker.tally).toEqual({ net: "0", rounds: 0, startedAt: null, lastRound: 5 });
+    expect(tracker.view(first, 0, "normal").isMoving).toBe(false);
+    expect(tracker.view(first, 0, "normal").tally).toEqual({ net: "0", rounds: 0, startedAt: null, lastRound: 5 });
   });
 
   it("forgets everything on reset", () => {
@@ -202,7 +208,7 @@ describe("MotionTracker", () => {
     tracker.observe(before, after, 0, "normal");
     tracker.reset();
 
-    expect(tracker.isMoving(after, 0, "normal")).toBe(false);
-    expect(tracker.tally.rounds).toBe(0);
+    expect(tracker.view(after, 0, "normal")).toMatchObject({ isMoving: false, holdsPlay: false });
+    expect(tracker.view(after, 0, "normal").tally.rounds).toBe(0);
   });
 });

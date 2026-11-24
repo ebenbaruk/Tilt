@@ -1,7 +1,8 @@
 // One player's Tilt session for any harness: device login, the polled table state, the moves, the
-// table choices and what plays out on the table (./motion). It ports the non-UI logic of
-// apps/mod/hooks/register.tsx (no sounds, no clipboard, no shell). Privacy (spec §10): it learns
-// only "agent working / idle" from `setAgent`, never a prompt, a file or a tool call.
+// table choices and, given a MotionTracker (./motion), what plays out on the table. It ports the
+// non-UI logic of apps/mod/hooks/register.tsx (no sounds, no clipboard, no shell). It imports only
+// plain TypeScript, so Node can load it. Privacy (spec §10): it learns only "agent working / idle"
+// from `setAgent`, never a prompt, a file or a tool call.
 import {
   apiBase,
   type ApiFailure,
@@ -48,8 +49,7 @@ import {
 } from "../../../apps/mod/hooks/keys";
 import { type IntentView, type Prefs, prefsView, storedPrefs } from "../../../apps/mod/hooks/model";
 import type { IntentResponse, PlayAction, RouletteBet, StateResponse } from "../../../apps/mod/hooks/protocol";
-import { isPlayHeld } from "../../../apps/mod/hooks/view";
-import { MotionTracker } from "./motion";
+import type { MotionTracker, TableMotion } from "./motion";
 import type { Auth, Snapshot, Store, Tone } from "./types";
 
 const TICK_MS = 100;
@@ -95,6 +95,17 @@ const DEFAULT_PREFS: Prefs = {
   towerDifficulty: "easy",
 };
 
+/** The table of a session without a MotionTracker: drawn still, nothing counted. */
+const STILL: TableMotion = {
+  spinElapsed: null,
+  revealed: null,
+  heldBalance: null,
+  resultElapsed: null,
+  tally: { net: "0", rounds: 0, startedAt: null, lastRound: null },
+  isMoving: false,
+  holdsPlay: false,
+};
+
 export interface SessionOptions {
   apiUrl: string;
   store: Store;
@@ -105,6 +116,8 @@ export interface SessionOptions {
   now?: () => number;
   /** Keno's random picks: the player's own choice of numbers, not an outcome. */
   random?: RandomBelow;
+  /** Plays each round out on the table (spin, cards, result); without one the table stays still. */
+  motion?: MotionTracker;
 }
 
 interface Device {
@@ -181,7 +194,7 @@ export class TiltSession {
   private agent: { isWorking: boolean; notice: string | null } = { isWorking: false, notice: null };
   private workStartedAt: number | null = null;
   private isVisible = true;
-  private readonly motion = new MotionTracker();
+  private readonly motion: MotionTracker | null;
 
   private token: string | null = null;
   private device: Device | null = null;
@@ -211,6 +224,7 @@ export class TiltSession {
     this.http = options.fetch ?? ((input, init) => fetch(input, init));
     this.now = options.now ?? Date.now;
     this.random = options.random ?? ((bound) => Math.floor(Math.random() * bound));
+    this.motion = options.motion ?? null;
     this.auth = { status: "out", message: this.base === null ? INVALID_API_URL : null };
   }
 
@@ -353,10 +367,7 @@ export class TiltSession {
   snapshot(): Snapshot {
     const state = this.remote.state;
     const now = this.now();
-    const speed = this.prefs.slotsSpeed;
-    const motion = this.motion.view(state, now, speed);
-    // A round playing out holds the play keys too: a press would play on a table not shown yet.
-    const isHeld = isPlayHeld({ intent: this.intent, ...motion });
+    const motion = this.motion?.view(state, now, this.prefs.slotsSpeed) ?? STILL;
 
     return {
       auth: this.auth,
@@ -368,10 +379,15 @@ export class TiltSession {
       isBusy: this.intent !== null,
       message: this.message,
       agent: this.agent,
-      tally: this.motion.tally,
-      ...motion,
-      isMoving: this.motion.isMoving(state, now, speed),
-      keys: state === null ? [] : planKeys({ state, prefs: this.prefs, isBusy: isHeld }),
+      tally: motion.tally,
+      spinElapsed: motion.spinElapsed,
+      revealed: motion.revealed,
+      heldBalance: motion.heldBalance,
+      resultElapsed: motion.resultElapsed,
+      isMoving: motion.isMoving,
+      // A round playing out holds the play keys too: a press would play on a table not shown yet.
+      keys:
+        state === null ? [] : planKeys({ state, prefs: this.prefs, isBusy: this.intent !== null || motion.holdsPlay }),
       // The web page to deposit on, only when the api named one on its own site.
       depositUrl: state?.webUrl === undefined || this.base === null ? null : trustedVerifyUrl(state.webUrl, this.base),
       now,
@@ -491,7 +507,7 @@ export class TiltSession {
     this.token = null;
     this.device = null;
     this.remote = EMPTY_REMOTE;
-    this.motion.reset();
+    this.motion?.reset();
     this.intent = null;
     // The next account's sponsor time starts from zero.
     this.sponsorMs = 0;
@@ -918,7 +934,7 @@ export class TiltSession {
 
     // The deal, the spin and the result it holds back start before the state can be drawn: a
     // drawing in between would show the settled round with nothing held, its balance first.
-    this.motion.observe(held.state, fetched.value, now, this.prefs.slotsSpeed);
+    this.motion?.observe(held.state, fetched.value, now, this.prefs.slotsSpeed);
 
     // An unchanged state is not announced, so the table is not redrawn on every poll.
     if (!isSame) {

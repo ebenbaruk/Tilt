@@ -1,6 +1,7 @@
 // Tilt for DeepSeek Harness: the plugin entry dsh loads (package.json `main`). Installed dsh runs
-// plain Node, which strips the types of the TypeScript plugin and the table it shares with the
-// other harnesses; the hook below lets their extensionless relative imports find their `.ts` files.
+// plain Node, which strips the types of the TypeScript plugin and the session it shares with the
+// other harnesses (packages/play/src/core, plain TypeScript only); the hook below lets their
+// extensionless relative imports find their `.ts` files.
 import { registerHooks } from "node:module";
 
 const RELATIVE = /^\.{1,2}\//;

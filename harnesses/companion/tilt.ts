@@ -6,6 +6,7 @@ import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
+  MotionTracker,
   TiltSession,
   fileStore,
   openInBrowser,
@@ -46,7 +47,12 @@ function main(): void {
   if (!apiUrl) fail("Set TILT_API_URL to your Tilt API (https, or http on localhost).");
   if (!stdin.isTTY || !stdout.isTTY) fail("tilt needs an interactive terminal.");
 
-  const created = new TiltSession({ apiUrl, store: fileStore(), openUrl: openInBrowser });
+  const created = new TiltSession({
+    apiUrl,
+    store: fileStore(),
+    openUrl: openInBrowser,
+    motion: new MotionTracker(),
+  });
   // A fresh session only carries a message when it refused the API URL (not https, not loopback).
   const refusal = created.snapshot().auth;
   if (refusal.status === "out" && refusal.message) fail(refusal.message);

@@ -65,13 +65,13 @@ function sgrOf(style: Style): string {
   return codes.length === 0 ? "" : `\x1b[${codes.join(";")}m`;
 }
 
+// Fields are declared, not constructor parameter properties: Node only strips erasable syntax.
 class Canvas {
+  readonly width: number;
   readonly rows: Cell[][];
 
-  constructor(
-    readonly width: number,
-    height: number,
-  ) {
+  constructor(width: number, height: number) {
+    this.width = width;
     this.rows = Array.from({ length: height }, () => Array.from({ length: width }, () => BLANK));
   }
 

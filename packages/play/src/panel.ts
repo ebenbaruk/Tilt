@@ -1,8 +1,8 @@
 // The Tilt table for any harness that prints lines: the Claude Code mod's own pane
 // (apps/mod/hooks/view.tsx renderPane) drawn by ./term, from a session's snapshot.
-import { activeGame, GAME_LABELS } from "../../../apps/mod/hooks/keys";
-import { formatSigned, formatUsdc, SEPARATOR, cleanText } from "../../../apps/mod/hooks/format";
-import { applyTheme, FG4, FG6, GOLD, GREEN, PINK, RED, type Ui } from "../../../apps/mod/hooks/theme";
+import { cleanText } from "../../../apps/mod/hooks/format";
+import { frameAt } from "../../../apps/mod/hooks/motion";
+import { applyTheme, FG4, FG6, GOLD, type Ui } from "../../../apps/mod/hooks/theme";
 import {
   fitsRows,
   type KeysHint,
@@ -11,28 +11,17 @@ import {
   renderPane,
   type Snapshot as TableSnapshot,
 } from "../../../apps/mod/hooks/view";
-import { h, installJsx, renderLines, termUi } from "./term";
+import { MOD_LOGIN_HINT, type StatusOptions } from "./status";
+import { h, installJsx, renderLines, termUi } from "./term/index";
 import type { Snapshot } from "./types";
 
-export interface PanelOptions {
-  color: boolean;
-  width: number;
+export interface PanelOptions extends StatusOptions {
   /** The rows the table may take; past them, the keys come first and the table runs on below. */
   rows?: number;
-  /** How this harness logs in, shown to a logged-out player: "/tilt login", "ctrl+l"… */
-  loginHint?: string;
-  /** The terminal's ground is light: the accents switch to their light set. */
-  light?: boolean;
   /** The footer's key hints, longest first, each its gold lead then the rest; by default the
    *  focused pane's ("esc hands the keys back"). */
   keysHint?: readonly KeysHint[];
 }
-
-/** The mod's own words to a logged-out player: a harness that logs in otherwise says how under them. */
-const MOD_LOGIN_HINT = "/tilt login";
-/** The agent spinner turns a step this often, and every frame while the table moves (register.tsx). */
-const SPINNER_FRAME_MS = 200;
-const SPIN_FRAME_MS = 100;
 
 // The mod's view files call the global `h` and `Fragment` (their JSX pragmas).
 installJsx();
@@ -52,7 +41,7 @@ function tableSnapshot(snapshot: Snapshot): TableSnapshot {
     message: snapshot.message?.text ?? null,
     agent: {
       isWorking: agent.isWorking,
-      frame: Math.floor(snapshot.now / (snapshot.isMoving ? SPIN_FRAME_MS : SPINNER_FRAME_MS)),
+      frame: frameAt(snapshot.now, snapshot.isMoving),
       // The session's only notice is the "✓ agent finished" one.
       notice: agent.notice === null ? null : { text: agent.notice, tone: "success" },
     },
@@ -122,50 +111,4 @@ export function renderPanel(
   const shown = line === null ? pane : h(Box, { flexDirection: "column" }, pane, h(Box, { paddingX: 1 }, line));
 
   return renderLines(shown, { width, color });
-}
-
-/** One line for a harness's status bar: "TILT 12.40 · Blackjack · +1.00 · agent working". */
-export function renderStatusLine(
-  snapshot: Snapshot,
-  { color, width, loginHint = MOD_LOGIN_HINT, light = false }: PanelOptions,
-): string {
-  const { Box, Text } = termUi;
-  const { auth, state } = snapshot;
-
-  applyTheme(light);
-  const parts: object[] = [h(Text, { color: PINK, bold: true }, "TILT")];
-
-  if (auth.status === "out") {
-    parts.push(h(Text, { color: GOLD }, loginHint));
-  } else if (auth.status === "pending") {
-    parts.push(h(Text, {}, "confirm code ", h(Text, { color: GOLD }, cleanText(auth.userCode))));
-  } else if (state === null) {
-    parts.push(h(Text, { color: FG6 }, "connecting…"));
-  } else {
-    const round = state.round;
-    const net = round === null ? 0n : BigInt(round.net);
-
-    parts[0] = h(Text, {}, parts[0], " ", h(Text, { color: GOLD }, formatUsdc(state.balance)));
-    parts.push(h(Text, {}, GAME_LABELS[activeGame(state, snapshot.prefs)]));
-
-    if (round !== null) {
-      parts.push(
-        round.phase === "idle"
-          ? h(Text, { color: net > 0n ? GREEN : net < 0n ? RED : FG6 }, formatSigned(round.net))
-          : h(Text, {}, "in play"),
-      );
-    }
-
-    parts.push(
-      snapshot.agent.isWorking ? h(Text, { color: GREEN }, "agent working") : h(Text, { color: FG6 }, "agent idle"),
-    );
-  }
-
-  const line = h(
-    Text,
-    { wrap: "truncate-end" },
-    ...parts.flatMap((part, index) => (index === 0 ? [part] : [SEPARATOR, part])),
-  );
-
-  return renderLines(h(Box, {}, line), { width, color })[0] ?? " ".repeat(width);
 }

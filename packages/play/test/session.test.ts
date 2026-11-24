@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { StateResponse } from "../../../apps/mod/hooks/protocol";
 import { apiBase, trustedVerifyUrl } from "../src/api";
+import { MotionTracker } from "../src/motion";
 import { FRAME_MS, TiltSession } from "../src/session";
 import type { Saved, Store } from "../src/types";
 
@@ -383,7 +384,8 @@ describe("TiltSession", () => {
     session.stop();
   });
 
-  it("draws every frame while a new round spins, then stops at rest", async () => {
+  /** A poll that brings a settled roulette round after the first, empty table. */
+  function spinFetch(): { fetch: typeof fetch; polls: () => number } {
     let polls = 0;
     const bet = { kind: "red" } as const;
     const spun: StateResponse = {
@@ -407,10 +409,17 @@ describe("TiltSession", () => {
         return json(polls === 1 ? STATE : spun);
       },
     });
+
+    return { fetch, polls: () => polls };
+  }
+
+  it("draws every frame while a new round spins, then stops at rest", async () => {
+    const { fetch, polls } = spinFetch();
     const session = new TiltSession({
       apiUrl: API,
       store: memoryStore({ token: "mod-token", apiBase: API, prefs: null }),
       fetch,
+      motion: new MotionTracker(),
     });
     const draw = vi.fn();
 
@@ -418,8 +427,9 @@ describe("TiltSession", () => {
     session.start();
     await vi.advanceTimersByTimeAsync(5_200);
 
-    expect(polls).toBe(2);
+    expect(polls()).toBe(2);
     expect(session.snapshot()).toMatchObject({ isMoving: true, heldBalance: STATE.balance });
+    expect(session.snapshot().keys.some((key) => key.command.kind === "start")).toBe(false);
 
     const atSpin = draw.mock.calls.length;
 
@@ -433,6 +443,30 @@ describe("TiltSession", () => {
     expect(session.snapshot()).toMatchObject({ isMoving: false, heldBalance: null });
     await vi.advanceTimersByTimeAsync(4_000);
     expect(draw.mock.calls.length).toBe(atRest);
+    session.stop();
+  });
+
+  it("draws a still table without a MotionTracker: the result and its balance at once", async () => {
+    const { fetch, polls } = spinFetch();
+    const session = new TiltSession({
+      apiUrl: API,
+      store: memoryStore({ token: "mod-token", apiBase: API, prefs: null }),
+      fetch,
+    });
+
+    session.start();
+    await vi.advanceTimersByTimeAsync(5_200);
+
+    expect(polls()).toBe(2);
+    expect(session.snapshot()).toMatchObject({
+      isMoving: false,
+      heldBalance: null,
+      spinElapsed: null,
+      state: { balance: "11400000" },
+      tally: { rounds: 0 },
+    });
+    // Nothing holds the play keys: the next spin is offered at once.
+    expect(session.snapshot().keys.some((key) => key.command.kind === "start")).toBe(true);
     session.stop();
   });
 });

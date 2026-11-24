@@ -2,7 +2,14 @@
 // plugin entry. It draws one status line, follows turn start/end, and plays through palette
 // commands and select dialogs. It never looks at prompts, replies or tool calls: the agent
 // events are used for their timing and thread id only.
-import { TiltSession, fileStore, renderPanel, renderStatusLine, writeAgentSignal } from "../../packages/play/src/index";
+import {
+  MotionTracker,
+  TiltSession,
+  fileStore,
+  renderPanel,
+  renderStatusLine,
+  writeAgentSignal,
+} from "../../packages/play/src/index";
 import type { Snapshot } from "../../packages/play/src/index";
 import type { PluginAPI, PluginUI } from "./amp";
 
@@ -46,6 +53,7 @@ export default function (amp: PluginAPI): void {
         return false;
       }
     },
+    motion: new MotionTracker(),
   });
 
   let shownText = "";

@@ -4,7 +4,7 @@
 //
 // Privacy: only agent_start/agent_end are heard, for their timing; their payloads are never read.
 // No prompt, reply, tool call or transcript is touched. Keys are captured only in game mode.
-import { TiltSession, fileStore, renderPanel, renderStatusLine } from "../../packages/play/src/index";
+import { MotionTracker, TiltSession, fileStore, renderPanel, renderStatusLine } from "../../packages/play/src/index";
 
 // --- The parts of the omp/pi ExtensionAPI this file uses (omp: packages/coding-agent/src/
 // extensibility/extensions/types.ts; pi: packages/coding-agent/docs/extensions.md).
@@ -212,7 +212,7 @@ export default function tilt(pi: ExtensionAPI): void {
       table.attach(ctx.ui);
       return;
     }
-    session = new TiltSession({ apiUrl, store: fileStore(), openUrl });
+    session = new TiltSession({ apiUrl, store: fileStore(), openUrl, motion: new MotionTracker() });
     table = new Table(session, ctx.ui);
   };
 

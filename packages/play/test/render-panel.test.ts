@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { renderPanel, renderStatusLine } from "../src/panel";
+import { renderPanel } from "../src/panel";
+import { renderStatusLine } from "../src/status";
 import { stringWidth } from "../src/term/width";
 import type { Game, Prefs, RoundView, Snapshot, StateResponse } from "../src/types";
 
