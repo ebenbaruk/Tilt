@@ -407,6 +407,16 @@ describe("intents", () => {
     expect((await intents.submit(promo(5_000_000, NOBODY))).status).toBe("submitted");
   });
 
+  it("caps one player's promo payouts per 24 h even when concurrent", async () => {
+    const intents = new Intents(db, new FakeExecutor(), LIMITS);
+    const amount = 4_000_000;
+    const results = await Promise.all(Array.from({ length: 10 }, () => intents.submit(promo(amount)).then((r) => r.status, (e: IntentError) => e.code)));
+    const accepted = results.filter((r) => r === "submitted").length;
+    expect(BigInt(accepted * amount)).toBeLessThanOrEqual(LIMITS.dailyPromoLimitPerPlayer);
+    expect(accepted).toBe(3);
+    expect(results.filter((r) => r === "LIMIT_EXCEEDED")).toHaveLength(7);
+  });
+
   it("caps deposits of all players together per 24 h, even when concurrent", async () => {
     const intents = new Intents(db, new FakeExecutor(), { ...LIMITS, dailyDepositLimitGlobal: 120_000_000n });
     const results = await Promise.all(
