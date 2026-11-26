@@ -5,6 +5,7 @@ import { revokeAllSessions } from "./auth/sessions";
 import { approvePrizes, listPrizes, payPrizes, type PrizeStatus } from "./competitions/payouts";
 import { closeCompetition, createCampaign, openCompetition } from "./competitions/store";
 import { audit, createDb, migrate, type Db } from "./db";
+import { skipTo } from "./indexer";
 import { HttpRelay } from "./relay";
 
 const USAGE = `commands:
@@ -17,6 +18,7 @@ const USAGE = `commands:
   prize:approve       --id PRIZE_ID | --competition ID
   prize:pay           (needs RELAY_URL and RELAY_API_KEY)
   session:revoke-user --user DID
+  indexer:skip        --signature SIG  (a transaction the rollup never serves; it is never indexed)
 env: DATABASE_URL, ADMIN_ACTOR (who runs the command)`;
 
 const OPTIONS = {
@@ -39,6 +41,7 @@ const OPTIONS = {
   competition: { type: "string" },
   status: { type: "string" },
   user: { type: "string" },
+  signature: { type: "string" },
   force: { type: "boolean" },
 } as const;
 
@@ -123,6 +126,13 @@ async function run(db: Db, command: string, flags: Flags, actor: string): Promis
       const revoked = await revokeAllSessions(db, user);
       await audit(db, actor, "session:revoke-user", { user, revoked });
       return { revoked };
+    }
+    case "indexer:skip": {
+      const signature = required(flags, "signature");
+      console.warn("skipping a transaction: a round it settled will be missing from competitions");
+      const previous = await skipTo(db, signature);
+      await audit(db, actor, "indexer:skip", { signature, previous });
+      return { signature, previous };
     }
     default:
       throw new Error(`unknown command\n${USAGE}`);

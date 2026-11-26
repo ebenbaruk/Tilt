@@ -8,6 +8,7 @@ import {
   Indexer,
   indexedThrough,
   parseSettled,
+  skipTo,
   type FetchedTransaction,
   type RollupSource,
   type SignatureInfo,
@@ -74,6 +75,8 @@ class FakeSource implements RollupSource {
   listener: ((signature: string, logs: string[]) => void) | undefined;
   fetched: string[] = [];
   failNextSignatures = false;
+  /** Listed but never served, like the rollup's oldest transaction on 2026-11-24. */
+  unserved = new Set<string>();
 
   async subscribe(onLogs: (signature: string, logs: string[]) => void) {
     this.listener = onLogs;
@@ -95,6 +98,7 @@ class FakeSource implements RollupSource {
 
   async transaction(signature: string) {
     this.fetched.push(signature);
+    if (this.unserved.has(signature)) throw new Error("The operation was aborted due to timeout");
     return this.history.find((h) => h.signature === signature)?.tx ?? null;
   }
 
@@ -351,6 +355,29 @@ describe.skipIf(!db)("indexer", () => {
     const through = must((await indexedThrough(db)) ?? undefined, "indexed_through");
     expect(through.getTime()).toBeLessThanOrEqual(before);
     expect(through.getTime()).toBeGreaterThan(before - 60_000);
+  });
+
+  it("stays stuck on a transaction the rollup never serves until an operator skips it", async () => {
+    const sig = (n: number) => anchor.utils.bytes.bs58.encode(Buffer.alloc(64, n));
+    source.add(sig(1), settledLogs(player, 1, 1, 1));
+    source.add(sig(2), settledLogs(player, 2, 2, 2));
+    source.add(sig(3), settledLogs(player, 3, 3, 3));
+    source.unserved.add(sig(2));
+    await indexer.backfill();
+    await indexer.backfill();
+    expect(await count("rounds")).toBe(1);
+    const blockTime = new Date("2026-10-13T10:00:00Z");
+    expect(await indexedThrough(db)).toEqual(blockTime);
+
+    expect(await skipTo(db, sig(2))).toBe(sig(1));
+    await indexer.backfill();
+    const { rows } = await db.query("SELECT round FROM rounds ORDER BY round");
+    expect(rows).toEqual([{ round: 1 }, { round: 3 }]);
+    expect(must((await indexedThrough(db)) ?? undefined, "indexed_through") > blockTime).toBe(true);
+  });
+
+  it("skips only to a transaction signature", async () => {
+    await expect(skipTo(db, "s1")).rejects.toThrow("not a transaction signature");
   });
 
   it("survives RPC failures: the next run picks up where it stopped", async () => {

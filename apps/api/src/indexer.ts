@@ -38,6 +38,7 @@ const INVOKE_LOG = /^Program ([1-9A-HJ-NP-Za-km-z]+) invoke \[\d+\]$/;
 const EXIT_LOG = /^Program [1-9A-HJ-NP-Za-km-z]+ (success|failed)/;
 const CURSOR = "rollup";
 const PAGE = 1_000;
+const SIGNATURE_BYTES = 64;
 /** Pages per backfill run; beyond, the gap is logged (the live feed covers normal operation). */
 const MAX_PAGES = 50;
 const RESUBSCRIBE_MAX_MS = 60_000;
@@ -337,12 +338,35 @@ export class Indexer {
     const startedAt = Date.now();
     for (const info of await this.newSignatures(await this.cursor())) {
       if (this.stopped) return;
-      const tx = info.failed ? null : await this.source.transaction(info.signature);
-      if (tx) await this.process(info.signature, tx.logs, tx.blockTime ?? new Date(), tx);
-      await this.advance(info.signature, tx?.blockTime ?? null);
+      try {
+        const tx = info.failed ? null : await this.source.transaction(info.signature);
+        if (tx) await this.process(info.signature, tx.logs, tx.blockTime ?? new Date(), tx);
+        await this.advance(info.signature, tx?.blockTime ?? null);
+      } catch (e) {
+        // Named so an operator can act: a transaction the rollup lists but never serves blocks
+        // every run here, until skipped with `admin indexer:skip`.
+        log.error("indexer backfill stuck", e, { signature: info.signature });
+        return;
+      }
     }
     await this.indexedThrough(new Date(startedAt - LISTING_LAG_MS));
   }
+}
+
+/** Moves the backfill cursor to `signature`: the next run resumes right after it, so that
+ *  transaction is never indexed. Returns the previous cursor. */
+export async function skipTo(db: Queryable, signature: string): Promise<string | null> {
+  if (anchor.utils.bytes.bs58.decode(signature).length !== SIGNATURE_BYTES) {
+    throw new Error("not a transaction signature");
+  }
+  const { rows } = await db.query<{ previous: string | null }>(
+    `WITH previous AS (SELECT signature FROM indexer_cursor WHERE name = $1)
+     INSERT INTO indexer_cursor (name, signature) VALUES ($1, $2)
+     ON CONFLICT (name) DO UPDATE SET signature = EXCLUDED.signature, updated_at = now()
+     RETURNING (SELECT signature FROM previous) AS previous`,
+    [CURSOR, signature],
+  );
+  return rows[0].previous;
 }
 
 /** Every round settled before this time is indexed; null before the first backfill. */
