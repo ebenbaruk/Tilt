@@ -4,11 +4,12 @@
 // Live feed from `onLogs`, plus a periodic backfill from a signature cursor that catches
 // anything the websocket missed. Never crashes the process: errors are logged and retried.
 import anchor from "@coral-xyz/anchor";
-import { Connection, PublicKey, type VersionedTransactionResponse } from "@solana/web3.js";
+import { Connection, PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { idl, PROGRAM_ID, playerAccountAddress } from "@tilt/contract";
 import type { Game } from "@tilt/mod/protocol";
-import type { ChainReader } from "./chain";
-import type { Db, Queryable } from "./db";
+import { z } from "zod";
+import { RPC_TIMEOUT_MS, type ChainReader } from "./chain";
+import { transaction, type Db, type Queryable } from "./db";
 import { VRF_BYTES } from "./games/rng";
 import { log } from "./log";
 import { isCashout, saveDetail, saveDraw, saveRound, type DrawRecord, type SettledRound } from "./rounds";
@@ -38,7 +39,8 @@ const INVOKE_LOG = /^Program ([1-9A-HJ-NP-Za-km-z]+) invoke \[\d+\]$/;
 const EXIT_LOG = /^Program [1-9A-HJ-NP-Za-km-z]+ (success|failed)/;
 const CURSOR = "rollup";
 const PAGE = 1_000;
-const SIGNATURE_BYTES = 64;
+/** Failed runs in a row on one signature before it counts as stuck and may be skipped. */
+export const STUCK_RUNS = 3;
 /** Pages per backfill run; beyond, the gap is logged (the live feed covers normal operation). */
 const MAX_PAGES = 50;
 const RESUBSCRIBE_MAX_MS = 60_000;
@@ -152,23 +154,73 @@ export function decodeCallbacks(instructions: RawInstruction[]): Omit<DrawRecord
   return draws;
 }
 
+/** `getTransaction` with the base64 encoding. Not json: the rollup's RPC never answers the
+ *  json encoding of its own huge internal transactions (~1 MB program loads, 2026-11-24 and 27),
+ *  which blocked the backfill. */
+const RawTransaction = z.object({
+  blockTime: z.number().nullish(),
+  transaction: z.tuple([z.string(), z.literal("base64")]),
+  meta: z
+    .object({
+      err: z.unknown(),
+      logMessages: z.array(z.string()).nullish(),
+      loadedAddresses: z.object({ writable: z.array(z.string()), readonly: z.array(z.string()) }).nullish(),
+      innerInstructions: z
+        .array(
+          z.object({
+            instructions: z.array(
+              z.object({ programIdIndex: z.number(), accounts: z.array(z.number()), data: z.string() }),
+            ),
+          }),
+        )
+        .nullish(),
+    })
+    .nullable(),
+});
+export type RawTransaction = z.infer<typeof RawTransaction>;
+
+const RpcResponse = z.object({
+  result: RawTransaction.nullish(),
+  error: z.object({ message: z.string() }).optional(),
+});
+
 /** Every instruction of a fetched transaction, CPIs included, with resolved accounts. */
-function instructionsOf(tx: VersionedTransactionResponse): RawInstruction[] {
-  const keys = tx.transaction.message.getAccountKeys({ accountKeysFromLookups: tx.meta?.loadedAddresses });
+function instructionsOf(raw: RawTransaction): RawInstruction[] {
+  const { message } = VersionedTransaction.deserialize(Buffer.from(raw.transaction[0], "base64"));
+  const loaded = raw.meta?.loadedAddresses;
+  const keys = message.getAccountKeys({
+    accountKeysFromLookups: loaded && {
+      writable: loaded.writable.map((k) => new PublicKey(k)),
+      readonly: loaded.readonly.map((k) => new PublicKey(k)),
+    },
+  });
   const resolve = (programIdIndex: number, accounts: number[], data: Buffer): RawInstruction => {
     const programId = keys.get(programIdIndex);
     if (!programId) throw new Error("instruction references an unknown account");
     return { programId, accounts: accounts.map((i) => keys.get(i) ?? PublicKey.default), data };
   };
-  const top = tx.transaction.message.compiledInstructions.map((ix) =>
+  const top = message.compiledInstructions.map((ix) =>
     resolve(ix.programIdIndex, ix.accountKeyIndexes, Buffer.from(ix.data)),
   );
-  const inner = (tx.meta?.innerInstructions ?? []).flatMap((group) =>
+  const inner = (raw.meta?.innerInstructions ?? []).flatMap((group) =>
     group.instructions.map((ix) =>
       resolve(ix.programIdIndex, ix.accounts, Buffer.from(anchor.utils.bytes.bs58.decode(ix.data))),
     ),
   );
   return [...top, ...inner];
+}
+
+/** A fetched transaction as the indexer needs it; null for a failed one. Instructions are only
+ *  decoded when the logs show a VRF callback: the rollup's own transactions use a message
+ *  version web3.js cannot read. */
+export function decodeTransaction(raw: RawTransaction): FetchedTransaction | null {
+  if (raw.meta?.err) return null;
+  const logs = raw.meta?.logMessages ?? [];
+  return {
+    logs,
+    blockTime: raw.blockTime ? new Date(raw.blockTime * 1000) : null,
+    draws: logs.some((l) => CALLBACK_LOGS.includes(l)) ? decodeCallbacks(instructionsOf(raw)) : [],
+  };
 }
 
 export class ConnectionSource implements RollupSource {
@@ -191,16 +243,21 @@ export class ConnectionSource implements RollupSource {
   }
 
   async transaction(signature: string): Promise<FetchedTransaction | null> {
-    const tx = await this.connection.getTransaction(signature, {
-      commitment: "confirmed",
-      maxSupportedTransactionVersion: 0,
+    const response = await fetch(this.connection.rpcEndpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "getTransaction",
+        params: [signature, { encoding: "base64", commitment: "confirmed", maxSupportedTransactionVersion: 0 }],
+      }),
+      signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
     });
-    if (!tx || tx.meta?.err) return null;
-    return {
-      logs: tx.meta?.logMessages ?? [],
-      blockTime: tx.blockTime ? new Date(tx.blockTime * 1000) : null,
-      draws: decodeCallbacks(instructionsOf(tx)),
-    };
+    if (!response.ok) throw new Error(`getTransaction: HTTP ${response.status}`);
+    const body = RpcResponse.parse(await response.json());
+    if (body.error) throw new Error(`getTransaction: ${body.error.message}`);
+    return body.result ? decodeTransaction(body.result) : null;
   }
 }
 
@@ -343,30 +400,54 @@ export class Indexer {
         if (tx) await this.process(info.signature, tx.logs, tx.blockTime ?? new Date(), tx);
         await this.advance(info.signature, tx?.blockTime ?? null);
       } catch (e) {
-        // Named so an operator can act: a transaction the rollup lists but never serves blocks
-        // every run here, until skipped with `admin indexer:skip`.
-        log.error("indexer backfill stuck", e, { signature: info.signature });
+        const runs = await this.failedOn(info.signature);
+        if (runs < STUCK_RUNS) log.error("indexer backfill failed", e, { signature: info.signature, runs });
+        else log.error("indexer backfill stuck; see admin indexer:skip", e, { signature: info.signature, runs });
         return;
       }
     }
+    await this.db.query("DELETE FROM indexer_stuck WHERE name = $1", [CURSOR]);
     await this.indexedThrough(new Date(startedAt - LISTING_LAG_MS));
+  }
+
+  /** Counts the runs in a row that failed on `signature`; returns that count. */
+  private async failedOn(signature: string): Promise<number> {
+    const { rows } = await this.db.query<{ runs: number }>(
+      `INSERT INTO indexer_stuck (name, signature, runs) VALUES ($1, $2, 1)
+       ON CONFLICT (name) DO UPDATE SET
+         runs = CASE WHEN indexer_stuck.signature = EXCLUDED.signature THEN indexer_stuck.runs + 1 ELSE 1 END,
+         since = CASE WHEN indexer_stuck.signature = EXCLUDED.signature THEN indexer_stuck.since ELSE now() END,
+         signature = EXCLUDED.signature
+       RETURNING runs`,
+      [CURSOR, signature],
+    );
+    return rows[0].runs;
   }
 }
 
-/** Moves the backfill cursor to `signature`: the next run resumes right after it, so that
- *  transaction is never indexed. Returns the previous cursor. */
-export async function skipTo(db: Queryable, signature: string): Promise<string | null> {
-  if (anchor.utils.bytes.bs58.decode(signature).length !== SIGNATURE_BYTES) {
-    throw new Error("not a transaction signature");
-  }
-  const { rows } = await db.query<{ previous: string | null }>(
-    `WITH previous AS (SELECT signature FROM indexer_cursor WHERE name = $1)
-     INSERT INTO indexer_cursor (name, signature) VALUES ($1, $2)
-     ON CONFLICT (name) DO UPDATE SET signature = EXCLUDED.signature, updated_at = now()
-     RETURNING (SELECT signature FROM previous) AS previous`,
-    [CURSOR, signature],
-  );
-  return rows[0].previous;
+/** Moves the backfill cursor onto the signature it is stuck on, so the next run resumes right
+ *  after it and that one transaction is never indexed. Refuses any other signature, and one that
+ *  has not failed STUCK_RUNS runs in a row: a passing outage, or a pasted signature further on,
+ *  would silently drop rounds from competitions. */
+export async function skipTo(db: Db, signature: string): Promise<{ previous: string | null; runs: number }> {
+  return transaction(db, async (client) => {
+    const stuck = await client.query<{ signature: string; runs: number }>(
+      "SELECT signature, runs FROM indexer_stuck WHERE name = $1 FOR UPDATE",
+      [CURSOR],
+    );
+    const row = stuck.rows[0];
+    if (!row || row.signature !== signature) throw new Error("the backfill is not stuck on this signature");
+    if (row.runs < STUCK_RUNS) throw new Error(`failed ${row.runs} run(s) only; wait for ${STUCK_RUNS} in a row`);
+    const { rows } = await client.query<{ previous: string | null }>(
+      `WITH previous AS (SELECT signature FROM indexer_cursor WHERE name = $1)
+       INSERT INTO indexer_cursor (name, signature) VALUES ($1, $2)
+       ON CONFLICT (name) DO UPDATE SET signature = EXCLUDED.signature, updated_at = now()
+       RETURNING (SELECT signature FROM previous) AS previous`,
+      [CURSOR, signature],
+    );
+    await client.query("DELETE FROM indexer_stuck WHERE name = $1", [CURSOR]);
+    return { previous: rows[0].previous, runs: row.runs };
+  });
 }
 
 /** Every round settled before this time is indexed; null before the first backfill. */

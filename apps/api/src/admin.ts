@@ -18,7 +18,7 @@ const USAGE = `commands:
   prize:approve       --id PRIZE_ID | --competition ID
   prize:pay           (needs RELAY_URL and RELAY_API_KEY)
   session:revoke-user --user DID
-  indexer:skip        --signature SIG  (a transaction the rollup never serves; it is never indexed)
+  indexer:skip        --signature SIG  (only the one the backfill logs as stuck; it is never indexed)
 env: DATABASE_URL, ADMIN_ACTOR (who runs the command)`;
 
 const OPTIONS = {
@@ -130,9 +130,9 @@ async function run(db: Db, command: string, flags: Flags, actor: string): Promis
     case "indexer:skip": {
       const signature = required(flags, "signature");
       console.warn("skipping a transaction: a round it settled will be missing from competitions");
-      const previous = await skipTo(db, signature);
-      await audit(db, actor, "indexer:skip", { signature, previous });
-      return { signature, previous };
+      const skipped = await skipTo(db, signature);
+      await audit(db, actor, "indexer:skip", { signature, ...skipped });
+      return { signature, ...skipped };
     }
     default:
       throw new Error(`unknown command\n${USAGE}`);
