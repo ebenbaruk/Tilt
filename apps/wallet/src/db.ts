@@ -1,4 +1,4 @@
-// Postgres: player wallets (cache of Privy) and intents (idempotency and audit trail).
+// Postgres: player wallets (cache of Privy), intents (idempotency and audit trail) and used consent tokens.
 import pg from "pg";
 
 export type Db = pg.Pool;
@@ -47,6 +47,16 @@ CREATE INDEX IF NOT EXISTS intents_created ON intents (created_at);
 DROP INDEX IF EXISTS intents_one_pending_per_user;
 CREATE UNIQUE INDEX IF NOT EXISTS intents_one_pending_play_per_user ON intents (user_id)
   WHERE status = 'pending' AND action->>'type' <> 'promo_payout';
+
+-- Identity tokens already used, by sha256 of their signed part (never the token itself): one token
+-- approves one intent and its action. Rows are purged by the cron once the token has long expired.
+CREATE TABLE IF NOT EXISTS consents (
+  token_hash BYTEA PRIMARY KEY,
+  intent_id  UUID NOT NULL,
+  action     JSONB NOT NULL,
+  used_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS consents_used_at ON consents (used_at);
 `;
 
 export async function migrate(db: Db): Promise<void> {

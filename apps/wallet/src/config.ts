@@ -62,6 +62,9 @@ const Env = z.object({
   MIN_PROMO_PAYOUT: UsdcAmount.default(1_000_000n),
   /** Largest single promo payout (USDC base units). */
   MAX_PROMO_PAYOUT: UsdcAmount.default(1_000_000_000n),
+  /** Largest total of promo payouts one player can receive per rolling 24 h (USDC base units). The default,
+   *  MAX_PROMO_PAYOUT, is intended: a winner gets at most one top prize per 24 h. */
+  DAILY_PROMO_LIMIT_PER_PLAYER: UsdcAmount.default(1_000_000_000n),
   /** Largest total of promo payouts, all players together, per rolling 24 h (USDC base units). */
   DAILY_PROMO_LIMIT: UsdcAmount.default(5_000_000_000n),
   /** How often the cron settles intents, expires stale rounds and checkpoints losses. */

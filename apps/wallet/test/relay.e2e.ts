@@ -84,11 +84,11 @@ async function until<T>(f: () => Promise<T | undefined>, what: string, timeoutMs
 async function main() {
   const db = createDb(env("TEST_DATABASE_URL", "postgres://postgres:tilt@127.0.0.1:55432/tilt_test"));
   await migrate(db);
-  await db.query("TRUNCATE intents, players");
+  await db.query("TRUNCATE intents, players, consents");
   const players = new LocalPlayerWallets();
-  const intents = new Intents(db, new ChainExecutor(chain, players, db), { maxDeposit: BigInt(usdc(50)), dailyDepositLimit: BigInt(usdc(100)), dailyDepositLimitGlobal: BigInt(usdc(1000)), minPromoPayout: BigInt(usdc(1)), maxPromoPayout: BigInt(usdc(50)), dailyPromoLimit: BigInt(usdc(100)) });
-  // Stands in for Privy's identity tokens (checked by the HTTP tests): the token is the user id.
-  const consent = { verify: async (identityToken: string) => ({ userId: identityToken, issuedAt: Date.now() / 1000 }) };
+  const intents = new Intents(db, new ChainExecutor(chain, players, db), { maxDeposit: BigInt(usdc(50)), dailyDepositLimit: BigInt(usdc(100)), dailyDepositLimitGlobal: BigInt(usdc(1000)), minPromoPayout: BigInt(usdc(1)), maxPromoPayout: BigInt(usdc(50)), dailyPromoLimitPerPlayer: BigInt(usdc(100)), dailyPromoLimit: BigInt(usdc(100)) });
+  // Stands in for Privy's identity tokens (checked by the HTTP tests): "<user id>|<nonce>", one per intent.
+  const consent = { verify: async (identityToken: string) => ({ userId: identityToken.split("|")[0], issuedAt: Date.now() / 1000 }) };
   const app = createApp({ apiKeys: [API_KEY], intents, players, chain, db, consent });
   const api = async <T>(path: string, body?: unknown): Promise<{ status: number; json: T }> => {
     const res = await app.request(path, {
@@ -99,7 +99,7 @@ async function main() {
     return { status: res.status, json: (await res.json()) as T };
   };
   const submit = (userId: string, action: Action, intentId = randomUUID()) =>
-    api<IntentResponse>("/intents", { intentId, userId, action, consent: { identityToken: userId } }).then((r) => r.json);
+    api<IntentResponse>("/intents", { intentId, userId, action, consent: { identityToken: `${userId}|${intentId}` } }).then((r) => r.json);
 
   const vault = await chain.fetchVault();
   console.log(`base=${chain.base.rpcEndpoint} rollup=${chain.rollup.rpcEndpoint}`);
@@ -167,7 +167,7 @@ async function main() {
   check("refus du programme remonté tel quel", refused.status === "failed" && refused.error?.code === "PROGRAM_ERROR" && refused.error.message === "AmountOutOfRange", refused.error?.message ?? "");
   const conflict = await api("/intents", { intentId: openId, userId: user, action: { type: "blackjack_hit" } });
   check("identifiant d'intention réutilisé pour autre chose → 409", conflict.status === 409);
-  const capped = await api("/intents", { intentId: randomUUID(), userId: user, action: { type: "deposit", amount: String(usdc(60)) }, consent: { identityToken: user } });
+  const capped = await api("/intents", { intentId: randomUUID(), userId: user, action: { type: "deposit", amount: String(usdc(60)) }, consent: { identityToken: `${user}|${randomUUID()}` } });
   check("dépôt au-delà du plafond du relais refusé (422)", capped.status === 422);
   const unconsented = await api("/intents", { intentId: randomUUID(), userId: user, action: { type: "deposit", amount: String(usdc(1)) } });
   check("dépôt sans jeton d'identité du joueur refusé (403)", unconsented.status === 403);

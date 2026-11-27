@@ -2,7 +2,9 @@
 // player, forwarded by `apps/api`, so a leaked API key alone cannot deposit or withdraw for anyone.
 import type { PrivyClient } from "@privy-io/node";
 import type { IntentRequest } from "@tilt/contract";
+import { createHash } from "node:crypto";
 import { IntentError } from "./chain";
+import type { Db } from "./db";
 
 export interface VerifiedIdentity {
   userId: string;
@@ -33,9 +35,12 @@ export class PrivyConsentVerifier implements ConsentVerifier {
 const NEEDS_CONSENT: ReadonlySet<IntentRequest["action"]["type"]> = new Set(["open_account", "deposit", "withdraw"]);
 /** The player authenticated this recently: a token picked up from a log cannot be reused for long. */
 const CONSENT_MAX_AGE_SECS = 300;
+/** Used tokens are remembered well past their 5 minutes of validity: a margin for clock skew. */
+const USED_CONSENT_RETENTION = "1 hour";
 
-/** Throws CONSENT_REQUIRED unless the action needs no consent or carries the player's fresh identity token. */
-export async function requireConsent(verifier: ConsentVerifier, { userId, action, consent }: IntentRequest, nowMs = Date.now()): Promise<void> {
+/** Throws CONSENT_REQUIRED unless the action needs no consent or carries the player's fresh identity token,
+ *  not already used for another intent or action. */
+export async function requireConsent(verifier: ConsentVerifier, db: Db, { intentId, userId, action, consent }: IntentRequest, nowMs = Date.now()): Promise<void> {
   if (!NEEDS_CONSENT.has(action.type)) return;
   if (!consent) throw new IntentError("CONSENT_REQUIRED", "this action needs the player's Privy identity token");
   const identity = await verifier.verify(consent.identityToken).catch((e: unknown) => {
@@ -46,4 +51,23 @@ export async function requireConsent(verifier: ConsentVerifier, { userId, action
   if (nowMs / 1000 - identity.issuedAt > CONSENT_MAX_AGE_SECS) {
     throw new IntentError("CONSENT_REQUIRED", `identity token older than ${CONSENT_MAX_AGE_SECS} s`);
   }
+  // One token approves one intent and its action: a token picked up in transit cannot approve other
+  // moves during its 5 minutes. Replays of the same intent (e.g. after PLAYER_BUSY) may reuse it.
+  // Only the signed part (header.payload) is hashed: the signature has several valid encodings
+  // (ECDSA high-s, base64url unused bits), each of which would otherwise count as a new token.
+  // A single statement, so concurrent requests with the same token cannot both bind it.
+  const signedPart = consent.identityToken.split(".").slice(0, 2).join(".");
+  const tokenHash = createHash("sha256").update(signedPart).digest();
+  const { rowCount } = await db.query(
+    `INSERT INTO consents (token_hash, intent_id, action) VALUES ($1, $2, $3)
+     ON CONFLICT (token_hash) DO UPDATE SET used_at = consents.used_at
+     WHERE consents.intent_id = EXCLUDED.intent_id AND consents.action = EXCLUDED.action`,
+    [tokenHash, intentId, action],
+  );
+  if (rowCount === 0) throw new IntentError("CONSENT_REQUIRED", "identity token already used for another intent or action");
+}
+
+/** Relay cron: forgets used tokens long expired. */
+export async function purgeUsedConsents(db: Db): Promise<void> {
+  await db.query(`DELETE FROM consents WHERE used_at < now() - interval '${USED_CONSENT_RETENTION}'`);
 }

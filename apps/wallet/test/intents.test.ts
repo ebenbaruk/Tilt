@@ -3,12 +3,13 @@
 // deposit caps, auth and validation.
 import anchor from "@coral-xyz/anchor";
 import type { Action } from "@tilt/contract";
+import { PrivyClient } from "@privy-io/node";
 import { PublicKey, Transaction } from "@solana/web3.js";
-import { randomUUID } from "node:crypto";
+import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
-import type { ConsentVerifier } from "../src/consent";
+import { PrivyConsentVerifier, requireConsent, type ConsentVerifier } from "../src/consent";
 import { IntentError, type PlayerAccount, type RecordSend, type SentTransaction, type TiltChain, type TransactionStatus, UnconfirmedError } from "../src/chain";
 import { createDb, migrate, type Db } from "../src/db";
 import { Intents, type Executor, type RelayLimits } from "../src/intents";
@@ -28,6 +29,7 @@ const LIMITS: RelayLimits = {
   dailyDepositLimitGlobal: 200_000_000n,
   minPromoPayout: 1_000_000n,
   maxPromoPayout: 10_000_000n,
+  dailyPromoLimitPerPlayer: 15_000_000n,
   dailyPromoLimit: 20_000_000n,
 };
 
@@ -37,7 +39,7 @@ beforeAll(async () => {
   await migrate(db);
 });
 afterAll(() => db.end());
-beforeEach(() => db.query("TRUNCATE intents, players"));
+beforeEach(() => db.query("TRUNCATE intents, players, consents"));
 
 const sent = (signature = `sig-${randomUUID()}`): SentTransaction => ({ network: "rollup", signature, lastValidBlockHeight: 100 });
 
@@ -251,6 +253,20 @@ describe("intents", () => {
     expect(await sweep(db, chain, intents, SWEEP)).toEqual({ reconciled: 0, funded: 0n, expired: 0, checkpointed: 0, failed: 1 });
   });
 
+  it("forgets used identity tokens only once they have long expired", async () => {
+    const used = async (age: string) => {
+      const intentId = randomUUID();
+      await db.query(`INSERT INTO consents (token_hash, intent_id, action, used_at) VALUES ($1, $2, $3, now() - $4::interval)`, [Buffer.from(intentId), intentId, deposit(1), age]);
+      return intentId;
+    };
+    await used("61 minutes");
+    const recent = await used("10 minutes");
+    const intents = { reconcile: async () => 0 } as unknown as Intents;
+    expect(await sweep(db, pooled(1_000n, 0n) as unknown as TiltChain, intents, SWEEP)).toMatchObject({ failed: 0 });
+    const { rows } = await db.query<{ intent_id: string }>("SELECT intent_id FROM consents");
+    expect(rows).toEqual([{ intent_id: recent }]);
+  });
+
   it("grants the risk pool what its line lacks for new rounds, within the free bankroll", async () => {
     const intents = { reconcile: async () => 0 } as unknown as Intents;
     const funded: bigint[] = [];
@@ -383,6 +399,24 @@ describe("intents", () => {
     expect(results.filter((r) => r === "LIMIT_EXCEEDED")).toHaveLength(6);
   });
 
+  it("caps promo payouts per player per 24 h, without affecting other players", async () => {
+    const intents = new Intents(db, new FakeExecutor(), LIMITS);
+    expect((await intents.submit(promo(10_000_000))).status).toBe("submitted");
+    expect((await intents.submit(promo(5_000_000))).status).toBe("submitted");
+    await expect(intents.submit(promo(1_000_000))).rejects.toMatchObject({ code: "LIMIT_EXCEEDED" });
+    expect((await intents.submit(promo(5_000_000, NOBODY))).status).toBe("submitted");
+  });
+
+  it("caps one player's promo payouts per 24 h even when concurrent", async () => {
+    const intents = new Intents(db, new FakeExecutor(), LIMITS);
+    const amount = 4_000_000;
+    const results = await Promise.all(Array.from({ length: 10 }, () => intents.submit(promo(amount)).then((r) => r.status, (e: IntentError) => e.code)));
+    const accepted = results.filter((r) => r === "submitted").length;
+    expect(BigInt(accepted * amount)).toBeLessThanOrEqual(LIMITS.dailyPromoLimitPerPlayer);
+    expect(accepted).toBe(3);
+    expect(results.filter((r) => r === "LIMIT_EXCEEDED")).toHaveLength(7);
+  });
+
   it("caps deposits of all players together per 24 h, even when concurrent", async () => {
     const intents = new Intents(db, new FakeExecutor(), { ...LIMITS, dailyDepositLimitGlobal: 120_000_000n });
     const results = await Promise.all(
@@ -420,7 +454,7 @@ describe("intents", () => {
   });
 });
 
-/** Stands in for Privy: "token|<user id>|<issued at, unix s>" is a valid identity token, anything else is not. */
+/** Stands in for Privy: "token|<user id>|<issued at, unix s>|<nonce>" is a valid identity token, anything else is not. */
 const consent: ConsentVerifier = {
   async verify(identityToken) {
     const [kind, userId, issuedAt] = identityToken.split("|");
@@ -428,7 +462,7 @@ const consent: ConsentVerifier = {
     return { userId, issuedAt: Number(issuedAt) };
   },
 };
-const identityToken = (userId = USER, ageSecs = 0) => ({ identityToken: `token|${userId}|${Math.floor(Date.now() / 1000) - ageSecs}` });
+const identityToken = (userId = USER, ageSecs = 0) => ({ identityToken: `token|${userId}|${Math.floor(Date.now() / 1000) - ageSecs}|${randomUUID()}` });
 
 describe("HTTP API", () => {
   const NEXT_KEY = "n".repeat(40);
@@ -491,6 +525,30 @@ describe("HTTP API", () => {
     for (const { row } of rows) expect(row).not.toContain(token.identityToken);
   });
 
+  it("binds an identity token to one intent, which may replay it", async () => {
+    const token = identityToken();
+    const first = { ...intent(deposit(1)), consent: token };
+    expect(await (await post(first)).json()).toMatchObject({ status: "submitted" });
+    expect((await post(first)).status).toBe(200);
+    const reused = await post({ ...intent(deposit(1)), consent: token });
+    expect(reused.status).toBe(403);
+    expect(await reused.json()).toMatchObject({ error: { code: "CONSENT_REQUIRED" } });
+    expect(await (await post({ ...intent(deposit(1)), consent: identityToken() })).json()).toMatchObject({ status: "submitted" });
+
+    // A refused intent records nothing, so its retry with the same token is checked again, not refused for consent,
+    // but the token cannot approve another action under that intent id.
+    const capped = { ...intent(deposit(100_000_001)), consent: identityToken() };
+    expect((await post(capped)).status).toBe(422);
+    expect((await post(capped)).status).toBe(422);
+    const swapped = await post({ ...capped, action: deposit(1) });
+    expect(swapped.status).toBe(403);
+    expect(await swapped.json()).toMatchObject({ error: { code: "CONSENT_REQUIRED" } });
+
+    const shared = identityToken();
+    const statuses = await Promise.all([1, 2, 3, 4].map(async () => (await post({ ...intent(deposit(1)), consent: shared })).status));
+    expect(statuses.sort()).toEqual([200, 403, 403, 403]);
+  });
+
   it("maps request refusals to 409 and 422", async () => {
     const request = intent(bet);
     await post(request);
@@ -518,5 +576,47 @@ describe("HTTP API", () => {
     await post(game);
     expect((await call(`/payouts/promo/${game.intentId}`)).status).toBe(404);
     expect((await pay({ ...payout, payoutId: randomUUID(), amount: "999999" })).status).toBe(422);
+  });
+});
+
+describe("consent with real ES256 identity tokens", () => {
+  const APP_ID = "cm0testapp000000000000001";
+  const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  // Privy's own verification (jose), offline: the key below replaces Privy's published one.
+  const privy = new PrivyClient({ appId: APP_ID, appSecret: "test-secret", jwtVerificationKey: publicKey.export({ type: "spki", format: "pem" }).toString() });
+  const verifier = new PrivyConsentVerifier(privy);
+  const P256_ORDER = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
+  const BASE64URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+  /** An identity token signed as Privy signs them. */
+  const signedToken = (userId = USER) => {
+    const now = Math.floor(Date.now() / 1000);
+    const part = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url");
+    const signed = `${part({ alg: "ES256", typ: "JWT" })}.${part({ iss: "privy.io", aud: APP_ID, sub: userId, iat: now, exp: now + 3600, cr: String(now), linked_accounts: "[]" })}`;
+    return `${signed}.${sign("sha256", Buffer.from(signed), { key: privateKey, dsaEncoding: "ieee-p1363" }).toString("base64url")}`;
+  };
+  /** The same token with the signature's s replaced by n − s, which ECDSA accepts too. */
+  const highS = (token: string) => {
+    const [header, payload, signature] = token.split(".");
+    const rs = Buffer.from(signature, "base64url");
+    const s = BigInt(`0x${rs.subarray(32).toString("hex")}`);
+    const flipped = Buffer.from((P256_ORDER - s).toString(16).padStart(64, "0"), "hex");
+    return `${header}.${payload}.${Buffer.concat([rs.subarray(0, 32), flipped]).toString("base64url")}`;
+  };
+  /** The same token with a different unused low bit in the signature's last base64url character
+   *  (64 bytes take 86 characters: the last one carries 2 bits of data and 4 unused ones). */
+  const otherPaddingBits = (token: string) => token.slice(0, -1) + BASE64URL[BASE64URL.indexOf(token.slice(-1)) ^ 1];
+
+  it("refuses another intent a re-encoded signature of an already used token", async () => {
+    const token = signedToken();
+    const variants = [highS(token), otherPaddingBits(token)];
+    for (const variant of variants) {
+      expect(variant).not.toBe(token);
+      expect(await verifier.verify(variant)).toMatchObject({ userId: USER });
+    }
+    await requireConsent(verifier, db, { ...intent(deposit(1)), consent: { identityToken: token } });
+    for (const variant of variants) {
+      await expect(requireConsent(verifier, db, { ...intent(deposit(1)), consent: { identityToken: variant } })).rejects.toMatchObject({ code: "CONSENT_REQUIRED" });
+    }
   });
 });

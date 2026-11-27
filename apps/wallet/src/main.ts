@@ -45,6 +45,7 @@ const intents = new Intents(db, new ChainExecutor(chain, players, db), {
   dailyDepositLimitGlobal: config.DAILY_DEPOSIT_LIMIT_GLOBAL,
   minPromoPayout: config.MIN_PROMO_PAYOUT,
   maxPromoPayout: config.MAX_PROMO_PAYOUT,
+  dailyPromoLimitPerPlayer: config.DAILY_PROMO_LIMIT_PER_PLAYER,
   dailyPromoLimit: config.DAILY_PROMO_LIMIT,
 });
 const app = createApp({ apiKeys: config.RELAY_API_KEYS, intents, players, chain, db, consent: new PrivyConsentVerifier(privy) });

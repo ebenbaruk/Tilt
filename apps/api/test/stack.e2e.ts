@@ -183,6 +183,7 @@ async function main() {
     dailyDepositLimitGlobal: usdc(10_000),
     minPromoPayout: usdc(0.01),
     maxPromoPayout: usdc(20),
+    dailyPromoLimitPerPlayer: usdc(100),
     dailyPromoLimit: usdc(100),
   });
   const relayApp = createRelayApp({

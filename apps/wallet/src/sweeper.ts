@@ -1,9 +1,10 @@
 // Relay cron: settles interrupted intents, keeps the house's risk pool funded, requests again
 // VRF draws that never arrived, closes rounds the player abandoned (a stand or a cash-out at the
 // current value, by the program), and releases settled losses and secured wins lost again from
-// the vault reservation (`checkpoint`).
+// the vault reservation (`checkpoint`). It also forgets used identity tokens long expired.
 import { PublicKey } from "@solana/web3.js";
 import type { PlayerAccount, TiltChain } from "./chain";
+import { purgeUsedConsents } from "./consent";
 import type { Db } from "./db";
 import type { Intents } from "./intents";
 
@@ -100,6 +101,7 @@ export async function sweep(db: Db, chain: TiltChain, intents: Intents, options:
     logFailure("risk pool funding failed", e);
     return 0n;
   });
+  await purgeUsedConsents(db).catch((e: unknown) => logFailure("consent purge failed", e));
   const { config } = await chain.fetchVault();
   const timeoutSecs = Number(config.roundTimeoutSecs.toString());
   const abandonedSecs = Number(config.abandonedRoundSecs.toString());
