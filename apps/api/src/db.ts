@@ -154,6 +154,14 @@ CREATE TABLE IF NOT EXISTS indexer_cursor (
 );
 ALTER TABLE indexer_cursor ADD COLUMN IF NOT EXISTS indexed_through TIMESTAMPTZ;
 
+-- The signature the backfill keeps failing on, and how many runs in a row (admin indexer:skip).
+CREATE TABLE IF NOT EXISTS indexer_stuck (
+  name      TEXT PRIMARY KEY,
+  signature TEXT NOT NULL,
+  runs      INTEGER NOT NULL CHECK (runs > 0),
+  since     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS campaigns (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   sponsor        TEXT NOT NULL UNIQUE,

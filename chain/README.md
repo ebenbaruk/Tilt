@@ -25,7 +25,7 @@ scripts/
   local-stack.sh      Solana + rollup + oracle VRF en local (Docker)
   e2e.ts              scénario complet en USDC : jeux, retraits, attaques, checkpoint, gains promo
   sync-idl.sh         copie l'IDL vers packages/contract
-  admin.ts            opérations d'admin : état, pauses, libération des retraits, rôles (docs/runbook.md)
+  admin.ts            opérations d'admin : état, pauses, libération des retraits, rôles, USDC de test sur devnet (docs/runbook.md)
 ```
 
 ## Rôles

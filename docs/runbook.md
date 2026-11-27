@@ -44,6 +44,8 @@ Les lignes `sweep stuck` (un passage du cron dure plus de 5 min) et `intent sett
 
 **Crash du relais.** Le redémarrer : les intentions interrompues sont retrouvées sur la chaîne par la réconciliation (aucune n'est rejouée). Vérifier ensuite l'absence de `STUCK_INTENTS`.
 
+**Indexeur de l'api bloqué** (`indexer backfill stuck` dans les logs de l'api, avec une `signature`). Le rattrapage échoue depuis au moins `STUCK_RUNS` (3) passages de suite sur la même transaction. Tant que ça dure, les compétitions ne peuvent pas être clôturées (le flux en direct, lui, continue d'enregistrer les manches). D'abord chercher la cause : redemander la transaction au rollup en direct (`getTransaction` en base64) et lire le message d'erreur dans le log. Ne sauter que si le rollup ne la servira jamais, et après avoir vérifié dans ses logs, ou sur un explorateur, qu'elle ne contient ni `RoundSettled` ni tirage VRF. Ensuite : `pnpm --filter @tilt/api admin indexer:skip --signature <la signature du log>`. La commande refuse toute autre signature, ainsi qu'une transaction qui n'a pas encore échoué 3 fois de suite, et elle est écrite dans l'audit.
+
 ## Mise à jour du programme
 
 `set_config` revalide toute la config (`Config::validate`). Quand une version relève un plancher, la config en place doit déjà le respecter **avant** la mise à jour ; sinon toute commande qui recopie la config actuelle (`pause`, `resume`, la remise en état de `scripts/e2e.ts --shared-vault`) est refusée `InvalidConfig` jusqu'à ce qu'on la corrige. `scripts/e2e.ts` refuse de démarrer sur un coffre sous le plancher, pour ne pas y laisser sa config de test.
