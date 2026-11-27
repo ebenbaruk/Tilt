@@ -44,7 +44,7 @@ export async function testDb(): Promise<Db | null> {
 
 export async function resetDb(db: Db): Promise<void> {
   await db.query(
-    `TRUNCATE audit_log, impressions, prizes, competitions, campaigns, indexer_cursor, draws, rounds,
+    `TRUNCATE audit_log, impressions, prizes, competitions, campaigns, indexer_cursor, indexer_stuck, draws, rounds,
               intents, limits, mod_sessions, device_codes, users CASCADE`,
   );
 }
