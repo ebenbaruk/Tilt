@@ -14,6 +14,10 @@ export interface FaucetLimits {
   dailyLimit: bigint;
 }
 
+/** Reserve level below which the monitor alerts: half a day of claims at the global cap. A refill
+ *  of one day's cap (FAUCET_DAILY_LIMIT) clears it until half of that is handed out again. */
+export const lowFaucetReserve = (limits: FaucetLimits): bigint => limits.dailyLimit / 2n;
+
 /** A refused claim, with when the next one can succeed. */
 export class FaucetLimitError extends IntentError {
   constructor(

@@ -7,7 +7,7 @@ import { TiltChain } from "./chain";
 import { loadConfig } from "./config";
 import { createDb, migrate } from "./db";
 import { ChainExecutor } from "./executor";
-import { assertDevnet } from "./faucet";
+import { assertDevnet, lowFaucetReserve } from "./faucet";
 import { Intents } from "./intents";
 import { check, logAlert } from "./monitor";
 import { PrivyPlayerWallets } from "./players";
@@ -58,7 +58,7 @@ const thresholds = {
   minRelayerLamports: config.MIN_RELAYER_LAMPORTS,
   minEscrowLamports: config.MIN_ESCROW_LAMPORTS,
   minFreeBankroll: config.MIN_FREE_BANKROLL,
-  minFaucetReserve: faucet?.dailyLimit,
+  minFaucetReserve: faucet && lowFaucetReserve(faucet),
 };
 let sweepStartedAt: number | undefined;
 const sweepTimer = setInterval(() => {

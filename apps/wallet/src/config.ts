@@ -82,8 +82,8 @@ const Env = z.object({
   FAUCET_ENABLED: z.enum(["true", "false"]).default("false").transform((s) => s === "true"),
   /** What one claim pays, and what one player can claim per rolling 24 h (USDC base units). */
   FAUCET_AMOUNT: UsdcAmount.default(100_000_000n),
-  /** Largest total the faucet pays all players together per rolling 24 h (USDC base units). Also
-   *  the reserve level below which the monitor alerts. */
+  /** Largest total the faucet pays all players together per rolling 24 h (USDC base units). The
+   *  monitor alerts when the reserve holds less than half of it. */
   FAUCET_DAILY_LIMIT: UsdcAmount.default(10_000_000_000n),
 }).refine((env) => env.FAUCET_AMOUNT <= env.FAUCET_DAILY_LIMIT, { path: ["FAUCET_AMOUNT"], message: "must not exceed FAUCET_DAILY_LIMIT" });
 
