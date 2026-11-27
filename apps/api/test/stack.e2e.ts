@@ -208,6 +208,8 @@ async function main() {
     intents: new Intents(db, relay),
     limiters: generousLimits(),
     geo: { header: "x-country", blocked: ["US"], allowUnknown: false, edgeSecret: EDGE_SECRET },
+    // A local validator: the relay has no faucet there.
+    solanaDevnet: false,
     config: {
       WEB_ORIGIN: "https://tilt.test",
       WEB_URL: "https://tilt.test",

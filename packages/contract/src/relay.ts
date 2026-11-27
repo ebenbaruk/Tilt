@@ -225,6 +225,10 @@ export type PromoPayoutRequest = z.infer<typeof PromoPayoutRequest>;
 export const PromoPayoutResponse = IntentResponse.omit({ intentId: true }).extend({ payoutId: z.string().uuid() });
 export type PromoPayoutResponse = z.infer<typeof PromoPayoutResponse>;
 
+/** Solana devnet's genesis hash: the only cluster where the relay may run the faucet, and where
+ *  the api asks it for the faucet's status. */
+export const DEVNET_GENESIS_HASH = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
+
 /** Devnet only: test USDC from the relayer's reserve to the player's wallet, capped per player
  *  per rolling 24 h and for all players together. The amount is set by the relay, not the caller. */
 export const FaucetClaimRequest = z.object({

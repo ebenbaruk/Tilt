@@ -42,11 +42,13 @@ CREATE TABLE IF NOT EXISTS intents (
 CREATE INDEX IF NOT EXISTS intents_user_created ON intents (user_id, created_at);
 -- Global 24 h caps (deposits, promo payouts) sum over every player.
 CREATE INDEX IF NOT EXISTS intents_created ON intents (created_at);
--- One intent in flight per player: rounds are sequential and deposits must not overlap.
--- Promo payouts (relayer-signed, on Solana) are left out: a prize must not make the player busy.
+-- One move in flight per player: rounds are sequential and deposits must not overlap.
+-- What Tilt pays the player from the relayer (promo payouts, devnet faucet claims, on Solana) is
+-- left out: a prize or test USDC must not make the player busy. Their caps are checked under locks.
 DROP INDEX IF EXISTS intents_one_pending_per_user;
-CREATE UNIQUE INDEX IF NOT EXISTS intents_one_pending_play_per_user ON intents (user_id)
-  WHERE status = 'pending' AND action->>'type' <> 'promo_payout';
+DROP INDEX IF EXISTS intents_one_pending_play_per_user;
+CREATE UNIQUE INDEX IF NOT EXISTS intents_one_pending_move_per_user ON intents (user_id)
+  WHERE status = 'pending' AND action->>'type' NOT IN ('promo_payout', 'faucet');
 `;
 
 export async function migrate(db: Db): Promise<void> {

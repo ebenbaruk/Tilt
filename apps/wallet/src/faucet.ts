@@ -1,14 +1,11 @@
 // Devnet faucet: test USDC from the relayer's reserve (its own token account for the vault mint)
 // to a player's wallet. A claim is an intent of type "faucet": idempotent by claim id, kept in the
 // intents table as the audit trail, and checked against its caps under the claim's locks.
-import type { FaucetStatusResponse } from "@tilt/contract";
+import { DEVNET_GENESIS_HASH, type FaucetStatusResponse } from "@tilt/contract";
 import type { Connection } from "@solana/web3.js";
 import type pg from "pg";
 import { IntentError } from "./chain";
 import type { Db } from "./db";
-
-/** Solana devnet's genesis hash: the only cluster the faucet may run on. */
-export const DEVNET_GENESIS_HASH = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
 
 export interface FaucetLimits {
   /** What one claim pays, which is also what one player can claim per rolling 24 h (USDC base units). */
@@ -16,6 +13,10 @@ export interface FaucetLimits {
   /** What all players together can claim per rolling 24 h (USDC base units). */
   dailyLimit: bigint;
 }
+
+/** Reserve level below which the monitor alerts: half a day of claims at the global cap. A refill
+ *  of one day's cap (FAUCET_DAILY_LIMIT) clears it until half of that is handed out again. */
+export const lowFaucetReserve = (limits: FaucetLimits): bigint => limits.dailyLimit / 2n;
 
 /** A refused claim, with when the next one can succeed. */
 export class FaucetLimitError extends IntentError {

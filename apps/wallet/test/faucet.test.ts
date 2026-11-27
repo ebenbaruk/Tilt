@@ -9,6 +9,7 @@ import {
   getAssociatedTokenAddressSync,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
+import { DEVNET_GENESIS_HASH } from "@tilt/contract";
 import { type AccountInfo, Keypair, PublicKey, type Transaction } from "@solana/web3.js";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,8 +18,9 @@ import { IntentError, type RecordSend, TiltChain, type Vault } from "../src/chai
 import { loadConfig } from "../src/config";
 import { createDb, migrate, type Db } from "../src/db";
 import { ChainExecutor } from "../src/executor";
-import { assertDevnet, DEVNET_GENESIS_HASH, type FaucetLimits } from "../src/faucet";
+import { assertDevnet, type FaucetLimits, lowFaucetReserve } from "../src/faucet";
 import { Intents, type Executor, type RelayAction, type RelayLimits } from "../src/intents";
+import { evaluate } from "../src/monitor";
 import type { PlayerWallet, PlayerWallets } from "../src/players";
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL ?? "postgres://postgres:tilt@127.0.0.1:55432/tilt_test";
@@ -225,6 +227,20 @@ describe("faucet guards", () => {
     expect(() => loadConfig({ ...env, FAUCET_ENABLED: "yes" })).toThrow("FAUCET_ENABLED");
     expect(() => loadConfig({ ...env, FAUCET_AMOUNT: "1.5" })).toThrow("FAUCET_AMOUNT");
     expect(() => loadConfig({ ...env, FAUCET_AMOUNT: "20000000000" })).toThrow("FAUCET_AMOUNT: must not exceed FAUCET_DAILY_LIMIT");
+  });
+
+  it("alerts on a low reserve once half a day of claims is handed out, not right after a refill", () => {
+    const config = loadConfig({ ...env, FAUCET_ENABLED: "true" });
+    const limits = { amount: config.FAUCET_AMOUNT, dailyLimit: config.FAUCET_DAILY_LIMIT };
+    const thresholds = { minRelayerLamports: 0n, minEscrowLamports: 0n, minFreeBankroll: 0n, minFaucetReserve: lowFaucetReserve(limits) };
+    const paused = { deposits: false, bets: false, payouts: false };
+    const alerts = (faucetReserve: bigint) =>
+      evaluate({ vaultBalance: 0n, reserved: 0n, relayerLamports: 0n, escrowLamports: 0n, stuckIntents: 0, paused, faucetReserve }, thresholds).map((a) => a.code);
+    // The largest `pnpm admin mint-test` (10 000 USDC), then claims.
+    const refill = 10_000_000_000n;
+    expect(alerts(refill - limits.amount)).toEqual([]);
+    expect(alerts(refill / 2n)).toEqual([]);
+    expect(alerts(refill / 2n - limits.amount)).toEqual(["LOW_FAUCET_RESERVE"]);
   });
 });
 

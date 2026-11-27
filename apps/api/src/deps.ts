@@ -29,6 +29,8 @@ export interface AppDeps {
   intents: Intents;
   limiters: Limiters;
   geo: GeoPolicy;
+  /** SOLANA_RPC_URL is Solana devnet, the only cluster where the relay may run a faucet. */
+  solanaDevnet: boolean;
   config: Pick<
     Config,
     "WEB_ORIGIN" | "WEB_URL" | "TRUST_PROXY" | "TRUSTED_PROXY_HOPS" | "PRIVY_KEY_QUORUM_ID" | "PRIVY_POLICY_ID"

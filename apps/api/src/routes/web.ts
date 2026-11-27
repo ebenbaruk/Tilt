@@ -52,8 +52,10 @@ async function depositAction(deps: AppDeps, wallet: PublicKey, amount: string): 
 }
 
 /** The faucet as the account page shows it. Its status is best effort: the page must load (and
- *  withdrawals stay reachable) when the relay can't say, so a failure only hides the faucet. */
+ *  withdrawals stay reachable) when the relay can't say, so a failure only hides the faucet. Off
+ *  devnet the relay can have none, so it isn't asked. */
 async function faucetOf(deps: AppDeps, userId: string): Promise<AccountResponse["faucet"]> {
+  if (!deps.solanaDevnet) return null;
   try {
     const status = await deps.relay.faucetStatus(userId);
     return status.enabled && status.amount ? { amount: status.amount, nextClaimAt: status.nextClaimAt } : null;

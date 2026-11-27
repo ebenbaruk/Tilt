@@ -68,6 +68,9 @@ interface StoredIntent {
   response: IntentResponse;
 }
 
+/** What Tilt pays the player (prizes, test USDC): like the relay, never makes the player busy. */
+const paysPlayer = (action: StoredIntent["action"]) => action.type === "promo_payout" || action.type === "faucet";
+
 export class FakeRelay {
   readonly users = new Map<string, { solanaAddress: string; accountOpen: boolean }>();
   readonly intents = new Map<string, StoredIntent>();
@@ -91,6 +94,8 @@ export class FakeRelay {
   faucet: { amount: string } | null = null;
   /** When each player who claimed may claim again (ISO 8601). */
   readonly faucetClaims = new Map<string, string>();
+  /** Faucet status requests received. */
+  faucetStatusCalls = 0;
   private server: ServerType | undefined;
   url = "";
 
@@ -123,8 +128,10 @@ export class FakeRelay {
       const same = existing.userId === userId && JSON.stringify(existing.action) === JSON.stringify(action);
       return same ? { status: 200 as const, body: existing.response } : refuse("INTENT_CONFLICT", 409);
     }
-    const busy = [...this.intents.values()].some((i) => i.userId === userId && i.response.status === "pending");
-    if (busy && action.type !== "promo_payout") return refuse("PLAYER_BUSY", 409);
+    const busy = [...this.intents.values()].some(
+      (i) => i.userId === userId && i.response.status === "pending" && !paysPlayer(i.action),
+    );
+    if (busy && !paysPlayer(action)) return refuse("PLAYER_BUSY", 409);
     if (this.limitExceeded && (action.type === "deposit" || action.type === "open_account")) {
       return refuse("LIMIT_EXCEEDED", 422);
     }
@@ -177,6 +184,7 @@ export class FakeRelay {
       return c.json({ payoutId: intentId, ...rest });
     });
     app.get("/faucet/:userId", (c) => {
+      this.faucetStatusCalls++;
       const status: FaucetStatusResponse = {
         enabled: this.faucet !== null,
         amount: this.faucet?.amount ?? null,
@@ -302,6 +310,7 @@ export function testApp(db: Db, relay: FakeRelay, chain: FakeChain, overrides: P
     intents: new Intents(db, relayClient),
     limiters: generousLimits(),
     geo: { header: "x-country", blocked: ["US", "FR"], allowUnknown: false, edgeSecret: EDGE_SECRET },
+    solanaDevnet: true,
     config: {
       WEB_ORIGIN: "https://tilt.test",
       WEB_URL: "https://tilt.test",

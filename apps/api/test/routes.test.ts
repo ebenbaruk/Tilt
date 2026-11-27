@@ -67,6 +67,7 @@ describe.skipIf(!db)("api routes", () => {
     relay.down = false;
     relay.faucet = null;
     relay.faucetClaims.clear();
+    relay.faucetStatusCalls = 0;
     chain = new FakeChain();
     ({ app } = testApp(db, relay, chain));
     wallet = relay.addUser(ALICE).toBase58();
@@ -712,6 +713,24 @@ describe.skipIf(!db)("api routes", () => {
       relay.down = true;
       expect(await faucetOf()).toBeNull();
     });
+
+    it("doesn't ask the relay off devnet, where it can have no faucet", async () => {
+      relay.faucet = { amount: "100000000" };
+      ({ app } = testApp(db, relay, chain, { solanaDevnet: false }));
+      expect(await faucetOf()).toBeNull();
+      expect(relay.faucetStatusCalls).toBe(0);
+    });
+
+    it("waits at most 2 s for the faucet's status, whatever the relay timeout", async () => {
+      relay.faucet = { amount: "100000000" };
+      ({ app } = testApp(db, relay, chain, { relay: relay.client(10_000) }));
+      expect(await faucetOf()).not.toBeNull();
+      // The wallet is cached by now: only the faucet status waits on the slow relay.
+      relay.delayMs = 5_000;
+      const started = Date.now();
+      expect(await faucetOf()).toBeNull();
+      expect(Date.now() - started).toBeLessThan(4_000);
+    }, 10_000);
   });
 
   describe("GET /v1/state", () => {

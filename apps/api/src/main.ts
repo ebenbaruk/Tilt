@@ -1,5 +1,6 @@
 // api entrypoint: HTTP server plus the rollup indexer.
 import { serve } from "@hono/node-server";
+import { DEVNET_GENESIS_HASH } from "@tilt/contract";
 import { createApp } from "./app";
 import { RpcChainReader } from "./chain";
 import { loadConfig } from "./config";
@@ -49,6 +50,7 @@ const app = createApp({
     verify: RateLimiter.perMinute(VERIFY_PER_IP_PER_MIN),
   },
   geo: geoPolicy(config),
+  solanaDevnet: (await chain.base.getGenesisHash()) === DEVNET_GENESIS_HASH,
   config,
   now: Date.now,
 });
