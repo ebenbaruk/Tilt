@@ -11,7 +11,7 @@ import { createApp } from "../src/app";
 import type { ConsentVerifier } from "../src/consent";
 import { IntentError, type PlayerAccount, type RecordSend, type SentTransaction, type TiltChain, type TransactionStatus, UnconfirmedError } from "../src/chain";
 import { createDb, migrate, type Db } from "../src/db";
-import { Intents, type Executor, type RelayLimits } from "../src/intents";
+import { Intents, type Executor, type RelayAction, type RelayLimits } from "../src/intents";
 import type { PlayerWallet, PlayerWallets } from "../src/players";
 import { releasable, requiredReserve, sweep } from "../src/sweeper";
 
@@ -43,15 +43,15 @@ const sent = (signature = `sig-${randomUUID()}`): SentTransaction => ({ network:
 
 /** Records calls; `run` decides each outcome. By default records a transaction and lands it. */
 class FakeExecutor implements Executor {
-  calls: Action[] = [];
+  calls: RelayAction[] = [];
   constructor(
-    private readonly run: (action: Action, record: RecordSend) => Promise<string> = async (_action, record) => {
+    private readonly run: (action: RelayAction, record: RecordSend) => Promise<string> = async (_action, record) => {
       const tx = sent();
       await record(tx);
       return tx.signature;
     },
   ) {}
-  async execute(_userId: string, action: Action, record: RecordSend): Promise<string> {
+  async execute(_userId: string, action: RelayAction, record: RecordSend): Promise<string> {
     this.calls.push(action);
     return this.run(action, record);
   }
@@ -411,12 +411,33 @@ describe("intents", () => {
     expect((await prize).status).toBe("submitted");
   });
 
-  it("migrates a database that still has the old one-pending index", async () => {
+  it("lets the player play and deposit while a faucet claim is in flight", async () => {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const intents = new Intents(db, new FakeExecutor(async (action, record) => {
+      const tx = sent();
+      await record(tx);
+      if (action.type === "faucet") await held;
+      return tx.signature;
+    }), { ...LIMITS, faucet: { amount: 100_000_000n, dailyLimit: 300_000_000n } });
+    const claimId = randomUUID();
+    const claim = intents.submit({ intentId: claimId, userId: USER, action: { type: "faucet", claimId, amount: "100000000" } });
+    await sleep(50);
+    expect((await intents.submit(intent(bet))).status).toBe("submitted");
+    expect((await intents.submit(intent(deposit(1_000_000)))).status).toBe("submitted");
+    release();
+    expect((await claim).status).toBe("submitted");
+  });
+
+  it("migrates a database that still has an older one-pending index", async () => {
     await db.query("CREATE UNIQUE INDEX IF NOT EXISTS intents_one_pending_per_user ON intents (user_id) WHERE status = 'pending'");
+    await db.query(
+      "CREATE UNIQUE INDEX IF NOT EXISTS intents_one_pending_play_per_user ON intents (user_id) WHERE status = 'pending' AND action->>'type' <> 'promo_payout'",
+    );
     await migrate(db);
     await migrate(db);
     const { rows } = await db.query<{ indexname: string }>("SELECT indexname FROM pg_indexes WHERE tablename = 'intents' AND indexname LIKE 'intents_one_pending%'");
-    expect(rows.map((r) => r.indexname)).toEqual(["intents_one_pending_play_per_user"]);
+    expect(rows.map((r) => r.indexname)).toEqual(["intents_one_pending_move_per_user"]);
   });
 });
 
