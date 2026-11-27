@@ -13,6 +13,8 @@ export interface MonitorThresholds {
   minEscrowLamports: bigint;
   /** Bankroll not reserved for players (USDC base units): below it, new accounts get refused. */
   minFreeBankroll: bigint;
+  /** Devnet faucet reserve (USDC base units); undefined when the faucet is disabled. */
+  minFaucetReserve?: bigint;
 }
 
 /** What the monitor looks at, gathered from the chain and the database. */
@@ -23,14 +25,29 @@ export interface Snapshot {
   escrowLamports: bigint;
   stuckIntents: number;
   paused: { deposits: boolean; bets: boolean; payouts: boolean };
+  /** Undefined when the faucet is disabled. */
+  faucetReserve?: bigint;
 }
 
-export type AlertCode = "INSOLVENT" | "LOW_FREE_BANKROLL" | "LOW_RELAYER_SOL" | "LOW_ESCROW" | "STUCK_INTENTS" | "PAUSED" | "MONITOR_FAILED";
+export type AlertCode =
+  | "INSOLVENT"
+  | "LOW_FREE_BANKROLL"
+  | "LOW_RELAYER_SOL"
+  | "LOW_ESCROW"
+  | "LOW_FAUCET_RESERVE"
+  | "STUCK_INTENTS"
+  | "PAUSED"
+  | "MONITOR_FAILED";
 
 export interface Alert {
   code: AlertCode;
   severity: "critical" | "warning";
   message: string;
+}
+
+/** One structured line for the log pipeline to page on. */
+export function logAlert(alert: Alert): void {
+  console.error(JSON.stringify({ level: "alert", ...alert }));
 }
 
 /** Pending intents older than this are stuck: reconciliation should have settled them. */
@@ -50,6 +67,9 @@ export function evaluate(s: Snapshot, t: MonitorThresholds): Alert[] {
   if (s.escrowLamports < t.minEscrowLamports) {
     alerts.push({ code: "LOW_ESCROW", severity: "critical", message: `relayer escrow has ${s.escrowLamports} lamports: withdrawals and checkpoints will stall` });
   }
+  if (t.minFaucetReserve !== undefined && s.faucetReserve !== undefined && s.faucetReserve < t.minFaucetReserve) {
+    alerts.push({ code: "LOW_FAUCET_RESERVE", severity: "warning", message: `faucet reserve holds ${s.faucetReserve}: refill it (docs/runbook.md)` });
+  }
   if (s.stuckIntents > 0) {
     alerts.push({ code: "STUCK_INTENTS", severity: "warning", message: `${s.stuckIntents} intents pending for over ${STUCK_INTENT_SECS} s` });
   }
@@ -58,14 +78,15 @@ export function evaluate(s: Snapshot, t: MonitorThresholds): Alert[] {
   return alerts;
 }
 
-export async function snapshot(db: Db, chain: TiltChain): Promise<Snapshot> {
+export async function snapshot(db: Db, chain: TiltChain, faucet = false): Promise<Snapshot> {
   const vault = await chain.fetchVault();
   const relayer = vault.relayer;
-  const [vaultToken, relayerLamports, escrowLamports, stuck] = await Promise.all([
+  const [vaultToken, relayerLamports, escrowLamports, stuck, faucetReserve] = await Promise.all([
     getAccount(chain.base, vaultTokenAddress()),
     chain.base.getBalance(relayer),
     chain.base.getBalance(escrowPdaFromEscrowAuthority(relayer)),
     db.query<{ n: string }>("SELECT count(*) AS n FROM intents WHERE status = 'pending' AND created_at < now() - make_interval(secs => $1)", [STUCK_INTENT_SECS]),
+    faucet ? chain.fetchFaucetReserve() : undefined,
   ]);
   return {
     vaultBalance: vaultToken.amount,
@@ -73,13 +94,14 @@ export async function snapshot(db: Db, chain: TiltChain): Promise<Snapshot> {
     relayerLamports: BigInt(relayerLamports),
     escrowLamports: BigInt(escrowLamports),
     stuckIntents: Number(stuck.rows[0].n),
+    faucetReserve,
     paused: { deposits: vault.config.depositsPaused, bets: vault.config.betsPaused, payouts: vault.config.payoutsPaused },
   };
 }
 
 /** The alerts of one monitoring pass. Failing to look is itself critical: it would hide every other alert. */
 export async function check(db: Db, chain: TiltChain, t: MonitorThresholds): Promise<Alert[]> {
-  return snapshot(db, chain).then(
+  return snapshot(db, chain, t.minFaucetReserve !== undefined).then(
     (s) => evaluate(s, t),
     (e: unknown) => [{ code: "MONITOR_FAILED", severity: "critical", message: `monitoring failed: ${e instanceof Error ? e.message : String(e)}` }],
   );

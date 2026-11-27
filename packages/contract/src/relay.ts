@@ -172,7 +172,7 @@ export const ErrorCode = z.enum([
   "INTENT_CONFLICT",
   /** Another intent of this player is still in flight; retry once it settles. */
   "PLAYER_BUSY",
-  /** The relay's caps (deposits, promo payouts) would be exceeded. */
+  /** The relay's caps (deposits, promo payouts, faucet claims) would be exceeded. */
   "LIMIT_EXCEEDED",
   /** Missing, invalid, stale or someone else's identity token on an action that needs consent. */
   "CONSENT_REQUIRED",
@@ -183,6 +183,10 @@ export const ErrorCode = z.enum([
   "TABLE_NOT_READY",
   "PROGRAM_ERROR",
   "NETWORK_ERROR",
+  /** The devnet faucet is not enabled on this relay (always the case on mainnet). */
+  "FAUCET_DISABLED",
+  /** The faucet's reserve cannot pay a full claim; nothing was sent. */
+  "FAUCET_EMPTY",
   "INTERNAL_ERROR",
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
@@ -221,6 +225,28 @@ export type PromoPayoutRequest = z.infer<typeof PromoPayoutRequest>;
 export const PromoPayoutResponse = IntentResponse.omit({ intentId: true }).extend({ payoutId: z.string().uuid() });
 export type PromoPayoutResponse = z.infer<typeof PromoPayoutResponse>;
 
+/** Devnet only: test USDC from the relayer's reserve to the player's wallet, capped per player
+ *  per rolling 24 h and for all players together. The amount is set by the relay, not the caller. */
+export const FaucetClaimRequest = z.object({
+  /** Client-generated; replaying the same id never pays twice. */
+  claimId: Uuid,
+  userId: PrivyUserId,
+});
+export type FaucetClaimRequest = z.infer<typeof FaucetClaimRequest>;
+
+export const FaucetClaimResponse = IntentResponse.omit({ intentId: true }).extend({ claimId: z.string().uuid(), amount: Amount });
+export type FaucetClaimResponse = z.infer<typeof FaucetClaimResponse>;
+
+export const FaucetStatusResponse = z.object({
+  /** False unless the relay enabled the faucet, which it only allows on devnet. */
+  enabled: z.boolean(),
+  /** What one claim pays (USDC base units); null when disabled. */
+  amount: Amount.nullable(),
+  /** When this player can claim next (ISO 8601); null if now, or when disabled. */
+  nextClaimAt: z.string().datetime().nullable(),
+});
+export type FaucetStatusResponse = z.infer<typeof FaucetStatusResponse>;
+
 export const UserResponse = z.object({
   userId: z.string(),
   /** The player's Solana wallet (Privy embedded wallet). */
@@ -230,5 +256,12 @@ export const UserResponse = z.object({
 });
 export type UserResponse = z.infer<typeof UserResponse>;
 
-export const ErrorResponse = z.object({ error: z.object({ code: ErrorCode, message: z.string() }) });
+export const ErrorResponse = z.object({
+  error: z.object({
+    code: ErrorCode,
+    message: z.string(),
+    /** LIMIT_EXCEEDED on a faucet claim: when the next claim can succeed (ISO 8601). */
+    retryAt: z.string().datetime().optional(),
+  }),
+});
 export type ErrorResponse = z.infer<typeof ErrorResponse>;

@@ -7,8 +7,9 @@ import { TiltChain } from "./chain";
 import { loadConfig } from "./config";
 import { createDb, migrate } from "./db";
 import { ChainExecutor } from "./executor";
+import { assertDevnet } from "./faucet";
 import { Intents } from "./intents";
-import { check } from "./monitor";
+import { check, logAlert } from "./monitor";
 import { PrivyPlayerWallets } from "./players";
 import { sweep } from "./sweeper";
 
@@ -32,10 +33,13 @@ const vault = await chain.fetchVault();
 if (!vault.relayer.equals(config.RELAYER_SECRET_KEY.publicKey)) {
   throw new Error(`RELAYER_SECRET_KEY is not the vault relayer (${vault.relayer.toBase58()})`);
 }
+const faucet = config.FAUCET_ENABLED ? { amount: config.FAUCET_AMOUNT, dailyLimit: config.FAUCET_DAILY_LIMIT } : undefined;
+if (faucet) await assertDevnet(chain.base);
 
 const privy = new PrivyClient({ appId: config.PRIVY_APP_ID, appSecret: config.PRIVY_APP_SECRET, timeout: PRIVY_TIMEOUT_MS, maxRetries: 1 });
 const players = new PrivyPlayerWallets(privy, config.PRIVY_AUTHORIZATION_KEY, db);
 const intents = new Intents(db, new ChainExecutor(chain, players, db), {
+  faucet,
   maxDeposit: config.MAX_DEPOSIT,
   dailyDepositLimit: config.DAILY_DEPOSIT_LIMIT,
   dailyDepositLimitGlobal: config.DAILY_DEPOSIT_LIMIT_GLOBAL,
@@ -48,12 +52,13 @@ const app = createApp({ apiKeys: config.RELAY_API_KEYS, intents, players, chain,
 const server = serve({ fetch: app.fetch, hostname: config.HOST, port: config.PORT });
 const log = (msg: string, extra: Record<string, unknown> = {}) => console.log(JSON.stringify({ level: "info", msg, ...extra }));
 const logError = (msg: string, e: unknown) => console.error(JSON.stringify({ level: "error", msg, error: e instanceof Error ? e.message : String(e) }));
-log("relay listening", { host: config.HOST, port: config.PORT, relayer: config.RELAYER_SECRET_KEY.publicKey.toBase58() });
+log("relay listening", { host: config.HOST, port: config.PORT, relayer: config.RELAYER_SECRET_KEY.publicKey.toBase58(), faucet: config.FAUCET_ENABLED });
 
 const thresholds = {
   minRelayerLamports: config.MIN_RELAYER_LAMPORTS,
   minEscrowLamports: config.MIN_ESCROW_LAMPORTS,
   minFreeBankroll: config.MIN_FREE_BANKROLL,
+  minFaucetReserve: faucet?.dailyLimit,
 };
 let sweepStartedAt: number | undefined;
 const sweepTimer = setInterval(() => {
@@ -81,7 +86,7 @@ const monitorTimer = setInterval(() => {
   monitoring = true;
   void check(db, chain, thresholds)
     .then((alerts) => {
-      for (const alert of alerts) console.error(JSON.stringify({ level: "alert", ...alert }));
+      alerts.forEach(logAlert);
     })
     .finally(() => {
       monitoring = false;

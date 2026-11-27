@@ -3,10 +3,12 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import {
   ErrorResponse,
+  FaucetClaimRequest,
   IntentRequest,
   PrivyUserId,
   PromoPayoutRequest,
   type ErrorCode,
+  type FaucetClaimResponse,
   type IntentResponse,
   type PromoPayoutResponse,
   type UserResponse,
@@ -16,6 +18,7 @@ import { z } from "zod";
 import { IntentError, type TiltChain } from "./chain";
 import { type ConsentVerifier, requireConsent } from "./consent";
 import type { Db } from "./db";
+import { FaucetLimitError, faucetStatus } from "./faucet";
 import type { Intents } from "./intents";
 import type { PlayerWallets } from "./players";
 
@@ -37,7 +40,7 @@ function authorized(header: string | undefined, apiKeys: readonly string[]): boo
   return apiKeys.map((key) => timingSafeEqual(token, digest(key))).includes(true);
 }
 
-const error = (code: ErrorCode, message: string): ErrorResponse => ({ error: { code, message } });
+const error = (code: ErrorCode, message: string, retryAt?: Date): ErrorResponse => ({ error: { code, message, ...(retryAt && { retryAt: retryAt.toISOString() }) } });
 const invalid = (issues: z.ZodIssue[]) => error("INVALID_REQUEST", issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
 
 /** Refusals of the request itself, not of the action. CONSENT_REQUIRED, PLAYER_BUSY and
@@ -58,7 +61,7 @@ async function run<T>(submit: () => Promise<IntentResponse>, shape: (r: IntentRe
     return { body: shape(await submit()), status: 200 };
   } catch (e) {
     const status = e instanceof IntentError ? REQUEST_REFUSALS[e.code] : undefined;
-    if (e instanceof IntentError && status) return { body: error(e.code, e.message), status };
+    if (e instanceof IntentError && status) return { body: error(e.code, e.message, e instanceof FaucetLimitError ? e.retryAt : undefined), status };
     throw e;
   }
 }
@@ -123,6 +126,27 @@ export function createApp(deps: AppDeps): Hono {
     if (!payoutId.success) return c.json(error("INVALID_REQUEST", "payoutId must be a UUID"), 400);
     const payout = await deps.intents.get(payoutId.data, true);
     return payout ? c.json(asPayout(payout)) : c.json(error("INVALID_REQUEST", "unknown payout"), 404);
+  });
+
+  app.get("/faucet/:userId", async (c) => {
+    const userId = PrivyUserId.safeParse(c.req.param("userId"));
+    if (!userId.success) return c.json(error("INVALID_REQUEST", "userId must be a Privy user id"), 400);
+    return c.json(await faucetStatus(deps.db, userId.data, deps.intents.faucet));
+  });
+
+  app.post("/faucet/claims", async (c) => {
+    const parsed = FaucetClaimRequest.safeParse(await c.req.json().catch(() => undefined));
+    if (!parsed.success) return c.json(invalid(parsed.error.issues), 400);
+    const faucet = deps.intents.faucet;
+    if (!faucet) return c.json(error("FAUCET_DISABLED", "the faucet is not enabled on this relay"), 403);
+    const { claimId, userId } = parsed.data;
+    // The amount is the relay's, never the caller's.
+    const amount = faucet.amount.toString();
+    const { body, status } = await run(
+      () => deps.intents.submit({ intentId: claimId, userId, action: { type: "faucet", claimId, amount } }),
+      ({ intentId, ...rest }): FaucetClaimResponse => ({ claimId: intentId, amount, ...rest }),
+    );
+    return c.json(body, status);
   });
 
   app.onError((e, c) => {
