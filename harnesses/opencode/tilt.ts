@@ -13,9 +13,12 @@ export const HOTKEYS: readonly string[] = [..."abcdefghijklmnopqrstuvwxyz0123456
 
 // The table's rows, between the mod's two pane sizes (apps/mod/hooks/view.tsx PANE_ROWS), with
 // HOST_ROWS of the terminal left to the host's prompt, its footer and some of the session.
+// To keep large cards (a round's end, many blackjack hands) it may grow until only
+// GROWN_HOST_ROWS are left: the prompt and its footer, and a little of the session.
 const MIN_TABLE_ROWS = 20;
 const MAX_TABLE_ROWS = 30;
 const HOST_ROWS = 12;
+const GROWN_HOST_ROWS = 8;
 
 export const NO_API_URL = "TILT · set TILT_API_URL (or the plugin's apiUrl option) and restart";
 
@@ -197,15 +200,14 @@ export class TiltTable {
   private paint(): void {
     if (this.size.width === 0) return;
     // The table leaves the prompt and the session most of the terminal.
-    const room = this.size.height - HOST_ROWS;
-    const rows = Math.max(MIN_TABLE_ROWS, Math.min(MAX_TABLE_ROWS, room));
+    const rows = Math.max(MIN_TABLE_ROWS, Math.min(MAX_TABLE_ROWS, this.size.height - HOST_ROWS));
     this.lastPaintId += 1;
     const request: PaintRequest = {
       id: this.lastPaintId,
       snapshot: this.session.snapshot(),
       width: this.size.width,
       rows,
-      maxRows: Math.max(rows, room),
+      maxRows: Math.max(rows, this.size.height - GROWN_HOST_ROWS),
       color: this.color,
     };
     this.painter.postMessage(request);
