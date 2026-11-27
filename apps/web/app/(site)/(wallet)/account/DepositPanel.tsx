@@ -10,6 +10,7 @@ import { Status } from "@/components/ui/Status";
 import { compareAmounts, formatAmount, parseAmount } from "@/lib/amount";
 import { solanaCluster } from "@/lib/config";
 import { usdcDestination } from "@/lib/solana";
+import { Faucet } from "./Faucet";
 import { MoneyStatus } from "./MoneyStatus";
 import { useMoneyIntent } from "./useMoneyIntent";
 import styles from "./account.module.css";
@@ -82,6 +83,7 @@ export function DepositPanel({ account, onSettled }: { account: AccountResponse;
         doneText="Deposit landed. It counts from your next round."
         onCheckAgain={() => void checkAgain()}
       />
+      <Faucet faucet={account.faucet} onClaimed={onSettled} />
       <FundWallet address={account.solanaAddress} />
     </Box>
   );

@@ -12,7 +12,13 @@ import { GUESSES } from "../src/games/hilo";
 import type { Outcome } from "../src/games/round";
 import { settle } from "../src/games/settlement";
 import { DIFFICULTY_NAMES } from "../src/games/tower";
-import type { AccountResponse, MoneyIntentResponse, ResponsibleLimits, VerifyResponse } from "../src/public";
+import type {
+  AccountResponse,
+  FaucetResponse,
+  MoneyIntentResponse,
+  ResponsibleLimits,
+  VerifyResponse,
+} from "../src/public";
 import { RateLimiter } from "../src/ratelimit";
 import { saveDetail, saveDraw, saveRound } from "../src/rounds";
 import { ensureUser } from "../src/users";
@@ -59,6 +65,8 @@ describe.skipIf(!db)("api routes", () => {
     relay.limitExceeded = false;
     relay.delayMs = 0;
     relay.down = false;
+    relay.faucet = null;
+    relay.faucetClaims.clear();
     chain = new FakeChain();
     ({ app } = testApp(db, relay, chain));
     wallet = relay.addUser(ALICE).toBase58();
@@ -610,12 +618,99 @@ describe.skipIf(!db)("api routes", () => {
           dailyLossNext: null,
           excludedUntil: null,
         },
+        faucet: null,
       });
       expect((await app.request("/v1/account", { headers: { authorization: "Bearer nope" } })).status).toBe(401);
     });
 
     it("is 404 without a Solana wallet", async () => {
       expect((await app.request("/v1/account", { headers: access(BOB) })).status).toBe(404);
+    });
+  });
+
+  describe("devnet faucet", () => {
+    const claim = (headers: Record<string, string> = access(ALICE), body: unknown = { claimId: randomUUID() }) =>
+      app.request("/v1/account/faucet", json(body, headers));
+    const faucetOf = async () =>
+      ((await (await app.request("/v1/account", { headers: access(ALICE) })).json()) as AccountResponse).faucet;
+
+    it("shows the faucet on the account only when the relay has one", async () => {
+      expect(await faucetOf()).toBeNull();
+      relay.faucet = { amount: "100000000" };
+      expect(await faucetOf()).toEqual({ amount: "100000000", nextClaimAt: null });
+    });
+
+    it("pays once per claim id, then says when the next claim is", async () => {
+      relay.faucet = { amount: "100000000" };
+      const claimId = randomUUID();
+      const first = await claim(access(ALICE), { claimId });
+      expect(first.status).toBe(200);
+      const body = (await first.json()) as FaucetResponse;
+      expect(body).toEqual({
+        claimId,
+        amount: "100000000",
+        status: "submitted",
+        signature: expect.any(String),
+        error: null,
+      });
+      expect(await (await claim(access(ALICE), { claimId })).json()).toEqual(body);
+      expect(relay.intents.size).toBe(1);
+
+      const nextClaimAt = must(relay.faucetClaims.get(ALICE), "claim");
+      const refused = await claim();
+      expect(refused.status).toBe(403);
+      expect(await refused.json()).toEqual({
+        error: {
+          code: "BLOCKED",
+          message: `test USDC limit reached, next claim after ${nextClaimAt.slice(0, 16).replace("T", " ")} UTC`,
+        },
+      });
+      expect(await faucetOf()).toEqual({ amount: "100000000", nextClaimAt });
+      expect(relay.actions()).toEqual([]);
+    });
+
+    it("reports an empty faucet without its internals", async () => {
+      relay.faucet = { amount: "100000000" };
+      relay.outcome = () => ({ status: "failed", error: { code: "FAUCET_EMPTY", message: "reserve 7xKX… holds 5" } });
+      expect(await (await claim()).json()).toMatchObject({
+        status: "failed",
+        signature: null,
+        error: { code: "FAUCET_EMPTY", message: "the test USDC faucet is empty, try again later" },
+      });
+    });
+
+    it("is refused when the relay has no faucet", async () => {
+      const res = await claim();
+      expect(res.status).toBe(404);
+      expect(await res.json()).toMatchObject({ error: { code: "NOT_FOUND" } });
+    });
+
+    it("needs a web login and a valid claim id, and never takes an amount", async () => {
+      relay.faucet = { amount: "100000000" };
+      expect((await claim({ authorization: "Bearer nope" })).status).toBe(401);
+      expect((await claim(mod)).status).toBe(401);
+      expect((await claim(access(ALICE), { claimId: "1" })).status).toBe(400);
+      expect((await claim(access(ALICE), { claimId: randomUUID(), amount: "999000000" })).status).toBe(400);
+      expect((await claim(access(BOB))).status).toBe(404);
+      expect(relay.intents.size).toBe(0);
+    });
+
+    it("is geo-blocked and rate limited like deposits", async () => {
+      relay.faucet = { amount: "100000000" };
+      expect((await claim({ ...access(ALICE), "x-country": "US" })).status).toBe(451);
+      ({ app } = testApp(db, relay, chain, {
+        limiters: { ...testApp(db, relay, chain).deps.limiters, money: RateLimiter.perMinute(1) },
+      }));
+      expect((await claim()).status).toBe(200);
+      expect((await claim()).status).toBe(429);
+    });
+
+    it("still loads the account when the relay can't tell the faucet's status", async () => {
+      relay.faucet = { amount: "100000000" };
+      expect(await faucetOf()).not.toBeNull();
+      // The wallet is cached by now: only the faucet status needs the relay.
+      relay.down = true;
+      expect(await faucetOf()).toBeNull();
     });
   });
 

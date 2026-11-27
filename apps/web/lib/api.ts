@@ -6,6 +6,8 @@ import type {
   DeviceApproveRequest,
   DeviceApproveResponse,
   ExcludeRequest,
+  FaucetRequest,
+  FaucetResponse,
   GeoResponse,
   LeaderboardResponse,
   LimitsRequest,
@@ -156,6 +158,8 @@ export function createApi(
       request<MoneyIntentResponse>("/v1/account/deposit", { method: "POST", body, auth }),
     withdraw: (auth: Auth, body: WithdrawRequest) =>
       request<MoneyIntentResponse>("/v1/account/withdraw", { method: "POST", body, auth }),
+    faucet: (auth: Auth, body: FaucetRequest) =>
+      request<FaucetResponse>("/v1/account/faucet", { method: "POST", body, auth }),
     moneyIntent: (auth: Auth, intentId: string) =>
       request<MoneyIntentResponse>(`/v1/account/intents/${enc(intentId)}`, { auth }),
     sessions: (auth: Auth) => request<SessionsResponse>("/v1/account/sessions", { auth }),
