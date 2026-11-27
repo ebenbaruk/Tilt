@@ -1,7 +1,7 @@
 import type { FaucetResponse } from "@tilt/api/public";
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/lib/api";
-import { claimErrorPhase, claimPhase, faucetOffer } from "@/lib/faucet";
+import { claimErrorPhase, claimPhase, faucetClaims, faucetOffer } from "@/lib/faucet";
 
 const now = new Date("2026-11-24T12:00:00.000Z");
 const faucet = { amount: "100000000", nextClaimAt: null };
@@ -53,8 +53,10 @@ describe("claim outcome", () => {
     expect(claimPhase(other)).toEqual({ kind: "failed", message: "The claim failed. Retry in a moment." });
   });
 
-  it("reads a BLOCKED refusal as the 24 h limit, and other errors as failures", () => {
-    expect(claimErrorPhase(new ApiError("BLOCKED", "test USDC limit reached", 403))).toEqual({ kind: "limit" });
+  it("reads a BLOCKED refusal as a cap, without claiming which one, and other errors as failures", () => {
+    // The player's 24 h and the faucet's daily total both answer BLOCKED: the player may not have claimed yet.
+    const limit = claimErrorPhase(new ApiError("BLOCKED", "test USDC limit reached", 403));
+    expect(limit).toEqual({ kind: "limit", message: "The test USDC limit is reached for now." });
     expect(claimErrorPhase(new ApiError("RATE_LIMITED", "slow down", 429))).toEqual({
       kind: "failed",
       message: "Too many requests. Wait a few seconds and retry.",
@@ -63,5 +65,55 @@ describe("claim outcome", () => {
       kind: "failed",
       message: "no test USDC faucet here",
     });
+  });
+});
+
+describe("faucetClaims", () => {
+  const answer =
+    (status: FaucetResponse["status"]) =>
+    async (claimId: string): Promise<FaucetResponse> => ({
+      claimId,
+      amount: "100000000",
+      status,
+      signature: status === "submitted" ? "5ig" : null,
+      error: null,
+    });
+  const fails = (error: ApiError) => async (): Promise<FaucetResponse> => {
+    throw error;
+  };
+  const ids = () => {
+    let n = 0;
+    return () => `claim-${++n}`;
+  };
+  const sentIds =
+    (log: string[]) => (send: (claimId: string) => Promise<FaucetResponse>) => async (claimId: string) => {
+      log.push(claimId);
+      return send(claimId);
+    };
+
+  it("resends the same claim after an unknown outcome until the relay is done with it", async () => {
+    const claim = faucetClaims(ids());
+    const sent: string[] = [];
+    const via = sentIds(sent);
+    expect(await claim(via(fails(new ApiError("UPSTREAM_ERROR", "relay unavailable", 502))))).toMatchObject({
+      kind: "failed",
+    });
+    await claim(via(fails(new ApiError("NETWORK_ERROR", "offline", null))));
+    expect(await claim(via(answer("pending")))).toEqual({ kind: "pending" });
+    expect(await claim(via(answer("submitted")))).toEqual({ kind: "done", signature: "5ig" });
+    await claim(via(answer("submitted")));
+    expect(sent).toEqual(["claim-1", "claim-1", "claim-1", "claim-1", "claim-2"]);
+  });
+
+  it("starts a new claim after a failed or refused one", async () => {
+    const claim = faucetClaims(ids());
+    const sent: string[] = [];
+    const via = sentIds(sent);
+    await claim(via(answer("failed")));
+    expect(await claim(via(fails(new ApiError("BLOCKED", "test USDC limit reached", 403))))).toMatchObject({
+      kind: "limit",
+    });
+    await claim(via(answer("submitted")));
+    expect(sent).toEqual(["claim-1", "claim-2", "claim-3"]);
   });
 });

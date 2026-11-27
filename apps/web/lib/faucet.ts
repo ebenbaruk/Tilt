@@ -23,8 +23,9 @@ export type FaucetPhase =
   | { kind: "done"; signature: string | null }
   /** Sent, not confirmed yet: the wallet balance catches up on a later refresh. */
   | { kind: "pending" }
-  /** Already claimed in the last 24 h: the refreshed offer says when the next claim opens. */
-  | { kind: "limit" }
+  /** Refused at a cap, the player's 24 h or all players' daily total: the refreshed offer says when
+   *  the next claim opens. */
+  | { kind: "limit"; message: string }
   | { kind: "failed"; message: string };
 
 export function claimPhase(response: FaucetResponse): FaucetPhase {
@@ -35,7 +36,33 @@ export function claimPhase(response: FaucetResponse): FaucetPhase {
   return { kind: "failed", message: "The claim failed. Retry in a moment." };
 }
 
+/** The API doesn't say which cap refused the claim, so neither does this. */
+const LIMIT_MESSAGE = "The test USDC limit is reached for now.";
+
 export function claimErrorPhase(error: unknown): FaucetPhase {
-  if (error instanceof ApiError && error.code === "BLOCKED") return { kind: "limit" };
+  if (error instanceof ApiError && error.code === "BLOCKED") return { kind: "limit", message: LIMIT_MESSAGE };
   return { kind: "failed", message: describeError(error) };
+}
+
+/**
+ * Claims under one id until the relay is done with that claim, like money intents: a retry after a
+ * timeout or a lost answer resends the same claim, which never pays twice, rather than a second one
+ * the relay would refuse while the first may still land.
+ */
+export function faucetClaims(newId: () => string) {
+  let claimId: string | null = null;
+  return async function claim(send: (claimId: string) => Promise<FaucetResponse>): Promise<FaucetPhase> {
+    claimId ??= newId();
+    try {
+      const response = await send(claimId);
+      // Landed or failed: the next claim is a new one. Pending: it is still this one.
+      if (response.status !== "pending") claimId = null;
+      return claimPhase(response);
+    } catch (error) {
+      const phase = claimErrorPhase(error);
+      // Refused at a cap, so never recorded. Any other error may hide a claim in flight.
+      if (phase.kind === "limit") claimId = null;
+      return phase;
+    }
+  };
 }

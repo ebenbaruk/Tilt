@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Status } from "@/components/ui/Status";
 import { getApi } from "@/lib/api";
 import { solanaCluster } from "@/lib/config";
-import { claimErrorPhase, claimPhase, faucetOffer, type FaucetPhase } from "@/lib/faucet";
+import { faucetClaims, faucetOffer, type FaucetPhase } from "@/lib/faucet";
 import { solanaTxUrl } from "@/lib/solana";
 import styles from "./account.module.css";
 
@@ -15,16 +15,13 @@ import styles from "./account.module.css";
 export function Faucet({ faucet, onClaimed }: { faucet: AccountResponse["faucet"]; onClaimed: () => void }) {
   const { auth } = useTiltAuth();
   const [phase, setPhase] = useState<FaucetPhase>({ kind: "idle" });
+  const [claimFaucet] = useState(() => faucetClaims(() => crypto.randomUUID()));
   const offer = faucetOffer(solanaCluster(), faucet, new Date());
   if (!offer) return null;
 
   async function claim() {
     setPhase({ kind: "working" });
-    try {
-      setPhase(claimPhase(await getApi().faucet(await auth(), { claimId: crypto.randomUUID() })));
-    } catch (error) {
-      setPhase(claimErrorPhase(error));
-    }
+    setPhase(await claimFaucet(async (claimId) => getApi().faucet(await auth(), { claimId })));
     // The wallet balance, or when the next claim opens.
     onClaimed();
   }
@@ -69,7 +66,7 @@ function ClaimStatus({ phase }: { phase: FaucetPhase }) {
     case "pending":
       return <Status tone="info">Test USDC is on its way. Refresh in a minute.</Status>;
     case "limit":
-      return <Status tone="info">You already got test USDC in the last 24 h.</Status>;
+      return <Status tone="info">{phase.message}</Status>;
     case "failed":
       return <Status tone="loss">{phase.message}</Status>;
   }
