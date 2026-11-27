@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::constants::MIN_BET_FLOOR;
+use crate::constants::{MIN_BET_FLOOR, MIN_ROUND_TIMEOUT_SECS};
 use crate::errors::TiltError;
 use crate::games::{
     baccarat::BaccaratCoup,
@@ -38,7 +38,8 @@ pub struct Config {
     pub player_daily_cap: u64,
     /// House money (paid beyond players' own deposits) sent automatically per 24 h block.
     pub daily_cap: u64,
-    /// A draw not answered this long can be requested again by the relayer.
+    /// A draw not answered this long can be requested again by the relayer. At least
+    /// `MIN_ROUND_TIMEOUT_SECS`.
     pub round_timeout_secs: i64,
     /// A round left waiting for the player this long (a blackjack hand, a Mines, Hilo or Tower
     /// board) is closed for them by the relayer: stand, or cash-out at the current value. Until
@@ -75,7 +76,7 @@ impl Config {
                 && self.max_withdrawal > 0
                 && self.max_withdrawal <= self.player_daily_cap
                 && self.max_withdrawal <= self.daily_cap
-                && self.round_timeout_secs > 0
+                && self.round_timeout_secs >= MIN_ROUND_TIMEOUT_SECS
                 && self.abandoned_round_secs >= self.round_timeout_secs
                 && self.validator != Pubkey::default()
                 && self.vrf_queue != Pubkey::default(),
@@ -607,7 +608,7 @@ mod tests {
             max_withdrawal: 2,
             player_daily_cap: 2,
             daily_cap: 2,
-            round_timeout_secs: 60,
+            round_timeout_secs: MIN_ROUND_TIMEOUT_SECS,
             abandoned_round_secs: 21_600,
             validator: Pubkey::new_from_array([1; 32]),
             vrf_queue: Pubkey::new_from_array([2; 32]),
@@ -654,7 +655,12 @@ mod tests {
                 ..valid_config()
             },
             Config {
-                abandoned_round_secs: 59,
+                // A retry could land while the first request can still be answered.
+                round_timeout_secs: MIN_ROUND_TIMEOUT_SECS - 1,
+                ..valid_config()
+            },
+            Config {
+                abandoned_round_secs: MIN_ROUND_TIMEOUT_SECS - 1,
                 ..valid_config()
             },
             Config {

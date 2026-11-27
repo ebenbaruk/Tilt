@@ -10,7 +10,7 @@ use crate::constants::{ACCOUNT_SEED, LEDGER_SEED, MINES_SEED, RISK_POOL_SEED, VA
 use crate::errors::TiltError;
 use crate::games::mines::{self, MinesBoard, MAX_MINES, NONE};
 use crate::instructions::play::{
-    callback_account, draw_request, expiry, now, pending_draw, settle_round, Expiry,
+    callback_account, draw_request, expire, now, pending_draw, settle_round, Expiry,
 };
 use crate::risk::RiskPool;
 use crate::rng::Rng;
@@ -227,7 +227,7 @@ fn cash_out(accounts: &mut MinesPlay) {
 pub fn expire_mines_round(mut ctx: Context<MinesPlay>, client_seed: [u8; 32]) -> Result<()> {
     let round = &ctx.accounts.account.round;
     require!(round.game == Game::Mines, TiltError::WrongState);
-    match expiry(round, &ctx.accounts.vault.config, now()?)? {
+    match expire(&ctx.accounts.account, &ctx.accounts.vault.config)? {
         Expiry::Retry(_) => request_reveal(&mut ctx, client_seed),
         Expiry::Abandoned => {
             cash_out(ctx.accounts);

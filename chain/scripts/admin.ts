@@ -2,6 +2,7 @@
 //
 //   pnpm admin status
 //   pnpm admin pause deposits|bets|payouts|promo|all     pnpm admin resume …
+//   pnpm admin set-round-timeout <secs>   delay before the relay may request a draw again
 //   pnpm admin release <player>        pays a player's held withdrawals after review
 //   pnpm admin withdraw-house <usdc>   moves unreserved bankroll to the treasury
 //   pnpm admin withdraw-promo <usdc>   moves unspent promo money to the treasury
@@ -127,12 +128,18 @@ async function main() {
         free: (balance - reserved).toString(),
         paused: { deposits: v.config.depositsPaused, bets: v.config.betsPaused, payouts: v.config.payoutsPaused, promo: promo?.config.paused },
         promoBalance: promoBalance.toString(),
+        roundTimeoutSecs: v.config.roundTimeoutSecs.toString(),
       });
       return;
     }
     case "pause":
     case "resume":
       return setPauses(command === "pause", arg);
+    case "set-round-timeout": {
+      if (!arg || !/^\d+$/.test(arg)) throw new Error("expected a number of seconds, e.g. 300");
+      const config: Config = { ...v.config, roundTimeoutSecs: new anchor.BN(arg) };
+      return run(v.admin, await program.methods.setConfig(config).accountsPartial({ admin: v.admin, vault }).instruction());
+    }
     case "release": {
       const player = pubkey(arg);
       return run(v.admin, await program.methods.releaseWithdrawals()

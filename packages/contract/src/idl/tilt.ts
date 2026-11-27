@@ -10614,6 +10614,19 @@ export type Tilt = {
   ],
   "events": [
     {
+      "name": "drawRetried",
+      "discriminator": [
+        201,
+        113,
+        226,
+        247,
+        19,
+        159,
+        211,
+        163
+      ]
+    },
+    {
       "name": "lossReleased",
       "discriminator": [
         112,
@@ -11065,7 +11078,8 @@ export type Tilt = {
           {
             "name": "roundTimeoutSecs",
             "docs": [
-              "A draw not answered this long can be requested again by the relayer."
+              "A draw not answered this long can be requested again by the relayer. At least",
+              "`MIN_ROUND_TIMEOUT_SECS`."
             ],
             "type": "i64"
           },
@@ -11142,6 +11156,44 @@ export type Tilt = {
           },
           {
             "name": "climb"
+          }
+        ]
+      }
+    },
+    {
+      "name": "drawRetried",
+      "docs": [
+        "A draw requested again by the relay: the abandoned request's answer can no longer play the",
+        "round. Public so anyone can see how often, and for whom, draws are retried."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "player",
+            "type": "pubkey"
+          },
+          {
+            "name": "round",
+            "docs": [
+              "The round's number, the one its `RoundSettled` will carry."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "game",
+            "type": {
+              "defined": {
+                "name": "game"
+              }
+            }
+          },
+          {
+            "name": "abandonedRequestId",
+            "docs": [
+              "The request given up on; the new one is `abandoned_request_id + 1`."
+            ],
+            "type": "u64"
           }
         ]
       }

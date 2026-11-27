@@ -2,6 +2,7 @@
 
 use anchor_lang::prelude::*;
 
+use crate::constants::MIN_ROUND_TIMEOUT_SECS;
 use crate::risk::RiskPool;
 use crate::state::{Bankroll, Config, PlayerAccount, Vault};
 
@@ -16,7 +17,7 @@ pub fn config() -> Config {
         max_withdrawal: 1_000,
         player_daily_cap: 1_000,
         daily_cap: 1_000,
-        round_timeout_secs: 60,
+        round_timeout_secs: MIN_ROUND_TIMEOUT_SECS,
         abandoned_round_secs: 21_600,
         validator: Pubkey::new_unique(),
         vrf_queue: Pubkey::new_unique(),

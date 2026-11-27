@@ -29,6 +29,8 @@ Les lignes `sweep stuck` (un passage du cron dure plus de 5 min) et `intent sett
 | `pause promo` | Plus aucun gain promo. |
 | `pause all` / `resume …` | Tout, ou levée. |
 
+`pause` et `resume` renvoient toute la config du coffre (`set_config`) : si le programme la refuse (`InvalidConfig`, par exemple un `round_timeout_secs` sous le plancher du programme), ils échouent aussi. Voir « Mise à jour du programme ».
+
 ## Incidents
 
 **Retraits mis en attente** (`WithdrawalHeld` : au-delà des plafonds, ou pendant une pause). Vérifier le joueur (KYC, historique des manches), puis `release <wallet du joueur>`. Le contrôle anti-fraude s'applique quand même.
@@ -52,6 +54,19 @@ Le bouton « get 100 test USDC » de `/account` envoie de l'USDC de test depuis 
 **Recharger la réserve** (alerte `LOW_FAUCET_RESERVE` ou `FAUCET_EMPTY`) : avec la clé qui est l'autorité du mint de test, `cd chain && ANCHOR_WALLET=<clé> pnpm admin mint-test <adresse du relayer> 10000` (10 000 USDC au plus par appel, crée l'ATA si besoin), à répéter pour garder au moins une journée de demandes. Ou `spl-token mint <mint> <montant> <ATA du relayer>` avec la même clé.
 
 **Couper le faucet** (abus, multi-comptes) : `FAUCET_ENABLED=false` et redémarrer le relais ; le bouton disparaît de `/account`. Rien d'autre ne dépend de la réserve : le relayer ne paie jamais un joueur depuis elle hors faucet.
+
+## Mise à jour du programme
+
+`set_config` revalide toute la config (`Config::validate`). Quand une version relève un plancher, la config en place doit déjà le respecter **avant** la mise à jour ; sinon toute commande qui recopie la config actuelle (`pause`, `resume`, la remise en état de `scripts/e2e.ts --shared-vault`) est refusée `InvalidConfig` jusqu'à ce qu'on la corrige. `scripts/e2e.ts` refuse de démarrer sur un coffre sous le plancher, pour ne pas y laisser sa config de test.
+
+Plancher de `round_timeout_secs` (`MIN_ROUND_TIMEOUT_SECS`, `chain/programs/tilt/src/constants.rs`) : 300 s. Le coffre devnet (`HL9taNC…`) était à 60 s le 2026-11-24 (`abandoned_round_secs` à 21 600, qui doit rester ≥).
+
+1. `status` : lire `roundTimeoutSecs`.
+2. S'il est sous 300 : `set-round-timeout 300`, **avec l'ancien programme** (il accepte toute valeur > 0 jusqu'à `abandoned_round_secs`). Relancer `status` pour vérifier.
+3. Mettre à jour le programme.
+4. `status`, puis `pause bets` et `resume bets` : `set_config` passe (quelques secondes sans nouvelle manche).
+
+Si l'ordre n'a pas été suivi : `set-round-timeout 300` suffit, `pause` remarche ensuite.
 
 ## Passage de l'admin sur un multisig
 

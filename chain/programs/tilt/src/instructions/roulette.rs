@@ -183,7 +183,7 @@ pub fn roulette_chips(
 pub fn expire_roulette_round(mut ctx: Context<RoulettePlay>, client_seed: [u8; 32]) -> Result<()> {
     let round = &ctx.accounts.account.round;
     require!(round.on_roulette_table(), TiltError::WrongState);
-    expired_draw(round, &ctx.accounts.vault.config)?;
+    expired_draw(&ctx.accounts.account, &ctx.accounts.vault.config)?;
     request_roulette_draw(&mut ctx, client_seed)
 }
 

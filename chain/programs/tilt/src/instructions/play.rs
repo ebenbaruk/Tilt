@@ -9,7 +9,9 @@ use ephemeral_rollups_sdk::vrf::{
     types::SerializableAccountMeta,
 };
 
-use crate::constants::{ACCOUNT_SEED, LEDGER_SEED, RISK_POOL_SEED, TABLE_SEED, VAULT_SEED};
+use crate::constants::{
+    ACCOUNT_SEED, LEDGER_SEED, MIN_ROUND_TIMEOUT_SECS, RISK_POOL_SEED, TABLE_SEED, VAULT_SEED,
+};
 use crate::errors::TiltError;
 use crate::games::{
     baccarat::{BaccaratBet, BaccaratCoup},
@@ -300,7 +302,7 @@ pub fn expire_round(mut ctx: Context<Play>, client_seed: [u8; 32]) -> Result<()>
         round.game.draws_in_round() && !round.on_roulette_table(),
         TiltError::WrongState
     );
-    match expiry(round, &ctx.accounts.vault.config, now()?)? {
+    match expire(&ctx.accounts.account, &ctx.accounts.vault.config)? {
         Expiry::Retry(draw) => request_draw(&mut ctx, draw, client_seed),
         // Only blackjack hands wait for the player among these games.
         Expiry::Abandoned => {
@@ -313,7 +315,8 @@ pub fn expire_round(mut ctx: Context<Play>, client_seed: [u8; 32]) -> Result<()>
 /// What the relay cron may do with a round left untouched.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Expiry {
-    /// A draw still awaited after `round_timeout_secs`: requested again.
+    /// A draw still awaited after `round_timeout_secs` (never under `MIN_ROUND_TIMEOUT_SECS`):
+    /// requested again.
     Retry(Draw),
     /// A round left waiting for the player for `abandoned_round_secs`: closed for them as
     /// they could have closed it (a stand, a cash-out), so it stops holding the account.
@@ -323,7 +326,11 @@ pub(crate) enum Expiry {
 /// How a round untouched since `round.last_action` expires at `now`, or why it does not.
 pub(crate) fn expiry(round: &Round, config: &Config, now: i64) -> Result<Expiry> {
     let (expiry, after) = match round.status {
-        RoundStatus::AwaitingDraw(draw) => (Expiry::Retry(draw), config.round_timeout_secs),
+        // A vault configured before the floor existed keeps its lower value: enforce it here too.
+        RoundStatus::AwaitingDraw(draw) => (
+            Expiry::Retry(draw),
+            config.round_timeout_secs.max(MIN_ROUND_TIMEOUT_SECS),
+        ),
         RoundStatus::PlayerTurn => (Expiry::Abandoned, config.abandoned_round_secs),
         RoundStatus::Idle => return err!(TiltError::WrongState),
     };
@@ -331,10 +338,46 @@ pub(crate) fn expiry(round: &Round, config: &Config, now: i64) -> Result<Expiry>
     Ok(expiry)
 }
 
+/// A draw requested again by the relay: the abandoned request's answer can no longer play the
+/// round. Public so anyone can see how often, and for whom, draws are retried.
+#[event]
+pub struct DrawRetried {
+    pub player: Pubkey,
+    /// The round's number, the one its `RoundSettled` will carry.
+    pub round: u32,
+    pub game: Game,
+    /// The request given up on; the new one is `abandoned_request_id + 1`.
+    pub abandoned_request_id: u64,
+}
+
+/// How the account's round expires now (`expiry`). A retry is published as `DrawRetried`
+/// before the new request replaces the abandoned one.
+pub(crate) fn expire(account: &PlayerAccount, config: &Config) -> Result<Expiry> {
+    let outcome = expiry(&account.round, config, now()?)?;
+    if let Some(retried) = draw_retried(account, &outcome) {
+        emit!(retried);
+    }
+    Ok(outcome)
+}
+
+/// The event `expire` emits for `outcome`: one per retry, none for an abandoned round.
+fn draw_retried(account: &PlayerAccount, outcome: &Expiry) -> Option<DrawRetried> {
+    let Expiry::Retry(_) = outcome else {
+        return None;
+    };
+    Some(DrawRetried {
+        player: account.player,
+        // `finish_round` counts the round before `RoundSettled` is emitted.
+        round: account.rounds + 1,
+        game: account.round.game,
+        abandoned_request_id: account.round.request_id,
+    })
+}
+
 /// The draw to request again for a game that never waits for the player (the one-draw
 /// games, roulette chips).
-pub(crate) fn expired_draw(round: &Round, config: &Config) -> Result<Draw> {
-    match expiry(round, config, now()?)? {
+pub(crate) fn expired_draw(account: &PlayerAccount, config: &Config) -> Result<Draw> {
+    match expire(account, config)? {
         Expiry::Retry(draw) => Ok(draw),
         Expiry::Abandoned => err!(TiltError::WrongState),
     }
@@ -401,7 +444,7 @@ pub fn consume_randomness(
 mod tests {
     use super::*;
 
-    use crate::instructions::testing::config;
+    use crate::instructions::testing::{account, config, pool_of};
 
     const LAST_ACTION: i64 = 1_000;
 
@@ -437,6 +480,28 @@ mod tests {
                 Expiry::Retry(draw)
             );
         }
+    }
+
+    #[test]
+    fn a_vault_left_under_the_floor_still_waits_the_floor_before_a_retry() {
+        // `set_config` refuses this, but a vault configured before the floor keeps its value.
+        let old = Config {
+            round_timeout_secs: 60,
+            ..config()
+        };
+        let round = untouched(RoundStatus::AwaitingDraw(Draw::Deal));
+        assert_eq!(
+            expiry(&round, &old, LAST_ACTION + 60).unwrap_err(),
+            TiltError::RoundNotExpired.into()
+        );
+        assert_eq!(
+            expiry(&round, &old, LAST_ACTION + MIN_ROUND_TIMEOUT_SECS - 1).unwrap_err(),
+            TiltError::RoundNotExpired.into()
+        );
+        assert_eq!(
+            expiry(&round, &old, LAST_ACTION + MIN_ROUND_TIMEOUT_SECS).unwrap(),
+            Expiry::Retry(Draw::Deal)
+        );
     }
 
     #[test]
@@ -481,5 +546,41 @@ mod tests {
                 TiltError::StaleRandomness.into()
             );
         }
+    }
+
+    #[test]
+    fn a_retry_is_published_under_the_number_its_round_settles_with() {
+        let mut a = PlayerAccount {
+            rounds: 4,
+            round: Round {
+                game: Game::Slots,
+                request_id: 7,
+                ..untouched(RoundStatus::AwaitingDraw(Draw::Spin))
+            },
+            ..account()
+        };
+        let timeout = config().round_timeout_secs;
+        let outcome = expiry(&a.round, &config(), LAST_ACTION + timeout).unwrap();
+        let retried = draw_retried(&a, &outcome).expect("a retry is published");
+        assert_eq!(
+            (retried.player, retried.game, retried.abandoned_request_id),
+            (a.player, Game::Slots, 7)
+        );
+        // What `settle_round` does before emitting `RoundSettled { round: rounds, .. }`.
+        let mut pool = pool_of(&a);
+        a.finish_round(settle(a.round.stake, 0), &mut pool);
+        assert_eq!(retried.round, a.rounds);
+    }
+
+    #[test]
+    fn an_abandoned_round_publishes_no_retry() {
+        let a = PlayerAccount {
+            round: untouched(RoundStatus::PlayerTurn),
+            ..account()
+        };
+        let abandoned = config().abandoned_round_secs;
+        let outcome = expiry(&a.round, &config(), LAST_ACTION + abandoned).unwrap();
+        assert_eq!(outcome, Expiry::Abandoned);
+        assert!(draw_retried(&a, &outcome).is_none());
     }
 }
