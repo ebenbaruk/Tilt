@@ -1059,7 +1059,9 @@ async function countRound(
   }
 
   if (next.session !== playing.session) {
-    await update($, session, () => next.session);
+    // From the session held now, not the one read above: a logout during the awaits in between
+    // resets it, and the old total must not come back.
+    await update($, session, (value) => motion.countSession(value, before, after, now));
   }
 
   if (counted.settled !== null && BigInt(counted.settled.net) > 0n) {

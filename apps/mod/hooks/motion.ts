@@ -175,9 +175,7 @@ export function countRound(
 
   // The first look at the table: what is on it was played before this session.
   if (before === null && session.lastRound === null) {
-    if (round !== null) {
-      session = { ...session, lastRound: round.number };
-    }
+    session = countSession(session, before, after, now);
 
     return { playing: { ...playing, spin, deal, session }, isNew, settled: null };
   }
@@ -186,12 +184,7 @@ export function countRound(
     return { playing: { ...playing, spin, deal }, isNew, settled: null };
   }
 
-  session = {
-    net: (BigInt(session.net) + BigInt(round.net)).toString(),
-    rounds: session.rounds + 1,
-    startedAt: session.startedAt ?? now,
-    lastRound: round.number,
-  };
+  session = countSession(session, before, after, now);
 
   // A still table (the main screen's Mines and Tower boards) plays the result as the moving one does.
   // The balance shown until then: the one held while it spun or was dealt, else the one before it settled.
@@ -204,4 +197,32 @@ export function countRound(
   const result = { round: round.number, startsAt: resultShowsAt(spin, deal, round, now, speed), balance };
 
   return { playing: { spin, deal, result, session }, isNew, settled: round };
+}
+
+/**
+ * The session line once `after` replaces `before`: the first look at the table marks what is on it
+ * as played before, and a round that settles counts once. Unchanged, it keeps its object.
+ */
+export function countSession(
+  session: TiltSession,
+  before: StateResponse | null,
+  after: StateResponse,
+  now: number,
+): TiltSession {
+  const round = after.round;
+
+  if (before === null && session.lastRound === null) {
+    return round === null ? session : { ...session, lastRound: round.number };
+  }
+
+  if (round === null || round.phase !== "idle" || round.number === session.lastRound) {
+    return session;
+  }
+
+  return {
+    net: (BigInt(session.net) + BigInt(round.net)).toString(),
+    rounds: session.rounds + 1,
+    startedAt: session.startedAt ?? now,
+    lastRound: round.number,
+  };
 }
