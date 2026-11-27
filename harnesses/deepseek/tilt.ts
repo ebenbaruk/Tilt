@@ -3,6 +3,7 @@
 // the balance and the last result, and the companion (harnesses/companion) draws the table: dsh
 // runs plugins under plain Node, which cannot load the mod's view (.tsx).
 // No prompt, reply, tool call or session event is ever read.
+import { cleanText } from "../../apps/mod/hooks/format";
 import {
   TiltSession,
   fileStore,
@@ -90,7 +91,8 @@ async function login(tilt: TiltSession): Promise<CommandResult> {
 function statusText(tilt: TiltSession): string {
   const snapshot = tilt.snapshot();
   const line = renderStatusLine(snapshot, { color: false, width: TEXT_WIDTH }).trimEnd();
-  return [line, snapshot.message?.text, COMPANION].filter((text) => text !== undefined).join("\n");
+  const message = snapshot.message === null ? undefined : cleanText(snapshot.message.text);
+  return [line, message, COMPANION].filter((text) => text !== undefined).join("\n");
 }
 
 function configuredApiUrl(config: unknown): string | undefined {
