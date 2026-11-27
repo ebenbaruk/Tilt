@@ -2,6 +2,9 @@
 // the shared `@tilt/contract` schemas; upstream text never reaches players.
 import {
   ErrorResponse,
+  FaucetClaimRequest,
+  FaucetClaimResponse,
+  FaucetStatusResponse,
   IntentRequest,
   IntentResponse,
   PromoPayoutRequest,
@@ -21,6 +24,9 @@ export interface Relay {
   getIntent(intentId: string): Promise<IntentResponse | null>;
   payPromo(request: PromoPayoutRequest): Promise<PromoPayoutResponse>;
   getPromo(payoutId: string): Promise<PromoPayoutResponse | null>;
+  /** The devnet faucet, as the relay sees it for this player. */
+  faucetStatus(userId: string): Promise<FaucetStatusResponse>;
+  claimFaucet(request: FaucetClaimRequest): Promise<FaucetClaimResponse>;
 }
 
 /** Refusals of the request itself: the relay recorded nothing, the same id may be sent again. */
@@ -36,6 +42,7 @@ const SAFE_MESSAGES: Partial<Record<ErrorCode, string>> = {
   LIMIT_EXCEEDED: "deposit cap reached",
   PLAYER_BUSY: "another move is still in flight",
   INTENT_CONFLICT: "intent id already used for another action",
+  FAUCET_EMPTY: "the test USDC faucet is empty, try again later",
 };
 
 /** A failed intent's error, reduced to what players may see (Anchor error names are safe). */
@@ -57,7 +64,17 @@ function refusal(status: number, body: unknown): ApiError {
   if (status === 409 && code === "INTENT_CONFLICT") {
     return new ApiError("INTENT_CONFLICT", SAFE_MESSAGES.INTENT_CONFLICT ?? "");
   }
-  if (status === 422 && code === "LIMIT_EXCEEDED") return new ApiError("BLOCKED", "deposit cap reached, try less");
+  if (status === 422 && code === "LIMIT_EXCEEDED") {
+    const retryAt = parsed.success ? parsed.data.error.retryAt : undefined;
+    // Only faucet claims carry retryAt; deposits are refused by the relay's own caps.
+    if (retryAt)
+      return new ApiError(
+        "BLOCKED",
+        `test USDC limit reached, next claim after ${retryAt.slice(0, 16).replace("T", " ")} UTC`,
+      );
+    return new ApiError("BLOCKED", "deposit cap reached, try less");
+  }
+  if (status === 403 && code === "FAUCET_DISABLED") return new ApiError("NOT_FOUND", "no test USDC faucet here");
   // The relay checks the player's identity token again; it is only refused once it expired in between.
   if (status === 403 && code === "CONSENT_REQUIRED")
     return new ApiError("FORBIDDEN", "identity check expired, sign in again");
@@ -92,6 +109,17 @@ export class HttpRelay implements Relay {
   async getPromo(payoutId: string): Promise<PromoPayoutResponse | null> {
     const path = `/payouts/promo/${encodeURIComponent(payoutId)}`;
     return this.call("GET", path, PromoPayoutResponse, undefined, "INVALID_REQUEST");
+  }
+
+  async faucetStatus(userId: string): Promise<FaucetStatusResponse> {
+    const path = `/faucet/${encodeURIComponent(userId)}`;
+    const status = await this.call("GET", path, FaucetStatusResponse, undefined, "INVALID_REQUEST");
+    // The relay never answers this route with 404; were it to, "no faucet" is the safe reading.
+    return status ?? { enabled: false, amount: null, nextClaimAt: null };
+  }
+
+  async claimFaucet(request: FaucetClaimRequest): Promise<FaucetClaimResponse> {
+    return this.call("POST", "/faucet/claims", FaucetClaimResponse, FaucetClaimRequest.parse(request));
   }
 
   /** One relay call. With `notFound`, a 404 carrying that code resolves to null. */

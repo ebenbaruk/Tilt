@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Amount, IntentRequest, PrivyUserId } from "./relay";
+import { Amount, ErrorResponse, FaucetClaimRequest, FaucetClaimResponse, FaucetStatusResponse, IntentRequest, PrivyUserId } from "./relay";
 
 describe("Amount", () => {
   it("accepts positive integers in base units up to u64", () => {
@@ -145,5 +145,31 @@ describe("PrivyUserId", () => {
     for (const bad of ["", "did:privy:", "did:privy:abc", "did:privy:CM3NP4U9J001RC8B73SEQMQQK", "did:privy:cm3np4u9j001rc8b73seqmqqk/../x", "did:privy:" + "a".repeat(41), "cm3np4u9j001rc8b73seqmqqk"]) {
       expect(PrivyUserId.safeParse(bad).success, bad).toBe(false);
     }
+  });
+});
+
+describe("faucet", () => {
+  const claimId = "6F9619FF-8B86-4011-B42D-00C04FC964FF";
+  const userId = "did:privy:cm3np4u9j001rc8b73seqmqqk";
+
+  it("takes no amount from the caller and lowercases the claim id", () => {
+    expect(FaucetClaimRequest.parse({ claimId, userId, amount: "1000000000000" })).toEqual({ claimId: claimId.toLowerCase(), userId });
+    expect(FaucetClaimRequest.safeParse({ claimId: "1", userId }).success).toBe(false);
+    expect(FaucetClaimRequest.safeParse({ claimId, userId: "did:privy:x" }).success).toBe(false);
+  });
+
+  it("describes claims and the status in base units and ISO times", () => {
+    expect(FaucetClaimResponse.safeParse({ claimId: claimId.toLowerCase(), amount: "100000000", status: "submitted", signature: "5ig" }).success).toBe(true);
+    expect(FaucetClaimResponse.safeParse({ claimId: claimId.toLowerCase(), amount: "100.5", status: "submitted" }).success).toBe(false);
+    expect(FaucetStatusResponse.safeParse({ enabled: true, amount: "100000000", nextClaimAt: "2026-11-25T10:00:00.000Z" }).success).toBe(true);
+    expect(FaucetStatusResponse.safeParse({ enabled: false, amount: null, nextClaimAt: null }).success).toBe(true);
+    expect(FaucetStatusResponse.safeParse({ enabled: true, amount: "100000000", nextClaimAt: "tomorrow" }).success).toBe(false);
+  });
+
+  it("says when a refused claim can be retried", () => {
+    const limit = { error: { code: "LIMIT_EXCEEDED", message: "m", retryAt: "2026-11-25T10:00:00.000Z" } };
+    expect(ErrorResponse.parse(limit)).toEqual(limit);
+    expect(ErrorResponse.safeParse({ error: { code: "FAUCET_EMPTY", message: "m" } }).success).toBe(true);
+    expect(ErrorResponse.safeParse({ error: { ...limit.error, retryAt: "soon" } }).success).toBe(false);
   });
 });

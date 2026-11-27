@@ -2,7 +2,14 @@
 // by the relayer. The program stays the arbiter: everything is re-checked on-chain.
 import anchor from "@coral-xyz/anchor";
 import type { IdlAccounts, IdlTypes, Program as ProgramT } from "@coral-xyz/anchor";
-import { createAssociatedTokenAccountIdempotentInstruction, getAccount, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import {
+  createAssociatedTokenAccountIdempotentInstruction,
+  createTransferCheckedInstruction,
+  getAccount,
+  getAssociatedTokenAddressSync,
+  TOKEN_PROGRAM_ID,
+  unpackAccount,
+} from "@solana/spl-token";
 import { Connection, Keypair, PublicKey, Transaction, type TransactionInstruction } from "@solana/web3.js";
 import {
   type Action,
@@ -32,6 +39,7 @@ import {
 } from "@tilt/contract";
 import { randomBytes } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
+import { logAlert } from "./monitor";
 import type { PlayerWallet, PlayerWallets } from "./players";
 
 const { BN, Program } = anchor;
@@ -168,6 +176,8 @@ const RPC_TIMEOUT_MS = 30_000;
 /** How long the rollup gets to see a table or board just opened and delegated on Solana. */
 const TABLE_READY_MS = 20_000;
 const TABLE_POLL_MS = 250;
+/** The vault mint's decimals: amounts are USDC base units everywhere. A mismatch fails the transfer. */
+const USDC_DECIMALS = 6;
 
 export type Network = "solana" | "rollup";
 
@@ -436,6 +446,34 @@ export class TiltChain {
       .instruction();
     const createToken = createAssociatedTokenAccountIdempotentInstruction(this.relayer.publicKey, playerToken, player, vault.mint);
     return this.sendBase(new Transaction().add(createToken, pay), record);
+  }
+
+  /** Test USDC left in the devnet faucet's reserve: the relayer's own token account for the vault mint. */
+  async fetchFaucetReserve(): Promise<bigint> {
+    const vault = await this.fetchVault();
+    return this.tokenBalance(getAssociatedTokenAddressSync(vault.mint, this.relayer.publicKey));
+  }
+
+  /** Devnet faucet: `amount` from the reserve to the player's wallet (token account created if
+   *  needed, the relayer pays the rent). A reserve short of the full amount sends nothing. */
+  async payFaucet(player: PublicKey, amount: bigint, record: RecordSend): Promise<string> {
+    const vault = await this.fetchVault();
+    const reserve = getAssociatedTokenAddressSync(vault.mint, this.relayer.publicKey);
+    const held = await this.tokenBalance(reserve);
+    if (held < amount) {
+      logAlert({ code: "LOW_FAUCET_RESERVE", severity: "warning", message: `faucet reserve ${reserve.toBase58()} holds ${held}, a claim needs ${amount}: refill it` });
+      throw new IntentError("FAUCET_EMPTY", `faucet reserve holds ${held}, below ${amount}`);
+    }
+    const playerToken = getAssociatedTokenAddressSync(vault.mint, player);
+    const createToken = createAssociatedTokenAccountIdempotentInstruction(this.relayer.publicKey, playerToken, player, vault.mint);
+    const transfer = createTransferCheckedInstruction(reserve, vault.mint, playerToken, this.relayer.publicKey, amount, USDC_DECIMALS);
+    return this.sendBase(new Transaction().add(createToken, transfer), record);
+  }
+
+  /** A token account's balance; 0 while it does not exist. */
+  private async tokenBalance(address: PublicKey): Promise<bigint> {
+    const info = await this.base.getAccountInfo(address);
+    return info ? unpackAccount(address, info).amount : 0n;
   }
 
   /** Relay cron: releases the player's losses from the vault reservation. */

@@ -95,6 +95,7 @@ pnpm --filter @tilt/web dev        # web, http://localhost:3000
 
   Sans ce contrat, tous les joueurs ont l'adresse de Vercel pour l'api, et le compartiment d'auth (`RATE_AUTH_PER_MIN`, 10 par minute et par IP) bloque tout le monde. Implémentation de référence, en service sur le devnet : `ops/gateway.mjs` du déploiement devnet (hors dépôt).
 - Privy : une app de développement. Le relais a besoin de `PRIVY_AUTHORIZATION_KEY` (quorum de clés) ; `api` et le web ont besoin de l'id de l'app ; `api` a aussi besoin de `PRIVY_KEY_QUORUM_ID` / `PRIVY_POLICY_ID`. Le script `apps/wallet/scripts/privy-setup.ts` crée le quorum et la policy.
+- Faucet de test USDC (`FAUCET_ENABLED`, relais) : coupé par défaut, et le relais refuse de démarrer avec s'il n'est pas sur devnet (hash de genèse de `SOLANA_RPC_URL`). En local (validateur), laisse-le coupé : `/account` n'affiche alors pas le bouton. Sur devnet, voir `docs/runbook.md` (« Faucet devnet »).
 
 ## 5. Le mod dans Claude Code
 
