@@ -75,7 +75,7 @@ const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xW
 /** SPL token account layout: mint (32), owner (32), amount (u64 LE), … */
 const TOKEN_AMOUNT_OFFSET = 64;
 const TOKEN_ACCOUNT_SIZE = 165;
-const RPC_TIMEOUT_MS = 10_000;
+export const RPC_TIMEOUT_MS = 10_000;
 /** The vault config changes only by admin action; a minute of staleness is harmless (the
  *  program re-checks every limit). */
 const CONFIG_TTL_MS = 60_000;

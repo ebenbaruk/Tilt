@@ -1,13 +1,16 @@
 // Indexer against Postgres with a fake rollup: events and VRF callbacks encoded with the real IDL.
 import anchor from "@coral-xyz/anchor";
-import { Keypair, PublicKey } from "@solana/web3.js";
+import { Keypair, PublicKey, TransactionInstruction, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import { idl, PROGRAM_ID, playerAccountAddress } from "@tilt/contract";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   decodeCallbacks,
+  decodeTransaction,
   Indexer,
   indexedThrough,
   parseSettled,
+  skipTo,
+  STUCK_RUNS,
   type FetchedTransaction,
   type RollupSource,
   type SignatureInfo,
@@ -74,6 +77,8 @@ class FakeSource implements RollupSource {
   listener: ((signature: string, logs: string[]) => void) | undefined;
   fetched: string[] = [];
   failNextSignatures = false;
+  /** Listed but never served (an RPC that keeps timing out on them). */
+  unserved = new Set<string>();
 
   async subscribe(onLogs: (signature: string, logs: string[]) => void) {
     this.listener = onLogs;
@@ -95,6 +100,7 @@ class FakeSource implements RollupSource {
 
   async transaction(signature: string) {
     this.fetched.push(signature);
+    if (this.unserved.has(signature)) throw new Error("The operation was aborted due to timeout");
     return this.history.find((h) => h.signature === signature)?.tx ?? null;
   }
 
@@ -191,6 +197,67 @@ describe("decoding", () => {
         randomness: Buffer.alloc(32, i + 1),
       })),
     );
+  });
+
+  it("decodes a base64 transaction's VRF callback made through a CPI, the real shape", () => {
+    const vrf = Keypair.generate().publicKey;
+    const identity = Keypair.generate().publicKey;
+    const account = Keypair.generate().publicKey;
+    const message = new TransactionMessage({
+      payerKey: identity,
+      recentBlockhash: PublicKey.default.toBase58(),
+      instructions: [
+        new TransactionInstruction({
+          programId: vrf,
+          keys: [identity, account, PROGRAM_ID].map((pubkey) => ({ pubkey, isSigner: false, isWritable: false })),
+          data: Buffer.alloc(0),
+        }),
+      ],
+    }).compileToV0Message();
+    const keys = message.staticAccountKeys;
+    const index = (k: PublicKey) => keys.findIndex((x) => x.equals(k));
+    const raw = {
+      blockTime: 1_795_767_994,
+      transaction: [Buffer.from(new VersionedTransaction(message).serialize()).toString("base64"), "base64"] as [
+        string,
+        "base64",
+      ],
+      meta: {
+        err: null,
+        logMessages: callbackLogs,
+        loadedAddresses: { writable: [], readonly: [] },
+        innerInstructions: [
+          {
+            instructions: [
+              {
+                programIdIndex: index(PROGRAM_ID),
+                accounts: [index(identity), index(account)],
+                data: anchor.utils.bytes.bs58.encode(callbackData(7, 9)),
+              },
+            ],
+          },
+        ],
+      },
+    };
+    expect(decodeTransaction(raw)).toEqual({
+      logs: callbackLogs,
+      blockTime: new Date(1_795_767_994_000),
+      draws: [{ account: account.toBase58(), requestId: 7n, randomness: Buffer.alloc(32, 9) }],
+    });
+  });
+
+  it("reads the rollup's own transactions from their logs alone (a message version web3.js rejects)", () => {
+    // 0x81: versioned message, version 1, as the rollup's ~1 MB program loads come back.
+    const raw = {
+      blockTime: null,
+      transaction: [Buffer.from([1, ...Array(64).fill(0), 0x81, 1, 0]).toString("base64"), "base64"] as [
+        string,
+        "base64",
+      ],
+      meta: { err: null, logMessages: ["MagicRoot: finalized program load"] },
+    };
+    expect(decodeTransaction(raw)).toEqual({ logs: ["MagicRoot: finalized program load"], blockTime: null, draws: [] });
+    expect(decodeTransaction({ ...raw, meta: { err: { InstructionError: [0, "x"] } } })).toBeNull();
   });
 
   it("parses RoundSettled of every new game", () => {
@@ -351,6 +418,42 @@ describe.skipIf(!db)("indexer", () => {
     const through = must((await indexedThrough(db)) ?? undefined, "indexed_through");
     expect(through.getTime()).toBeLessThanOrEqual(before);
     expect(through.getTime()).toBeGreaterThan(before - 60_000);
+  });
+
+  it("stays stuck on a transaction the rollup never serves until an operator skips that one", async () => {
+    source.add("s1", settledLogs(player, 1, 1, 1));
+    source.add("s2", settledLogs(player, 2, 2, 2));
+    source.add("s3", settledLogs(player, 3, 3, 3));
+    source.unserved.add("s2");
+    for (let run = 1; run < STUCK_RUNS; run++) await indexer.backfill();
+    await expect(skipTo(db, "s2")).rejects.toThrow(`wait for ${STUCK_RUNS} in a row`);
+    await indexer.backfill();
+    expect(await count("rounds")).toBe(1);
+    const blockTime = new Date("2026-10-13T10:00:00Z");
+    expect(await indexedThrough(db)).toEqual(blockTime);
+
+    await expect(skipTo(db, "s3")).rejects.toThrow("not stuck on this signature");
+    expect(await skipTo(db, "s2")).toEqual({ previous: "s1", runs: STUCK_RUNS });
+    await expect(skipTo(db, "s2")).rejects.toThrow("not stuck on this signature");
+    await indexer.backfill();
+    const { rows } = await db.query("SELECT round FROM rounds ORDER BY round");
+    expect(rows).toEqual([{ round: 1 }, { round: 3 }]);
+    expect(must((await indexedThrough(db)) ?? undefined, "indexed_through") > blockTime).toBe(true);
+  });
+
+  it("counts failed runs per signature: one that goes through resets the count", async () => {
+    source.add("s1", settledLogs(player, 1, 1, 1));
+    source.add("s2", settledLogs(player, 2, 2, 2));
+    source.unserved.add("s1");
+    for (let run = 0; run < STUCK_RUNS - 1; run++) await indexer.backfill();
+    source.unserved.delete("s1");
+    source.unserved.add("s2");
+    await indexer.backfill();
+    await expect(skipTo(db, "s2")).rejects.toThrow("failed 1 run(s) only");
+    source.unserved.clear();
+    await indexer.backfill();
+    expect(await count("rounds")).toBe(2);
+    expect(await count("indexer_stuck")).toBe(0);
   });
 
   it("survives RPC failures: the next run picks up where it stopped", async () => {
