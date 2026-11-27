@@ -54,6 +54,9 @@ export function safeIntentError(error: IntentResponse["error"]): { code: string;
   return { code: error.code, message: SAFE_MESSAGES[error.code] ?? "intent failed" };
 }
 
+/** The account page waits on the faucet's status: a slow relay only hides the faucet, sooner. */
+const FAUCET_STATUS_TIMEOUT_MS = 2_000;
+
 const upstream = () => new ApiError("UPSTREAM_ERROR", "relay unavailable, retry with the same id");
 
 /** HTTP refusals of the relay, as api errors. */
@@ -113,7 +116,8 @@ export class HttpRelay implements Relay {
 
   async faucetStatus(userId: string): Promise<FaucetStatusResponse> {
     const path = `/faucet/${encodeURIComponent(userId)}`;
-    const status = await this.call("GET", path, FaucetStatusResponse, undefined, "INVALID_REQUEST");
+    const timeoutMs = Math.min(this.timeoutMs, FAUCET_STATUS_TIMEOUT_MS);
+    const status = await this.call("GET", path, FaucetStatusResponse, undefined, "INVALID_REQUEST", timeoutMs);
     // The relay never answers this route with 404; were it to, "no faucet" is the safe reading.
     return status ?? { enabled: false, amount: null, nextClaimAt: null };
   }
@@ -129,6 +133,7 @@ export class HttpRelay implements Relay {
     schema: z.ZodType<T, z.ZodTypeDef, unknown>,
     body: undefined,
     notFound: ErrorCode,
+    timeoutMs?: number,
   ): Promise<T | null>;
   private async call<T>(
     method: "POST",
@@ -142,6 +147,7 @@ export class HttpRelay implements Relay {
     schema: z.ZodType<T, z.ZodTypeDef, unknown>,
     body?: object,
     notFound?: ErrorCode,
+    timeoutMs = this.timeoutMs,
   ): Promise<T | null> {
     let response: Response;
     let json: unknown;
@@ -150,7 +156,7 @@ export class HttpRelay implements Relay {
         method,
         headers: { authorization: `Bearer ${this.apiKey}`, ...(body ? { "content-type": "application/json" } : {}) },
         body: body ? JSON.stringify(body) : undefined,
-        signal: AbortSignal.timeout(this.timeoutMs),
+        signal: AbortSignal.timeout(timeoutMs),
       });
       json = await response.json().catch(() => undefined);
     } catch (e) {

@@ -9,6 +9,7 @@ import {
   getAssociatedTokenAddressSync,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
+import { DEVNET_GENESIS_HASH } from "@tilt/contract";
 import { type AccountInfo, Keypair, PublicKey, type Transaction } from "@solana/web3.js";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,7 +18,7 @@ import { IntentError, type RecordSend, TiltChain, type Vault } from "../src/chai
 import { loadConfig } from "../src/config";
 import { createDb, migrate, type Db } from "../src/db";
 import { ChainExecutor } from "../src/executor";
-import { assertDevnet, DEVNET_GENESIS_HASH, type FaucetLimits } from "../src/faucet";
+import { assertDevnet, type FaucetLimits } from "../src/faucet";
 import { Intents, type Executor, type RelayAction, type RelayLimits } from "../src/intents";
 import type { PlayerWallet, PlayerWallets } from "../src/players";
 

@@ -94,6 +94,8 @@ export class FakeRelay {
   faucet: { amount: string } | null = null;
   /** When each player who claimed may claim again (ISO 8601). */
   readonly faucetClaims = new Map<string, string>();
+  /** Faucet status requests received. */
+  faucetStatusCalls = 0;
   private server: ServerType | undefined;
   url = "";
 
@@ -182,6 +184,7 @@ export class FakeRelay {
       return c.json({ payoutId: intentId, ...rest });
     });
     app.get("/faucet/:userId", (c) => {
+      this.faucetStatusCalls++;
       const status: FaucetStatusResponse = {
         enabled: this.faucet !== null,
         amount: this.faucet?.amount ?? null,
@@ -307,6 +310,7 @@ export function testApp(db: Db, relay: FakeRelay, chain: FakeChain, overrides: P
     intents: new Intents(db, relayClient),
     limiters: generousLimits(),
     geo: { header: "x-country", blocked: ["US", "FR"], allowUnknown: false, edgeSecret: EDGE_SECRET },
+    solanaDevnet: true,
     config: {
       WEB_ORIGIN: "https://tilt.test",
       WEB_URL: "https://tilt.test",
