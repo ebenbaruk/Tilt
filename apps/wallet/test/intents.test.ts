@@ -442,6 +442,8 @@ describe("HTTP API", () => {
     expect((await call("/users/x", {}, "wrong")).status).toBe(401);
     expect((await call(`/users/${USER}`, {}, NEXT_KEY)).status).toBe(200);
     expect((await app().request("/intents", { method: "POST" })).status).toBe(401);
+    // hono < 4.13.16 skipped "*" middleware for an unrouted path with an encoded line terminator (GHSA-h7mg-cq63-vhpq).
+    expect((await app().request("/intents%0A")).status).toBe(401);
     expect(await (await app().request("/health")).json()).toEqual({ ok: true });
   });
 
