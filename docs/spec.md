@@ -268,11 +268,13 @@ GET  /intents/:intentId -> même réponse
 //              TABLE_NOT_READY (table de blackjack pas encore ouverte dans le rollup ; rien n'est joué, renvoyer l'action), …
 // 409 INTENT_CONFLICT (id réutilisé pour autre chose) ou PLAYER_BUSY (une intention du joueur est déjà en vol)
 // 403 CONSENT_REQUIRED : open_account, deposit et withdraw exigent consent.identityToken (jeton d'identité Privy du joueur, émis il y a moins de 5 min).
-// 422 LIMIT_EXCEEDED (plafonds du relais : dépôts par joueur et global, gains promo) ; rien n'est enregistré, le même intentId peut être renvoyé.
+//     Un jeton n'approuve qu'un seul couple (intentId, action) : rejouer la même intention avec la même action peut le réutiliser, toute autre intention ou action → 403 CONSENT_REQUIRED.
+// 422 LIMIT_EXCEEDED (plafonds du relais : dépôts par joueur et global ; gains promo par gain, par joueur et global) ; rien n'est enregistré, le même intentId peut être renvoyé.
 POST /payouts/promo { payoutId, userId, amount, poolId, reason } -> { payoutId, status, signature?, error? }
 GET  /payouts/promo/:payoutId -> même réponse
 // Verse un gain de compétition ou un drop depuis le pool promo (séparé de la bankroll) dans le wallet du joueur.
 // Plafonds par gain et par 24 h et pause dans le programme ; un payoutId ne paie qu'une fois, même on-chain.
+// Le relais plafonne aussi, sur 24 h glissantes (gains non échoués) : par gain (MIN_PROMO_PAYOUT..MAX_PROMO_PAYOUT), par joueur (DAILY_PROMO_LIMIT_PER_PLAYER, par défaut = MAX_PROMO_PAYOUT, voulu : au plus un gros prix par joueur et par 24 h) et pour tous les joueurs (DAILY_PROMO_LIMIT). Le plafond par joueur n'arrête pas un attaquant à plusieurs comptes : c'est le plafond global qui borne la perte.
 ```
 
 **Règles :**
@@ -282,13 +284,13 @@ GET  /payouts/promo/:payoutId -> même réponse
 - `api` ne touche jamais aux clés. Le relais ne garde aucun état de jeu : il le lit sur la chaîne.
 - `api` lit l'état et les événements directement sur la chaîne (RPC / indexeur), pas via le relais.
 - La clé Privy du relais ne peut signer, pour le joueur, que des transactions du programme Tilt (policy Privy `PRIVY_POLICY_ID`, possédée par une clé d'administration hors ligne ; à attacher par le web quand le joueur ajoute le signer : `additional_signers: [{ signer_id: PRIVY_KEY_QUORUM_ID, override_policy_ids: [PRIVY_POLICY_ID] }]`). Vérifié en live : transfert USDC refusé, seul ou à côté d'une instruction Tilt ; la clé du relais ne peut pas modifier la policy.
-- Consentement du joueur : pour `open_account`, `deposit` et `withdraw`, `api` transmet le jeton d'identité Privy du joueur ; le relais vérifie sa signature, qu'il appartient à `userId` et qu'il a moins de 5 minutes (sinon 403 `CONSENT_REQUIRED`), et ne le stocke pas. Une clé API volée ne suffit donc plus à déplacer l'argent d'un joueur.
+- Consentement du joueur : pour `open_account`, `deposit` et `withdraw`, `api` transmet le jeton d'identité Privy du joueur ; le relais vérifie sa signature, qu'il appartient à `userId` et qu'il a moins de 5 minutes (sinon 403 `CONSENT_REQUIRED`). Un jeton n'approuve qu'un seul couple (`intentId`, action) : le relais ne stocke pas le jeton, seulement le sha256 de sa partie signée (`header.payload`, pour qu'un ré-encodage de la signature ne compte pas comme un nouveau jeton), lié à ce couple dans une seule requête atomique et gardé 1 h (purgé par le cron) ; un jeton déjà lié à une autre intention ou action → 403 `CONSENT_REQUIRED`. Une clé API volée ne suffit donc plus à déplacer l'argent d'un joueur, et un jeton intercepté n'approuve rien d'autre que son intention.
 
 **Développement en parallèle :** Armand publie très tôt l'IDL v0 (forme des comptes et événements) et le contrat du relais. Eli code le mod et `api` contre un **faux relais** qui rejoue des événements enregistrés. On branche tout sur devnet en M3.
 
 **3. Le protocole mod ↔ `api` et web ↔ `api` (Eli).** Le mod ne peut importer que ses propres fichiers : ses types sont dans `apps/mod/hooks/protocol.ts` (source de vérité, sans import), ceux du web dans `apps/api/src/public.ts`. `api` vérifie ses schémas zod contre ces types à la compilation.
 - **Connexion du mod :** flux par code (`/tilt login` → `/connect?code=` sur le web → approbation avec le jeton Privy). Le jeton du mod est opaque, haché en base, valable 30 jours, révocable, **limité au jeu**.
-- **Consentement (mouvements d'argent) :** le web envoie un jeton d'identité Privy frais (`X-Privy-Identity-Token`) ; `api` le vérifie puis le transmet au relais (`IntentRequest.consent`), qui le vérifie à son tour (moins de 5 min, même joueur). Le jeton n'est jamais stocké.
+- **Consentement (mouvements d'argent) :** le web envoie un jeton d'identité Privy frais (`X-Privy-Identity-Token`) ; `api` le vérifie puis le transmet au relais (`IntentRequest.consent`), qui le vérifie à son tour (moins de 5 min, même joueur, un seul couple (`intentId`, action) par jeton). `api` ne stocke jamais le jeton ; le relais n'en garde que le sha256 de `header.payload`, 1 h.
 
 ## 8. Répartition du travail
 
