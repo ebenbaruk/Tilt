@@ -16,6 +16,16 @@ describe("install prompt", () => {
     expect(block?.[1]).toBe(INSTALL_PROMPT);
   });
 
+  it("gives the agent one API URL in the client README, as a bare https origin", () => {
+    // The prompt pastes it inside quotes into a shell command: anything beyond an origin could escape them.
+    const lines = readFileSync(CLIENT_README, "utf8")
+      .split("\n")
+      .filter((line) => line.startsWith("API URL: "));
+    expect(lines).toHaveLength(1);
+    const url = lines[0]?.match(/^API URL: `([^`]*)`/)?.[1];
+    expect(url).toMatch(/^https:\/\/[a-z0-9.-]+(:\d+)?$/);
+  });
+
   it("sends testers to the client repo, never to the monorepo", () => {
     expect(INSTALL_PROMPT).toContain("github.com/ebenbaruk/tilt-client");
     expect(INSTALL_PROMPT).not.toMatch(/ebenbaruk\/Tilt\b/);
