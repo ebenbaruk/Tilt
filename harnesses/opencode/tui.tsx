@@ -114,7 +114,7 @@ function TiltBand(props: { table: TiltTable; version: Accessor<number>; playKey:
   const dimensions = useTerminalDimensions();
   const lines = () => {
     props.version();
-    return props.table.lines(Math.max(1, dimensions().width)).map(parseAnsi);
+    return props.table.lines(Math.max(1, dimensions().width), dimensions().height).map(parseAnsi);
   };
   const hint = () => {
     props.version();

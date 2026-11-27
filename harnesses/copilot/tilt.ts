@@ -1,24 +1,27 @@
 // Tilt for GitHub Copilot CLI: a `/tilt` slash command that plays through select dialogs and
-// prints the table in the timeline, while the agent's turns come from `assistant.turn_start` and
-// `session.idle`. Those events are used for their timing only: no prompt, reply, tool call or
+// prints one line in the timeline (the balance and the last result), while the agent's turns come
+// from `assistant.turn_start` and `session.idle`. The table, and its sponsor, are the companion's
+// (harnesses/companion): the CLI runs extensions under plain Node, which cannot load the mod's
+// view (.tsx). The turn events are used for their timing only: no prompt, reply, tool call or
 // payload is ever read.
+import { cleanText } from "../../apps/mod/hooks/format";
 import {
   TiltSession,
   fileStore,
   openInBrowser,
-  renderPanel,
   renderStatusLine,
   writeAgentSignal,
-} from "../../packages/play/src/index";
-import type { Snapshot } from "../../packages/play/src/index";
+} from "../../packages/play/src/core";
+import type { Snapshot } from "../../packages/play/src/core";
 import type { CopilotSession, JoinSession } from "./copilot";
 
 // The extension runs on pipes and never learns the terminal's width: a width that fits most.
-const PANEL_WIDTH = 72;
+const LINE_WIDTH = 72;
 // How long the play loop waits for a move to land before offering the keys again.
 const MOVE_SETTLE_MS = 15_000;
 const HOTKEY = /^[a-z0-9]$/;
-const USAGE = "Usage: /tilt (play) · /tilt table · /tilt login · /tilt logout · /tilt <key>";
+const USAGE = "Usage: /tilt (play) · /tilt status · /tilt login · /tilt logout · /tilt <key>";
+const COMPANION = "The table: run harnesses/companion/bin/tilt in a split pane.";
 const NO_API_URL = "Tilt needs TILT_API_URL in the environment Copilot starts from. Set it, then run /clear.";
 
 export async function startTilt(joinSession: JoinSession): Promise<void> {
@@ -29,7 +32,7 @@ export async function startTilt(joinSession: JoinSession): Promise<void> {
     commands: [
       {
         name: "tilt",
-        description: "Play Tilt while Copilot works: /tilt, /tilt table, /tilt login, /tilt logout, /tilt <key>",
+        description: "Play Tilt while Copilot works: /tilt, /tilt status, /tilt login, /tilt logout, /tilt <key>",
         handler: async ({ args }) => {
           if (play === null) return notify(session, NO_API_URL);
           await play.command(args ?? "");
@@ -53,7 +56,7 @@ class Play {
   constructor(copilot: CopilotSession, tilt: TiltSession) {
     this.copilot = copilot;
     this.tilt = tilt;
-    // Sponsor time counts only while a play dialog is open.
+    // The sponsor is on the companion's table, never in these dialogs: no sponsor time counts here.
     tilt.setVisible(false);
     tilt.start();
     this.followLogin();
@@ -68,7 +71,7 @@ class Play {
   async command(args: string): Promise<void> {
     const word = args.trim().toLowerCase();
     if (word === "" || word === "play") return this.play();
-    if (word === "table") return this.showTable();
+    if (word === "status") return this.showStatus();
     if (word === "login") return this.login();
     if (word === "logout") return this.logout();
     if (HOTKEY.test(word)) return this.pressKey(word);
@@ -88,38 +91,35 @@ class Play {
   /** Picks moves from a dialog until the person cancels it. */
   private async play(): Promise<void> {
     if (!this.copilot.capabilities.ui?.elicitation) {
-      await this.showTable();
+      await this.showStatus();
       return notify(this.copilot, "This Copilot session has no dialogs: press a key with /tilt <key>.");
     }
-    this.tilt.setVisible(true);
-    try {
-      for (;;) {
-        const snapshot = this.tilt.snapshot();
-        if (snapshot.auth.status !== "in") return notify(this.copilot, "Sign in first: /tilt login");
-        const keys = snapshot.keys.filter((key) => key.hotkey !== "");
-        if (keys.length === 0) return notify(this.copilot, snapshot.message?.text ?? "Nothing to play right now.");
-
-        const options = keys.map((key) => `${key.hotkey}  ${key.label}${key.isSelected ? " ✓" : ""}`);
-        const choice = await this.copilot.ui.select(tableText(snapshot), options);
-        const key = keys[options.indexOf(choice ?? "")];
-        if (!key) return; // cancelled
-        if (!this.tilt.press(key.hotkey)) await notify(this.copilot, "That move is not available now.");
-        await settled(this.tilt);
+    for (;;) {
+      const snapshot = this.tilt.snapshot();
+      if (snapshot.auth.status !== "in") return notify(this.copilot, "Sign in first: /tilt login");
+      const keys = snapshot.keys.filter((key) => key.hotkey !== "");
+      if (keys.length === 0) {
+        const message = snapshot.message === null ? "Nothing to play right now." : cleanText(snapshot.message.text);
+        return notify(this.copilot, message);
       }
-    } finally {
-      this.tilt.setVisible(false);
+
+      const options = keys.map((key) => `${key.hotkey}  ${key.label}${key.isSelected ? " ✓" : ""}`);
+      const choice = await this.copilot.ui.select(statusText(snapshot), options);
+      const key = keys[options.indexOf(choice ?? "")];
+      if (!key) return; // cancelled
+      if (!this.tilt.press(key.hotkey)) await notify(this.copilot, "That move is not available now.");
+      await settled(this.tilt);
     }
   }
 
   private async pressKey(hotkey: string): Promise<void> {
-    if (!this.tilt.press(hotkey)) return notify(this.copilot, `Key ${hotkey} is not offered now. See /tilt table.`);
+    if (!this.tilt.press(hotkey)) return notify(this.copilot, `Key ${hotkey} is not offered now. ${COMPANION}`);
     await settled(this.tilt);
-    await this.showTable();
+    await this.showStatus();
   }
 
-  private showTable(): Promise<void> {
-    // A fenced block keeps the table's columns if the timeline renders Markdown.
-    return notify(this.copilot, ["```text", tableText(this.tilt.snapshot()), "```"].join("\n"));
+  private showStatus(): Promise<void> {
+    return notify(this.copilot, statusText(this.tilt.snapshot()));
   }
 
   private async login(): Promise<void> {
@@ -152,9 +152,11 @@ class Play {
   }
 }
 
-function tableText(snapshot: Snapshot): string {
-  const status = renderStatusLine(snapshot, { color: false, width: PANEL_WIDTH }).trimEnd();
-  return [status, "", ...renderPanel(snapshot, { color: false, width: PANEL_WIDTH })].join("\n");
+/** The balance and the last result in one line, the session's last notice, and where the table is. */
+function statusText(snapshot: Snapshot): string {
+  const line = renderStatusLine(snapshot, { color: false, width: LINE_WIDTH }).trimEnd();
+  const message = snapshot.message === null ? undefined : cleanText(snapshot.message.text);
+  return [line, message, COMPANION].filter((text) => text !== undefined).join("\n");
 }
 
 /** Resolves once no move is in flight, or after MOVE_SETTLE_MS so the loop never hangs. */

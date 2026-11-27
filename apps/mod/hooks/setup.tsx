@@ -1,3 +1,6 @@
+/** @jsxRuntime classic */
+/** @jsx h */
+/** @jsxFrag Fragment */
 // `/tilt setup`: where Tilt sits and how big its cards are, each choice drawn as a small preview.
 // No `$` here: the hooks module saves a choice to the mod's own `/config` rows.
 import type { RenderElement } from "claude-code";

@@ -1,12 +1,24 @@
 // Everything the OpenCode / Kilo TUI plugin does besides drawing: one TiltSession, the table's
 // shown/hidden and game-mode state, the agent's busy/idle from session statuses, and the /tilt
 // menu. tui.tsx only wires this to the host's slots, keymap and dialogs.
-import { TiltSession, fileStore, openInBrowser, renderPanel, renderStatusLine } from "../../packages/play/src/index";
+// Only plain TypeScript on this thread: the mod's view (.tsx) loads in painter.ts's Worker.
+import { planKeys } from "../../apps/mod/hooks/keys";
+import { FRAME_MS, TiltSession, fileStore, openInBrowser, renderStatusLine } from "../../packages/play/src/core";
+import type { PaintReply, PaintRequest } from "./painter";
 
 /** Enters game mode; `alt+t` is free in both hosts' default keybinds. Override: plugin option `key`. */
 export const DEFAULT_PLAY_KEY = "alt+t";
 /** Every key a key plan can offer: one digit or one lowercase letter. */
 export const HOTKEYS: readonly string[] = [..."abcdefghijklmnopqrstuvwxyz0123456789"];
+
+// The table's rows, between the mod's two pane sizes (apps/mod/hooks/view.tsx PANE_ROWS), with
+// HOST_ROWS of the terminal left to the host's prompt, its footer and some of the session.
+// To keep large cards (a round's end, many blackjack hands) it may grow until only
+// GROWN_HOST_ROWS are left: the prompt and its footer, and a little of the session.
+const MIN_TABLE_ROWS = 20;
+const MAX_TABLE_ROWS = 30;
+const HOST_ROWS = 12;
+const GROWN_HOST_ROWS = 8;
 
 export const NO_API_URL = "TILT · set TILT_API_URL (or the plugin's apiUrl option) and restart";
 
@@ -42,10 +54,23 @@ export class TiltTable {
   private readonly busySessions = new Set<string>();
   private readonly listeners = new Set<() => void>();
   private readonly stopListening: () => void;
+  /** Draws the table off this thread (see painter.ts); the last lines it sent are shown meanwhile. */
+  private readonly painter = new Worker(new URL("./painter.ts", import.meta.url).href);
+  private painted: string[] = [];
+  /** The last drawing's round still plays out: its play keys are held (painter.ts tracks the motion). */
+  private holdsPlay = false;
+  private nextFrame: ReturnType<typeof setTimeout> | null = null;
+  private size = { width: 0, height: 0 };
+  private lastPaintId = 0;
+  private shownPaintId = 0;
+  private readonly color = !process.env.NO_COLOR;
 
   constructor(apiUrl: string) {
     this.session = new TiltSession({ apiUrl, store: fileStore(), openUrl: openInBrowser });
-    this.stopListening = this.session.onChange(() => this.emit());
+    this.painter.onmessage = (event: MessageEvent<PaintReply>) => this.showPainted(event.data);
+    this.painter.onerror = (event) => this.showPainted({ id: this.lastPaintId, error: event.message });
+    // Every change; the Worker's replies ask for the frames of a round playing out.
+    this.stopListening = this.session.onChange(() => this.changed());
     this.session.setVisible(true);
     this.session.start();
   }
@@ -63,18 +88,25 @@ export class TiltTable {
     this.shown = shown;
     if (!shown) this.playing = false;
     this.session.setVisible(shown);
-    this.emit();
+    this.changed();
   }
 
   setPlaying(playing: boolean): void {
     if (playing && !this.shown) this.setShown(true);
     this.playing = playing;
-    this.emit();
+    this.changed();
   }
 
   /** A key typed in game mode; keys the table does not offer now are dropped. */
   press(hotkey: string): void {
-    if (this.playing) this.session.press(hotkey);
+    if (!this.playing) return;
+    const { state, prefs } = this.session.snapshot();
+    // While a round plays out the table offers what a busy one does: no play key.
+    const isHeld =
+      this.holdsPlay &&
+      state !== null &&
+      !planKeys({ state, prefs, isBusy: true }).some((key) => key.hotkey === hotkey);
+    if (!isHeld) this.session.press(hotkey);
   }
 
   /** Only the status type is read: no message, part or prompt ever reaches this plugin. */
@@ -84,11 +116,14 @@ export class TiltTable {
     this.session.setAgent(this.busySessions.size > 0);
   }
 
-  /** The lines to draw `width` columns wide, ANSI colored. */
-  lines(width: number): string[] {
-    const snapshot = this.session.snapshot();
-    if (!this.shown) return [renderStatusLine(snapshot, { color: true, width })];
-    return renderPanel(snapshot, { color: true, width });
+  /** The lines to draw `width` columns wide, ANSI colored, in a terminal `height` rows tall. */
+  lines(width: number, height: number): string[] {
+    if (width !== this.size.width || height !== this.size.height) {
+      this.size = { width, height };
+      this.paint();
+    }
+    if (!this.shown) return [renderStatusLine(this.session.snapshot(), { color: this.color, width })];
+    return this.painted;
   }
 
   menu(): { title: string; value: MenuAction }[] {
@@ -122,6 +157,8 @@ export class TiltTable {
   }
 
   dispose(): void {
+    if (this.nextFrame !== null) clearTimeout(this.nextFrame);
+    this.painter.terminate();
     this.stopListening();
     this.listeners.clear();
     this.session.stop();
@@ -154,6 +191,55 @@ export class TiltTable {
       };
     }
     return { variant: "success", message: "Signed out of Tilt." };
+  }
+
+  /**
+   * Asks for the table at the last size drawn; `showPainted` draws it when it comes. Hidden too:
+   * the Worker follows the round's motion from every state the session announces.
+   */
+  private paint(): void {
+    if (this.size.width === 0) return;
+    // The table leaves the prompt and the session most of the terminal.
+    const rows = Math.max(MIN_TABLE_ROWS, Math.min(MAX_TABLE_ROWS, this.size.height - HOST_ROWS));
+    this.lastPaintId += 1;
+    const request: PaintRequest = {
+      id: this.lastPaintId,
+      snapshot: this.session.snapshot(),
+      width: this.size.width,
+      rows,
+      maxRows: Math.max(rows, this.size.height - GROWN_HOST_ROWS),
+      color: this.color,
+    };
+    this.painter.postMessage(request);
+  }
+
+  /** A drawing done; one older than the one shown (it came late) is dropped. */
+  private showPainted(reply: PaintReply): void {
+    if (reply.id < this.shownPaintId) return;
+    this.shownPaintId = reply.id;
+    if ("lines" in reply) {
+      this.painted = reply.lines;
+      this.holdsPlay = reply.holdsPlay;
+      if (reply.isMoving) this.paintNextFrame();
+    } else {
+      this.painted = [`TILT · the table could not be drawn: ${reply.error}`];
+      this.holdsPlay = false;
+    }
+    this.emit();
+  }
+
+  /** The next frame of a round playing out; the first drawing at rest asks for none. */
+  private paintNextFrame(): void {
+    if (this.nextFrame !== null) return;
+    this.nextFrame = setTimeout(() => {
+      this.nextFrame = null;
+      this.paint();
+    }, FRAME_MS);
+  }
+
+  private changed(): void {
+    this.paint();
+    this.emit();
   }
 
   private emit(): void {

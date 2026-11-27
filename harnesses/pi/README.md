@@ -6,7 +6,9 @@ This is a single extension module, `index.ts`, that works in both
 and you play it with the keys while the agent works. omp loads the file with Bun and pi loads it
 with jiti, straight from a clone of this repo. You don't need to install or build anything. The
 only import is the shared core, `../../packages/play/src/index`, by relative path, so keep the file
-inside the clone.
+inside the clone. The table is the Claude Code mod's own pane (`apps/mod/hooks/view.tsx`), drawn as
+text by `packages/play`: it moves while a round plays out (a spin, cards turned over, the result).
+Those files are TSX, which pi's loader compiles only when told to: see the pi install below.
 
 ## Install
 
@@ -33,6 +35,10 @@ omp -e <TILT_DIR>/harnesses/pi/index.ts
 ```
 
 ### pi
+
+pi loads extensions with jiti, which compiles the table's TSX files only with JSX turned on. Start
+pi with `JITI_JSX=1` in its environment (for example `export JITI_JSX=1` in the shell that starts
+it); without it the extension fails to load with a parse error in `apps/mod/hooks/view.tsx`.
 
 Choose one of these:
 
@@ -71,7 +77,9 @@ editor, so nothing leaks into your prompt. Enter, ctrl keys, arrows, pastes and 
 the harness. **Outside game mode the extension doesn't take any keystroke.**
 
 The widget is a component, not a string array, because both hosts cut string widgets at 10 lines.
-It is drawn at the width the host passes on each frame, or 80 columns when the host passes none.
+It is drawn at the width the host passes on each frame, or 80 columns when the host passes none,
+and 20 to 30 rows tall (the terminal's height less 12 rows for the host): large cards where they
+fit, small ones otherwise. While a round plays out the widget asks for a repaint every 80 ms.
 Set `NO_COLOR` to turn colours off. Your token and table choices are kept in
 `~/.tilt/session.json` with mode 0600, and that file is shared with the other Tilt harnesses.
 
@@ -127,11 +135,17 @@ in tmux), against the fake API (`bun packages/play/test/fake-api.ts 8099`), not 
   game mode.
 - Sending a prompt shows `● agent working` during the turn and `✓ agent finished in 2s` after.
 
+Checked on 2026-11-17 with jiti 2.7.0 (pi's version) under Node 22.23, outside pi: loading
+`packages/play` fails with a parse error in `apps/mod/hooks/view.tsx` by default, and loads and
+draws the table with `JITI_JSX=1`.
+
 Not verified:
 
+- **The mod's pane (since 2026-11-17) has not been run in omp or pi.** The run above drew the
+  previous text table. The same table code was run in the companion under Bun, which omp uses too.
 - **pi itself hasn't been run**, only omp. Nothing has been tried against the real API.
-- Whether jiti (pi) resolves the core's extensionless relative imports. It is expected to, but it
-  hasn't been run.
+- That pi's compiled binaries (which load extensions through their own embedded jiti) honor
+  `JITI_JSX=1` as the npm package does.
 - `tui.requestRender()` from a widget factory: the widget repainted in omp, but it hasn't been
   observed in pi.
 - Kitty keyboard protocol: plain letters are assumed to arrive as text, which holds for the flags
@@ -139,4 +153,4 @@ Not verified:
 - pi's `agent_end` isn't its final idle event (`agent_settled` is). During auto-retries the table
   can briefly show the agent as idle.
 - In omp, an exception inside the shared core's own timers would take the session down, because
-  raw timers aren't isolated. This extension doesn't start any timers itself.
+  raw timers aren't isolated. The core's frame timer (`onFrame`) catches what a repaint throws.

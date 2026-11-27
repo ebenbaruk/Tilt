@@ -1,3 +1,6 @@
+/** @jsxRuntime classic */
+/** @jsx h */
+/** @jsxFrag Fragment */
 // Hilo and Tower: a draw per move, a cash-out between moves, as Mines. Drawn still by the pane
 // and the table surface module alike.
 import type { RenderElement } from "claude-code";

@@ -33,6 +33,10 @@ Keys:
 | Ctrl+L           | log in when logged out; log out (or cancel a pending login) on a second Ctrl+L |
 | Ctrl+C / Ctrl+D  | quit                                                                           |
 
+The table is the Claude Code mod's own pane, drawn as text at the pane's size: large cards when
+the terminal is tall enough, small ones otherwise. It moves while a round plays out (redrawn every
+80 ms) and does nothing in between. Set `NO_COLOR` to turn colours off.
+
 Login opens the confirmation page with `open` (macOS), `xdg-open` (Linux) or `rundll32`
 (Windows), without a shell; the code and link also stay on the table. The session token lives in
 `~/.tilt/session.json` (mode 0600). Logging out removes it.
@@ -75,6 +79,13 @@ delete `~/.tilt/` (the token, the turn signal and the status line).
   read), prints `{}` and switches the pane to `● agent working`; `tilt-signal idle` switches it to
   `✓ agent finished…`; `tilt-status` prints `TILT 100.10 · Dice · −0.10 · agent working`; Ctrl+C
   quits and removes `status.txt`.
+- Verified on 2026-11-17 on Linux (Bun 1.4.2, tmux at 120x40 and 80x30, colour on and with
+  `NO_COLOR=1`) against the fake API: the table is the Claude Code mod's own pane (large cards at
+  120x40, small ones at 80x30, the roulette felt, the reels, the wheel, the Keno and Mines boards),
+  every key shows its letter, Ctrl+L logs in, and the table moves while a round plays out: blackjack
+  cards turn over one by one (deal, hit, the dealer's draw on stand), roulette, wheel and slots spin,
+  dice roll and Keno draws, the balance stays held until the result shows, then the result line and
+  the session line update. Mines draws its board, but the fake API does not play Mines.
 - Split-pane commands follow the official docs:
   [tmux](https://man7.org/linux/man-pages/man1/tmux.1.html),
   [WezTerm](https://wezterm.org/cli/cli/split-pane.html),

@@ -1,3 +1,6 @@
+/** @jsxRuntime classic */
+/** @jsx h */
+/** @jsxFrag Fragment */
 // Roulette, baccarat, slots and Mines tables, drawn still by the pane and the table surface module alike.
 import type { RenderElement } from "claude-code";
 

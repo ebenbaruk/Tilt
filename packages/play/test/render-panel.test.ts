@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { renderBaccarat, renderBlackjack, renderHilo } from "../src/render/cards";
-import { renderPanel, renderStatusLine } from "../src/render/panel";
-import { visibleWidth } from "../src/render/style";
-import type { Game, Prefs, RenderContext, RoundView, Snapshot, StateResponse } from "../src/types";
+import { renderPanel } from "../src/panel";
+import { renderStatusLine } from "../src/status";
+import { stringWidth } from "../src/term/width";
+import type { BlackjackHandView } from "../../../apps/mod/hooks/protocol";
+import type { Game, Prefs, RoundView, Snapshot, StateResponse } from "../src/types";
 
 const WIDTH = 60;
-const NARROW = 40;
+const ESCAPE = "\x1b[";
 
 const PREFS: Prefs = {
   game: "blackjack",
@@ -63,10 +64,18 @@ function snapshot(overrides: Partial<Snapshot>): Snapshot {
     auth: { status: "in" },
     state: null,
     error: null,
+    fetchedAt: 0,
     prefs: PREFS,
+    intent: null,
     isBusy: false,
     message: null,
     agent: { isWorking: true, notice: null },
+    tally: { net: "0", rounds: 0, startedAt: null, lastRound: null },
+    isMoving: false,
+    spinElapsed: null,
+    revealed: null,
+    heldBalance: null,
+    resultElapsed: null,
     keys: [],
     depositUrl: null,
     now: 0,
@@ -97,18 +106,6 @@ const BLACKJACK_ROUND: RoundView = {
         stake: "1000000",
         result: null,
       },
-      {
-        cards: [
-          { rank: 10, suit: "♦" },
-          { rank: 9, suit: "♣" },
-        ],
-        total: 19,
-        soft: false,
-        doubled: true,
-        split: false,
-        stake: "1000000",
-        result: null,
-      },
     ],
     activeHand: 0,
     dealer: [{ rank: 9, suit: "♣" }],
@@ -117,6 +114,19 @@ const BLACKJACK_ROUND: RoundView = {
     canDouble: true,
     canSplit: false,
   },
+};
+
+const RED = { kind: "red" } as const;
+
+const ROULETTE_LOSS: RoundView = {
+  phase: "idle",
+  stake: "1000000",
+  payout: "0",
+  fee: "0",
+  net: "-1000000",
+  number: 8,
+  settledSignature: "sig",
+  detail: { game: "roulette", bet: RED, chips: [{ bet: RED, amount: "1000000" }], number: 17 },
 };
 
 const BACCARAT_WIN: RoundView = {
@@ -143,145 +153,218 @@ const BACCARAT_WIN: RoundView = {
   },
 };
 
-const HILO_ROUND: RoundView = {
-  phase: "player_turn",
-  stake: "1000000",
-  payout: "0",
-  fee: "0",
-  net: "0",
-  number: 9,
-  settledSignature: null,
-  detail: {
-    game: "hilo",
-    cards: [
-      { rank: 13, suit: "♠" },
-      { rank: 9, suit: "♥" },
-    ],
-    guesses: ["lower"],
-    pending: null,
-    multiplier: "1.3000",
-    higherMultiplier: "2.1000",
-    lowerMultiplier: "1.5000",
-    skipsLeft: 9,
-    canGuess: true,
-    canCashOut: true,
-    busted: false,
-  },
-};
-
-function expectFitted(lines: string[], width: number): void {
-  for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
-}
-
 const text = (lines: string[]): string => lines.join("\n");
 
+const SGR = /\x1b\[[0-9;]*m/g;
+
+/** Columns a line takes on screen: its color codes take none. */
+const columns = (line: string): number => stringWidth(line.replace(SGR, ""));
+
+function expectWidth(lines: string[], width: number): void {
+  for (const line of lines) expect(columns(line)).toBe(width);
+}
+
 describe("renderPanel", () => {
-  it("invites a logged-out player to log in, with the last message", () => {
+  it("invites a logged-out player to log in the harness's way, with the last message", () => {
     const lines = renderPanel(snapshot({ auth: { status: "out", message: "Login expired." } }), {
+      color: false,
+      width: WIDTH,
+      loginHint: "ctrl+l",
+    });
+
+    expect(text(lines)).toContain("TILT");
+    expect(text(lines)).toContain("Run /tilt login to play while your agent works.");
+    expect(text(lines)).toContain("Login expired.");
+    expect(text(lines)).toContain("Here, log in with ctrl+l.");
+    expectWidth(lines, WIDTH);
+  });
+
+  it("names no other way to log in where /tilt login is the harness's own", () => {
+    const lines = renderPanel(snapshot({ auth: { status: "out", message: null } }), { color: false, width: WIDTH });
+
+    expect(text(lines)).not.toContain("Here, log in");
+  });
+
+  it("shows the user code and the whole login page while the login is pending", () => {
+    const verifyUrl = "https://tilt.example/connect?code=ABCD-EFGH";
+    const lines = renderPanel(snapshot({ auth: { status: "pending", userCode: "ABCD-EFGH", verifyUrl } }), {
       color: false,
       width: WIDTH,
     });
 
-    expect(text(lines)).toContain("TILT");
-    expect(text(lines)).toContain("/tilt login");
-    expect(text(lines)).toContain("Login expired.");
-    expect(lines.every((line) => visibleWidth(line) === WIDTH)).toBe(true);
+    expect(text(lines)).toContain("Confirm code ABCD-EFGH in your browser");
+    expect(lines.some((line) => line.trim() === verifyUrl)).toBe(true);
   });
 
-  it("shows the user code and the verify URL while the login is pending, wrapping a long URL", () => {
-    const verifyUrl = `https://tilt.example/login?code=${"x".repeat(60)}`;
-    const lines = renderPanel(snapshot({ auth: { status: "pending", userCode: "ABCD-EFGH", verifyUrl } }), {
-      color: false,
-      width: NARROW,
+  it("draws a blackjack round with the header, the agent, large cards and the keys with their letters", () => {
+    const lines = renderPanel(snapshot({ state: state(BLACKJACK_ROUND) }), { color: false, width: WIDTH, rows: 40 });
+    const all = text(lines);
+
+    expect(all).toContain("1:  Blackjack");
+    expect(all).toContain("balance 12.40 USDC");
+    expect(all).toContain("rank #3");
+    expect(all).toContain("agent is working");
+    expect(all).toContain("DEALER 9 + ?");
+    expect(all).toContain("▶ YOU soft 17");
+    // Large cards: the card's frame and its corner rank.
+    expect(all).toContain("│A♠ │6♥   │");
+    expect(all).toContain("h: hit");
+    expect(all).toContain("s: stand");
+    expect(all).toContain("PRESENTED BY Acme");
+    expectWidth(lines, WIDTH);
+  });
+
+  it("leaves the host's own `h` and no `Fragment` on globalThis, before and after drawing", () => {
+    const hostH = (): string => "the host's h";
+
+    // Importing the panel installs nothing: the view's JSX globals exist only while it draws.
+    expect("h" in globalThis || "Fragment" in globalThis).toBe(false);
+    Object.assign(globalThis, { h: hostH });
+
+    try {
+      const lines = renderPanel(snapshot({ state: state(BLACKJACK_ROUND) }), { color: false, width: WIDTH, rows: 40 });
+
+      expect(text(lines)).toContain("h: hit");
+      expect(Reflect.get(globalThis, "h")).toBe(hostH);
+      expect("Fragment" in globalThis).toBe(false);
+    } finally {
+      Reflect.deleteProperty(globalThis, "h");
+    }
+  });
+
+  it("gives way to small cards and puts the keys first in fewer rows", () => {
+    const lines = renderPanel(snapshot({ state: state(BLACKJACK_ROUND) }), { color: false, width: WIDTH, rows: 20 });
+    const all = text(lines);
+    const keysAt = lines.findIndex((line) => line.includes("h: hit"));
+    const dealerAt = lines.findIndex((line) => line.includes("DEALER"));
+
+    expect(all).not.toContain("╭───╭");
+    expect(all).toContain("A♠   6♥");
+    expect(keysAt).toBeGreaterThan(-1);
+    expect(keysAt).toBeLessThan(dealerAt);
+  });
+
+  it("keeps large cards for six settled hands up to maxRows, the sponsor on a line, and only as far as it must", () => {
+    const settled = (n: number): BlackjackHandView => ({
+      cards: [
+        { rank: 10, suit: "♠" },
+        { rank: n, suit: "♥" },
+        { rank: 2, suit: "♣" },
+      ],
+      total: 12 + n,
+      soft: false,
+      doubled: false,
+      split: false,
+      stake: "1000000",
+      result: "lose",
     });
+    const sixSettled: RoundView = {
+      ...BLACKJACK_ROUND,
+      phase: "idle",
+      stake: "6000000",
+      net: "-6000000",
+      settledSignature: "sig",
+      detail: {
+        game: "blackjack",
+        hands: [2, 3, 4, 5, 6, 7].map(settled),
+        activeHand: null,
+        dealer: [
+          { rank: 8, suit: "♥" },
+          { rank: 4, suit: "♠" },
+          { rank: 9, suit: "♣" },
+        ],
+        dealerTotal: 21,
+        canHit: false,
+        canDouble: false,
+        canSplit: false,
+      },
+    };
+    const snap = snapshot({
+      state: state(sixSettled),
+      message: { text: "Balance too low for this bet", tone: "loss" },
+    });
+    const wide = 160;
 
-    expect(text(lines)).toContain("ABCD-EFGH");
-    expect(lines.map((line) => line.trimEnd()).join("")).toContain(verifyUrl);
-    expectFitted(lines, NARROW);
+    const capped = text(renderPanel(snap, { color: false, width: wide, rows: 30 }));
+    const grown = renderPanel(snap, { color: false, width: wide, rows: 30, maxRows: 60 });
+
+    // At 30 rows the round's end no longer fits large cards; with room it keeps them.
+    expect(capped).not.toContain("╭───╭");
+    expect(text(grown)).toContain("╭───╭");
+    expect(grown.length).toBeGreaterThan(30);
+    expect(grown.length).toBeLessThan(60);
+    // Shorter with the sponsor on a line than with its column wrapping the hands: still shown.
+    expect(text(grown)).toContain("PRESENTED BY Acme");
   });
 
-  it("says connecting before the first state", () => {
-    expect(text(renderPanel(snapshot({}), { color: false, width: WIDTH }))).toContain("connecting…");
-  });
-
-  it("draws a blackjack round in progress with tabs, balance, the active hand and the keys", () => {
+  it("spins a round the motion says is spinning, its balance held back", () => {
     const lines = renderPanel(
       snapshot({
-        state: state(BLACKJACK_ROUND),
-        keys: [
-          {
-            key: "game-blackjack",
-            hotkey: "1",
-            label: "Blackjack",
-            isSelected: true,
-            command: { kind: "switch", game: "blackjack" },
-          },
-          {
-            key: "hit",
-            hotkey: "h",
-            label: "hit",
-            isSelected: false,
-            command: { kind: "play", action: { type: "blackjack_hit" } },
-          },
-          {
-            key: "stand",
-            hotkey: "s",
-            label: "stand",
-            isSelected: false,
-            command: { kind: "play", action: { type: "blackjack_stand" } },
-          },
-        ],
+        state: { ...state(ROULETTE_LOSS), balance: "11400000" },
+        prefs: { ...PREFS, game: "roulette" },
+        isMoving: true,
+        spinElapsed: 300,
+        heldBalance: "12400000",
       }),
       { color: false, width: WIDTH },
     );
-    const all = text(lines);
 
-    expect(all).toContain("[1] Blackjack");
-    expect(all).toContain("balance 12.40");
-    expect(all).toContain("#3");
-    expect(all).toContain("agent working");
-    expect(all).toContain("DEALER 9 + ?");
-    expect(all).toContain("▶ #1 soft 17");
-    expect(all).toContain("A♠ 6♥");
-    expect(all).toContain("doubled");
-    expect(all).toContain("h hit");
-    expect(all).toContain("s stand");
-    expect(all).toContain("presented by Acme · pool 500.00");
-    // The switch keys are the header's tabs, not drawn twice.
-    expect(all.split("Blackjack").length - 1).toBe(1);
-    expectFitted(lines, WIDTH);
+    expect(text(lines)).toContain("spinning…");
+    expect(text(lines)).toContain("balance 12.40");
+    expect(text(lines)).not.toContain("loses");
   });
 
-  it("draws a settled baccarat win in green when colored, and fits a narrow width", () => {
-    const snap = snapshot({ state: state(BACCARAT_WIN), prefs: { ...PREFS, game: "baccarat" } });
-    const plain = text(renderPanel(snap, { color: false, width: NARROW }));
-
-    expect(plain).toContain("WIN +0.94");
-    expect(plain).toContain("BANKER 8");
-    expect(plain).toContain("WINS");
-    expect(plain).toContain("K♦ 8♣");
-    expectFitted(renderPanel(snap, { color: false, width: NARROW }), NARROW);
-
-    const colored = renderPanel(snap, { color: true, width: NARROW });
-    expect(text(colored)).toContain("\x1b[");
-    expectFitted(colored, NARROW);
-  });
-
-  it("shows a blocked reason and the deposit hint for an unopened account", () => {
-    const blocked = text(
-      renderPanel(snapshot({ state: { ...state(null), blocked: "Self-excluded until May." } }), {
-        color: false,
-        width: WIDTH,
-      }),
+  it("tells the settled result and the balance once nothing moves", () => {
+    const lines = renderPanel(
+      snapshot({ state: { ...state(ROULETTE_LOSS), balance: "11400000" }, prefs: { ...PREFS, game: "roulette" } }),
+      { color: false, width: WIDTH },
     );
-    expect(blocked).toContain("Self-excluded until May.");
 
-    const unopened = renderPanel(
+    expect(text(lines)).toContain("balance 11.40");
+    expect(text(lines)).toContain("17 BLACK");
+  });
+
+  it("draws the footer's key hint the harness gives", () => {
+    const options = { color: false, width: WIDTH, keysHint: [["ctrl+c", " quits"]] as const };
+    const lines = renderPanel(snapshot({ state: state(null) }), options);
+
+    expect(lines.at(-1)).toContain("ctrl+c quits");
+    expect(text(lines)).not.toContain("esc hands");
+  });
+
+  it("shows a refused move and a blocked account", () => {
+    const refused = renderPanel(
+      snapshot({ state: state(BLACKJACK_ROUND), message: { text: "Not enough balance.", tone: "loss" } }),
+      { color: false, width: WIDTH },
+    );
+    const blocked = renderPanel(snapshot({ state: { ...state(null), blocked: "Self-excluded until May." } }), {
+      color: false,
+      width: WIDTH,
+    });
+
+    expect(text(refused)).toContain("Not enough balance.");
+    expect(text(blocked)).toContain("Self-excluded until May.");
+  });
+
+  it("gives the deposit page in full to an account not open yet", () => {
+    const lines = renderPanel(
       snapshot({ state: { ...state(null), accountOpen: false }, depositUrl: "https://tilt.example/deposit" }),
       { color: false, width: WIDTH },
     );
-    expect(text(unopened)).toContain("first deposit");
-    expect(text(unopened)).toContain("https://tilt.example/deposit");
+
+    expect(text(lines)).toContain("first deposit");
+    expect(lines.some((line) => line.trim() === "https://tilt.example/deposit")).toBe(true);
+  });
+
+  it("colors only when asked, every line still the width", () => {
+    const snap = snapshot({ state: state(BACCARAT_WIN), prefs: { ...PREFS, game: "baccarat" } });
+    const plain = renderPanel(snap, { color: false, width: WIDTH });
+    const colored = renderPanel(snap, { color: true, width: WIDTH });
+
+    expect(text(plain)).not.toContain(ESCAPE);
+    expect(text(colored)).toContain(ESCAPE);
+    expectWidth(colored, WIDTH);
+    expect(renderPanel(snap, { color: true, width: WIDTH, light: true })).not.toEqual(colored);
   });
 });
 
@@ -299,56 +382,17 @@ describe("renderStatusLine", () => {
         prefs: { ...PREFS, game: "baccarat" },
         agent: { isWorking: false, notice: null },
       }),
-      {
-        color: false,
-        width: WIDTH,
-      },
+      { color: false, width: WIDTH },
     );
 
     expect(line.trimEnd()).toBe("TILT 12.40 · Baccarat · +0.94 · agent idle");
-    expect(visibleWidth(renderStatusLine(snapshot({ state: state(BACCARAT_WIN) }), { color: true, width: 20 }))).toBe(
-      20,
-    );
-  });
-});
-
-describe("card renderers", () => {
-  const ctx = (width: number): RenderContext => ({ color: false, width, prefs: { ...PREFS, hands: 3 }, now: 0 });
-
-  it("draw the empty tables from the prefs", () => {
-    expect(text(renderBlackjack(null, ctx(WIDTH)))).toContain("3 hands");
-    expect(text(renderBaccarat(null, ctx(WIDTH)))).toContain("bet banker · pays ×1.95");
-    expect(text(renderHilo(null, ctx(WIDTH)))).toContain("higher or lower");
+    expect(columns(line)).toBe(WIDTH);
   });
 
-  it("draw a Hilo turn with the trail, the offers and the cash-out", () => {
-    const lines = renderHilo(HILO_ROUND, ctx(NARROW));
-    const all = text(lines);
+  it("cuts to the width, colored or not", () => {
+    const snap = snapshot({ state: state(BACCARAT_WIN) });
 
-    expect(all).toContain("K♠ ▼ 9♥");
-    expect(all).toContain("multiplier ×1.30");
-    expect(all).toContain("▲ higher or same 38% ×2.10");
-    expect(all).toContain("▼ lower or same 69% ×1.50");
-    expect(all).toContain("9 left");
-    expect(all).toContain("cash out 1.30");
-    expectFitted(lines, NARROW);
-  });
-
-  it("keep at most 12 lines with ten blackjack hands", () => {
-    const detail = BLACKJACK_ROUND.detail;
-    if (detail.game !== "blackjack") throw new Error("fixture");
-    const hand = detail.hands[0];
-    if (hand === undefined) throw new Error("fixture");
-    const round: RoundView = {
-      ...BLACKJACK_ROUND,
-      phase: "idle",
-      net: "-10000000",
-      detail: { ...detail, hands: Array.from({ length: 10 }, () => ({ ...hand, result: "lose" as const })) },
-    };
-    const lines = renderBlackjack(round, ctx(NARROW));
-
-    expect(lines.length).toBeLessThanOrEqual(12);
-    expect(text(lines)).toContain("LOSE −10.00");
-    expectFitted(lines, NARROW);
+    expect(columns(renderStatusLine(snap, { color: true, width: 20 }))).toBe(20);
+    expect(renderStatusLine(snap, { color: false, width: 20 })).not.toContain(ESCAPE);
   });
 });

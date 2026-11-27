@@ -1,3 +1,6 @@
+/** @jsxRuntime classic */
+/** @jsx h */
+/** @jsxFrag Fragment */
 // What the pane and the band draw, from the mod's state alone. No `$` here: the hooks module
 // hands in the surface's elements and one callback for every key.
 import type { RenderElement } from "claude-code";
@@ -1118,7 +1121,7 @@ function sessionText(ui: Ui, session: TiltSession, parts: { net: string; rest: s
 }
 
 /** How to get the keys, or hand them back: its first words in gold, then the rest. */
-type KeysHint = readonly [string, string];
+export type KeysHint = readonly [string, string];
 
 /** Where clicks land, the table surface module that takes the keys a click gives it: drawn, or kept
  *  drawing nothing beside a still board (it takes no click there: a click reveals a tile). */
@@ -1130,6 +1133,10 @@ type ClickTable = "drawn" | "kept" | null;
  * it holds them (the engine never says when Esc takes them back): both, there.
  */
 function keysHints(layout: PaneLayout, table: ClickTable): readonly KeysHint[] {
+  if (layout.keysHint !== undefined) {
+    return layout.keysHint;
+  }
+
   if (layout.isBand || (!layout.isFocused && table === "kept")) {
     return [
       ["ctrl+x tab", " keys · esc hands them back"],
@@ -1433,6 +1440,12 @@ export interface PaneLayout {
   isClickable: boolean;
   /** Drawn in the band above the prompt, where a digit typed in an empty prompt presses a Button. */
   isBand: boolean;
+  /** The footer's key hints, longest first, from a client that hands out its keys otherwise
+   *  (packages/play's harnesses); Claude Code leaves it unset. */
+  keysHint?: readonly KeysHint[];
+  /** The sponsor and leaderboard on a line rather than in their column, from a client that
+   *  would otherwise fall back to small cards (packages/play's harnesses); Claude Code leaves it unset. */
+  isSidebarOff?: boolean;
 }
 
 /** Everything around the table: header, agent line, outcome, status, keys (framed, as with large cards) and footer. */
@@ -1523,7 +1536,7 @@ function tableRows(
 
 /** The sponsor and leaderboard get their own column where the pane is wide and tall enough; else a line. */
 const sidebarFits = (layout: PaneLayout): boolean =>
-  layout.bodyColumns >= WIDE_MIN_COLUMNS && layout.bodyRows >= SIDEBAR_MIN_ROWS;
+  layout.isSidebarOff !== true && layout.bodyColumns >= WIDE_MIN_COLUMNS && layout.bodyRows >= SIDEBAR_MIN_ROWS;
 
 /** The cells the game column has: the pane less its padding, and less the sidebar where it fits. */
 function gameColumns(layout: PaneLayout): number {
@@ -1561,6 +1574,14 @@ export function fitsRows(snap: Snapshot, layout: PaneLayout, rows: number): bool
   const state = snap.remote.state;
 
   return state === null || paneRows(snap, state, layout, "small") <= rows;
+}
+
+/** The rows the pane takes with large cards; null before there is a table to measure. A host
+ *  that can grow (a harness widget) gives it these rather than falling back to small cards. */
+export function largeCardRows(snap: Snapshot, layout: PaneLayout): number | null {
+  const state = snap.remote.state;
+
+  return state === null ? null : paneRows(snap, state, layout, "large");
 }
 
 /** The card size the pane draws: the one asked for, or small where large ones would not fit. */

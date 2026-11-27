@@ -1,7 +1,9 @@
 # Tilt for GitHub Copilot CLI
 
-A Copilot CLI extension that adds `/tilt`: the Tilt table plays through Copilot's select dialogs
-while the agent works, and prints in the timeline. The agent's working/idle state comes from the
+A Copilot CLI extension that adds `/tilt`: you play Tilt through Copilot's select dialogs while
+the agent works, over one line (your balance and the last result), also printed in the timeline.
+The table itself is the companion's (`harnesses/companion/bin/tilt` in a split pane): the CLI runs
+extensions under plain Node, which cannot load the Claude Code mod's view (TSX). The agent's working/idle state comes from the
 `assistant.turn_start` and `session.idle` events, used for their timing only. The extension never
 reads prompts, replies, tool calls or event payloads, and runs no shell command except the
 platform opener (`open`, `xdg-open`, `rundll32`) for the login page.
@@ -11,7 +13,8 @@ Extensions are an **experimental** Copilot CLI feature and may change.
 ## Files
 
 - `extension.mjs`: the entry the CLI runs with Node. It lets Node load the shared TypeScript
-  table (`packages/play`) straight from your clone, then joins the session.
+  session (`packages/play/src/core.ts`, plain TypeScript only) straight from your clone, then
+  joins the session.
 - `tilt.ts`: the `/tilt` command, the play loop and the turn tracking.
 - `copilot.ts`: the few SDK types used, declared locally (the SDK ships inside the CLI).
 
@@ -32,17 +35,17 @@ Extensions are an **experimental** Copilot CLI feature and may change.
 
 ## Play
 
-| Command        | What it does                                                                                   |
-| -------------- | ---------------------------------------------------------------------------------------------- |
-| `/tilt login`  | Opens the login page and prints the code to confirm; the timeline says when you're in.         |
-| `/tilt`        | Opens a dialog with the table and its keys; pick moves until you cancel it.                    |
-| `/tilt table`  | Prints the table in the timeline.                                                              |
-| `/tilt <key>`  | Presses one key (e.g. `/tilt 1`), then prints the table. Use it where dialogs are unavailable. |
-| `/tilt logout` | Signs out on this machine.                                                                     |
+| Command        | What it does                                                                                  |
+| -------------- | --------------------------------------------------------------------------------------------- |
+| `/tilt login`  | Opens the login page and prints the code to confirm; the timeline says when you're in.        |
+| `/tilt`        | Opens a dialog with the line and the keys; pick moves until you cancel it.                    |
+| `/tilt status` | Prints the line in the timeline: `TILT 99.90 · Blackjack · −0.10 · agent idle`.               |
+| `/tilt <key>`  | Presses one key (e.g. `/tilt 1`), then prints the line. Use it where dialogs are unavailable. |
+| `/tilt logout` | Signs out on this machine.                                                                    |
 
 The extension also writes the turn file `~/.tilt/agent.json`, so the companion app
-(`harnesses/companion/bin/tilt` in a split pane) shows a live table you play with single keys
-while Copilot works.
+(`harnesses/companion/bin/tilt` in a split pane) draws the table, played with single keys, and
+follows Copilot's turns.
 
 ## Uninstall
 
@@ -60,8 +63,10 @@ Verified against the docs and SDK source (2026-10-29, CLI 1.0.105):
   `session.capabilities.ui.elicitation`; `requestedEnvironmentVariables` (the CLI strips sensitive
   variables from extensions): `nodejs/src/session.ts`, `nodejs/src/types.ts`, `nodejs/src/extension.ts`
   and `nodejs/docs/extensions.md` in <https://github.com/github/copilot-sdk>.
-- The adapter and the shared table load under plain Node 22.23 with type stripping and the
-  resolve hook in `extension.mjs`, and answer `/tilt` against a fake session.
+- On 2026-11-24, `tilt.ts` loaded under plain Node 22.23 with type stripping and the resolve hook
+  of `extension.mjs`, and answered `/tilt status`, `/tilt s` and `/tilt` against a fake session and
+  the fake API (`bun packages/play/test/fake-api.ts`). The SDK import of `extension.mjs` itself
+  comes from the CLI and was not loaded.
 
 Not verified (no Copilot CLI was run):
 
@@ -72,7 +77,6 @@ Not verified (no Copilot CLI was run):
   `~/.copilot/extensions/tilt/` folder whose `extension.mjs` holds the single line
   `import "<TILT_DIR>/harnesses/copilot/extension.mjs";`. Whether the CLI then resolves the SDK
   import from your clone is also unverified.
-- How the timeline renders `session.log` text (Markdown or plain) and whether the select dialog
-  keeps the table's line breaks and columns. The table is plain text at 72 columns because the
-  extension cannot read the terminal width.
+- How the timeline renders `session.log` text and whether the select dialog keeps its line breaks.
+  The line is plain text cut at 72 columns because the extension cannot read the terminal width.
 - Whether `TILT_API_URL` counts as sensitive; if it does, the CLI asks once to pass it through.

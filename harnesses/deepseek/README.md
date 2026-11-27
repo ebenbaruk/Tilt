@@ -2,17 +2,17 @@
 
 A Cordis plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), a
 developer preview whose APIs still change. It follows `agent/status` (`running`/`idle`, no
-content) and adds `/tilt`. In the terminal UI, `/tilt` opens the table as an overlay that takes
-the keys until Esc. Where no terminal UI is mounted (e.g. `dsh web`), `/tilt` answers with the
-table as text, and the companion app is the live table. The plugin never reads prompts,
+content) and adds `/tilt`, which answers with one line: your balance and the last result. The
+table is the companion app's (`harnesses/companion/bin/tilt` in a split pane): dsh runs plugins
+under plain Node, which cannot load the Claude Code mod's view (TSX). The plugin never reads prompts,
 replies, tool calls or session events, and runs no shell command except the platform opener
 (`open`, `xdg-open`, `rundll32`) for the login page.
 
 ## Files
 
-- `index.mjs`: the entry dsh loads. It lets Node load the TypeScript plugin and the shared table
-  (`packages/play`) straight from your clone.
-- `tilt.ts`: the plugin (`name`, `inject`, `apply`): turn tracking, `/tilt`, the overlay.
+- `index.mjs`: the entry dsh loads. It lets Node load the TypeScript plugin and the shared session
+  (`packages/play/src/core.ts`, plain TypeScript only) straight from your clone.
+- `tilt.ts`: the plugin (`name`, `inject`, `apply`): turn tracking and `/tilt`.
 - `dsh.ts`: the few dsh types used, declared locally.
 - `package.json` + `cordis.patch.yml`: make this folder a dsh bundle that mounts the plugin.
 
@@ -35,17 +35,15 @@ replies, tool calls or session events, and runs no shell command except the plat
 
 ## Play
 
-| Command        | What it does                                                                                             |
-| -------------- | -------------------------------------------------------------------------------------------------------- |
-| `/tilt login`  | Opens the login page and answers with the code to confirm.                                               |
-| `/tilt`        | Terminal UI: opens the table; press its keys, Esc goes back to the prompt. Elsewhere: the table as text. |
-| `/tilt table`  | The table as text.                                                                                       |
-| `/tilt <key>`  | Presses one key (e.g. `/tilt 1`).                                                                        |
-| `/tilt logout` | Signs out on this machine.                                                                               |
+| Command        | What it does                                                                                  |
+| -------------- | --------------------------------------------------------------------------------------------- |
+| `/tilt login`  | Opens the login page and answers with the code to confirm.                                    |
+| `/tilt`        | Answers with one line, `TILT 99.90 · Blackjack · −0.10 · agent idle`, and where the table is. |
+| `/tilt <key>`  | Presses one key (e.g. `/tilt 1`).                                                             |
+| `/tilt logout` | Signs out on this machine.                                                                    |
 
-The overlay is modal (dsh shows one overlay at a time): while it is open, keys go to Tilt and the
-agent keeps working. The plugin also writes the turn file `~/.tilt/agent.json`, so
-`harnesses/companion/bin/tilt` in a split pane shows a live table next to any dsh front end.
+The plugin also writes the turn file `~/.tilt/agent.json`, so `harnesses/companion/bin/tilt` in a
+split pane draws the table, played with single keys, and follows dsh's turns in any front end.
 
 ## Uninstall
 
@@ -58,31 +56,22 @@ first) to sign out everywhere.
 Verified against deepseek-ai/deepseek-harness `main` at commit
 `f3803c96974ad4a94195fb97e5c637e9c2a3afe3` (2026-10-28):
 
-- Plugin form (`name`, `inject`, `apply(ctx, config)`), `ctx.effect`, optional services through
-  `ctx.get`: `docs/user/develop/basic/index.md`, `docs/cordis-tutorial/02-lifecycle-and-effects.md`,
-  `docs/cordis-tutorial/03-services.md`.
+- Plugin form (`name`, `inject`, `apply(ctx, config)`), `ctx.effect`:
+  `docs/user/develop/basic/index.md`, `docs/cordis-tutorial/02-lifecycle-and-effects.md`.
 - Bundle manifest (`dsh.bundle.patch`), `dsh plugin --profile <p> add <path>` linking a local
   checkout, `remove`: `docs/user/develop/basic/publish.md`.
 - `agent/status` payload `{ agent, status }` with `running`/`idle`, and `agent/disposed`:
   `packages/core/agent/src/runtime-types.ts`.
 - `ctx.commands.register({ name, description, input, handler({ rawInput }) })` returning
   `{ kind: 'success' | 'error', text }`: `packages/interaction/commands/README.md`, `src/types.ts`.
-- The plugin and the shared table load under plain Node 22.23 with type stripping and the resolve
-  hook in `index.mjs`, and answer `/tilt` and draw the overlay against a fake context.
+- On 2026-11-24, `index.mjs` loaded under plain Node 22.23 with type stripping and its resolve
+  hook, and answered `/tilt`, `/tilt login` and `/tilt n` against a fake context and the fake API
+  (`bun packages/play/test/fake-api.ts`).
 
 Not verified:
 
-- **The overlay API.** The terminal UI left the dsh repo on 2026-08-04 (now `@deepseek-ai/dsh-tui`,
-  <https://github.com/omdsh-dev/dsh-tui>, whose public repo has no `src/` and which is not on npm).
-  `ctx.tui.openOverlay({ create(host) → { render, handleInput, invalidate }, options })` follows its
-  last public copy, `packages/ui/tui/src/extension/types.ts` at commit
-  `890343751a356273128416eba6be6b09ece7d463` and the design note
-  `.agents/notes/archived/architecture/2026-07-22-tui-interactive-extension-service.md`. The
-  `agent/status` listener signature changed since that copy, so the overlay may have too. When no
-  `tui` service is found, `/tilt` falls back to text and the companion; if the current TUI
-  changed the API, the overlay call may fail instead.
 - That installed dsh loads `index.mjs` with Node's default type stripping (Node 22.18+, dsh asks
   for `^22.19.0 || >=24.0.0`) without its own module hooks getting in the way.
-- How the TUI and the web client render multi-line command answers (the text table is 72 columns
-  with no color).
+- How the TUI and the web client render a multi-line command answer (the line is cut at 72
+  columns, with no color).
 - No dsh was installed or run.

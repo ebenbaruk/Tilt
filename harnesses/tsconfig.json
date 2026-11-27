@@ -6,8 +6,11 @@
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": ["node"]
+    "types": ["node"],
+    "jsx": "react",
+    "jsxFactory": "h",
+    "jsxFragmentFactory": "Fragment"
   },
-  "include": ["**/*.ts"],
+  "include": ["**/*.ts", "../packages/play/src/claude-code.d.ts"],
   "exclude": ["node_modules"]
 }
