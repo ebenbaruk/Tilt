@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { renderPanel } from "../src/panel";
 import { renderStatusLine } from "../src/status";
 import { stringWidth } from "../src/term/width";
+import type { BlackjackHandView } from "../../../apps/mod/hooks/protocol";
 import type { Game, Prefs, RoundView, Snapshot, StateResponse } from "../src/types";
 
 const WIDTH = 60;
@@ -241,6 +242,59 @@ describe("renderPanel", () => {
     expect(all).toContain("A♠   6♥");
     expect(keysAt).toBeGreaterThan(-1);
     expect(keysAt).toBeLessThan(dealerAt);
+  });
+
+  it("keeps large cards for six settled hands up to maxRows, the sponsor on a line, and only as far as it must", () => {
+    const settled = (n: number): BlackjackHandView => ({
+      cards: [
+        { rank: 10, suit: "♠" },
+        { rank: n, suit: "♥" },
+        { rank: 2, suit: "♣" },
+      ],
+      total: 12 + n,
+      soft: false,
+      doubled: false,
+      split: false,
+      stake: "1000000",
+      result: "lose",
+    });
+    const sixSettled: RoundView = {
+      ...BLACKJACK_ROUND,
+      phase: "idle",
+      stake: "6000000",
+      net: "-6000000",
+      settledSignature: "sig",
+      detail: {
+        game: "blackjack",
+        hands: [2, 3, 4, 5, 6, 7].map(settled),
+        activeHand: null,
+        dealer: [
+          { rank: 8, suit: "♥" },
+          { rank: 4, suit: "♠" },
+          { rank: 9, suit: "♣" },
+        ],
+        dealerTotal: 21,
+        canHit: false,
+        canDouble: false,
+        canSplit: false,
+      },
+    };
+    const snap = snapshot({
+      state: state(sixSettled),
+      message: { text: "Balance too low for this bet", tone: "loss" },
+    });
+    const wide = 160;
+
+    const capped = text(renderPanel(snap, { color: false, width: wide, rows: 30 }));
+    const grown = renderPanel(snap, { color: false, width: wide, rows: 30, maxRows: 60 });
+
+    // At 30 rows the round's end no longer fits large cards; with room it keeps them.
+    expect(capped).not.toContain("╭───╭");
+    expect(text(grown)).toContain("╭───╭");
+    expect(grown.length).toBeGreaterThan(30);
+    expect(grown.length).toBeLessThan(60);
+    // Shorter with the sponsor on a line than with its column wrapping the hands: still shown.
+    expect(text(grown)).toContain("PRESENTED BY Acme");
   });
 
   it("spins a round the motion says is spinning, its balance held back", () => {

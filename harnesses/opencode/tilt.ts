@@ -197,13 +197,15 @@ export class TiltTable {
   private paint(): void {
     if (this.size.width === 0) return;
     // The table leaves the prompt and the session most of the terminal.
-    const rows = Math.max(MIN_TABLE_ROWS, Math.min(MAX_TABLE_ROWS, this.size.height - HOST_ROWS));
+    const room = this.size.height - HOST_ROWS;
+    const rows = Math.max(MIN_TABLE_ROWS, Math.min(MAX_TABLE_ROWS, room));
     this.lastPaintId += 1;
     const request: PaintRequest = {
       id: this.lastPaintId,
       snapshot: this.session.snapshot(),
       width: this.size.width,
       rows,
+      maxRows: Math.max(rows, room),
       color: this.color,
     };
     this.painter.postMessage(request);

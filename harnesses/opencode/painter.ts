@@ -15,6 +15,8 @@ export interface PaintRequest {
   snapshot: Snapshot;
   width: number;
   rows: number;
+  /** The rows large cards may grow the table to (renderPanel's `maxRows`). */
+  maxRows: number;
   color: boolean;
 }
 
@@ -51,13 +53,13 @@ function follow({ state, fetchedAt, prefs }: Snapshot): void {
 }
 
 scope.onmessage = ({ data }) => {
-  const { id, snapshot, width, rows, color } = data;
+  const { id, snapshot, width, rows, maxRows, color } = data;
   let reply: PaintReply;
 
   try {
     follow(snapshot);
     const table = motion.view(snapshot.state, snapshot.now, snapshot.prefs.slotsSpeed);
-    const lines = renderPanel({ ...snapshot, ...table }, { color, width, rows }).slice(0, rows);
+    const lines = renderPanel({ ...snapshot, ...table }, { color, width, rows, maxRows }).slice(0, maxRows);
 
     reply = { id, lines, isMoving: table.isMoving, holdsPlay: table.holdsPlay };
   } catch (error) {

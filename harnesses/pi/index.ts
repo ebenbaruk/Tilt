@@ -158,8 +158,11 @@ class Table {
       : `${GAME_SHORTCUT} to play with the keys · /tilt to hide`;
     const hintLine = hint.slice(0, width).padEnd(width);
     // The table leaves the prompt and the agent's output most of the terminal.
-    const rows = Math.max(MIN_TABLE_ROWS, Math.min(MAX_TABLE_ROWS, (process.stdout.rows ?? 0) - HOST_ROWS));
-    const table = renderPanel(snapshot, { color, width, rows }).slice(0, rows);
+    const room = (process.stdout.rows ?? 0) - HOST_ROWS;
+    const rows = Math.max(MIN_TABLE_ROWS, Math.min(MAX_TABLE_ROWS, room));
+    // Large cards that need more (six settled blackjack hands) take what the terminal has left.
+    const maxRows = Math.max(rows, room);
+    const table = renderPanel(snapshot, { color, width, rows, maxRows }).slice(0, maxRows);
     return [...table, color ? `\x1b[2m${hintLine}\x1b[22m` : hintLine];
   }
 
